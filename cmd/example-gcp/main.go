@@ -21,16 +21,10 @@ import (
 	"flag"
 	"io"
 	"net/http"
-	"os"
 
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/storage/gcp"
 	"k8s.io/klog/v2"
-)
-
-var (
-	project = flag.String("project", os.Getenv("GOOGLE_CLOUD_PROJECT"), "GCP Project, take from env if unset")
-	listen  = flag.String("listen", ":2024", "Address:port to listen on")
 )
 
 func main() {
