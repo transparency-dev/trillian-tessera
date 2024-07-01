@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package gcp contains a GCP-based storage implementation for Tessera.G
+// Package gcp contains a GCP-based storage implementation for Tessera.
 package gcp
 
 import "errors"
