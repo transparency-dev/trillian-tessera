@@ -1,0 +1,18 @@
+on: [push, pull_request]
+name: Test Go
+permissions:
+  contents: read
+jobs:
+  test:
+    strategy:
+      matrix:
+        go-version: [1.22.x]
+        os: [ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+    - uses: actions/setup-go@93397bea11091df50f3d7e59dc26a7711a8bcfbe # v4.1.0
+      with:
+        go-version: ${{ matrix.go-version }}
+    - uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608 # v3.1.0
+    - run: go test -v -race -covermode=atomic -coverprofile=coverage.out ./...
+    - uses: codecov/codecov-action@eaaf4bedf32dbdc6b720b63067d99c4d77d6047d # v3.1.4
