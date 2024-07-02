@@ -286,27 +286,25 @@ func newTileFetcher(f Fetcher, logSize uint64) GetTileFunc {
 	}
 }
 
-// GetLeaf fetches the raw contents committed to at a given leaf index.
-// TODO(mhutchinson): This API is inefficient as it throws away a bunch of
-// neighbouring leaves. Rewrite this to return the EntryBundle.
-func GetLeaf(ctx context.Context, f Fetcher, i, logSize uint64) ([]byte, error) {
+// GetEntryBundle fetches the entry bundle at the given _tile index_.
+func GetEntryBundle(ctx context.Context, f Fetcher, i, logSize uint64) (api.EntryBundle, error) {
+	bundle := api.EntryBundle{}
 	p := layout.EntriesPath(i, logSize)
 	sRaw, err := f(ctx, p)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return nil, fmt.Errorf("leaf index %d not found: %w", i, err)
+			return bundle, fmt.Errorf("leaf index %d not found: %w", i, err)
 		}
-		return nil, fmt.Errorf("failed to fetch leaf index %d: %w", i, err)
+		return bundle, fmt.Errorf("failed to fetch leaf index %d: %w", i, err)
 	}
-	bundle := api.EntryBundle{}
 	if err := bundle.UnmarshalText(sRaw); err != nil {
-		return nil, fmt.Errorf("failed to parse EntryBundle for index %d: %v", i, err)
+		return bundle, fmt.Errorf("failed to parse EntryBundle for index %d: %v", i, err)
 	}
 	offset := int(i % 256)
 	if offset > len(bundle.Entries) {
-		return nil, fmt.Errorf("wanted leaf at tile index %d but only got %d entries", offset, len(bundle.Entries))
+		return bundle, fmt.Errorf("wanted leaf at tile index %d but only got %d entries", offset, len(bundle.Entries))
 	}
-	return bundle.Entries[i%256], nil
+	return bundle, nil
 }
 
 // LogStateTracker represents a client-side view of a target log's state.
