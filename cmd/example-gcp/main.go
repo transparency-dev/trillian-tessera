@@ -64,4 +64,8 @@ func main() {
 
 		// TODO: Add entry to log and return assigned index.
 	})
+
+	if err := http.ListenAndServe(*listen, http.DefaultServeMux); err != nil {
+		klog.Exitf("ListenAndServe: %v", err)
+	}
 }
