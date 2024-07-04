@@ -28,8 +28,10 @@ const (
 )
 
 // EntriesPath builds the local path at which the leaf with the given index lives in.
-// Note that this will be a leaf tile containing up to 256 entries and thus multiple
+// Note that this will be an entry bundle containing up to 256 entries and thus multiple
 // indices can map to the same output path.
+//
+// TODO(mhutchinson): revisit to consider how partial tile suffixes should be added.
 func EntriesPath(seq uint64) string {
 	seq = seq / 256
 	frag := []string{
@@ -42,8 +44,7 @@ func EntriesPath(seq uint64) string {
 	return filepath.Join(frag...)
 }
 
-// TilePath builds the directory path and relative filename for the subtree tile with the
-// given level and index.
+// TilePath builds the path to the subtree tile with the given level and index.
 func TilePath(level, index uint64) string {
 	seq := index / 256
 	frag := []string{
