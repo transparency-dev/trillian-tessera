@@ -14,15 +14,17 @@
 
 // Package gcp contains a GCP-based storage implementation for Tessera.
 //
+// TODO: decide whether to rename this package.
+//
 // This storage implementation uses GCS for long-term storage and serving of
-// entry bundles and log tiles, and CloudSQL for coordinating updates to GCS
+// entry bundles and log tiles, and Spanner for coordinating updates to GCS
 // when multiple instances of a personality binary are running.
 //
 // A single GCS bucket is used to hold entry bundles and log internal tiles.
 // The object keys for the bucket are selected so as to conform to the
 // expected layout of a tile-based log.
 //
-// A CloudSQL database provides a transactional mechanism to allow multiple
+// A Spanner database provides a transactional mechanism to allow multiple
 // frontends to safely update the contents of the log.
 package gcp
 
@@ -49,13 +51,12 @@ type Storage struct {
 
 // Config holds GCP project and resource configuration for a storage instance.
 type Config struct {
-	// ProjectID is the GCP project which hosts the storage bucket and CloudSQL database for the log.
+	// ProjectID is the GCP project which hosts the storage bucket and Spanner database for the log.
 	ProjectID string
 	// Bucket is the name of the GCS bucket to use for storing log state.
 	Bucket string
 	// Spanner is the GCP resource URI of the spanner database instance to use.
 	Spanner string
-	// DBUser is the username for accessing the CloudSQL database.
 }
 
 // New creates a new instance of the GCP based Storage.
@@ -70,15 +71,15 @@ func New(ctx context.Context, cfg Config) (*Storage, error) {
 		klog.Exitf("Failed to connect to Spanner: %v", err)
 	}
 
-	if err := initDB(ctx, dbPool); err != nil {
-		return nil, fmt.Errorf("failed to init DB: %v", err)
-	}
-
 	r := &Storage{
 		gcsClient: c,
 		projectID: cfg.ProjectID,
 		bucket:    cfg.Bucket,
 		dbPool:    dbPool,
+	}
+
+	if err := r.initDB(ctx); err != nil {
+		return nil, fmt.Errorf("failed to init DB: %v", err)
 	}
 
 	if exists, err := r.bucketExists(ctx); err != nil {
@@ -105,7 +106,7 @@ func New(ctx context.Context, cfg Config) (*Storage, error) {
 //     Seq into the committed tree state.
 //
 // The database and schema should be created externally, e.g. by terraform.
-func initDB(ctx context.Context, dbPool *spanner.Client) error {
+func (s *Storage) initDB(ctx context.Context) error {
 
 	/* Schema for reference:
 	CREATE TABLE SeqCoord (
@@ -129,10 +130,10 @@ func initDB(ctx context.Context, dbPool *spanner.Client) error {
 	// sequencing and integration to occur.
 	// Note that this will only succeed if no row exists, so there's no danger
 	// of "resetting" an existing log.
-	if _, err := dbPool.Apply(ctx, []*spanner.Mutation{spanner.Insert("SeqCoord", []string{"id", "next"}, []interface{}{0, 0})}); spanner.ErrCode(err) != codes.AlreadyExists {
+	if _, err := s.dbPool.Apply(ctx, []*spanner.Mutation{spanner.Insert("SeqCoord", []string{"id", "next"}, []interface{}{0, 0})}); spanner.ErrCode(err) != codes.AlreadyExists {
 		return err
 	}
-	if _, err := dbPool.Apply(ctx, []*spanner.Mutation{spanner.Insert("IntCoord", []string{"id", "seq"}, []interface{}{0, 0})}); spanner.ErrCode(err) != codes.AlreadyExists {
+	if _, err := s.dbPool.Apply(ctx, []*spanner.Mutation{spanner.Insert("IntCoord", []string{"id", "seq"}, []interface{}{0, 0})}); spanner.ErrCode(err) != codes.AlreadyExists {
 		return err
 	}
 	return nil

@@ -4,16 +4,20 @@ terraform {
 
 # Services
 resource "google_project_service" "serviceusage_googleapis_com" {
-  service = "serviceusage.googleapis.com"
+  service            = "serviceusage.googleapis.com"
+  disable_on_destroy = false
 }
 resource "google_project_service" "storage_api_googleapis_com" {
-  service = "storage-api.googleapis.com"
+  service            = "storage-api.googleapis.com"
+  disable_on_destroy = false
 }
 resource "google_project_service" "storage_component_googleapis_com" {
-  service = "storage-component.googleapis.com"
+  service            = "storage-component.googleapis.com"
+  disable_on_destroy = false
 }
 resource "google_project_service" "storage_googleapis_com" {
-  service = "storage.googleapis.com"
+  service            = "storage.googleapis.com"
+  disable_on_destroy = false
 }
 
 ## Resources
@@ -22,7 +26,7 @@ resource "google_project_service" "storage_googleapis_com" {
 
 resource "google_service_account" "log_writer" {
   account_id   = "${var.base_name}-writer"
-  display_name = "Log writer service account"
+  display_name = "Transparency log writer service account"
 }
 
 

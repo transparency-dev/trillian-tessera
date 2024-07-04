@@ -3,9 +3,9 @@ terraform {
 }
 
 locals {
-  project_id  = "trillian-tessera"
-  location      = "us-central1"
-  base_name = "example-gcs"
+  project_id = "trillian-tessera"
+  location   = "us-central1"
+  base_name   = "example-gcp"
 }
 
 inputs = merge(
