@@ -17,21 +17,36 @@
 package main
 
 import (
+	"context"
 	"crypto/sha256"
 	"flag"
 	"io"
 	"net/http"
+	"os"
 
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/storage/gcp"
 	"k8s.io/klog/v2"
 )
 
+var (
+	bucket  = flag.String("bucket", "", "Bucket to use for storing log")
+	listen  = flag.String("listen", ":2024", "Address:port to listen on")
+	project = flag.String("project", os.Getenv("GOOGLE_CLOUD_PROJECT"), "GCP Project, take from env if unset")
+	spanner = flag.String("spanner", "", "Spanner resource URI ('projects/.../...')")
+)
+
 func main() {
 	klog.InitFlags(nil)
 	flag.Parse()
+	ctx := context.Background()
 
-	_, err := gcp.New()
+	gcpCfg := gcp.Config{
+		ProjectID: *project,
+		Bucket:    *bucket,
+		Spanner:   *spanner,
+	}
+	_, err := gcp.New(ctx, gcpCfg)
 	if err != nil {
 		klog.Exitf("Failed to create new GCP storage: %v", err)
 	}
@@ -49,4 +64,8 @@ func main() {
 
 		// TODO: Add entry to log and return assigned index.
 	})
+
+	if err := http.ListenAndServe(*listen, http.DefaultServeMux); err != nil {
+		klog.Exitf("ListenAndServe: %v", err)
+	}
 }
