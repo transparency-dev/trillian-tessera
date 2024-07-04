@@ -1,6 +1,6 @@
 module github.com/transparency-dev/trillian-tessera
 
-go 1.22.4
+go 1.22.5
 
 require (
 	github.com/transparency-dev/merkle v0.0.2
