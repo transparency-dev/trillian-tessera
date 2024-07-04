@@ -34,7 +34,7 @@ import (
 	gcs "cloud.google.com/go/storage"
 	"google.golang.org/api/iterator"
 	"google.golang.org/grpc/codes"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 )
 
 // Storage is a GCP based storage implementation for Tessera.
