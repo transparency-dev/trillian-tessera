@@ -31,12 +31,17 @@ package gcp
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"slices"
 
 	"cloud.google.com/go/spanner"
 	gcs "cloud.google.com/go/storage"
+	"github.com/transparency-dev/trillian-tessera/api/layout"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/iterator"
 	"google.golang.org/grpc/codes"
@@ -50,7 +55,14 @@ type Storage struct {
 	projectID string
 	bucket    string
 
-	dbPool *spanner.Client
+	dbPool   *spanner.Client
+	objStore objStore
+}
+
+// objStore describes a type which can store and retrieve objects.
+type objStore interface {
+	getObject(ctx context.Context, obj string) ([]byte, int64, error)
+	setObject(ctx context.Context, obj string, data []byte, cond *gcs.Conditions) error
 }
 
 // Config holds GCP project and resource configuration for a storage instance.
@@ -67,6 +79,10 @@ type Config struct {
 func New(ctx context.Context, cfg Config) (*Storage, error) {
 	c, err := gcs.NewClient(ctx)
 	if err != nil {
+		return nil, fmt.Errorf("failed to create GCS client: %v", err)
+	}
+	gcsStorage, err := newGCSStorage(ctx, c, cfg.ProjectID, cfg.Bucket)
+	if err != nil {
 		return nil, fmt.Errorf("failed to create GCS storage: %v", err)
 	}
 
@@ -80,16 +96,11 @@ func New(ctx context.Context, cfg Config) (*Storage, error) {
 		projectID: cfg.ProjectID,
 		bucket:    cfg.Bucket,
 		dbPool:    dbPool,
+		objStore:  gcsStorage,
 	}
 
 	if err := r.initDB(ctx); err != nil {
 		return nil, fmt.Errorf("failed to init DB: %v", err)
-	}
-
-	if exists, err := r.bucketExists(ctx); err != nil {
-		return nil, fmt.Errorf("failed to check whether bucket %q exists: %v", r.bucket, err)
-	} else if !exists {
-		return nil, fmt.Errorf("bucket %q does not exist, please create it", r.bucket)
 	}
 
 	return r, nil
@@ -143,26 +154,93 @@ func (s *Storage) initDB(ctx context.Context) error {
 	return nil
 }
 
-// bucketExists tests whether the configured bucket exists.
-func (s *Storage) bucketExists(ctx context.Context) (bool, error) {
-	it := s.gcsClient.Buckets(ctx, s.projectID)
+// tileSuffix returns either the empty string or a tiles API suffix based on the passed-in tile size.
+func tileSuffix(s uint64) string {
+	if p := s % 256; p != 0 {
+		return fmt.Sprintf(".p/%d", p)
+	}
+	return ""
+}
+
+// setTile stores a tile in GCS.
+// Fully populated tiles are stored at the path corresponding to the level &
+// index parameters, partially populated (i.e. right-hand edge) tiles are
+// stored with a .xx suffix where xx is the number of "tile leaves" in hex.
+func (s *Storage) setTile(ctx context.Context, level, index uint64, tile [][]byte) error {
+	tileSize := uint64(len(tile))
+	klog.V(2).Infof("StoreTile: level %d index %x ts: %x", level, index, tileSize)
+	if tileSize == 0 || tileSize > 256 {
+		return fmt.Errorf("tileSize %d must be > 0 and <= 256", tileSize)
+	}
+	t := slices.Concat(tile...)
+
+	// Pass an empty rootDir since we don't need this concept in GCS.
+	tPath := layout.TilePath(level, index) + tileSuffix(tileSize)
+
+	return s.objStore.setObject(ctx, tPath, t, &gcs.Conditions{DoesNotExist: true})
+}
+
+// getTile returns the tile at the given tile-level and tile-index.
+// If no complete tile exists at that location, it will attempt to find a
+// partial tile for the given tree size at that location.
+func (s *Storage) getTile(ctx context.Context, level, index, logSize uint64) ([][]byte, error) {
+	tileSize := layout.PartialTileSize(level, index, logSize)
+
+	// Pass an empty rootDir since we don't need this concept in GCS.
+	objName := layout.TilePath(level, index) + tileSuffix(tileSize)
+	data, _, err := s.objStore.getObject(ctx, objName)
+	if err != nil {
+		if errors.Is(err, gcs.ErrObjectNotExist) {
+			// Return the generic NotExist error so that tileCache.Visit can differentiate
+			// between this and other errors.
+			return nil, os.ErrNotExist
+		}
+		return nil, err
+	}
+
+	// Recreate the tile slices
+	l := len(data)
+	if m := l % sha256.Size; m != 0 {
+		return nil, fmt.Errorf("invalid tile size %d", m)
+	}
+	t := make([][]byte, l/sha256.Size)
+	for i := range t {
+		t[i] = data[i*sha256.Size : (i+1)*sha256.Size]
+	}
+	return t, nil
+}
+
+// gcsStorage knows how to store and retrieve objects from GCS.
+type gcsStorage struct {
+	bucket    string
+	gcsClient *gcs.Client
+}
+
+// newGCSStorage creates a new gcsStorage.
+//
+// The specified bucket must exist or an error will be returned.
+func newGCSStorage(ctx context.Context, c *gcs.Client, projectID string, bucket string) (*gcsStorage, error) {
+	it := c.Buckets(ctx, projectID)
 	for {
 		bAttrs, err := it.Next()
 		if err == iterator.Done {
-			break
+			return nil, fmt.Errorf("bucket %q does not exist, please create it", bucket)
 		}
 		if err != nil {
-			return false, err
+			return nil, err
 		}
-		if bAttrs.Name == s.bucket {
-			return true, nil
+		if bAttrs.Name == bucket {
+			break
 		}
 	}
-	return false, nil
+	return &gcsStorage{
+		gcsClient: c,
+		bucket:    bucket,
+	}, nil
 }
 
 // getObject returns the data and generation of the specified object, or an error.
-func (s *Storage) getObject(ctx context.Context, obj string) ([]byte, int64, error) {
+func (s *gcsStorage) getObject(ctx context.Context, obj string) ([]byte, int64, error) {
 	r, err := s.gcsClient.Bucket(s.bucket).Object(obj).NewReader(ctx)
 	if err != nil {
 		return nil, -1, fmt.Errorf("getObject: failed to create reader for object %q in bucket %q: %w", obj, s.bucket, err)
@@ -181,7 +259,7 @@ func (s *Storage) getObject(ctx context.Context, obj string) ([]byte, int64, err
 // When preconditions are specified and are not met, an error will be returned unless the currently
 // stored data is bit-for-bit identical to the data to-be-written. This is intended to provide
 // idempotentency for writes.
-func (s *Storage) setObject(ctx context.Context, objName string, data []byte, cond *gcs.Conditions) error {
+func (s *gcsStorage) setObject(ctx context.Context, objName string, data []byte, cond *gcs.Conditions) error {
 	bkt := s.gcsClient.Bucket(s.bucket)
 	obj := bkt.Object(objName)
 
