@@ -8,7 +8,8 @@ This directory contains configuration-as-code to deploy the distributor to suppo
 ## Prerequisites
 
 Deploying these examples requires installation of:
- - `terraform` or `opentofu`
+ - [`terraform`](https://developer.hashicorp.com/terraform/install) or 
+   [`opentofu`](https://opentofu.org/docs/intro/install/)
  - [`terragrunt`](https://terragrunt.gruntwork.io/docs/getting-started/install/)
 
 ## Deploying
