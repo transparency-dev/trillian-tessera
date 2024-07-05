@@ -29,13 +29,13 @@ Tessera is currently under active development, and is not yet ready for general 
 
 ### Roadmap
 
-Alpha expected by Q4 2024.
+Alpha expected by Q4 2024, and production ready in the first half of 2025.
 
 #### What’s happening to Trillian v1?
 
 [Trillian v1](https://github.com/google/trillian) is still in use in production environments by multiple organisations in multiple ecosystems, and is likely to remain so for the mid-term. 
 
-_Forward looking statement:_ New ecosystems, or existing ecosystems looking to evolve, should strongly consider migrating to Tessera and adopting the patterns it encourages. 
+New ecosystems, or existing ecosystems looking to evolve, should strongly consider planning a migration to Tessera and adopting the patterns it encourages. 
 
 ### Getting started
 
