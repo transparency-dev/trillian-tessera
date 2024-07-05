@@ -29,7 +29,7 @@ Tessera is currently under active development, and is not yet ready for general 
 
 ### Roadmap
 
-Alpha expected by Q4 2024. Link to Patrick’s magic kanban simulator.
+Alpha expected by Q4 2024.
 
 #### What’s happening to Trillian v1?
 
