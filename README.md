@@ -21,7 +21,7 @@ Tessera goals:
     *   "Best-effort" de-duplication of entries
     *   Synchronous integration
 *   Broadly similar write-throughput and write-availability, and potentially _far_ higher read-throughput and read-availability compared to Trillian v1 (dependent on underlying infrastructure)
-*   Enable building of arbitrary log personalities, including support for the peculiarities of a [CT Tiles](https://github.com/C2SP/C2SP/blob/main/sunlight.md)  compliant log.
+*   Enable building of arbitrary log personalities, including support for the peculiarities of a [CT Tiles](https://github.com/C2SP/C2SP/blob/main/sunlight.md) compliant log.
 
 ### Status
 
@@ -65,7 +65,6 @@ This repo is licensed under the Apache 2.0 license, see [LICENSE](/LICENSE) for 
 
 - Slack: https://transparency-dev.slack.com/ ([invitation](https://join.slack.com/t/transparency-dev/shared_invite/zt-27pkqo21d-okUFhur7YZ0rFoJVIOPznQ))
 - Mailing list: https://groups.google.com/forum/#!forum/trillian-transparency
-
 
 ### Acknowledgements
 
