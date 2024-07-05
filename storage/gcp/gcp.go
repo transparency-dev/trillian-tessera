@@ -29,11 +29,15 @@
 package gcp
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
+	"net/http"
 
 	"cloud.google.com/go/spanner"
 	gcs "cloud.google.com/go/storage"
+	"google.golang.org/api/googleapi"
 	"google.golang.org/api/iterator"
 	"google.golang.org/grpc/codes"
 	"k8s.io/klog/v2"
@@ -155,4 +159,61 @@ func (s *Storage) bucketExists(ctx context.Context) (bool, error) {
 		}
 	}
 	return false, nil
+}
+
+// getObject returns the data and generation of the specified object, or an error.
+func (s *Storage) getObject(ctx context.Context, obj string) ([]byte, int64, error) {
+	r, err := s.gcsClient.Bucket(s.bucket).Object(obj).NewReader(ctx)
+	if err != nil {
+		return nil, -1, fmt.Errorf("getObject: failed to create reader for object %q in bucket %q: %w", obj, s.bucket, err)
+	}
+	defer r.Close()
+
+	d, err := io.ReadAll(r)
+	return d, r.Attrs.Generation, err
+}
+
+// setObject stores the provided data in the specified object, optionally gated by a condition.
+//
+// cond can be used to specify preconditions for the write (e.g. write iff not exists, write iff
+// current generation is X, etc.), or nil can be passed if no preconditions are desired.
+//
+// When preconditions are specified and are not met, an error will be returned unless the currently
+// stored data is bit-for-bit identical to the data to-be-written. This is intended to provide
+// idempotentency for writes.
+func (s *Storage) setObject(ctx context.Context, objName string, data []byte, cond *gcs.Conditions) error {
+	bkt := s.gcsClient.Bucket(s.bucket)
+	obj := bkt.Object(objName)
+
+	var w *gcs.Writer
+	if cond == nil {
+		w = obj.NewWriter(ctx)
+
+	} else {
+		w = obj.If(*cond).NewWriter(ctx)
+	}
+	if _, err := w.Write(data); err != nil {
+		return fmt.Errorf("failed to write object %q to bucket %q: %w", objName, s.bucket, err)
+	}
+
+	if err := w.Close(); err != nil {
+		// If we run into a precondition failure error, check that the object
+		// which exists contains the same content that we want to write.
+		// If so, we can consider this write to be idempotently successful.
+		if ee, ok := err.(*googleapi.Error); ok && ee.Code == http.StatusPreconditionFailed {
+			existing, existingGen, err := s.getObject(ctx, objName)
+			if err != nil {
+				return fmt.Errorf("failed to fetch existing content for %q (@%d): %v", objName, existingGen, err)
+			}
+			if !bytes.Equal(existing, data) {
+				return fmt.Errorf("precondition failed: resource content for %q differs from data to-be-written", objName)
+			}
+
+			klog.V(2).Infof("setObject: identical resource already exists for %q, continuing", objName)
+			return nil
+		}
+
+		return err
+	}
+	return nil
 }
