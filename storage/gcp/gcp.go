@@ -163,9 +163,8 @@ func tileSuffix(s uint64) string {
 }
 
 // setTile stores a tile in GCS.
-// Fully populated tiles are stored at the path corresponding to the level &
-// index parameters, partially populated (i.e. right-hand edge) tiles are
-// stored with a .xx suffix where xx is the number of "tile leaves" in hex.
+//
+// The location to which the tile is written is defined by the tile layout spec.
 func (s *Storage) setTile(ctx context.Context, level, index uint64, tile [][]byte) error {
 	tileSize := uint64(len(tile))
 	klog.V(2).Infof("StoreTile: level %d index %x ts: %x", level, index, tileSize)
@@ -180,9 +179,8 @@ func (s *Storage) setTile(ctx context.Context, level, index uint64, tile [][]byt
 	return s.objStore.setObject(ctx, tPath, t, &gcs.Conditions{DoesNotExist: true})
 }
 
-// getTile returns the tile at the given tile-level and tile-index.
-// If no complete tile exists at that location, it will attempt to find a
-// partial tile for the given tree size at that location.
+// getTile returns the tile at the given tile-level and tile-index for the specified log size, or
+// an error if it doesn't exist.
 func (s *Storage) getTile(ctx context.Context, level, index, logSize uint64) ([][]byte, error) {
 	tileSize := layout.PartialTileSize(level, index, logSize)
 
@@ -201,7 +199,7 @@ func (s *Storage) getTile(ctx context.Context, level, index, logSize uint64) ([]
 	// Recreate the tile slices
 	l := len(data)
 	if m := l % sha256.Size; m != 0 {
-		return nil, fmt.Errorf("invalid tile size %d", m)
+		return nil, fmt.Errorf("invalid tile data size %d", l)
 	}
 	t := make([][]byte, l/sha256.Size)
 	for i := range t {
