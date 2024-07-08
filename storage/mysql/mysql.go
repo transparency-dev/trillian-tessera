@@ -33,7 +33,8 @@ func New(db *sql.DB) (*Storage, error) {
 		db: db,
 	}
 	if err := s.db.Ping(); err != nil {
-		klog.Exitf("Failed to ping database: %v", err)
+		klog.Errorf("Failed to ping database: %v", err)
+		return nil, err
 	}
 
 	return s, nil
