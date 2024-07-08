@@ -27,32 +27,37 @@ const (
 	CheckpointPath = "checkpoint"
 )
 
-// EntriesPath builds the local path at which the leaf with the given index lives in.
+// EntriesPathForLogIndex() builds the local path at which the leaf with the given index lives in.
 // Note that this will be an entry bundle containing up to 256 entries and thus multiple
 // indices can map to the same output path.
 //
 // TODO(mhutchinson): revisit to consider how partial tile suffixes should be added.
-func EntriesPath(seq uint64) string {
+func EntriesPathForLogIndex(seq uint64) string {
 	seq = seq / 256
+	return EntriesPath(seq)
+}
+
+func EntriesPath(bundleIndex uint64) string {
 	frag := []string{
 		"tile",
 		"entries",
-		fmt.Sprintf("x%03x", (seq>>16)&0xff),
-		fmt.Sprintf("x%03x", (seq>>8)&0xff),
-		fmt.Sprintf("%03x", seq&0xff),
+		fmt.Sprintf("x%03x", (bundleIndex>>16)&0xff),
+		fmt.Sprintf("x%03x", (bundleIndex>>8)&0xff),
+		fmt.Sprintf("%03x", bundleIndex&0xff),
 	}
 	return filepath.Join(frag...)
 }
 
-// TilePath builds the path to the subtree tile with the given level and index.
-func TilePath(level, index uint64) string {
-	seq := index / 256
+// TilePath builds the path to the subtree tile with the given level and index in tile space.
+//
+// Note that NodeCoordsToTileAddress can be used to convert from node- to tile-space.
+func TilePath(tileLevel, tileIndex uint64) string {
 	frag := []string{
 		"tile",
-		fmt.Sprintf("%d", level),
-		fmt.Sprintf("x%03x", (seq>>16)&0xff),
-		fmt.Sprintf("x%03x", (seq>>8)&0xff),
-		fmt.Sprintf("%03x", seq&0xff),
+		fmt.Sprintf("%d", tileLevel),
+		fmt.Sprintf("x%03x", (tileIndex>>16)&0xff),
+		fmt.Sprintf("x%03x", (tileIndex>>8)&0xff),
+		fmt.Sprintf("%03x", tileIndex&0xff),
 	}
 	return filepath.Join(frag...)
 }

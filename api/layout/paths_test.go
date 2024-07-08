@@ -19,7 +19,7 @@ import (
 	"testing"
 )
 
-func TestEntriesPath(t *testing.T) {
+func TestEntriesPathForLogIndex(t *testing.T) {
 	for _, test := range []struct {
 		seq      uint64
 		wantPath string
@@ -36,6 +36,35 @@ func TestEntriesPath(t *testing.T) {
 		}, {
 			seq:      0xffeeddccbb,
 			wantPath: "tile/entries/x0ee/x0dd/0cc",
+		},
+	} {
+		desc := fmt.Sprintf("seq %d", test.seq)
+		t.Run(desc, func(t *testing.T) {
+			gotPath := EntriesPathForLogIndex(test.seq)
+			if gotPath != test.wantPath {
+				t.Errorf("got file %q want %q", gotPath, test.wantPath)
+			}
+		})
+	}
+}
+
+func TestEntriesPath(t *testing.T) {
+	for _, test := range []struct {
+		seq      uint64
+		wantPath string
+	}{
+		{
+			seq:      0,
+			wantPath: "tile/entries/x000/x000/000",
+		}, {
+			seq:      255,
+			wantPath: "tile/entries/x000/x000/0ff",
+		}, {
+			seq:      256,
+			wantPath: "tile/entries/x000/x001/000",
+		}, {
+			seq:      0xdccbb,
+			wantPath: "tile/entries/x00d/x0cc/0bb",
 		},
 	} {
 		desc := fmt.Sprintf("seq %d", test.seq)
@@ -61,7 +90,7 @@ func TestTilePath(t *testing.T) {
 		}, {
 			level:    15,
 			index:    0x455667,
-			wantPath: "tile/15/x000/x045/056",
+			wantPath: "tile/15/x045/x056/067",
 		},
 	} {
 		desc := fmt.Sprintf("level %x index %x", test.level, test.index)
