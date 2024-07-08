@@ -53,12 +53,10 @@ migration to Tessera and adopting the patterns it encourages.
 ```go
 
 import (
-
-    "[github.com/transparency-dev/trillian-tessera](http://github.com/transparency-dev/trillian-tessera)"
-
+    tessera "github.com/transparency-dev/trillian-tessera"
 )
 
-// TODO…
+// TODO...
 
 ```
 
@@ -79,4 +77,3 @@ This repo is licensed under the Apache 2.0 license, see [LICENSE](/LICENSE) for 
 
 Tessera builds upon the hard work, experience, and lessons from many _many_ folks involved in
 transparency ecosystems over the years.
-
