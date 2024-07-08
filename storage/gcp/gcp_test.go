@@ -79,7 +79,6 @@ func TestTileRoundtrip(t *testing.T) {
 		index    uint64
 		logSize  uint64
 		tileSize uint64
-		wantErr  bool
 	}{
 		{
 			name:     "ok",
@@ -91,9 +90,8 @@ func TestTileRoundtrip(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			wantTile := makeTile(t, test.tileSize)
-			err := s.setTile(ctx, test.level, test.index, wantTile)
-			if gotErr := err != nil; gotErr != test.wantErr {
-				t.Fatalf("setTile: %v want err %t", err, test.wantErr)
+			if err := s.setTile(ctx, test.level, test.index, wantTile); err != nil {
+				t.Fatalf("setTile: %v", err)
 			}
 
 			expPath := layout.TilePath(test.level, test.index) + tileSuffix(test.tileSize)
