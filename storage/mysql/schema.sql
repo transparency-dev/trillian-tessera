@@ -1,0 +1,24 @@
+-- Copyright 2024 Google LLC
+--
+-- Licensed under the Apache License, Version 2.0 (the "License");
+-- you may not use this file except in compliance with the License.
+-- You may obtain a copy of the License at
+--
+--     http://www.apache.org/licenses/LICENSE-2.0
+--
+-- Unless required by applicable law or agreed to in writing, software
+-- distributed under the License is distributed on an "AS IS" BASIS,
+-- WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+-- See the License for the specific language governing permissions and
+-- limitations under the License.
+
+-- MySQL version of the Trillian Tessera database schema.
+
+-- "Checkpoint" table stores a single row that records the current state of the log. It is updated after every sequence and integration.
+CREATE TABLE IF NOT EXISTS `Checkpoint` (
+  -- id is expected to be always 0 to maintain a maximum of a single row.
+  `id`    INT UNSIGNED NOT NULL,
+  -- note is the text signed by one or more keys in the checkpoint format. See https://github.com/C2SP/C2SP/blob/main/tlog-checkpoint.md and https://github.com/C2SP/C2SP/blob/main/signed-note.md.
+  `note`  MEDIUMBLOB NOT NULL,
+  PRIMARY KEY(`id`)
+);

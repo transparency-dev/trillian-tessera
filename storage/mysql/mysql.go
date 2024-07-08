@@ -16,10 +16,18 @@
 package mysql
 
 import (
+	"context"
 	"database/sql"
 
 	_ "github.com/go-sql-driver/mysql"
 	"k8s.io/klog/v2"
+)
+
+const (
+	selectCheckpointByIDSQL = "SELECT note FROM Checkpoint WHERE id = ?"
+	replaceCheckpointSQL    = "REPLACE INTO Checkpoint (id, note) VALUES (?, ?)"
+
+	checkpointID = 0
 )
 
 // Storage is a MySQL-based storage implementation for Tessera.
@@ -28,7 +36,7 @@ type Storage struct {
 }
 
 // New creates a new instance of the MySQL-based Storage.
-func New(db *sql.DB) (*Storage, error) {
+func New(ctx context.Context, db *sql.DB) (*Storage, error) {
 	s := &Storage{
 		db: db,
 	}
@@ -37,5 +45,53 @@ func New(db *sql.DB) (*Storage, error) {
 		return nil, err
 	}
 
+	// Initialize checkpoint if there is no row in the Checkpoint table.
+	if _, err := s.ReadCheckpoint(ctx); err != nil {
+		if err != sql.ErrNoRows {
+			klog.Errorf("Failed to read checkpoint: %v", err)
+			return nil, err
+		}
+
+		klog.Infof("Initializing checkpoint")
+		if err := s.writeCheckpoint(ctx, []byte("")); err != nil {
+			klog.Errorf("Failed to write initial checkpoint: %v", err)
+			return nil, err
+		}
+	}
+
 	return s, nil
+}
+
+// ReadCheckpoint returns the latest stored checkpoint.
+func (s *Storage) ReadCheckpoint(ctx context.Context) ([]byte, error) {
+	row := s.db.QueryRowContext(ctx, selectCheckpointByIDSQL, checkpointID)
+	if err := row.Err(); err != nil {
+		return nil, err
+	}
+
+	var checkpoint []byte
+	return checkpoint, row.Scan(&checkpoint)
+}
+
+// writeCheckpoint stores a raw log checkpoint.
+func (s *Storage) writeCheckpoint(ctx context.Context, rawCheckpoint []byte) error {
+	// Get a Tx for making transaction requests.
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	// Defer a rollback in case anything fails.
+	defer func() {
+		if err := tx.Rollback(); err != nil && err != sql.ErrTxDone {
+			klog.Errorf("Failed to rollback in writeCheckpoint: %v", err)
+		}
+	}()
+
+	if _, err := tx.ExecContext(ctx, replaceCheckpointSQL, checkpointID, rawCheckpoint); err != nil {
+		klog.Errorf("Failed to execute replaceCheckpointSQL: %v", err)
+		return err
+	}
+
+	// Commit the transaction.
+	return tx.Commit()
 }
