@@ -189,7 +189,7 @@ func (s *Storage) getTile(ctx context.Context, level, index, logSize uint64) ([]
 	data, _, err := s.objStore.getObject(ctx, objName)
 	if err != nil {
 		if errors.Is(err, gcs.ErrObjectNotExist) {
-			// Return the generic NotExist error so that tileCache.Visit can differentiate
+			// Return the generic NotExist error so that higher levels can differentiate
 			// between this and other errors.
 			return nil, os.ErrNotExist
 		}
