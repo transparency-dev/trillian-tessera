@@ -92,6 +92,10 @@ func TestTilePath(t *testing.T) {
 			index:    455667,
 			wantPath: "tile/15/x455/667",
 		}, {
+			level:    3,
+			index:    1234567,
+			wantPath: "tile/3/x001/x234/567",
+		}, {
 			level:    15,
 			index:    123456789,
 			wantPath: "tile/15/x123/x456/789",
