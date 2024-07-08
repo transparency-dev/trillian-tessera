@@ -29,11 +29,20 @@
 package gcp
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
+	"errors"
 	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"slices"
 
 	"cloud.google.com/go/spanner"
 	gcs "cloud.google.com/go/storage"
+	"github.com/transparency-dev/trillian-tessera/api/layout"
+	"google.golang.org/api/googleapi"
 	"google.golang.org/api/iterator"
 	"google.golang.org/grpc/codes"
 	"k8s.io/klog/v2"
@@ -46,7 +55,14 @@ type Storage struct {
 	projectID string
 	bucket    string
 
-	dbPool *spanner.Client
+	dbPool   *spanner.Client
+	objStore objStore
+}
+
+// objStore describes a type which can store and retrieve objects.
+type objStore interface {
+	getObject(ctx context.Context, obj string) ([]byte, int64, error)
+	setObject(ctx context.Context, obj string, data []byte, cond *gcs.Conditions) error
 }
 
 // Config holds GCP project and resource configuration for a storage instance.
@@ -63,6 +79,10 @@ type Config struct {
 func New(ctx context.Context, cfg Config) (*Storage, error) {
 	c, err := gcs.NewClient(ctx)
 	if err != nil {
+		return nil, fmt.Errorf("failed to create GCS client: %v", err)
+	}
+	gcsStorage, err := newGCSStorage(ctx, c, cfg.ProjectID, cfg.Bucket)
+	if err != nil {
 		return nil, fmt.Errorf("failed to create GCS storage: %v", err)
 	}
 
@@ -76,16 +96,11 @@ func New(ctx context.Context, cfg Config) (*Storage, error) {
 		projectID: cfg.ProjectID,
 		bucket:    cfg.Bucket,
 		dbPool:    dbPool,
+		objStore:  gcsStorage,
 	}
 
 	if err := r.initDB(ctx); err != nil {
 		return nil, fmt.Errorf("failed to init DB: %v", err)
-	}
-
-	if exists, err := r.bucketExists(ctx); err != nil {
-		return nil, fmt.Errorf("failed to check whether bucket %q exists: %v", r.bucket, err)
-	} else if !exists {
-		return nil, fmt.Errorf("bucket %q does not exist, please create it", r.bucket)
 	}
 
 	return r, nil
@@ -139,20 +154,142 @@ func (s *Storage) initDB(ctx context.Context) error {
 	return nil
 }
 
-// bucketExists tests whether the configured bucket exists.
-func (s *Storage) bucketExists(ctx context.Context) (bool, error) {
-	it := s.gcsClient.Buckets(ctx, s.projectID)
+// tileSuffix returns either the empty string or a tiles API suffix based on the passed-in tile size.
+func tileSuffix(s uint64) string {
+	if p := s % 256; p != 0 {
+		return fmt.Sprintf(".p/%d", p)
+	}
+	return ""
+}
+
+// setTile stores a tile in GCS.
+//
+// The location to which the tile is written is defined by the tile layout spec.
+func (s *Storage) setTile(ctx context.Context, level, index uint64, tile [][]byte) error {
+	tileSize := uint64(len(tile))
+	klog.V(2).Infof("StoreTile: level %d index %x ts: %x", level, index, tileSize)
+	if tileSize == 0 || tileSize > 256 {
+		return fmt.Errorf("tileSize %d must be > 0 and <= 256", tileSize)
+	}
+	t := slices.Concat(tile...)
+
+	// Pass an empty rootDir since we don't need this concept in GCS.
+	tPath := layout.TilePath(level, index) + tileSuffix(tileSize)
+
+	return s.objStore.setObject(ctx, tPath, t, &gcs.Conditions{DoesNotExist: true})
+}
+
+// getTile returns the tile at the given tile-level and tile-index for the specified log size, or
+// an error if it doesn't exist.
+func (s *Storage) getTile(ctx context.Context, level, index, logSize uint64) ([][]byte, error) {
+	tileSize := layout.PartialTileSize(level, index, logSize)
+
+	// Pass an empty rootDir since we don't need this concept in GCS.
+	objName := layout.TilePath(level, index) + tileSuffix(tileSize)
+	data, _, err := s.objStore.getObject(ctx, objName)
+	if err != nil {
+		if errors.Is(err, gcs.ErrObjectNotExist) {
+			// Return the generic NotExist error so that higher levels can differentiate
+			// between this and other errors.
+			return nil, os.ErrNotExist
+		}
+		return nil, err
+	}
+
+	// Recreate the tile slices
+	l := len(data)
+	if m := l % sha256.Size; m != 0 {
+		return nil, fmt.Errorf("invalid tile data size %d", l)
+	}
+	t := make([][]byte, l/sha256.Size)
+	for i := range t {
+		t[i] = data[i*sha256.Size : (i+1)*sha256.Size]
+	}
+	return t, nil
+}
+
+// gcsStorage knows how to store and retrieve objects from GCS.
+type gcsStorage struct {
+	bucket    string
+	gcsClient *gcs.Client
+}
+
+// newGCSStorage creates a new gcsStorage.
+//
+// The specified bucket must exist or an error will be returned.
+func newGCSStorage(ctx context.Context, c *gcs.Client, projectID string, bucket string) (*gcsStorage, error) {
+	it := c.Buckets(ctx, projectID)
 	for {
 		bAttrs, err := it.Next()
 		if err == iterator.Done {
-			break
+			return nil, fmt.Errorf("bucket %q does not exist, please create it", bucket)
 		}
 		if err != nil {
-			return false, err
+			return nil, err
 		}
-		if bAttrs.Name == s.bucket {
-			return true, nil
+		if bAttrs.Name == bucket {
+			break
 		}
 	}
-	return false, nil
+	return &gcsStorage{
+		gcsClient: c,
+		bucket:    bucket,
+	}, nil
+}
+
+// getObject returns the data and generation of the specified object, or an error.
+func (s *gcsStorage) getObject(ctx context.Context, obj string) ([]byte, int64, error) {
+	r, err := s.gcsClient.Bucket(s.bucket).Object(obj).NewReader(ctx)
+	if err != nil {
+		return nil, -1, fmt.Errorf("getObject: failed to create reader for object %q in bucket %q: %w", obj, s.bucket, err)
+	}
+	defer r.Close()
+
+	d, err := io.ReadAll(r)
+	return d, r.Attrs.Generation, err
+}
+
+// setObject stores the provided data in the specified object, optionally gated by a condition.
+//
+// cond can be used to specify preconditions for the write (e.g. write iff not exists, write iff
+// current generation is X, etc.), or nil can be passed if no preconditions are desired.
+//
+// When preconditions are specified and are not met, an error will be returned unless the currently
+// stored data is bit-for-bit identical to the data to-be-written. This is intended to provide
+// idempotentency for writes.
+func (s *gcsStorage) setObject(ctx context.Context, objName string, data []byte, cond *gcs.Conditions) error {
+	bkt := s.gcsClient.Bucket(s.bucket)
+	obj := bkt.Object(objName)
+
+	var w *gcs.Writer
+	if cond == nil {
+		w = obj.NewWriter(ctx)
+
+	} else {
+		w = obj.If(*cond).NewWriter(ctx)
+	}
+	if _, err := w.Write(data); err != nil {
+		return fmt.Errorf("failed to write object %q to bucket %q: %w", objName, s.bucket, err)
+	}
+
+	if err := w.Close(); err != nil {
+		// If we run into a precondition failure error, check that the object
+		// which exists contains the same content that we want to write.
+		// If so, we can consider this write to be idempotently successful.
+		if ee, ok := err.(*googleapi.Error); ok && ee.Code == http.StatusPreconditionFailed {
+			existing, existingGen, err := s.getObject(ctx, objName)
+			if err != nil {
+				return fmt.Errorf("failed to fetch existing content for %q (@%d): %v", objName, existingGen, err)
+			}
+			if !bytes.Equal(existing, data) {
+				return fmt.Errorf("precondition failed: resource content for %q differs from data to-be-written", objName)
+			}
+
+			klog.V(2).Infof("setObject: identical resource already exists for %q, continuing", objName)
+			return nil
+		}
+
+		return err
+	}
+	return nil
 }
