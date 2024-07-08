@@ -19,28 +19,57 @@ import (
 	"testing"
 )
 
-func TestEntriesPath(t *testing.T) {
+func TestEntriesPathForLogIndex(t *testing.T) {
 	for _, test := range []struct {
 		seq      uint64
 		wantPath string
 	}{
 		{
 			seq:      0,
-			wantPath: "tile/entries/x000/x000/000",
+			wantPath: "tile/entries/000",
 		}, {
 			seq:      255,
-			wantPath: "tile/entries/x000/x000/000",
+			wantPath: "tile/entries/000",
 		}, {
 			seq:      256,
-			wantPath: "tile/entries/x000/x000/001",
+			wantPath: "tile/entries/001",
 		}, {
-			seq:      0xffeeddccbb,
-			wantPath: "tile/entries/x0ee/x0dd/0cc",
+			seq:      123456789 * 256,
+			wantPath: "tile/entries/x123/x456/789",
 		},
 	} {
 		desc := fmt.Sprintf("seq %d", test.seq)
 		t.Run(desc, func(t *testing.T) {
-			gotPath := EntriesPath(test.seq)
+			gotPath := EntriesPathForLogIndex(test.seq)
+			if gotPath != test.wantPath {
+				t.Errorf("got file %q want %q", gotPath, test.wantPath)
+			}
+		})
+	}
+}
+
+func TestEntriesPath(t *testing.T) {
+	for _, test := range []struct {
+		N        uint64
+		wantPath string
+	}{
+		{
+			N:        0,
+			wantPath: "tile/entries/000",
+		}, {
+			N:        255,
+			wantPath: "tile/entries/255",
+		}, {
+			N:        256,
+			wantPath: "tile/entries/256",
+		}, {
+			N:        123456789000,
+			wantPath: "tile/entries/x123/x456/x789/000",
+		},
+	} {
+		desc := fmt.Sprintf("N %d", test.N)
+		t.Run(desc, func(t *testing.T) {
+			gotPath := EntriesPath(test.N)
 			if gotPath != test.wantPath {
 				t.Errorf("got file %q want %q", gotPath, test.wantPath)
 			}
@@ -57,11 +86,19 @@ func TestTilePath(t *testing.T) {
 		{
 			level:    0,
 			index:    0,
-			wantPath: "tile/0/x000/x000/000",
+			wantPath: "tile/0/000",
 		}, {
 			level:    15,
-			index:    0x455667,
-			wantPath: "tile/15/x000/x045/056",
+			index:    455667,
+			wantPath: "tile/15/x455/667",
+		}, {
+			level:    3,
+			index:    1234567,
+			wantPath: "tile/3/x001/x234/567",
+		}, {
+			level:    15,
+			index:    123456789,
+			wantPath: "tile/15/x123/x456/789",
 		},
 	} {
 		desc := fmt.Sprintf("level %x index %x", test.level, test.index)

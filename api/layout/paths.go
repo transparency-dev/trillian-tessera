@@ -19,7 +19,6 @@ package layout
 
 import (
 	"fmt"
-	"path/filepath"
 )
 
 const (
@@ -27,32 +26,39 @@ const (
 	CheckpointPath = "checkpoint"
 )
 
-// EntriesPath builds the local path at which the leaf with the given index lives in.
+// EntriesPathForLogIndex builds the local path at which the leaf with the given index lives in.
 // Note that this will be an entry bundle containing up to 256 entries and thus multiple
 // indices can map to the same output path.
 //
 // TODO(mhutchinson): revisit to consider how partial tile suffixes should be added.
-func EntriesPath(seq uint64) string {
-	seq = seq / 256
-	frag := []string{
-		"tile",
-		"entries",
-		fmt.Sprintf("x%03x", (seq>>16)&0xff),
-		fmt.Sprintf("x%03x", (seq>>8)&0xff),
-		fmt.Sprintf("%03x", seq&0xff),
-	}
-	return filepath.Join(frag...)
+func EntriesPathForLogIndex(seq uint64) string {
+	return EntriesPath(seq / 256)
 }
 
-// TilePath builds the path to the subtree tile with the given level and index.
-func TilePath(level, index uint64) string {
-	seq := index / 256
-	frag := []string{
-		"tile",
-		fmt.Sprintf("%d", level),
-		fmt.Sprintf("x%03x", (seq>>16)&0xff),
-		fmt.Sprintf("x%03x", (seq>>8)&0xff),
-		fmt.Sprintf("%03x", seq&0xff),
+// EntriesPath returns the local path for the Nth entry bundle.
+func EntriesPath(N uint64) string {
+	return fmt.Sprintf("tile/entries%s", fmtN(N))
+}
+
+// TilePath builds the path to the subtree tile with the given level and index in tile space.
+func TilePath(tileLevel, tileIndex uint64) string {
+	return fmt.Sprintf("tile/%d%s", tileLevel, fmtN(tileIndex))
+}
+
+// fmtN returns the "N" part of a Tiles-spec path.
+//
+// N is grouped into chunks of 3 decimal digits, starting with the most significant digit, and
+// padding with zeroes as necessary.
+// Digit groups are prefixed with "x", except for the least-significant group which has no prefix,
+// and separated with slashes.
+//
+// See https://github.com/C2SP/C2SP/blob/main/tlog-tiles.md#:~:text=index%201234067%20will%20be%20encoded%20as%20x001/x234/067
+func fmtN(N uint64) string {
+	n := fmt.Sprintf("/%03d", N%1000)
+	N /= 1000
+	for N > 0 {
+		n = fmt.Sprintf("/x%03d%s", N%1000, n)
+		N /= 1000
 	}
-	return filepath.Join(frag...)
+	return n
 }
