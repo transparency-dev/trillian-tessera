@@ -17,6 +17,7 @@ package api
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
 )
@@ -46,12 +47,12 @@ func (t HashTile) MarshalText() ([]byte, error) {
 // UnmarshalText implements encoding/TextUnmarshaler and reads HashTiles
 // which are encoded using the tlog-tiles spec.
 func (t *HashTile) UnmarshalText(raw []byte) error {
-	if len(raw)%32 != 0 {
-		return fmt.Errorf("%d is not a multiple of 32", len(raw))
+	if len(raw)%sha256.Size != 0 {
+		return fmt.Errorf("%d is not a multiple of %d", len(raw), sha256.Size)
 	}
-	nodes := make([][]byte, 0, len(raw)/32)
-	for index := 0; index < len(raw); index += 32 {
-		data := raw[index : index+32]
+	nodes := make([][]byte, 0, len(raw)/sha256.Size)
+	for index := 0; index < len(raw); index += sha256.Size {
+		data := raw[index : index+sha256.Size]
 		nodes = append(nodes, data)
 	}
 	t.Nodes = nodes
@@ -62,13 +63,13 @@ func (t *HashTile) UnmarshalText(raw []byte) error {
 // These entries correspond to a leaf tile in the hash tree.
 type EntryBundle struct {
 	// Entries stores the leaf entries of the log, in order.
-	// Note that only non-ephemeral nodes are stored.
 	Entries [][]byte
 }
 
 // MarshalText implements encoding/TextMarshaller and writes out an EntryBundle
 // instance as sequences of big-endian uint16 length-prefixed log entries,
 // as specified by the tlog-tiles spec.
+// TODO(#41): this _may_ need to be changed to support CT
 func (t EntryBundle) MarshalText() ([]byte, error) {
 	r := &bytes.Buffer{}
 	sizeBs := make([]byte, 2)
@@ -87,7 +88,7 @@ func (t EntryBundle) MarshalText() ([]byte, error) {
 // UnmarshalText implements encoding/TextUnmarshaler and reads EntryBundles
 // which are encoded using the tlog-tiles spec.
 func (t *EntryBundle) UnmarshalText(raw []byte) error {
-	nodes := make([][]byte, 0)
+	nodes := make([][]byte, 0, 256)
 	for index := 0; index < len(raw); {
 		dataIndex := index + 2
 		if dataIndex > len(raw) {
