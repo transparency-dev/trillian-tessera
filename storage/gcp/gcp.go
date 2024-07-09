@@ -38,10 +38,12 @@ import (
 	"net/http"
 	"os"
 	"slices"
+	"time"
 
 	"cloud.google.com/go/spanner"
 	gcs "cloud.google.com/go/storage"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
+	"github.com/transparency-dev/trillian-tessera/storage"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/iterator"
 	"google.golang.org/grpc/codes"
@@ -55,14 +57,22 @@ type Storage struct {
 	projectID string
 	bucket    string
 
-	dbPool   *spanner.Client
-	objStore objStore
+	dbPool    *spanner.Client
+	sequencer sequencer
+	objStore  objStore
+
+	queue *storage.Queue
 }
 
 // objStore describes a type which can store and retrieve objects.
 type objStore interface {
 	getObject(ctx context.Context, obj string) ([]byte, int64, error)
 	setObject(ctx context.Context, obj string, data []byte, cond *gcs.Conditions) error
+}
+
+// coord describes a type which knows how to sequence entries.
+type sequencer interface {
+	assignEntries(ctx context.Context, entries [][]byte) (uint64, error)
 }
 
 // Config holds GCP project and resource configuration for a storage instance.
@@ -85,19 +95,20 @@ func New(ctx context.Context, cfg Config) (*Storage, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create GCS storage: %v", err)
 	}
-
-	dbPool, err := spanner.NewClient(ctx, cfg.Spanner)
+	seq, err := newSpannerSequencer(ctx, cfg.Spanner)
 	if err != nil {
-		klog.Exitf("Failed to connect to Spanner: %v", err)
+		return nil, fmt.Errorf("failed to create Spanner sequencer: %v", err)
 	}
 
 	r := &Storage{
 		gcsClient: c,
 		projectID: cfg.ProjectID,
 		bucket:    cfg.Bucket,
-		dbPool:    dbPool,
 		objStore:  gcsStorage,
+		sequencer: seq,
 	}
+	// TODO(al): make queue options configurable:
+	r.queue = storage.NewQueue(time.Second, 256, r.sequenceEntries)
 
 	if err := r.initDB(ctx); err != nil {
 		return nil, fmt.Errorf("failed to init DB: %v", err)
@@ -162,6 +173,16 @@ func tileSuffix(s uint64) string {
 	return ""
 }
 
+// sequenceEntries durably assigns passed in entries to indices in the log.
+//
+// The entries are assigned to a contiguous range in the log, in the same order as
+// they're passed in.
+//
+// Returns the log index assigned to the first entry passed in, or an error.
+func (s *Storage) sequenceEntries(ctx context.Context, entries [][]byte) (uint64, error) {
+	return s.sequencer.assignEntries(ctx, entries)
+}
+
 // setTile stores a tile in GCS.
 //
 // The location to which the tile is written is defined by the tile layout spec.
@@ -206,6 +227,31 @@ func (s *Storage) getTile(ctx context.Context, level, index, logSize uint64) ([]
 		t[i] = data[i*sha256.Size : (i+1)*sha256.Size]
 	}
 	return t, nil
+}
+
+// spannerSequencer uses Cloud Spanner to provide
+// a durable and thread/multi-process safe sequencer.
+type spannerSequencer struct {
+	dbPool *spanner.Client
+}
+
+// new SpannerSequencer returns a new spannerSequencer struct which uses the provided
+// spanner resource name for its spanner connection.
+func newSpannerSequencer(ctx context.Context, spannerDB string) (*spannerSequencer, error) {
+	dbPool, err := spanner.NewClient(ctx, spannerDB)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to Spanner: %v", err)
+	}
+	return &spannerSequencer{
+		dbPool: dbPool,
+	}, nil
+}
+
+// assignEntries durably assigns each of the passed-in entries an index in the log.
+//
+// Entries are allocated contiguous indices, in the order in which they appear in the entries parameter.
+func (s *spannerSequencer) assignEntries(ctx context.Context, entries [][]byte) (uint64, error) {
+	return 0, errors.New("not implemented")
 }
 
 // gcsStorage knows how to store and retrieve objects from GCS.
