@@ -24,8 +24,8 @@ import (
 )
 
 const (
-	selectCheckpointByIDSQL = "SELECT note FROM Checkpoint WHERE id = ?"
-	replaceCheckpointSQL    = "REPLACE INTO Checkpoint (id, note) VALUES (?, ?)"
+	selectCheckpointByIDSQL = "SELECT `note` FROM `Checkpoint` WHERE `id` = ?"
+	replaceCheckpointSQL    = "REPLACE INTO `Checkpoint` (`id`, `note`) VALUES (?, ?)"
 
 	checkpointID = 0
 )
