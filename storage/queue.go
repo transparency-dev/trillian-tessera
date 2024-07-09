@@ -31,11 +31,11 @@ type Queue struct {
 	flush FlushFunc
 
 	inFlightMu sync.Mutex
-	inFlight   map[string][]chan Index
+	inFlight   map[string][]chan IndexFunc
 }
 
-// Index is a function which returns an assigned log index, or an error.
-type Index func() (idx uint64, err error)
+// IndexFunc is a function which returns an assigned log index, or an error.
+type IndexFunc func() (idx uint64, err error)
 
 // FlushFunc is the signature of a function which will receive the slice of queued entries.
 // It should return the index assigned to the first entry in the provided slice.
@@ -49,7 +49,7 @@ type FlushFunc func(ctx context.Context, entries [][]byte) (index uint64, err er
 func NewQueue(maxAge time.Duration, maxSize uint, f FlushFunc) *Queue {
 	q := &Queue{
 		flush:    f,
-		inFlight: make(map[string][]chan Index, maxSize),
+		inFlight: make(map[string][]chan IndexFunc, maxSize),
 	}
 	q.buf = buffer.New(
 		buffer.WithSize(maxSize),
@@ -67,26 +67,31 @@ func (q *Queue) squashDupes(e entry) bool {
 
 	k := string(e.data)
 	l, isKnown := q.inFlight[k]
-	q.inFlight[k] = append(l, e.index)
+	q.inFlight[k] = append(l, e.c)
 	return isKnown
 }
 
-func (q *Queue) Add(ctx context.Context, e []byte) <-chan Index {
+// Add places e into the queue, and returns a func which may be called to retrieve the assigned index.
+func (q *Queue) Add(ctx context.Context, e []byte) IndexFunc {
 	entry := entry{
-		data:  e,
-		index: make(chan Index, 1),
+		data: e,
+		c:    make(chan IndexFunc, 1),
 	}
 	if q.squashDupes(entry) {
 		// This entry is already in the queue, so no need to add it again.
-		return entry.index
+		return entry.index()
 	}
 	if err := q.buf.Push(entry); err != nil {
-		entry.index <- func() (uint64, error) { return 0, err }
-		close(entry.index)
+		entry.c <- func() (uint64, error) { return 0, err }
+		close(entry.c)
 	}
-	return entry.index
+	return entry.index()
 }
 
+// doFlush handles the queue flush, and sending notifications of assigned log indices.
+//
+// To prevent blockin the queue longer than necessary, the notifications happen in a
+// separate goroutine.
 func (q *Queue) doFlush(items []interface{}) {
 	entries := make([]entry, len(items))
 	entriesData := make([][]byte, len(items))
@@ -103,16 +108,25 @@ func (q *Queue) doFlush(items []interface{}) {
 		defer q.inFlightMu.Unlock()
 
 		for i, e := range entries {
-			for _, dd := range q.inFlight[string(e.data)] {
+			k := string(e.data)
+			for _, dd := range q.inFlight[k] {
 				dd <- func() (uint64, error) { return s + uint64(i), err }
 				close(dd)
 			}
+			delete(q.inFlight, k)
 		}
 	}()
 
 }
 
 type entry struct {
-	data  []byte
-	index chan Index
+	data     []byte
+	entryCtx context.Context
+	c        chan IndexFunc
+}
+
+func (e *entry) index() IndexFunc {
+	return sync.OnceValues(func() (uint64, error) {
+		return (<-e.c)()
+	})
 }

@@ -73,7 +73,7 @@ func TestQueue(t *testing.T) {
 			q := storage.NewQueue(test.maxWait, uint(test.maxEntries), flushFunc)
 
 			// Now submit a bunch of entries
-			adds := make([]<-chan storage.Index, test.numItems)
+			adds := make([]storage.IndexFunc, test.numItems)
 			wantEntries := make([][]byte, test.numItems)
 			for i := uint64(0); i < test.numItems; i++ {
 				wantEntries[i] = []byte(fmt.Sprintf("item %d", i))
@@ -81,7 +81,7 @@ func TestQueue(t *testing.T) {
 			}
 
 			for i, r := range adds {
-				N, err := (<-r)()
+				N, err := r()
 				if err != nil {
 					t.Errorf("Add: %v", err)
 					return
@@ -106,17 +106,17 @@ func TestDedup(t *testing.T) {
 	})
 
 	numEntries := 10
-	adds := []<-chan storage.Index{}
+	adds := []storage.IndexFunc{}
 	for i := 0; i < numEntries; i++ {
 		adds = append(adds, q.Add(context.TODO(), []byte("Have I seen this before?")))
 	}
 
-	firstN, err := (<-adds[0])()
+	firstN, err := adds[0]()
 	if err != nil {
 		t.Fatalf("Add: %v", err)
 	}
 	for i := 1; i < len(adds); i++ {
-		N, err := (<-adds[i])()
+		N, err := adds[i]()
 		if err != nil {
 			t.Errorf("[%d] got %v", i, err)
 		}
