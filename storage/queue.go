@@ -34,6 +34,9 @@ type Queue struct {
 	inFlight   map[string][]chan Index
 }
 
+// Index is a function which returns an assigned log index, or an error.
+type Index func() (idx uint64, err error)
+
 // FlushFunc is the signature of a function which will receive the slice of queued entries.
 // It should return the index assigned to the first entry in the provided slice.
 type FlushFunc func(ctx context.Context, entries [][]byte) (index uint64, err error)
@@ -54,12 +57,6 @@ func NewQueue(maxAge time.Duration, maxSize uint, f FlushFunc) *Queue {
 		buffer.WithFlusher(buffer.FlusherFunc(q.doFlush)),
 	)
 	return q
-}
-
-// Index represents the index assigned to an entry by the FlushFunc, or an error.
-type Index struct {
-	N   uint64
-	Err error
 }
 
 // squashDupes keeps track of all in-flight requests, enabling dupe squashing for entries currently in the queue.
@@ -84,7 +81,7 @@ func (q *Queue) Add(ctx context.Context, e []byte) <-chan Index {
 		return entry.index
 	}
 	if err := q.buf.Push(entry); err != nil {
-		entry.index <- Index{Err: err}
+		entry.index <- func() (uint64, error) { return 0, err }
 		close(entry.index)
 	}
 	return entry.index
@@ -107,7 +104,7 @@ func (q *Queue) doFlush(items []interface{}) {
 
 		for i, e := range entries {
 			for _, dd := range q.inFlight[string(e.data)] {
-				dd <- Index{N: s + uint64(i), Err: err}
+				dd <- func() (uint64, error) { return s + uint64(i), err }
 				close(dd)
 			}
 		}
