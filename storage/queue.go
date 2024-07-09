@@ -23,9 +23,17 @@ import (
 	"github.com/globocom/go-buffer"
 )
 
-// Queue knows how to queue up a number of entries before calling a FlushFunc with
-// a slice of all queued entries, in the same order as they were added, after either
-// a defined period of time has passed, or a defined number of entries were added.
+// Queue knows how to queue up a number of entries in order, taking care of deduplication as they're added.
+//
+// When the buffered queue grows past a defined size, or the age of the oldest entry in the
+// queue reaches a defined threshold, the queue will call a provided FlushFunc with
+// a slice containing all queued entries in the same order as they were added.
+//
+// If multiple identical entries are added to the queue between flushes, the queue will deduplicate them by
+// passing only the first through to the FlushFunc, and returning the index assigned to that entry to all
+// duplicate add calls.
+// Note that this deduplication only applies to "in-flight" entries currently in the queue; entries added
+// after a flush will not be deduped against those added before the flush.
 type Queue struct {
 	buf   *buffer.Buffer
 	flush FlushFunc
