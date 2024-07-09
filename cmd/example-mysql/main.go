@@ -64,7 +64,7 @@ func main() {
 		}
 
 		if _, err := w.Write(checkpoint); err != nil {
-			klog.Error(err)
+			klog.Errorf("/checkpoint: %v", err)
 			return
 		}
 	})
