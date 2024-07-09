@@ -128,10 +128,9 @@ func (q *Queue) doFlush(items []interface{}) {
 // The index field acts as a Future for the entry's assigned index/error, and will
 // hang until assign is called.
 type entry struct {
-	data     []byte
-	entryCtx context.Context
-	c        chan IndexFunc
-	index    IndexFunc
+	data  []byte
+	c     chan IndexFunc
+	index IndexFunc
 }
 
 // newEntry creates a new entry for the provided data.
