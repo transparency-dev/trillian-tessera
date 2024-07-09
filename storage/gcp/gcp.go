@@ -32,6 +32,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/gob"
 	"errors"
 	"fmt"
 	"io"
@@ -41,6 +42,7 @@ import (
 	"time"
 
 	"cloud.google.com/go/spanner"
+	"cloud.google.com/go/spanner/apiv1/spannerpb"
 	gcs "cloud.google.com/go/storage"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
 	"github.com/transparency-dev/trillian-tessera/storage"
@@ -250,8 +252,50 @@ func newSpannerSequencer(ctx context.Context, spannerDB string) (*spannerSequenc
 // assignEntries durably assigns each of the passed-in entries an index in the log.
 //
 // Entries are allocated contiguous indices, in the order in which they appear in the entries parameter.
+// This is achieved by storing the passed-in entries in the Seq table in Spanner, keyed by the
+// index assigned to the first entry in the batch.
 func (s *spannerSequencer) assignEntries(ctx context.Context, entries [][]byte) (uint64, error) {
-	return 0, errors.New("not implemented")
+	// Flatted the entries into a single slice of bytes which we can store in the Seq.v columne
+	b := &bytes.Buffer{}
+	e := gob.NewEncoder(b)
+	if err := e.Encode(entries); err != nil {
+		return 0, fmt.Errorf("failed to serialise batch: %v", err)
+	}
+	data := b.Bytes()
+	num := len(entries)
+
+	var next int64 // Unfortunately, Spanner doesn't support uint64 so we'll have to cast around a bit.
+
+	_, err := s.dbPool.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
+		// First we need to grab the next available sequence number from the SeqCoord table.
+		row, err := txn.ReadRowWithOptions(ctx, "SeqCoord", spanner.Key{0}, []string{"id", "next"}, &spanner.ReadOptions{LockHint: spannerpb.ReadRequest_LOCK_HINT_EXCLUSIVE})
+		if err != nil {
+			return err
+		}
+		var id int64
+		if err := row.Columns(&id, &next); err != nil {
+			return err
+		}
+
+		next := uint64(next) // Shadow next with a uint64 version of the same value to save on casts.
+		m := []*spanner.Mutation{
+			// Insert our newly sequenced batch of entries into Seq,
+			spanner.Insert("Seq", []string{"id", "seq", "v"}, []interface{}{0, int64(next), data}),
+			// and update the next-available sequence number row in SeqCoord.
+			spanner.Update("SeqCoord", []string{"id", "next"}, []interface{}{0, int64(next) + int64(num)}),
+		}
+		if err := txn.BufferWrite(m); err != nil {
+			return err
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return 0, fmt.Errorf("failed to flush batch: %v", err)
+	}
+
+	return uint64(next), nil
 }
 
 // gcsStorage knows how to store and retrieve objects from GCS.
