@@ -16,6 +16,7 @@
 package main
 
 import (
+	"context"
 	"crypto/sha256"
 	"database/sql"
 	"flag"
@@ -39,6 +40,7 @@ var (
 func main() {
 	klog.InitFlags(nil)
 	flag.Parse()
+	ctx := context.Background()
 
 	db, err := sql.Open("mysql", *mysqlURI)
 	if err != nil {
@@ -48,10 +50,24 @@ func main() {
 	db.SetMaxOpenConns(*dbMaxOpenConns)
 	db.SetMaxIdleConns(*dbMaxIdleConns)
 
-	_, err = mysql.New(db)
+	storage, err := mysql.New(ctx, db)
 	if err != nil {
 		klog.Exitf("Failed to create new MySQL storage: %v", err)
 	}
+
+	http.HandleFunc("GET /checkpoint", func(w http.ResponseWriter, r *http.Request) {
+		checkpoint, err := storage.ReadCheckpoint(r.Context())
+		if err != nil {
+			klog.Errorf("/checkpoint: %v", err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+
+		if _, err := w.Write(checkpoint); err != nil {
+			klog.Errorf("/checkpoint: %v", err)
+			return
+		}
+	})
 
 	http.HandleFunc("POST /add", func(w http.ResponseWriter, r *http.Request) {
 		b, err := io.ReadAll(r.Body)
