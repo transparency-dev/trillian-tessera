@@ -59,7 +59,6 @@ type Storage struct {
 	projectID string
 	bucket    string
 
-	dbPool    *spanner.Client
 	sequencer sequencer
 	objStore  objStore
 
@@ -112,59 +111,7 @@ func New(ctx context.Context, cfg Config) (*Storage, error) {
 	// TODO(al): make queue options configurable:
 	r.queue = storage.NewQueue(time.Second, 256, r.sequenceEntries)
 
-	if err := r.initDB(ctx); err != nil {
-		return nil, fmt.Errorf("failed to init DB: %v", err)
-	}
-
 	return r, nil
-}
-
-// initDB ensures that the coordination DB is initialised correctly.
-//
-// The database schema consists of 3 tables:
-//   - SeqCoord
-//     This table only ever contains a single row which tracks the next available
-//     sequence number.
-//   - Seq
-//     This table holds sequenced "batches" of entries. The batches are keyed
-//     by the sequence number assigned to the first entry in the batch, and
-//     each subsequent entry in the batch takes the numerically next sequence number.
-//   - IntCoord
-//     This table coordinates integration of the batches of entries stored in
-//     Seq into the committed tree state.
-//
-// The database and schema should be created externally, e.g. by terraform.
-func (s *Storage) initDB(ctx context.Context) error {
-
-	/* Schema for reference:
-	CREATE TABLE SeqCoord (
-	 id INT64 NOT NULL,
-	 next INT64 NOT NULL,
-	) PRIMARY KEY (id);
-
-	CREATE TABLE Seq (
-		id INT64 NOT NULL,
-		seq INT64 NOT NULL,
-		v BYTES(MAX),
-	) PRIMARY KEY (id, seq);
-
-	CREATE TABLE IntCoord (
-		id INT64 NOT NULL,
-		seq INT64 NOT NULL,
-	) PRIMARY KEY (id);
-	*/
-
-	// Set default values for a newly inisialised schema - these rows being present are a precondition for
-	// sequencing and integration to occur.
-	// Note that this will only succeed if no row exists, so there's no danger
-	// of "resetting" an existing log.
-	if _, err := s.dbPool.Apply(ctx, []*spanner.Mutation{spanner.Insert("SeqCoord", []string{"id", "next"}, []interface{}{0, 0})}); spanner.ErrCode(err) != codes.AlreadyExists {
-		return err
-	}
-	if _, err := s.dbPool.Apply(ctx, []*spanner.Mutation{spanner.Insert("IntCoord", []string{"id", "seq"}, []interface{}{0, 0})}); spanner.ErrCode(err) != codes.AlreadyExists {
-		return err
-	}
-	return nil
 }
 
 // tileSuffix returns either the empty string or a tiles API suffix based on the passed-in tile size.
@@ -244,9 +191,58 @@ func newSpannerSequencer(ctx context.Context, spannerDB string) (*spannerSequenc
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to Spanner: %v", err)
 	}
-	return &spannerSequencer{
+	r := &spannerSequencer{
 		dbPool: dbPool,
-	}, nil
+	}
+	return r, r.initDB(ctx)
+}
+
+// initDB ensures that the coordination DB is initialised correctly.
+//
+// The database schema consists of 3 tables:
+//   - SeqCoord
+//     This table only ever contains a single row which tracks the next available
+//     sequence number.
+//   - Seq
+//     This table holds sequenced "batches" of entries. The batches are keyed
+//     by the sequence number assigned to the first entry in the batch, and
+//     each subsequent entry in the batch takes the numerically next sequence number.
+//   - IntCoord
+//     This table coordinates integration of the batches of entries stored in
+//     Seq into the committed tree state.
+//
+// The database and schema should be created externally, e.g. by terraform.
+func (s *spannerSequencer) initDB(ctx context.Context) error {
+
+	/* Schema for reference:
+	CREATE TABLE SeqCoord (
+	 id INT64 NOT NULL,
+	 next INT64 NOT NULL,
+	) PRIMARY KEY (id);
+
+	CREATE TABLE Seq (
+		id INT64 NOT NULL,
+		seq INT64 NOT NULL,
+		v BYTES(MAX),
+	) PRIMARY KEY (id, seq);
+
+	CREATE TABLE IntCoord (
+		id INT64 NOT NULL,
+		seq INT64 NOT NULL,
+	) PRIMARY KEY (id);
+	*/
+
+	// Set default values for a newly inisialised schema - these rows being present are a precondition for
+	// sequencing and integration to occur.
+	// Note that this will only succeed if no row exists, so there's no danger
+	// of "resetting" an existing log.
+	if _, err := s.dbPool.Apply(ctx, []*spanner.Mutation{spanner.Insert("SeqCoord", []string{"id", "next"}, []interface{}{0, 0})}); spanner.ErrCode(err) != codes.AlreadyExists {
+		return err
+	}
+	if _, err := s.dbPool.Apply(ctx, []*spanner.Mutation{spanner.Insert("IntCoord", []string{"id", "seq"}, []interface{}{0, 0})}); spanner.ErrCode(err) != codes.AlreadyExists {
+		return err
+	}
+	return nil
 }
 
 // assignEntries durably assigns each of the passed-in entries an index in the log.
@@ -321,10 +317,12 @@ func newGCSStorage(ctx context.Context, c *gcs.Client, projectID string, bucket 
 			break
 		}
 	}
-	return &gcsStorage{
+	r := &gcsStorage{
 		gcsClient: c,
 		bucket:    bucket,
-	}, nil
+	}
+
+	return r, nil
 }
 
 // getObject returns the data and generation of the specified object, or an error.

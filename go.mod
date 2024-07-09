@@ -13,6 +13,8 @@ require (
 	k8s.io/klog/v2 v2.130.1
 )
 
+require cloud.google.com/go/longrunning v0.5.7 // indirect
+
 require (
 	cel.dev/expr v0.15.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20240617180043-68d350f18fd4 // indirect
