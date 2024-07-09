@@ -17,6 +17,7 @@ package storage
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/globocom/go-buffer"
@@ -28,33 +29,59 @@ import (
 type Queue struct {
 	buf   *buffer.Buffer
 	flush FlushFunc
+
+	inFlightMu sync.Mutex
+	inFlight   map[string][]chan Index
 }
 
 // FlushFunc is the signature of a function which will receive the slice of queued entries.
 // It should return the index assigned to the first entry in the provided slice.
 type FlushFunc func(ctx context.Context, entries [][]byte) (index uint64, err error)
 
-func NewQueue(maxWait time.Duration, maxSize uint, f FlushFunc) *Queue {
+// NewQueue creates a new queue with the specified maximum age and size.
+//
+// The provided FlushFunc will be called with a slice containing the contents of the queue, in
+// the same order as they were added, when either the oldest entry in the queue has been there
+// for maxAge, or the size of the queue reaches maxSize.
+func NewQueue(maxAge time.Duration, maxSize uint, f FlushFunc) *Queue {
 	q := &Queue{
-		flush: f,
+		flush:    f,
+		inFlight: make(map[string][]chan Index, maxSize),
 	}
 	q.buf = buffer.New(
 		buffer.WithSize(maxSize),
-		buffer.WithFlushInterval(maxWait),
+		buffer.WithFlushInterval(maxAge),
 		buffer.WithFlusher(buffer.FlusherFunc(q.doFlush)),
 	)
 	return q
 }
 
+// Index represents the index assigned to an entry by the FlushFunc, or an error.
 type Index struct {
 	N   uint64
 	Err error
+}
+
+// squashDupes keeps track of all in-flight requests, enabling dupe squashing for entries currently in the queue.
+// Returns true if the provided entry is a dupe and should NOT be added to the queue.
+func (q *Queue) squashDupes(e entry) bool {
+	q.inFlightMu.Lock()
+	defer q.inFlightMu.Unlock()
+
+	k := string(e.data)
+	l, isKnown := q.inFlight[k]
+	q.inFlight[k] = append(l, e.index)
+	return isKnown
 }
 
 func (q *Queue) Add(ctx context.Context, e []byte) <-chan Index {
 	entry := entry{
 		data:  e,
 		index: make(chan Index, 1),
+	}
+	if q.squashDupes(entry) {
+		// This entry is already in the queue, so no need to add it again.
+		return entry.index
 	}
 	if err := q.buf.Push(entry); err != nil {
 		entry.index <- Index{Err: err}
@@ -73,9 +100,16 @@ func (q *Queue) doFlush(items []interface{}) {
 
 	go func() {
 		s, err := q.flush(context.TODO(), entriesData)
+
+		// Send assigned indices to all the waiting Add() requests, including dupes.
+		q.inFlightMu.Lock()
+		defer q.inFlightMu.Unlock()
+
 		for i, e := range entries {
-			e.index <- Index{N: s + uint64(i), Err: err}
-			close(e.index)
+			for _, dd := range q.inFlight[string(e.data)] {
+				dd <- Index{N: s + uint64(i), Err: err}
+				close(dd)
+			}
 		}
 	}()
 
