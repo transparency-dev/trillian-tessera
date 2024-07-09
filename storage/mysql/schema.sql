@@ -18,7 +18,7 @@
 CREATE TABLE IF NOT EXISTS `Checkpoint` (
   -- id is expected to be always 0 to maintain a maximum of a single row.
   `id`    INT UNSIGNED NOT NULL,
-  -- note is the text signed by one or more keys in the checkpoint format. See https://github.com/C2SP/C2SP/blob/main/tlog-checkpoint.md and https://github.com/C2SP/C2SP/blob/main/signed-note.md.
+  -- note is the text signed by one or more keys in the checkpoint format. See https://c2sp.org/tlog-checkpoint and https://c2sp.org/signed-note.
   `note`  MEDIUMBLOB NOT NULL,
   PRIMARY KEY(`id`)
 );
