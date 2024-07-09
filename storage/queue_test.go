@@ -19,6 +19,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -93,4 +94,35 @@ func TestQueue(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestDedup(t *testing.T) {
+	idx := atomic.Uint64{}
+
+	q := storage.NewQueue(time.Second, 10 /*maxSize*/, func(ctx context.Context, entries [][]byte) (index uint64, err error) {
+		r := idx.Load()
+		idx.Add(1)
+		return r, nil
+	})
+
+	numEntries := 10
+	adds := []<-chan storage.Index{}
+	for i := 0; i < numEntries; i++ {
+		adds = append(adds, q.Add(context.TODO(), []byte("Have I seen this before?")))
+	}
+
+	first := <-adds[0]
+	if first.Err != nil {
+		t.Fatalf("Add: %v", first.Err)
+	}
+	for i := 1; i < len(adds); i++ {
+		g := <-adds[i]
+		if g.Err != nil {
+			t.Errorf("[%d] got %v", i, g.Err)
+		}
+		if g.N != first.N {
+			t.Errorf("[%d] got seq %d, want %d", i, g.N, first.N)
+		}
+	}
+
 }
