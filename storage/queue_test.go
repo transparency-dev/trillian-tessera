@@ -124,5 +124,4 @@ func TestDedup(t *testing.T) {
 			t.Errorf("[%d] got seq %d, want %d", i, N, firstN)
 		}
 	}
-
 }
