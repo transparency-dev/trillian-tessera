@@ -81,15 +81,15 @@ func TestQueue(t *testing.T) {
 			}
 
 			for i, r := range adds {
-				s := <-r
-				if s.Err != nil {
-					t.Errorf("Add: %v", s.Err)
+				N, err := (<-r)()
+				if err != nil {
+					t.Errorf("Add: %v", err)
 					return
 				}
-				if item := assignedItems[s.N]; item == nil {
-					t.Errorf("Item %d was not present", s.N)
+				if item := assignedItems[N]; item == nil {
+					t.Errorf("Item %d was not present", N)
 				} else if got, want := item, wantEntries[i]; !bytes.Equal(got, want) {
-					t.Errorf("Got item@%d %q, want %q", s.N, got, want)
+					t.Errorf("Got item@%d %q, want %q", N, got, want)
 				}
 			}
 		})
@@ -111,17 +111,17 @@ func TestDedup(t *testing.T) {
 		adds = append(adds, q.Add(context.TODO(), []byte("Have I seen this before?")))
 	}
 
-	first := <-adds[0]
-	if first.Err != nil {
-		t.Fatalf("Add: %v", first.Err)
+	firstN, err := (<-adds[0])()
+	if err != nil {
+		t.Fatalf("Add: %v", err)
 	}
 	for i := 1; i < len(adds); i++ {
-		g := <-adds[i]
-		if g.Err != nil {
-			t.Errorf("[%d] got %v", i, g.Err)
+		N, err := (<-adds[i])()
+		if err != nil {
+			t.Errorf("[%d] got %v", i, err)
 		}
-		if g.N != first.N {
-			t.Errorf("[%d] got seq %d, want %d", i, g.N, first.N)
+		if N != firstN {
+			t.Errorf("[%d] got seq %d, want %d", i, N, firstN)
 		}
 	}
 
