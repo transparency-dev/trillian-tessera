@@ -121,6 +121,7 @@ func main() {
 }
 
 // parseTileLevelIndex takes level and index in string, validates and returns them in uint64.
+// Note that this doesn't return any of the partial tile component.
 //
 // Examples:
 // "/tile/0/x001/x234/067" means level 0 and index 1234067 of a full tile.
