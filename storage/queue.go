@@ -98,7 +98,7 @@ func (q *Queue) Add(ctx context.Context, e []byte) IndexFunc {
 
 // doFlush handles the queue flush, and sending notifications of assigned log indices.
 //
-// To prevent blockin the queue longer than necessary, the notifications happen in a
+// To prevent blocking the queue longer than necessary, the notifications happen in a
 // separate goroutine.
 func (q *Queue) doFlush(items []interface{}) {
 	entries := make([]*entry, len(items))
