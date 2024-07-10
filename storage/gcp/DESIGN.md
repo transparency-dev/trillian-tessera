@@ -59,3 +59,13 @@ This table is used to coordinate integration of sequenced batches in the `Seq` t
 This currently uses GCS to store the hash -> index mapping in individual files, but it may make sense to explore a
 paging scheme to reduce the number of objects, or store the index mapping elsewhere.
 
+### Alternatives considered
+
+Other transactional storage systems are available on GCP, e.g. CloudSQL or AlloyDB.
+Experiments were run using CloudSQL (MySQL), AlloyDB, and Spanner.
+
+Spanner worked out to be the cheapest while also removing much of the administrative overhead which 
+would come from even a managed MySQL instance, and so was selected.
+
+The experimental implementation was tested to around 1B entries of 1KB each at a write rate of 1500/s.
+This was done using the smallest possible Spanner alloc of 100 Processing Units.
