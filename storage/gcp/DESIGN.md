@@ -6,10 +6,10 @@ is intended to work.
 ## Overview
 
 This design takes advantage of GCS for long term storage and low cost & complexity serving of read traffic, 
-but leverages something more _transactional_ for coordinating the cluster.
+but leverages something more transactional for coordinating the cluster.
 
 New entries flow in from the binary built with Tessera into transactional storage, where they're held
-temporarily to batch them up, and then assigned sequence numbers en bloc as each batch is flushed.
+temporarily to batch them up, and then assigned sequence numbers as each batch is flushed.
 This allows the `Add` API call to quickly return with *durably assigned* sequence numbers.
 
 From there, an async process derives the entry bundles and Merkle tree structure from the sequenced batches,
