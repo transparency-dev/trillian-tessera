@@ -24,8 +24,9 @@ import (
 )
 
 const (
-	selectCheckpointByIDSQL = "SELECT `note` FROM `Checkpoint` WHERE `id` = ?"
-	replaceCheckpointSQL    = "REPLACE INTO `Checkpoint` (`id`, `note`) VALUES (?, ?)"
+	selectCheckpointByIDSQL         = "SELECT `note` FROM `Checkpoint` WHERE `id` = ?"
+	replaceCheckpointSQL            = "REPLACE INTO `Checkpoint` (`id`, `note`) VALUES (?, ?)"
+	selectSubtreeByLevelAndIndexSQL = "SELECT `nodes` FROM `Subtree` WHERE `level` = ? AND `index` = ?"
 
 	checkpointID = 0
 )
@@ -94,4 +95,14 @@ func (s *Storage) writeCheckpoint(ctx context.Context, rawCheckpoint []byte) err
 
 	// Commit the transaction.
 	return tx.Commit()
+}
+
+func (s *Storage) ReadTile(ctx context.Context, level, index uint64) ([]byte, error) {
+	row := s.db.QueryRowContext(ctx, selectSubtreeByLevelAndIndexSQL, level, index)
+	if err := row.Err(); err != nil {
+		return nil, err
+	}
+
+	var tile []byte
+	return tile, row.Scan(&tile)
 }

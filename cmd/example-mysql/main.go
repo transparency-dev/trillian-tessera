@@ -20,8 +20,11 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"flag"
+	"fmt"
 	"io"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	tessera "github.com/transparency-dev/trillian-tessera"
@@ -69,6 +72,35 @@ func main() {
 		}
 	})
 
+	http.HandleFunc("GET /tile/{level}/{index...}", func(w http.ResponseWriter, r *http.Request) {
+		level, index, err := parseTileLevelIndex(r.PathValue("level"), r.PathValue("index"))
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			if _, werr := w.Write([]byte(err.Error())); werr != nil {
+				klog.Errorf("/tile/{level}/{index...}: %v", werr)
+			}
+			return
+		}
+
+		tile, err := storage.ReadTile(r.Context(), level, index)
+		if err != nil {
+			if err == sql.ErrNoRows {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+
+			klog.Errorf("/tile/{level}/{index...}: %v", err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		if _, err := w.Write(tile); err != nil {
+			klog.Errorf("/tile/{level}/{index...}: %v", err)
+			return
+		}
+	})
+
 	http.HandleFunc("POST /add", func(w http.ResponseWriter, r *http.Request) {
 		b, err := io.ReadAll(r.Body)
 		if err != nil {
@@ -86,4 +118,34 @@ func main() {
 	if err := http.ListenAndServe(*listen, http.DefaultServeMux); err != nil {
 		klog.Exitf("ListenAndServe: %v", err)
 	}
+}
+
+// parseTileLevelIndex takes level and index in string, validates and returns them in uint64.
+//
+// Examples:
+// "/tile/0/x001/x234/067" means level 0 and index 1234067 of a full tile.
+// "/tile/0/x001/x234/067.p/8" means level 0, index 1234067 and width 8 of a partial tile.
+func parseTileLevelIndex(level, index string) (uint64, uint64, error) {
+	l, err := strconv.ParseUint(level, 10, 64)
+	if err != nil {
+		return 0, 0, fmt.Errorf("malformed URL: failed to parse tile level")
+	}
+
+	var i uint64
+	switch splittedIndexPath := strings.Split(index, "/"); len(splittedIndexPath) {
+	// Full tile = 3
+	// Partial tile = 4
+	case 3, 4:
+		indexPath := strings.Join(splittedIndexPath[0:3], "")
+		indexPath = strings.ReplaceAll(indexPath, "x", "")
+		indexPath = strings.ReplaceAll(indexPath, ".p", "")
+		i, err = strconv.ParseUint(indexPath, 10, 64)
+		if err != nil {
+			return 0, 0, fmt.Errorf("malformed URL: failed to parse tile index")
+		}
+	default:
+		return 0, 0, fmt.Errorf("malformed URL: failed to parse tile index")
+	}
+
+	return l, i, nil
 }
