@@ -22,3 +22,14 @@ CREATE TABLE IF NOT EXISTS `Checkpoint` (
   `note`  MEDIUMBLOB NOT NULL,
   PRIMARY KEY(`id`)
 );
+
+-- "Subtree" table is an internal tile consisting of hashes. There is one row for each internal tile, and this is updated until it is completed, at which point it is immutable.
+CREATE TABLE IF NOT EXISTS `Subtree` (
+  -- level is the level of the tile.
+  `level` INT UNSIGNED NOT NULL,
+  -- index is the index of the tile.
+  `index` BIGINT UNSIGNED NOT NULL,
+  -- nodes stores the hashes of the leaves.
+  `nodes` MEDIUMBLOB NOT NULL,
+  PRIMARY KEY(`level`, `index`)
+);
