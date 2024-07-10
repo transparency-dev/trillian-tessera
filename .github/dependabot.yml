@@ -1,0 +1,19 @@
+version: 2
+updates:
+- package-ecosystem: gomod
+  directory: /
+  groups:
+    all-go-deps:
+      patterns:
+        - "*"
+  schedule:
+    interval: weekly
+
+- package-ecosystem: github-actions
+  directory: /
+  groups:
+    all-gha-deps:
+      patterns:
+        - "*"
+  schedule:
+    interval: weekly
