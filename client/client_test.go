@@ -1,4 +1,4 @@
-// Copyright 2021 Google LLC. All Rights Reserved.
+// Copyright 2024 Google LLC. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -27,12 +27,12 @@ import (
 	"github.com/transparency-dev/formats/log"
 	"github.com/transparency-dev/merkle/compact"
 	"github.com/transparency-dev/merkle/rfc6962"
-	"github.com/transparency-dev/serverless-log/api"
+	"github.com/transparency-dev/trillian-tessera/api"
 	"golang.org/x/mod/sumdb/note"
 )
 
 var (
-	testOrigin      = "example.com/testdata"
+	testOrigin      = "astra"
 	testLogVerifier = mustMakeVerifier("astra+cad5a3d2+AZJqeuyE/GnknsCNh1eCtDtwdAwKBddOlS8M2eI1Jt4b")
 	// Built using serverless/testdata/build_log.sh
 	testRawCheckpoints, testCheckpoints = mustLoadTestCheckpoints()
@@ -108,7 +108,6 @@ func (f *fetchCheckpointShim) Advance() {
 
 func TestCheckLogStateTracker(t *testing.T) {
 	ctx := context.Background()
-	h := rfc6962.DefaultHasher
 
 	for _, test := range []struct {
 		desc       string
@@ -180,7 +179,7 @@ func TestCheckLogStateTracker(t *testing.T) {
 		t.Run(test.desc, func(t *testing.T) {
 			shim := fetchCheckpointShim{Checkpoints: test.cpRaws}
 			f := shim.Fetcher(testLogFetcher)
-			lst, err := NewLogStateTracker(ctx, f, h, testRawCheckpoints[0], testLogVerifier, testOrigin, UnilateralConsensus(f))
+			lst, err := NewLogStateTracker(ctx, f, testRawCheckpoints[0], testLogVerifier, testOrigin, UnilateralConsensus(f))
 			if err != nil {
 				t.Fatalf("NewLogStateTracker: %v", err)
 			}
@@ -315,8 +314,8 @@ func TestCheckConsistency(t *testing.T) {
 func TestNodeCacheHandlesInvalidRequest(t *testing.T) {
 	ctx := context.Background()
 	wantBytes := []byte("one")
-	f := func(_ context.Context, _, _ uint64) (*api.Tile, error) {
-		return &api.Tile{
+	f := func(_ context.Context, _, _ uint64) (*api.HashTile, error) {
+		return &api.HashTile{
 			Nodes: [][]byte{wantBytes},
 		}, nil
 	}
@@ -344,7 +343,7 @@ func TestHandleZeroRoot(t *testing.T) {
 	if len(zeroCP.Hash) == 0 {
 		t.Fatal("BadTestData: checkpoint.0 has empty root hash")
 	}
-	if _, err := NewProofBuilder(context.Background(), zeroCP, rfc6962.DefaultHasher.HashChildren, testLogFetcher); err != nil {
+	if _, err := NewProofBuilder(context.Background(), zeroCP, testLogFetcher); err != nil {
 		t.Fatalf("NewProofBuilder: %v", err)
 	}
 }
