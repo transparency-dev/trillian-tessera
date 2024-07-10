@@ -132,32 +132,34 @@ func main() {
 // "/tile/0/x001/x234/067.p/8" means level 0, index 1234067 and width 8 of a partial tile.
 func parseTileLevelIndexWidth(level, index string) (uint64, uint64, uint64, error) {
 	l, err := strconv.ParseUint(level, 10, 64)
-	if err != nil {
+	if l > 63 || err != nil {
 		return 0, 0, 0, fmt.Errorf("failed to parse tile level")
 	}
 
-	var i, w uint64
-	switch indexPaths := strings.Split(index, "/"); len(indexPaths) {
-	// Full tile = 3
-	// Partial tile = 4
-	case 3, 4:
-		indexPath := strings.Join(indexPaths[0:3], "")
-		indexPath = strings.ReplaceAll(indexPath, "x", "")
-		indexPath = strings.ReplaceAll(indexPath, ".p", "")
-		i, err = strconv.ParseUint(indexPath, 10, 64)
-		if err != nil {
+	i := uint64(0)
+	w := uint64(256)
+	indexPaths := strings.Split(index, "/")
+
+	if strings.Contains(index, ".p") {
+		w, err = strconv.ParseUint(indexPaths[len(indexPaths)-1], 10, 64)
+		if err != nil || w < 1 || w > 255 {
 			return 0, 0, 0, fmt.Errorf("failed to parse tile index")
 		}
+		indexPaths[len(indexPaths)-2] = strings.TrimSuffix(indexPaths[len(indexPaths)-2], ".p")
+		indexPaths = indexPaths[:len(indexPaths)-1]
+	}
 
-		w = 256
-		if len(indexPaths) == 4 {
-			w, err = strconv.ParseUint(indexPaths[3], 10, 64)
-			if err != nil {
-				return 0, 0, 0, fmt.Errorf("failed to parse tile index")
-			}
-		}
-	default:
+	if strings.Count(index, "x") != len(indexPaths)-1 || strings.HasPrefix(indexPaths[len(indexPaths)-1], "x") {
 		return 0, 0, 0, fmt.Errorf("failed to parse tile index")
+	}
+
+	for _, indexPath := range indexPaths {
+		indexPath = strings.TrimPrefix(indexPath, "x")
+		n, err := strconv.ParseUint(indexPath, 10, 64)
+		if err != nil || n >= 1000 || len(indexPath) > 3 {
+			return 0, 0, 0, fmt.Errorf("failed to parse tile index")
+		}
+		i = i*1000 + n
 	}
 
 	return l, i, w, nil
