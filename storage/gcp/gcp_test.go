@@ -143,11 +143,11 @@ func TestTileRoundtrip(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			wantTile := makeTile(t, test.tileSize)
-			if err := s.setTile(ctx, test.level, test.index, wantTile); err != nil {
+			if err := s.setTile(ctx, test.level, test.index, test.logSize, wantTile); err != nil {
 				t.Fatalf("setTile: %v", err)
 			}
 
-			expPath := layout.TilePath(test.level, test.index) + tileSuffix(test.tileSize)
+			expPath := layout.TilePath(test.level, test.index, test.logSize)
 			_, ok := m.mem[expPath]
 			if !ok {
 				t.Fatalf("want tile at %v but found none", expPath)

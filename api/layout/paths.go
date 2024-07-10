@@ -29,20 +29,32 @@ const (
 // EntriesPathForLogIndex builds the local path at which the leaf with the given index lives in.
 // Note that this will be an entry bundle containing up to 256 entries and thus multiple
 // indices can map to the same output path.
-//
-// TODO(mhutchinson): revisit to consider how partial tile suffixes should be added.
-func EntriesPathForLogIndex(seq uint64) string {
-	return EntriesPath(seq / 256)
+// The logSize is required so that a partial qualifier can be appended to tiles that
+// would contain fewer than 256 entries.
+func EntriesPathForLogIndex(seq, logSize uint64) string {
+	p := PartialTileSize(0, seq, logSize)
+	return EntriesPath(seq/256, p)
 }
 
-// EntriesPath returns the local path for the Nth entry bundle.
-func EntriesPath(N uint64) string {
-	return fmt.Sprintf("tile/entries%s", fmtN(N))
+// EntriesPath returns the local path for the nth entry bundle. p denotes the partial
+// tile size, or 0 if the tile is complete.
+func EntriesPath(n, p uint64) string {
+	suffix := ""
+	if p > 0 {
+		suffix = fmt.Sprintf(".p/%d", p)
+	}
+	return fmt.Sprintf("tile/entries%s%s", fmtN(n), suffix)
 }
 
 // TilePath builds the path to the subtree tile with the given level and index in tile space.
-func TilePath(tileLevel, tileIndex uint64) string {
-	return fmt.Sprintf("tile/%d%s", tileLevel, fmtN(tileIndex))
+func TilePath(tileLevel, tileIndex, logSize uint64) string {
+	suffix := ""
+	p := PartialTileSize(tileLevel, tileIndex, logSize)
+	if p > 0 {
+		suffix = fmt.Sprintf(".p/%d", p)
+	}
+
+	return fmt.Sprintf("tile/%d%s%s", tileLevel, fmtN(tileIndex), suffix)
 }
 
 // fmtN returns the "N" part of a Tiles-spec path.

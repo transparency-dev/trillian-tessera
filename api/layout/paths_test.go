@@ -16,31 +16,45 @@ package layout
 
 import (
 	"fmt"
+	"math"
 	"testing"
 )
 
 func TestEntriesPathForLogIndex(t *testing.T) {
 	for _, test := range []struct {
 		seq      uint64
+		logSize  uint64
 		wantPath string
 	}{
 		{
 			seq:      0,
+			logSize:  256,
 			wantPath: "tile/entries/000",
 		}, {
 			seq:      255,
+			logSize:  256,
 			wantPath: "tile/entries/000",
 		}, {
+			seq:      251,
+			logSize:  255,
+			wantPath: "tile/entries/000.p/255",
+		}, {
 			seq:      256,
+			logSize:  512,
 			wantPath: "tile/entries/001",
 		}, {
+			seq:      256,
+			logSize:  257,
+			wantPath: "tile/entries/001.p/1",
+		}, {
 			seq:      123456789 * 256,
+			logSize:  123456790 * 256,
 			wantPath: "tile/entries/x123/x456/789",
 		},
 	} {
 		desc := fmt.Sprintf("seq %d", test.seq)
 		t.Run(desc, func(t *testing.T) {
-			gotPath := EntriesPathForLogIndex(test.seq)
+			gotPath := EntriesPathForLogIndex(test.seq, test.logSize)
 			if gotPath != test.wantPath {
 				t.Errorf("got file %q want %q", gotPath, test.wantPath)
 			}
@@ -51,25 +65,35 @@ func TestEntriesPathForLogIndex(t *testing.T) {
 func TestEntriesPath(t *testing.T) {
 	for _, test := range []struct {
 		N        uint64
+		P        uint64
 		wantPath string
 	}{
 		{
 			N:        0,
+			P:        0,
 			wantPath: "tile/entries/000",
+		},
+		{
+			N:        0,
+			P:        8,
+			wantPath: "tile/entries/000.p/8",
 		}, {
 			N:        255,
+			P:        0,
 			wantPath: "tile/entries/255",
 		}, {
 			N:        256,
+			P:        0,
 			wantPath: "tile/entries/256",
 		}, {
 			N:        123456789000,
+			P:        0,
 			wantPath: "tile/entries/x123/x456/x789/000",
 		},
 	} {
 		desc := fmt.Sprintf("N %d", test.N)
 		t.Run(desc, func(t *testing.T) {
-			gotPath := EntriesPath(test.N)
+			gotPath := EntriesPath(test.N, test.P)
 			if gotPath != test.wantPath {
 				t.Errorf("got file %q want %q", gotPath, test.wantPath)
 			}
@@ -81,29 +105,59 @@ func TestTilePath(t *testing.T) {
 	for _, test := range []struct {
 		level    uint64
 		index    uint64
+		logSize  uint64
 		wantPath string
 	}{
 		{
 			level:    0,
 			index:    0,
+			logSize:  256,
 			wantPath: "tile/0/000",
+		}, {
+			level:    0,
+			index:    0,
+			logSize:  0,
+			wantPath: "tile/0/000",
+		}, {
+			level:    0,
+			index:    0,
+			logSize:  255,
+			wantPath: "tile/0/000.p/255",
+		}, {
+			level:    1,
+			index:    0,
+			logSize:  math.MaxUint64,
+			wantPath: "tile/1/000",
+		}, {
+			level:    1,
+			index:    0,
+			logSize:  256,
+			wantPath: "tile/1/000.p/1",
+		}, {
+			level:    1,
+			index:    0,
+			logSize:  1024,
+			wantPath: "tile/1/000.p/4",
 		}, {
 			level:    15,
 			index:    455667,
+			logSize:  math.MaxUint64,
 			wantPath: "tile/15/x455/667",
 		}, {
 			level:    3,
 			index:    1234567,
+			logSize:  math.MaxUint64,
 			wantPath: "tile/3/x001/x234/567",
 		}, {
 			level:    15,
 			index:    123456789,
+			logSize:  math.MaxUint64,
 			wantPath: "tile/15/x123/x456/789",
 		},
 	} {
 		desc := fmt.Sprintf("level %x index %x", test.level, test.index)
 		t.Run(desc, func(t *testing.T) {
-			gotPath := TilePath(test.level, test.index)
+			gotPath := TilePath(test.level, test.index, test.logSize)
 			if gotPath != test.wantPath {
 				t.Errorf("Got path %q want %q", gotPath, test.wantPath)
 			}
