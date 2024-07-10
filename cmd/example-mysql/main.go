@@ -132,11 +132,11 @@ func parseTileLevelIndex(level, index string) (uint64, uint64, error) {
 	}
 
 	var i uint64
-	switch splittedIndexPath := strings.Split(index, "/"); len(splittedIndexPath) {
+	switch indexPaths := strings.Split(index, "/"); len(indexPaths) {
 	// Full tile = 3
 	// Partial tile = 4
 	case 3, 4:
-		indexPath := strings.Join(splittedIndexPath[0:3], "")
+		indexPath := strings.Join(indexPaths[0:3], "")
 		indexPath = strings.ReplaceAll(indexPath, "x", "")
 		indexPath = strings.ReplaceAll(indexPath, ".p", "")
 		i, err = strconv.ParseUint(indexPath, 10, 64)
