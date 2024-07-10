@@ -32,7 +32,7 @@ const (
 // The logSize is required so that a partial qualifier can be appended to tiles that
 // would contain fewer than 256 entries.
 func EntriesPathForLogIndex(seq, logSize uint64) string {
-	p := PartialTileSize(0, seq, logSize)
+	p := partialTileSize(0, seq, logSize)
 	return EntriesPath(seq/256, p)
 }
 
@@ -49,7 +49,7 @@ func EntriesPath(n, p uint64) string {
 // TilePath builds the path to the subtree tile with the given level and index in tile space.
 func TilePath(tileLevel, tileIndex, logSize uint64) string {
 	suffix := ""
-	p := PartialTileSize(tileLevel, tileIndex, logSize)
+	p := partialTileSize(tileLevel, tileIndex, logSize)
 	if p > 0 {
 		suffix = fmt.Sprintf(".p/%d", p)
 	}
