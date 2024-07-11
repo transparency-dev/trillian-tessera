@@ -132,11 +132,11 @@ func main() {
 // "/tile/0/x001/x234/067.p/8" means level 0, index 1234067 and width 8 of a partial tile.
 func parseTileLevelIndexWidth(level, index string) (uint64, uint64, uint64, error) {
 	l, err := strconv.ParseUint(level, 10, 64)
+	// Verify that level is an integer between 0 and 63 as specified in the tlog-tiles specification.
 	if l > 63 || err != nil {
 		return 0, 0, 0, fmt.Errorf("failed to parse tile level")
 	}
 
-	i := uint64(0)
 	w := uint64(256)
 	indexPaths := strings.Split(index, "/")
 
@@ -153,10 +153,11 @@ func parseTileLevelIndexWidth(level, index string) (uint64, uint64, uint64, erro
 		return 0, 0, 0, fmt.Errorf("failed to parse tile index")
 	}
 
+	i := uint64(0)
 	for _, indexPath := range indexPaths {
 		indexPath = strings.TrimPrefix(indexPath, "x")
 		n, err := strconv.ParseUint(indexPath, 10, 64)
-		if err != nil || n >= 1000 || len(indexPath) > 3 {
+		if err != nil || n >= 1000 || len(indexPath) != 3 {
 			return 0, 0, 0, fmt.Errorf("failed to parse tile index")
 		}
 		i = i*1000 + n
