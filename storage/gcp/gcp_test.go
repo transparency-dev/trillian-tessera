@@ -20,13 +20,66 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"os"
 	"sync"
 	"testing"
 
+	"cloud.google.com/go/spanner/spannertest"
+	"cloud.google.com/go/spanner/spansql"
 	gcs "cloud.google.com/go/storage"
 	"github.com/google/go-cmp/cmp"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
 )
+
+func newSpannerDB(t *testing.T) func() {
+	t.Helper()
+	srv, err := spannertest.NewServer("localhost:0")
+	if err != nil {
+		t.Fatalf("Failed to set up test spanner: %v", err)
+	}
+	os.Setenv("SPANNER_EMULATOR_HOST", srv.Addr)
+	dml, err := spansql.ParseDDL("", `
+			CREATE TABLE SeqCoord (id INT64 NOT NULL, next INT64 NOT NULL,) PRIMARY KEY (id); 
+			CREATE TABLE Seq (id INT64 NOT NULL, seq INT64 NOT NULL, v BYTES(MAX),) PRIMARY KEY (id, seq); 
+			CREATE TABLE IntCoord (id INT64 NOT NULL, seq INT64 NOT NULL,) PRIMARY KEY (id); 
+	`)
+	if err != nil {
+		t.Fatalf("Invalid DDL: %v", err)
+	}
+	if err := srv.UpdateDDL(dml); err != nil {
+		t.Fatalf("Failed to create schema in test spanner: %v", err)
+	}
+
+	return srv.Close
+
+}
+
+func TestSpannerSequencer(t *testing.T) {
+	ctx := context.Background()
+	close := newSpannerDB(t)
+	defer close()
+
+	seq, err := newSpannerSequencer(ctx, "projects/p/instances/i/databases/d")
+	if err != nil {
+		t.Fatalf("newSpannerSequencer: %v", err)
+	}
+
+	want := uint64(0)
+	for chunks := 0; chunks < 10; chunks++ {
+		entries := [][]byte{}
+		for i := 0; i < 10+chunks; i++ {
+			entries = append(entries, []byte(fmt.Sprintf("item %d/%d", chunks, i)))
+		}
+		got, err := seq.assignEntries(ctx, entries)
+		if err != nil {
+			t.Fatalf("assignEntries: %v", err)
+		}
+		if got != want {
+			t.Errorf("Chunk %d got seq %d, want %d", chunks, got, want)
+		}
+		want += uint64(len(entries))
+	}
+}
 
 func TestTileSuffix(t *testing.T) {
 	for _, test := range []struct {

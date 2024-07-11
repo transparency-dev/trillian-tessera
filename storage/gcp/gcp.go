@@ -32,16 +32,20 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/gob"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"slices"
+	"time"
 
 	"cloud.google.com/go/spanner"
+	"cloud.google.com/go/spanner/apiv1/spannerpb"
 	gcs "cloud.google.com/go/storage"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
+	"github.com/transparency-dev/trillian-tessera/storage"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/iterator"
 	"google.golang.org/grpc/codes"
@@ -55,14 +59,21 @@ type Storage struct {
 	projectID string
 	bucket    string
 
-	dbPool   *spanner.Client
-	objStore objStore
+	sequencer sequencer
+	objStore  objStore
+
+	queue *storage.Queue
 }
 
 // objStore describes a type which can store and retrieve objects.
 type objStore interface {
 	getObject(ctx context.Context, obj string) ([]byte, int64, error)
 	setObject(ctx context.Context, obj string, data []byte, cond *gcs.Conditions) error
+}
+
+// coord describes a type which knows how to sequence entries.
+type sequencer interface {
+	assignEntries(ctx context.Context, entries [][]byte) (uint64, error)
 }
 
 // Config holds GCP project and resource configuration for a storage instance.
@@ -85,25 +96,93 @@ func New(ctx context.Context, cfg Config) (*Storage, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create GCS storage: %v", err)
 	}
-
-	dbPool, err := spanner.NewClient(ctx, cfg.Spanner)
+	seq, err := newSpannerSequencer(ctx, cfg.Spanner)
 	if err != nil {
-		klog.Exitf("Failed to connect to Spanner: %v", err)
+		return nil, fmt.Errorf("failed to create Spanner sequencer: %v", err)
 	}
 
 	r := &Storage{
 		gcsClient: c,
 		projectID: cfg.ProjectID,
 		bucket:    cfg.Bucket,
-		dbPool:    dbPool,
 		objStore:  gcsStorage,
+		sequencer: seq,
 	}
-
-	if err := r.initDB(ctx); err != nil {
-		return nil, fmt.Errorf("failed to init DB: %v", err)
-	}
+	// TODO(al): make queue options configurable:
+	r.queue = storage.NewQueue(time.Second, 256, r.sequencer.assignEntries)
 
 	return r, nil
+}
+
+// tileSuffix returns either the empty string or a tiles API suffix based on the passed-in tile size.
+func tileSuffix(s uint64) string {
+	if p := s % 256; p != 0 {
+		return fmt.Sprintf(".p/%d", p)
+	}
+	return ""
+}
+
+// setTile stores a tile in GCS.
+//
+// The location to which the tile is written is defined by the tile layout spec.
+func (s *Storage) setTile(ctx context.Context, level, index uint64, tile [][]byte) error {
+	tileSize := uint64(len(tile))
+	klog.V(2).Infof("StoreTile: level %d index %x ts: %x", level, index, tileSize)
+	if tileSize == 0 || tileSize > 256 {
+		return fmt.Errorf("tileSize %d must be > 0 and <= 256", tileSize)
+	}
+	t := slices.Concat(tile...)
+
+	tPath := layout.TilePath(level, index) + tileSuffix(tileSize)
+
+	return s.objStore.setObject(ctx, tPath, t, &gcs.Conditions{DoesNotExist: true})
+}
+
+// getTile returns the tile at the given tile-level and tile-index for the specified log size, or
+// an error if it doesn't exist.
+func (s *Storage) getTile(ctx context.Context, level, index, logSize uint64) ([][]byte, error) {
+	tileSize := layout.PartialTileSize(level, index, logSize)
+
+	objName := layout.TilePath(level, index) + tileSuffix(tileSize)
+	data, _, err := s.objStore.getObject(ctx, objName)
+	if err != nil {
+		if errors.Is(err, gcs.ErrObjectNotExist) {
+			// Return the generic NotExist error so that higher levels can differentiate
+			// between this and other errors.
+			return nil, os.ErrNotExist
+		}
+		return nil, err
+	}
+
+	// Recreate the tile slices
+	l := len(data)
+	if m := l % sha256.Size; m != 0 {
+		return nil, fmt.Errorf("invalid tile data size %d", l)
+	}
+	t := make([][]byte, l/sha256.Size)
+	for i := range t {
+		t[i] = data[i*sha256.Size : (i+1)*sha256.Size]
+	}
+	return t, nil
+}
+
+// spannerSequencer uses Cloud Spanner to provide
+// a durable and thread/multi-process safe sequencer.
+type spannerSequencer struct {
+	dbPool *spanner.Client
+}
+
+// new SpannerSequencer returns a new spannerSequencer struct which uses the provided
+// spanner resource name for its spanner connection.
+func newSpannerSequencer(ctx context.Context, spannerDB string) (*spannerSequencer, error) {
+	dbPool, err := spanner.NewClient(ctx, spannerDB)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to Spanner: %v", err)
+	}
+	r := &spannerSequencer{
+		dbPool: dbPool,
+	}
+	return r, r.initDB(ctx)
 }
 
 // initDB ensures that the coordination DB is initialised correctly.
@@ -121,7 +200,7 @@ func New(ctx context.Context, cfg Config) (*Storage, error) {
 //     Seq into the committed tree state.
 //
 // The database and schema should be created externally, e.g. by terraform.
-func (s *Storage) initDB(ctx context.Context) error {
+func (s *spannerSequencer) initDB(ctx context.Context) error {
 
 	/* Schema for reference:
 	CREATE TABLE SeqCoord (
@@ -154,58 +233,54 @@ func (s *Storage) initDB(ctx context.Context) error {
 	return nil
 }
 
-// tileSuffix returns either the empty string or a tiles API suffix based on the passed-in tile size.
-func tileSuffix(s uint64) string {
-	if p := s % 256; p != 0 {
-		return fmt.Sprintf(".p/%d", p)
-	}
-	return ""
-}
-
-// setTile stores a tile in GCS.
+// assignEntries durably assigns each of the passed-in entries an index in the log.
 //
-// The location to which the tile is written is defined by the tile layout spec.
-func (s *Storage) setTile(ctx context.Context, level, index uint64, tile [][]byte) error {
-	tileSize := uint64(len(tile))
-	klog.V(2).Infof("StoreTile: level %d index %x ts: %x", level, index, tileSize)
-	if tileSize == 0 || tileSize > 256 {
-		return fmt.Errorf("tileSize %d must be > 0 and <= 256", tileSize)
+// Entries are allocated contiguous indices, in the order in which they appear in the entries parameter.
+// This is achieved by storing the passed-in entries in the Seq table in Spanner, keyed by the
+// index assigned to the first entry in the batch.
+func (s *spannerSequencer) assignEntries(ctx context.Context, entries [][]byte) (uint64, error) {
+	// Flatted the entries into a single slice of bytes which we can store in the Seq.v column.
+	b := &bytes.Buffer{}
+	e := gob.NewEncoder(b)
+	if err := e.Encode(entries); err != nil {
+		return 0, fmt.Errorf("failed to serialise batch: %v", err)
 	}
-	t := slices.Concat(tile...)
+	data := b.Bytes()
+	num := len(entries)
 
-	// Pass an empty rootDir since we don't need this concept in GCS.
-	tPath := layout.TilePath(level, index) + tileSuffix(tileSize)
+	var next int64 // Unfortunately, Spanner doesn't support uint64 so we'll have to cast around a bit.
 
-	return s.objStore.setObject(ctx, tPath, t, &gcs.Conditions{DoesNotExist: true})
-}
-
-// getTile returns the tile at the given tile-level and tile-index for the specified log size, or
-// an error if it doesn't exist.
-func (s *Storage) getTile(ctx context.Context, level, index, logSize uint64) ([][]byte, error) {
-	tileSize := layout.PartialTileSize(level, index, logSize)
-
-	// Pass an empty rootDir since we don't need this concept in GCS.
-	objName := layout.TilePath(level, index) + tileSuffix(tileSize)
-	data, _, err := s.objStore.getObject(ctx, objName)
-	if err != nil {
-		if errors.Is(err, gcs.ErrObjectNotExist) {
-			// Return the generic NotExist error so that higher levels can differentiate
-			// between this and other errors.
-			return nil, os.ErrNotExist
+	_, err := s.dbPool.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
+		// First we need to grab the next available sequence number from the SeqCoord table.
+		row, err := txn.ReadRowWithOptions(ctx, "SeqCoord", spanner.Key{0}, []string{"id", "next"}, &spanner.ReadOptions{LockHint: spannerpb.ReadRequest_LOCK_HINT_EXCLUSIVE})
+		if err != nil {
+			return err
 		}
-		return nil, err
+		var id int64
+		if err := row.Columns(&id, &next); err != nil {
+			return err
+		}
+
+		next := uint64(next) // Shadow next with a uint64 version of the same value to save on casts.
+		// TODO(al): think about whether aligning bundles to tile boundaries would be a good idea or not.
+		m := []*spanner.Mutation{
+			// Insert our newly sequenced batch of entries into Seq,
+			spanner.Insert("Seq", []string{"id", "seq", "v"}, []interface{}{0, int64(next), data}),
+			// and update the next-available sequence number row in SeqCoord.
+			spanner.Update("SeqCoord", []string{"id", "next"}, []interface{}{0, int64(next) + int64(num)}),
+		}
+		if err := txn.BufferWrite(m); err != nil {
+			return err
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return 0, fmt.Errorf("failed to flush batch: %v", err)
 	}
 
-	// Recreate the tile slices
-	l := len(data)
-	if m := l % sha256.Size; m != 0 {
-		return nil, fmt.Errorf("invalid tile data size %d", l)
-	}
-	t := make([][]byte, l/sha256.Size)
-	for i := range t {
-		t[i] = data[i*sha256.Size : (i+1)*sha256.Size]
-	}
-	return t, nil
+	return uint64(next), nil
 }
 
 // gcsStorage knows how to store and retrieve objects from GCS.
@@ -231,10 +306,12 @@ func newGCSStorage(ctx context.Context, c *gcs.Client, projectID string, bucket 
 			break
 		}
 	}
-	return &gcsStorage{
+	r := &gcsStorage{
 		gcsClient: c,
 		bucket:    bucket,
-	}, nil
+	}
+
+	return r, nil
 }
 
 // getObject returns the data and generation of the specified object, or an error.

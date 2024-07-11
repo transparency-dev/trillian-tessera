@@ -13,7 +13,13 @@ require (
 	k8s.io/klog/v2 v2.130.1
 )
 
-require cel.dev/expr v0.15.0 // indirect
+require cloud.google.com/go/longrunning v0.5.7 // indirect
+
+require (
+	cel.dev/expr v0.15.0 // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20240617180043-68d350f18fd4 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20240624140628-dc46fd24d27d // indirect
+)
 
 require (
 	cloud.google.com/go v0.115.0 // indirect
@@ -53,7 +59,5 @@ require (
 	golang.org/x/time v0.5.0 // indirect
 	golang.org/x/xerrors v0.0.0-20231012003039-104605ab7028 // indirect
 	google.golang.org/genproto v0.0.0-20240624140628-dc46fd24d27d // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20240617180043-68d350f18fd4 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20240624140628-dc46fd24d27d // indirect
 	google.golang.org/protobuf v1.34.2 // indirect
 )
