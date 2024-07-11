@@ -19,19 +19,22 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"reflect"
+	"sync"
 
 	"github.com/transparency-dev/merkle/compact"
 	"github.com/transparency-dev/merkle/rfc6962"
-	"github.com/transparency-dev/serverless-log/client"
 	"github.com/transparency-dev/trillian-tessera/api"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
 	"golang.org/x/sync/errgroup"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 )
 
 // fullTile represents a "fully populated" tile, i.e. it has all non-ephemeral internaly nodes
 // implied by the leaves.
 type fullTile struct {
+	sync.RWMutex
+
 	inner  map[compact.NodeID][]byte
 	leaves [][]byte
 }
@@ -54,10 +57,13 @@ func newFullTile(h *api.HashTile) *fullTile {
 
 // set allows setting of individual leaf/inner nodes.
 // It's intended to be used as a visitor for compact.Range.
-func (f fullTile) set(id compact.NodeID, hash []byte) {
+func (f *fullTile) set(id compact.NodeID, hash []byte) {
+	f.Lock()
+	defer f.Unlock()
+
 	if id.Level == 0 {
-		if l := uint64(len(f.leaves)); id.Index > l {
-			f.leaves = append(f.leaves, make([][]byte, l-id.Index+1)...)
+		if l := uint64(len(f.leaves)); id.Index >= l {
+			f.leaves = append(f.leaves, make([][]byte, id.Index+1-l)...)
 		}
 		f.leaves[id.Index] = hash
 	} else {
@@ -65,117 +71,173 @@ func (f fullTile) set(id compact.NodeID, hash []byte) {
 	}
 }
 
+// get allows access to individual leaf/inner nodes.
+func (f *fullTile) get(id compact.NodeID) []byte {
+	f.RLock()
+	defer f.RUnlock()
+
+	if id.Level == 0 {
+		if l := uint64(len(f.leaves)); id.Index >= l {
+			return nil
+		}
+		return f.leaves[id.Index]
+	}
+	return f.inner[id]
+}
+
+func (f *fullTile) equals(other *fullTile) bool {
+	return reflect.DeepEqual(f, other)
+}
+
 type GetTileFunc func(ctx context.Context, tileLevel uint64, tileIndex uint64, treeSize uint64) (*api.HashTile, error)
+type getFullTileFunc func(ctx context.Context, tileLevel uint64, tileIndex uint64, treeSize uint64) (*fullTile, error)
 
 type TreeBuilder struct {
-	tileWriteCache *tileWriteCache
-	getTile        func(ctx context.Context, tileLevel uint64, tileIndex uint64) (*api.HashTile, error)
+	getTile getFullTileFunc
+	rf      *compact.RangeFactory
 }
 
-func NewTreeBuilder(getTile func(ctx context.Context, tileLevel uint64, tileIndex uint64, treeSize uint64) (*api.HashTile, error)) *TreeBuilder {
-	getFullTile := func(ctx context.Context, tileLevel uint64, tileIndex uint64) (*fullTile, error) {
-		t, err := getTile(ctx, tileLevel, tileIndex)
-		if err != nil {
-			return nil, fmt.Errorf("getTile: %v", err)
-		}
-		return newFullTile(t), nil
-	}
-	return &TreeBuilder{
-		tileWriteCache: newTileWriteCache(getFullTile),
-		getTile:        getTile,
-	}
-}
-
-func (t *TreeBuilder) Integrate(ctx context.Context, fromSize uint64, entries [][]byte) (newSize uint64, rootHash []byte, err error) {
-	rc := readCache{entries: make(map[string]fullTile)}
-	defer func() {
-		klog.Infof("read cache hits: %d", rc.hits)
-	}()
-	getTile := func(l, i uint64) (*api.HashTile, error) {
-		r, ok := rc.get(l, i)
+func NewTreeBuilder(getTile GetTileFunc) *TreeBuilder {
+	readCache := tileReadCache{entries: make(map[string]*fullTile)}
+	getFullTile := func(ctx context.Context, tileLevel uint64, tileIndex uint64, treeSize uint64) (*fullTile, error) {
+		r, ok := readCache.get(tileLevel, tileIndex, treeSize)
 		if ok {
 			return r, nil
 		}
-		t, err := t.getTile(ctx, l, i, fromSize)
+		t, err := getTile(ctx, tileLevel, tileIndex, treeSize)
 		if err != nil {
 			return nil, err
 		}
-		rc.set(l, i, t)
-		return t, nil
+		ft := newFullTile(t)
+		readCache.set(tileLevel, tileIndex, treeSize, ft)
+		return ft, nil
 	}
-	prewarmCache(compact.RangeNodes(0, fromSize, nil), getTile)
-
-	hashes, err := client.FetchRangeNodes(ctx, fromSize, func(_ context.Context, l, i uint64) (*api.Tile, error) {
-		return getTile(l, i)
-	})
-	if err != nil {
-		return 0, nil, fmt.Errorf("failed to fetch compact range nodes: %w", err)
+	return &TreeBuilder{
+		getTile: getFullTile,
+		rf:      &compact.RangeFactory{Hash: rfc6962.DefaultHasher.HashChildren},
 	}
+}
 
-	rf := compact.RangeFactory{Hash: h.HashChildren}
-	baseRange, err := rf.NewRange(0, fromSize, hashes)
+func (t *TreeBuilder) newRange(ctx context.Context, treeSize uint64) (*compact.Range, error) {
+	rangeNodes := compact.RangeNodes(0, treeSize, nil)
+	errG := errgroup.Group{}
+	hashes := make([][]byte, len(rangeNodes))
+	for i, id := range rangeNodes {
+		i := i
+		id := id
+		errG.Go(func() error {
+			tLevel, tIndex, nLevel, nIndex := layout.NodeCoordsToTileAddress(uint64(id.Level), id.Index)
+			ft, err := t.getTile(ctx, uint64(tLevel), tIndex, treeSize)
+			if err != nil {
+				return err
+			}
+			h := ft.get(compact.NodeID{Level: nLevel, Index: nIndex})
+			if h == nil {
+				return fmt.Errorf("missing node: [%d/%d@%d]", id.Level, id.Index, treeSize)
+			}
+			hashes[i] = h
+			return nil
+		})
+	}
+	if err := errG.Wait(); err != nil {
+		return nil, err
+	}
+	return t.rf.NewRange(0, treeSize, hashes)
+}
+
+func (t *TreeBuilder) Integrate(ctx context.Context, fromSize uint64, entries [][]byte) (newSize uint64, rootHash []byte, tiles map[compact.NodeID]*api.HashTile, err error) {
+	baseRange, err := t.newRange(ctx, fromSize)
 	if err != nil {
-		return 0, nil, fmt.Errorf("failed to create range covering existing log: %w", err)
+		return 0, nil, nil, fmt.Errorf("failed to create range covering existing log: %w", err)
 	}
 
 	// Initialise a compact range representation, and verify the stored state.
 	r, err := baseRange.GetRootHash(nil)
 	if err != nil {
-		return 0, nil, fmt.Errorf("invalid log state, unable to recalculate root: %w", err)
+		return 0, nil, nil, fmt.Errorf("invalid log state, unable to recalculate root: %w", err)
 	}
 
 	klog.V(1).Infof("Loaded state with roothash %x", r)
-
 	// Create a new compact range which represents the update to the tree
-	newRange := rf.NewEmptyRange(fromSize)
-	tc := tileCache{m: make(map[tileKey]*api.Tile), getTile: getTile}
-	if len(batch) == 0 {
+	newRange := t.rf.NewEmptyRange(fromSize)
+	if len(entries) == 0 {
 		klog.V(1).Infof("Nothing to do.")
 		// Nothing to do, nothing done.
-		return fromSize, r, nil
+		return fromSize, r, nil, nil
 	}
-	for _, e := range batch {
-		lh := h.HashLeaf(e)
+	tc := newTileWriteCache(fromSize, t.getTile)
+	visitor := tc.Visitor(ctx)
+	for _, e := range entries {
+		lh := rfc6962.DefaultHasher.HashLeaf(e)
 		// Update range and set nodes
-		if err := newRange.Append(lh, tc.Visit); err != nil {
-			return 0, nil, fmt.Errorf("newRange.Append(): %v", err)
+		if err := newRange.Append(lh, visitor); err != nil {
+			return 0, nil, nil, fmt.Errorf("newRange.Append(): %v", err)
 		}
 
 	}
 
 	// Merge the update range into the old tree
-	if err := baseRange.AppendRange(newRange, tc.Visit); err != nil {
-		return 0, nil, fmt.Errorf("failed to merge new range onto existing log: %w", err)
+	if err := baseRange.AppendRange(newRange, visitor); err != nil {
+		return 0, nil, nil, fmt.Errorf("failed to merge new range onto existing log: %w", err)
 	}
 
 	// Calculate the new root hash - don't pass in the tileCache visitor here since
 	// this will construct any ephemeral nodes and we do not want to store those.
 	newRoot, err := baseRange.GetRootHash(nil)
 	if err != nil {
-		return 0, nil, fmt.Errorf("failed to calculate new root hash: %w", err)
+		return 0, nil, nil, fmt.Errorf("failed to calculate new root hash: %w", err)
+	}
+
+	if err := tc.Err(); err != nil {
+		return 0, nil, nil, err
 	}
 
 	// All calculation is now complete, all that remains is to store the new
 	// tiles and updated log state.
 	klog.V(1).Infof("New log state: size 0x%x hash: %x", baseRange.End(), newRoot)
 
-	eg := errgroup.Group{}
-	for k, t := range tc.m {
-		k := k
-		t := t
-		eg.Go(func() error {
-			if err := st.StoreTile(ctx, k.level, k.index, t); err != nil {
-				return fmt.Errorf("failed to store tile at level %d index %d: %w", k.level, k.index, err)
-			}
-			return nil
-		})
-	}
-	if err := eg.Wait(); err != nil {
-		return 0, nil, err
-	}
+	return baseRange.End(), newRoot, tc.Tiles(), nil
 
-	return baseRange.End(), newRoot, nil
+}
 
+// tileReadCache is a structure which provides a very simple thread-safe map of tiles.
+type tileReadCache struct {
+	sync.RWMutex
+
+	hits    int
+	entries map[string]*fullTile
+}
+
+func newTileReadCache() tileReadCache {
+	return tileReadCache{
+		entries: make(map[string]*fullTile),
+	}
+}
+
+// get returns a previously set tile and true, or, if no such tile is in the cache, returns nil and false.
+func (r *tileReadCache) get(tileLevel, tileIndex, treeSize uint64) (*fullTile, bool) {
+	r.RLock()
+	defer r.RUnlock()
+	k := layout.TilePath(tileLevel, tileIndex, treeSize)
+	e, ok := r.entries[k]
+	if ok {
+		r.hits++
+	}
+	return e, ok
+}
+
+// set associates the given tile coords with a tile.
+func (r *tileReadCache) set(tileLevel, tileIndex, treeSize uint64, t *fullTile) {
+	r.Lock()
+	defer r.Unlock()
+	k := layout.TilePath(tileLevel, tileIndex, treeSize)
+	if e, ok := r.entries[k]; ok && !e.equals(t) {
+		if klog.V(2).Enabled() {
+			klog.Infof("OVERWRITE TILE %v:\nExisting:%v\nNew\n%v", k, e, t)
+		}
+		panic(fmt.Errorf("Attempting to overwrite %v with different content", k))
+	}
+	r.entries[k] = t
 }
 
 // tileWriteCache is a simple cache for storing the newly created tiles produced by
@@ -190,13 +252,15 @@ type tileWriteCache struct {
 	m   map[compact.NodeID]*fullTile
 	err []error
 
-	getTile func(ctx context.Context, level, index uint64) (*fullTile, error)
+	treeSize uint64
+	getTile  getFullTileFunc
 }
 
-func newTileWriteCache(getTile func(ctx context.Context, tileLevel uint64, tileIndex uint64) (*fullTile, error)) *tileWriteCache {
+func newTileWriteCache(treeSize uint64, getTile getFullTileFunc) *tileWriteCache {
 	return &tileWriteCache{
-		m:       make(map[compact.NodeID]*fullTile),
-		getTile: getTile,
+		m:        make(map[compact.NodeID]*fullTile),
+		treeSize: treeSize,
+		getTile:  getTile,
 	}
 }
 
@@ -210,24 +274,36 @@ func (tc *tileWriteCache) Err() error {
 // If the tile containing id has not been seen before, this method will fetch
 // it from disk (or create a new empty in-memory tile if it doesn't exist), and
 // update it by setting the node corresponding to id to the value hash.
-func (tc tileWriteCache) Visit(ctx context.Context, id compact.NodeID, hash []byte) {
-	tileLevel, tileIndex, nodeLevel, nodeIndex := layout.NodeCoordsToTileAddress(uint64(id.Level), uint64(id.Index))
-	tileKey := compact.NodeID{Level: uint(tileLevel), Index: tileIndex}
-	tile := tc.m[tileKey]
-	if tile == nil {
-		var err error
-		tile, err = tc.getTile(ctx, tileLevel, tileIndex)
-		if err != nil {
-			if !os.IsNotExist(err) {
-				tc.err = append(tc.err, err)
-				return
+func (tc *tileWriteCache) Visitor(ctx context.Context) compact.VisitFn {
+	return func(id compact.NodeID, hash []byte) {
+		//klog.V(3).Infof("VISIT %v", id)
+		tileLevel, tileIndex, nodeLevel, nodeIndex := layout.NodeCoordsToTileAddress(uint64(id.Level), uint64(id.Index))
+		tileKey := compact.NodeID{Level: uint(tileLevel), Index: tileIndex}
+		tile := tc.m[tileKey]
+		if tile == nil {
+			var err error
+			tile, err = tc.getTile(ctx, tileLevel, tileIndex, tc.treeSize)
+			if err != nil {
+				if !errors.Is(err, os.ErrNotExist) {
+					tc.err = append(tc.err, err)
+					return
+				}
+				// This is a brand new tile.
+				tile = newFullTile(nil)
 			}
-			// This is a brand new tile.
-			tile = newFullTile(nil)
+			tc.m[tileKey] = tile
 		}
-		tc.m[tileKey] = tile
+		// Update the tile with the new node hash.
+		idx := compact.NodeID{Level: nodeLevel, Index: nodeIndex}
+		tile.set(idx, hash)
 	}
-	// Update the tile with the new node hash.
-	idx := compact.NodeID{Level: nodeLevel, Index: nodeIndex}
-	tile.set(idx, hash)
+}
+
+// Tiles returns all visited tiles.
+func (tc *tileWriteCache) Tiles() map[compact.NodeID]*api.HashTile {
+	newTiles := make(map[compact.NodeID]*api.HashTile)
+	for k, t := range tc.m {
+		newTiles[k] = &api.HashTile{Nodes: t.leaves}
+	}
+	return newTiles
 }
