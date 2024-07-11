@@ -1,6 +1,6 @@
 # MySQL Design
 
-Author: [Martin Hutchison](https://github.com/mhutchinson)
+Author: [Martin Hutchinson](https://github.com/mhutchinson)
 
 This document describes how the storage implementation for running Tessera on MySQL is intended to work.
 
