@@ -133,7 +133,6 @@ func (s *Storage) setTile(ctx context.Context, level, index uint64, tile [][]byt
 	}
 	t := slices.Concat(tile...)
 
-	// Pass an empty rootDir since we don't need this concept in GCS.
 	tPath := layout.TilePath(level, index) + tileSuffix(tileSize)
 
 	return s.objStore.setObject(ctx, tPath, t, &gcs.Conditions{DoesNotExist: true})
@@ -144,7 +143,6 @@ func (s *Storage) setTile(ctx context.Context, level, index uint64, tile [][]byt
 func (s *Storage) getTile(ctx context.Context, level, index, logSize uint64) ([][]byte, error) {
 	tileSize := layout.PartialTileSize(level, index, logSize)
 
-	// Pass an empty rootDir since we don't need this concept in GCS.
 	objName := layout.TilePath(level, index) + tileSuffix(tileSize)
 	data, _, err := s.objStore.getObject(ctx, objName)
 	if err != nil {
