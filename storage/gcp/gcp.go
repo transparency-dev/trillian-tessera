@@ -109,7 +109,7 @@ func New(ctx context.Context, cfg Config) (*Storage, error) {
 		sequencer: seq,
 	}
 	// TODO(al): make queue options configurable:
-	r.queue = storage.NewQueue(time.Second, 256, r.sequenceEntries)
+	r.queue = storage.NewQueue(time.Second, 256, r.sequencer.assignEntries)
 
 	return r, nil
 }
@@ -120,16 +120,6 @@ func tileSuffix(s uint64) string {
 		return fmt.Sprintf(".p/%d", p)
 	}
 	return ""
-}
-
-// sequenceEntries durably assigns passed in entries to indices in the log.
-//
-// The entries are assigned to a contiguous range in the log, in the same order as
-// they're passed in.
-//
-// Returns the log index assigned to the first entry passed in, or an error.
-func (s *Storage) sequenceEntries(ctx context.Context, entries [][]byte) (uint64, error) {
-	return s.sequencer.assignEntries(ctx, entries)
 }
 
 // setTile stores a tile in GCS.
@@ -251,7 +241,7 @@ func (s *spannerSequencer) initDB(ctx context.Context) error {
 // This is achieved by storing the passed-in entries in the Seq table in Spanner, keyed by the
 // index assigned to the first entry in the batch.
 func (s *spannerSequencer) assignEntries(ctx context.Context, entries [][]byte) (uint64, error) {
-	// Flatted the entries into a single slice of bytes which we can store in the Seq.v columne
+	// Flatted the entries into a single slice of bytes which we can store in the Seq.v column.
 	b := &bytes.Buffer{}
 	e := gob.NewEncoder(b)
 	if err := e.Encode(entries); err != nil {
@@ -274,6 +264,7 @@ func (s *spannerSequencer) assignEntries(ctx context.Context, entries [][]byte) 
 		}
 
 		next := uint64(next) // Shadow next with a uint64 version of the same value to save on casts.
+		// TODO(al): think about whether aligning bundles to tile boundaries would be a good idea or not.
 		m := []*spanner.Mutation{
 			// Insert our newly sequenced batch of entries into Seq,
 			spanner.Insert("Seq", []string{"id", "seq", "v"}, []interface{}{0, int64(next), data}),
