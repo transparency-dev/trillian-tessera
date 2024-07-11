@@ -14,9 +14,9 @@
 
 package layout
 
-// PartialTileSize returns the expected number of leaves in a tile at the given location within
+// partialTileSize returns the expected number of leaves in a tile at the given location within
 // a tree of the specified logSize, or 0 if the tile is expected to be fully populated.
-func PartialTileSize(level, index, logSize uint64) uint64 {
+func partialTileSize(level, index, logSize uint64) uint64 {
 	sizeAtLevel := logSize >> (level * 8)
 	fullTiles := sizeAtLevel / 256
 	if index < fullTiles {

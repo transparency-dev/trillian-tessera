@@ -122,18 +122,11 @@ func tileSuffix(s uint64) string {
 	return ""
 }
 
-// setTile stores a tile in GCS.
-//
 // The location to which the tile is written is defined by the tile layout spec.
-func (s *Storage) setTile(ctx context.Context, level, index uint64, tile [][]byte) error {
-	tileSize := uint64(len(tile))
-	klog.V(2).Infof("StoreTile: level %d index %x ts: %x", level, index, tileSize)
-	if tileSize == 0 || tileSize > 256 {
-		return fmt.Errorf("tileSize %d must be > 0 and <= 256", tileSize)
-	}
+func (s *Storage) setTile(ctx context.Context, level, index, logSize uint64, tile [][]byte) error {
 	t := slices.Concat(tile...)
-
-	tPath := layout.TilePath(level, index) + tileSuffix(tileSize)
+	tPath := layout.TilePath(level, index, logSize)
+	klog.V(2).Infof("StoreTile: %s", tPath)
 
 	return s.objStore.setObject(ctx, tPath, t, &gcs.Conditions{DoesNotExist: true})
 }
@@ -141,9 +134,7 @@ func (s *Storage) setTile(ctx context.Context, level, index uint64, tile [][]byt
 // getTile returns the tile at the given tile-level and tile-index for the specified log size, or
 // an error if it doesn't exist.
 func (s *Storage) getTile(ctx context.Context, level, index, logSize uint64) ([][]byte, error) {
-	tileSize := layout.PartialTileSize(level, index, logSize)
-
-	objName := layout.TilePath(level, index) + tileSuffix(tileSize)
+	objName := layout.TilePath(level, index, logSize)
 	data, _, err := s.objStore.getObject(ctx, objName)
 	if err != nil {
 		if errors.Is(err, gcs.ErrObjectNotExist) {
