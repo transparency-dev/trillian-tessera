@@ -65,35 +65,39 @@ func TestEntriesPathForLogIndex(t *testing.T) {
 func TestEntriesPath(t *testing.T) {
 	for _, test := range []struct {
 		N        uint64
-		P        uint64
+		logSize  uint64
 		wantPath string
 	}{
 		{
 			N:        0,
-			P:        0,
+			logSize:  289,
 			wantPath: "tile/entries/000",
 		},
 		{
 			N:        0,
-			P:        8,
+			logSize:  8,
 			wantPath: "tile/entries/000.p/8",
 		}, {
 			N:        255,
-			P:        0,
+			logSize:  256 * 256,
 			wantPath: "tile/entries/255",
 		}, {
+			N:        255,
+			logSize:  255*256 - 3,
+			wantPath: "tile/entries/255.p/253",
+		}, {
 			N:        256,
-			P:        0,
+			logSize:  257 * 256,
 			wantPath: "tile/entries/256",
 		}, {
 			N:        123456789000,
-			P:        0,
+			logSize:  math.MaxUint64,
 			wantPath: "tile/entries/x123/x456/x789/000",
 		},
 	} {
 		desc := fmt.Sprintf("N %d", test.N)
 		t.Run(desc, func(t *testing.T) {
-			gotPath := EntriesPath(test.N, test.P)
+			gotPath := EntriesPath(test.N, test.logSize)
 			if gotPath != test.wantPath {
 				t.Errorf("got file %q want %q", gotPath, test.wantPath)
 			}

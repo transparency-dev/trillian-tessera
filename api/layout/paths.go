@@ -32,15 +32,14 @@ const (
 // The logSize is required so that a partial qualifier can be appended to tiles that
 // would contain fewer than 256 entries.
 func EntriesPathForLogIndex(seq, logSize uint64) string {
-	p := partialTileSize(0, seq, logSize)
-	return EntriesPath(seq/256, p)
+	return EntriesPath(seq/256, logSize)
 }
 
 // EntriesPath returns the local path for the nth entry bundle. p denotes the partial
 // tile size, or 0 if the tile is complete.
-func EntriesPath(n, p uint64) string {
+func EntriesPath(n, logSize uint64) string {
 	suffix := ""
-	if p > 0 {
+	if p := partialTileSize(0, n, logSize); p > 0 {
 		suffix = fmt.Sprintf(".p/%d", p)
 	}
 	return fmt.Sprintf("tile/entries%s%s", fmtN(n), suffix)
