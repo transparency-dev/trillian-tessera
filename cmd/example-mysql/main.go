@@ -106,6 +106,37 @@ func main() {
 		}
 	})
 
+	http.HandleFunc("GET /tile/entries/{index...}", func(w http.ResponseWriter, r *http.Request) {
+		index, _, err := parseTileIndexWidth(r.PathValue("index"))
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			if _, werr := w.Write([]byte(fmt.Sprintf("Malformed URL: %s", err.Error()))); werr != nil {
+				klog.Errorf("/tile/entries/{index...}: %v", werr)
+			}
+			return
+		}
+
+		entryBundle, err := storage.ReadEntryBundle(r.Context(), index)
+		if err != nil {
+			if err == sql.ErrNoRows {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+
+			klog.Errorf("/tile/entries/{index...}: %v", err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+
+		// TODO: Add immutable Cache-Control header when the number of entries in the returned tile match the requested tile width.
+		// This ensures the response will not be cached when returning a partial tile on a full tile request.
+
+		if _, err := w.Write(entryBundle); err != nil {
+			klog.Errorf("/tile/entries/{index...}: %v", err)
+			return
+		}
+	})
+
 	http.HandleFunc("POST /add", func(w http.ResponseWriter, r *http.Request) {
 		b, err := io.ReadAll(r.Body)
 		if err != nil {
@@ -131,26 +162,46 @@ func main() {
 // "/tile/0/x001/x234/067" means level 0 and index 1234067 of a full tile.
 // "/tile/0/x001/x234/067.p/8" means level 0, index 1234067 and width 8 of a partial tile.
 func parseTileLevelIndexWidth(level, index string) (uint64, uint64, uint64, error) {
+	l, err := parseTileLevel(level)
+	if err != nil {
+		return 0, 0, 0, err
+	}
+
+	i, w, err := parseTileIndexWidth(index)
+	if err != nil {
+		return 0, 0, 0, err
+	}
+
+	return l, i, w, err
+}
+
+// parseTileLevel takes level in string, validates and returns the level in uint64.
+func parseTileLevel(level string) (uint64, error) {
 	l, err := strconv.ParseUint(level, 10, 64)
 	// Verify that level is an integer between 0 and 63 as specified in the tlog-tiles specification.
 	if l > 63 || err != nil {
-		return 0, 0, 0, fmt.Errorf("failed to parse tile level")
+		return 0, fmt.Errorf("failed to parse tile level")
 	}
+	return l, err
+}
 
+// parseTileIndexWidth takes index in string, validates and returns the index and width in uint64.
+func parseTileIndexWidth(index string) (uint64, uint64, error) {
 	w := uint64(256)
 	indexPaths := strings.Split(index, "/")
 
 	if strings.Contains(index, ".p") {
+		var err error
 		w, err = strconv.ParseUint(indexPaths[len(indexPaths)-1], 10, 64)
 		if err != nil || w < 1 || w > 255 {
-			return 0, 0, 0, fmt.Errorf("failed to parse tile index")
+			return 0, 0, fmt.Errorf("failed to parse tile index")
 		}
 		indexPaths[len(indexPaths)-2] = strings.TrimSuffix(indexPaths[len(indexPaths)-2], ".p")
 		indexPaths = indexPaths[:len(indexPaths)-1]
 	}
 
 	if strings.Count(index, "x") != len(indexPaths)-1 || strings.HasPrefix(indexPaths[len(indexPaths)-1], "x") {
-		return 0, 0, 0, fmt.Errorf("failed to parse tile index")
+		return 0, 0, fmt.Errorf("failed to parse tile index")
 	}
 
 	i := uint64(0)
@@ -158,10 +209,10 @@ func parseTileLevelIndexWidth(level, index string) (uint64, uint64, uint64, erro
 		indexPath = strings.TrimPrefix(indexPath, "x")
 		n, err := strconv.ParseUint(indexPath, 10, 64)
 		if err != nil || n >= 1000 || len(indexPath) != 3 {
-			return 0, 0, 0, fmt.Errorf("failed to parse tile index")
+			return 0, 0, fmt.Errorf("failed to parse tile index")
 		}
 		i = i*1000 + n
 	}
 
-	return l, i, w, nil
+	return i, w, nil
 }
