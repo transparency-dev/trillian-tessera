@@ -93,6 +93,7 @@ type GetTileFunc func(ctx context.Context, tileLevel uint64, tileIndex uint64, t
 type getFullTileFunc func(ctx context.Context, tileLevel uint64, tileIndex uint64, treeSize uint64) (*fullTile, error)
 
 type TreeBuilder struct {
+	sync.Mutex
 	getTile getFullTileFunc
 	rf      *compact.RangeFactory
 }
@@ -146,6 +147,9 @@ func (t *TreeBuilder) newRange(ctx context.Context, treeSize uint64) (*compact.R
 }
 
 func (t *TreeBuilder) Integrate(ctx context.Context, fromSize uint64, entries [][]byte) (newSize uint64, rootHash []byte, tiles map[compact.NodeID]*api.HashTile, err error) {
+	t.Lock()
+	defer t.Unlock()
+
 	baseRange, err := t.newRange(ctx, fromSize)
 	if err != nil {
 		return 0, nil, nil, fmt.Errorf("failed to create range covering existing log: %w", err)
