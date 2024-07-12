@@ -28,6 +28,7 @@ import (
 	"cloud.google.com/go/spanner/spansql"
 	gcs "cloud.google.com/go/storage"
 	"github.com/google/go-cmp/cmp"
+	"github.com/transparency-dev/trillian-tessera/api"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
 )
 
@@ -81,40 +82,12 @@ func TestSpannerSequencer(t *testing.T) {
 	}
 }
 
-func TestTileSuffix(t *testing.T) {
-	for _, test := range []struct {
-		name string
-		size uint64
-		want string
-	}{
-		{
-			name: "no suffix",
-			size: 256 * 23,
-			want: "",
-		}, {
-			name: "no suffix on zero",
-			size: 0,
-			want: "",
-		}, {
-			name: "has suffix",
-			size: 256*23 + 3,
-			want: ".p/3",
-		},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			if got, want := tileSuffix(test.size), test.want; got != want {
-				t.Fatalf("got %s want %s", got, want)
-			}
-		})
-	}
-}
-
-func makeTile(t *testing.T, size uint64) [][]byte {
+func makeTile(t *testing.T, size uint64) *api.HashTile {
 	t.Helper()
-	r := make([][]byte, size)
+	r := &api.HashTile{Nodes: make([][]byte, size)}
 	for i := uint64(0); i < size; i++ {
 		h := sha256.Sum256([]byte(fmt.Sprintf("%d", i)))
-		r[i] = h[:]
+		r.Nodes[i] = h[:]
 	}
 	return r
 }
@@ -158,6 +131,58 @@ func TestTileRoundtrip(t *testing.T) {
 				t.Fatalf("getTile: %v", err)
 			}
 			if !cmp.Equal(got, wantTile) {
+				t.Fatal("roundtrip returned different data")
+			}
+		})
+	}
+}
+
+func makeBundle(t *testing.T, size uint64) *api.EntryBundle {
+	t.Helper()
+	r := &api.EntryBundle{Entries: make([][]byte, size)}
+	for i := uint64(0); i < size; i++ {
+		r.Entries[i] = []byte(fmt.Sprintf("%d", i))
+	}
+	return r
+}
+
+func TestBundleRoundtrip(t *testing.T) {
+	ctx := context.Background()
+	m := newMemObjStore()
+	s := &Storage{
+		objStore: m,
+	}
+
+	for _, test := range []struct {
+		name       string
+		index      uint64
+		logSize    uint64
+		bundleSize uint64
+	}{
+		{
+			name:       "ok",
+			index:      3 * 256,
+			logSize:    3*256 + 20,
+			bundleSize: 20,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			wantBundle := makeBundle(t, test.bundleSize)
+			if err := s.setEntryBundle(ctx, test.index, test.logSize, wantBundle); err != nil {
+				t.Fatalf("setEntryBundle: %v", err)
+			}
+
+			expPath := layout.EntriesPath(test.index, test.logSize)
+			_, ok := m.mem[expPath]
+			if !ok {
+				t.Fatalf("want bundle at %v but found none", expPath)
+			}
+
+			got, err := s.getEntryBundle(ctx, test.index, test.logSize)
+			if err != nil {
+				t.Fatalf("getEntryBundle: %v", err)
+			}
+			if !cmp.Equal(got, wantBundle) {
 				t.Fatal("roundtrip returned different data")
 			}
 		})
