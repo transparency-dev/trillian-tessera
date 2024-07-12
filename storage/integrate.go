@@ -233,7 +233,7 @@ func (r *tileReadCache) set(tileLevel, tileIndex, treeSize uint64, t *fullTile) 
 	k := layout.TilePath(tileLevel, tileIndex, treeSize)
 	if e, ok := r.entries[k]; ok && !e.equals(t) {
 		if klog.V(2).Enabled() {
-			klog.Infof("OVERWRITE TILE %v:\nExisting:%v\nNew\n%v", k, e, t)
+			klog.Infof("OVERWRITE TILE %v:\nExisting:%x\nNew\n%x", k, e, t)
 		}
 		panic(fmt.Errorf("Attempting to overwrite %v with different content", k))
 	}

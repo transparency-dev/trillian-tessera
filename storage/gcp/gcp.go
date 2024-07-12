@@ -445,7 +445,6 @@ func (s *Storage) integrate(ctx context.Context, fromSeq uint64, entries [][]byt
 			//TODO: write out checkpoint
 			klog.Infof("New CP: %d, %x", newSize, newRoot)
 			return nil
-
 		})
 		return nil
 	})
@@ -581,7 +580,7 @@ func (s *gcsStorage) setObject(ctx context.Context, objName string, data []byte,
 			}
 			if !bytes.Equal(existing, data) {
 				if klog.V(2).Enabled() {
-					klog.Infof("OVERWRITE check failed (%v):\nExisting:\n%v\nOverwrite:\n%v", objName, existing, data)
+					klog.Infof("OVERWRITE check failed (%v):\nExisting:\n%x\nOverwrite:\n%x", objName, existing, data)
 				}
 				return fmt.Errorf("precondition failed: resource content for %q differs from data to-be-written", objName)
 			}
