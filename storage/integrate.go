@@ -62,10 +62,10 @@ func (f *fullTile) set(id compact.NodeID, hash []byte) {
 	defer f.Unlock()
 
 	if id.Level == 0 {
-		if l := uint64(len(f.leaves)); id.Index >= l {
-			f.leaves = append(f.leaves, make([][]byte, id.Index+1-l)...)
+		if l, idx := uint64(len(f.leaves)), id.Index; idx != l {
+			panic(fmt.Sprintf("set: attempting to set leaf %d, but expecting %d", idx, l))
 		}
-		f.leaves[id.Index] = hash
+		f.leaves = append(f.leaves, hash)
 	} else {
 		f.inner[id] = hash
 	}
