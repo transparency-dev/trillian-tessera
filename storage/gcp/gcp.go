@@ -70,13 +70,15 @@ type objStore interface {
 	setObject(ctx context.Context, obj string, data []byte, cond *gcs.Conditions) error
 }
 
-// coord describes a type which knows how to sequence entries.
+// sequencer describes a type which knows how to sequence entries.
 type sequencer interface {
 	// assignEntries should durably allocate contiguous index numbers to the provided entries,
 	// and return the lowest assigned index.
 	assignEntries(ctx context.Context, entries [][]byte) (uint64, error)
 	// consumeEntries should call the provided function with up to limit previously sequenced entries.
 	// If the call to consumeFunc returns no error, the entries should be considered to have been consumed.
+	// If any entries were successfully consumed, the implementation should also return true; this
+	// serves as a weak hint that there may be more entries to be consumed.
 	consumeEntries(ctx context.Context, limit uint64, f consumeFunc) (bool, error)
 }
 
