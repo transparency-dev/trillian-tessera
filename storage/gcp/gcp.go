@@ -31,19 +31,18 @@ package gcp
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"encoding/gob"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
-	"slices"
 	"time"
 
 	"cloud.google.com/go/spanner"
 	"cloud.google.com/go/spanner/apiv1/spannerpb"
 	gcs "cloud.google.com/go/storage"
+	"github.com/transparency-dev/trillian-tessera/api"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
 	"github.com/transparency-dev/trillian-tessera/storage"
 	"google.golang.org/api/googleapi"
@@ -114,47 +113,63 @@ func New(ctx context.Context, cfg Config) (*Storage, error) {
 	return r, nil
 }
 
-// tileSuffix returns either the empty string or a tiles API suffix based on the passed-in tile size.
-func tileSuffix(s uint64) string {
-	if p := s % 256; p != 0 {
-		return fmt.Sprintf(".p/%d", p)
+// setTile idempotently stores the provided tile at the location implied by the given level, index, and treeSize.
+func (s *Storage) setTile(ctx context.Context, level, index, logSize uint64, tile *api.HashTile) error {
+	data, err := tile.MarshalText()
+	if err != nil {
+		return err
 	}
-	return ""
-}
-
-// The location to which the tile is written is defined by the tile layout spec.
-func (s *Storage) setTile(ctx context.Context, level, index, logSize uint64, tile [][]byte) error {
-	t := slices.Concat(tile...)
 	tPath := layout.TilePath(level, index, logSize)
-	klog.V(2).Infof("StoreTile: %s", tPath)
+	klog.V(2).Infof("StoreTile: %s (%d entries)", tPath, len(tile.Nodes))
 
-	return s.objStore.setObject(ctx, tPath, t, &gcs.Conditions{DoesNotExist: true})
+	return s.objStore.setObject(ctx, tPath, data, &gcs.Conditions{DoesNotExist: true})
 }
 
-// getTile returns the tile at the given tile-level and tile-index for the specified log size, or
-// an error if it doesn't exist.
-func (s *Storage) getTile(ctx context.Context, level, index, logSize uint64) ([][]byte, error) {
+// getTile returns the tile at the given tile-level and tile-index for the specified log size.
+//
+// Returns a wrapped os.ErrNotExist if the tile does not exist.
+func (s *Storage) getTile(ctx context.Context, level, index, logSize uint64) (*api.HashTile, error) {
 	objName := layout.TilePath(level, index, logSize)
 	data, _, err := s.objStore.getObject(ctx, objName)
 	if err != nil {
 		if errors.Is(err, gcs.ErrObjectNotExist) {
 			// Return the generic NotExist error so that higher levels can differentiate
 			// between this and other errors.
-			return nil, os.ErrNotExist
+			return nil, fmt.Errorf("%v: %w", objName, os.ErrNotExist)
+		}
+		return nil, err
+	}
+	t := &api.HashTile{}
+	return t, t.UnmarshalText(data)
+}
+
+// getEntryBundle returns the entry bundle at the location implied by the given index and treeSize.
+//
+// Returns a wrapped os.ErrNotExist if the bundle does not exist.
+func (s *Storage) getEntryBundle(ctx context.Context, bundleIndex uint64, logSize uint64) (*api.EntryBundle, error) {
+	objName := layout.EntriesPath(bundleIndex, logSize)
+	data, _, err := s.objStore.getObject(ctx, objName)
+	if err != nil {
+		if errors.Is(err, gcs.ErrObjectNotExist) {
+			// Return the generic NotExist error so that higher levels can differentiate
+			// between this and other errors.
+			return nil, fmt.Errorf("%v: %w", objName, os.ErrNotExist)
 		}
 		return nil, err
 	}
 
-	// Recreate the tile slices
-	l := len(data)
-	if m := l % sha256.Size; m != 0 {
-		return nil, fmt.Errorf("invalid tile data size %d", l)
+	r := &api.EntryBundle{}
+	return r, r.UnmarshalText(data)
+}
+
+// setEntryBundle idempotently stores the entry bundle at the location implied by the bundleIndex and treeSize.
+func (s *Storage) setEntryBundle(ctx context.Context, bundleIndex uint64, logSize uint64, bundle *api.EntryBundle) error {
+	objName := layout.EntriesPath(bundleIndex, logSize)
+	data, err := bundle.MarshalText()
+	if err != nil {
+		return err
 	}
-	t := make([][]byte, l/sha256.Size)
-	for i := range t {
-		t[i] = data[i*sha256.Size : (i+1)*sha256.Size]
-	}
-	return t, nil
+	return s.objStore.setObject(ctx, objName, data, &gcs.Conditions{DoesNotExist: true})
 }
 
 // spannerSequencer uses Cloud Spanner to provide
