@@ -62,10 +62,10 @@ func (f *fullTile) set(id compact.NodeID, hash []byte) {
 	defer f.Unlock()
 
 	if id.Level == 0 {
-		if l, idx := uint64(len(f.leaves)), id.Index; idx != l {
-			panic(fmt.Sprintf("set: attempting to set leaf %d, but expecting %d", idx, l))
+		if l, idx := uint64(len(f.leaves)), id.Index; idx >= l {
+			f.leaves = append(f.leaves, make([][]byte, idx-l+1)...)
 		}
-		f.leaves = append(f.leaves, hash)
+		f.leaves[id.Index] = hash
 	} else {
 		f.inner[id] = hash
 	}
@@ -249,6 +249,7 @@ func (r *tileReadCache) set(tileLevel, tileIndex, treeSize uint64, t *fullTile) 
 //
 // Note that by itself, this cache does not update any persisted state.
 type tileWriteCache struct {
+	sync.Mutex
 	m   map[compact.NodeID]*fullTile
 	err []error
 
@@ -276,6 +277,8 @@ func (tc *tileWriteCache) Err() error {
 // update it by setting the node corresponding to id to the value hash.
 func (tc *tileWriteCache) Visitor(ctx context.Context) compact.VisitFn {
 	return func(id compact.NodeID, hash []byte) {
+		tc.Lock()
+		defer tc.Unlock()
 		//klog.V(3).Infof("VISIT %v", id)
 		tileLevel, tileIndex, nodeLevel, nodeIndex := layout.NodeCoordsToTileAddress(uint64(id.Level), uint64(id.Index))
 		tileKey := compact.NodeID{Level: uint(tileLevel), Index: tileIndex}
