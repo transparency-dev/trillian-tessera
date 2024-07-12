@@ -62,6 +62,9 @@ func (f *fullTile) set(id compact.NodeID, hash []byte) {
 	defer f.Unlock()
 
 	if id.Level == 0 {
+		if id.Index > 255 {
+			panic(fmt.Sprintf("Weird node ID: %v", id))
+		}
 		if l, idx := uint64(len(f.leaves)), id.Index; idx >= l {
 			f.leaves = append(f.leaves, make([][]byte, idx-l+1)...)
 		}
