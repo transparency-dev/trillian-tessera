@@ -159,7 +159,10 @@ func (s *Storage) getEntryBundle(ctx context.Context, bundleIndex uint64, logSiz
 	}
 
 	r := &api.EntryBundle{}
-	return r, r.UnmarshalText(data)
+	if err := r.UnmarshalText(data); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal %q: %v", objName, err)
+	}
+	return r, nil
 }
 
 // setEntryBundle idempotently stores the entry bundle at the location implied by the bundleIndex and treeSize.
@@ -169,7 +172,14 @@ func (s *Storage) setEntryBundle(ctx context.Context, bundleIndex uint64, logSiz
 	if err != nil {
 		return err
 	}
-	return s.objStore.setObject(ctx, objName, data, &gcs.Conditions{DoesNotExist: true})
+	// Note that setObject does an idempotent interpretation of DoesNotExist - it only
+	// returns an error if the named object exists _and_ contains different data to what's
+	// passed in here.
+	if err := s.objStore.setObject(ctx, objName, data, &gcs.Conditions{DoesNotExist: true}); err != nil {
+		return fmt.Errorf("setObject(%q): %v", objName, err)
+
+	}
+	return nil
 }
 
 // spannerSequencer uses Cloud Spanner to provide
@@ -188,7 +198,10 @@ func newSpannerSequencer(ctx context.Context, spannerDB string) (*spannerSequenc
 	r := &spannerSequencer{
 		dbPool: dbPool,
 	}
-	return r, r.initDB(ctx)
+	if err := r.initDB(ctx); err != nil {
+		return nil, fmt.Errorf("failed to initDB: %v", err)
+	}
+	return r, nil
 }
 
 // initDB ensures that the coordination DB is initialised correctly.
@@ -260,11 +273,11 @@ func (s *spannerSequencer) assignEntries(ctx context.Context, entries [][]byte) 
 		// First we need to grab the next available sequence number from the SeqCoord table.
 		row, err := txn.ReadRowWithOptions(ctx, "SeqCoord", spanner.Key{0}, []string{"id", "next"}, &spanner.ReadOptions{LockHint: spannerpb.ReadRequest_LOCK_HINT_EXCLUSIVE})
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to read SeqCoord: %v", err)
 		}
 		var id int64
 		if err := row.Columns(&id, &next); err != nil {
-			return err
+			return fmt.Errorf("failed to parse id column: %v", err)
 		}
 
 		next := uint64(next) // Shadow next with a uint64 version of the same value to save on casts.
@@ -276,7 +289,7 @@ func (s *spannerSequencer) assignEntries(ctx context.Context, entries [][]byte) 
 			spanner.Update("SeqCoord", []string{"id", "next"}, []interface{}{0, int64(next) + int64(num)}),
 		}
 		if err := txn.BufferWrite(m); err != nil {
-			return err
+			return fmt.Errorf("failed to apply TX: %v", err)
 		}
 
 		return nil
@@ -306,7 +319,7 @@ func newGCSStorage(ctx context.Context, c *gcs.Client, projectID string, bucket 
 			return nil, fmt.Errorf("bucket %q does not exist, please create it", bucket)
 		}
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("error scanning buckets: %v", err)
 		}
 		if bAttrs.Name == bucket {
 			break
@@ -329,7 +342,10 @@ func (s *gcsStorage) getObject(ctx context.Context, obj string) ([]byte, int64, 
 	defer r.Close()
 
 	d, err := io.ReadAll(r)
-	return d, r.Attrs.Generation, err
+	if err != nil {
+		return nil, -1, fmt.Errorf("failed to read %q: %v", obj, err)
+	}
+	return d, r.Attrs.Generation, nil
 }
 
 // setObject stores the provided data in the specified object, optionally gated by a condition.
@@ -337,9 +353,9 @@ func (s *gcsStorage) getObject(ctx context.Context, obj string) ([]byte, int64, 
 // cond can be used to specify preconditions for the write (e.g. write iff not exists, write iff
 // current generation is X, etc.), or nil can be passed if no preconditions are desired.
 //
-// When preconditions are specified and are not met, an error will be returned unless the currently
-// stored data is bit-for-bit identical to the data to-be-written. This is intended to provide
-// idempotentency for writes.
+// Note that when preconditions are specified and are not met, an error will be returned *unless*
+// the currently stored data is bit-for-bit identical to the data to-be-written.
+// This is intended to provide idempotentency for writes.
 func (s *gcsStorage) setObject(ctx context.Context, objName string, data []byte, cond *gcs.Conditions) error {
 	bkt := s.gcsClient.Bucket(s.bucket)
 	obj := bkt.Object(objName)
@@ -372,7 +388,7 @@ func (s *gcsStorage) setObject(ctx context.Context, objName string, data []byte,
 			return nil
 		}
 
-		return err
+		return fmt.Errorf("failed to close write on %q: %v", objName, err)
 	}
 	return nil
 }
