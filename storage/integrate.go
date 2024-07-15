@@ -34,8 +34,13 @@ import (
 type getFullTileFunc func(ctx context.Context, tileID TileID, treeSize uint64) (*fullTile, error)
 
 // TreeBuilder constructs Merkle trees.
+//
+// This struct it indended to be used by storage implementations during the integration of entries into the log.
+// TreeBuilder caches data from tiles to speed things up, but has no mechanism for evicting from its internal cache,
+// so while it _may_ be possible to use the same instance across a number of integration runs (e.g. if the same job
+// is responsible for integrating entries for a number of contiguous trees), the lifetime should be bounded so as not
+// to leak memory.
 type TreeBuilder struct {
-	sync.Mutex
 	getTile getFullTileFunc
 	rf      *compact.RangeFactory
 }
@@ -97,9 +102,6 @@ func (t *TreeBuilder) newRange(ctx context.Context, treeSize uint64) (*compact.R
 }
 
 func (t *TreeBuilder) Integrate(ctx context.Context, fromSize uint64, entries [][]byte) (newSize uint64, rootHash []byte, tiles map[TileID]*api.HashTile, err error) {
-	t.Lock()
-	defer t.Unlock()
-
 	baseRange, err := t.newRange(ctx, fromSize)
 	if err != nil {
 		return 0, nil, nil, fmt.Errorf("failed to create range covering existing log: %w", err)
