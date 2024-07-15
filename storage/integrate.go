@@ -219,6 +219,11 @@ func newTileWriteCache(treeSize uint64, getTile getFullTileFunc) *tileWriteCache
 	}
 }
 
+// Err returns an aggregated view of any errors seen by the visitor function.
+//
+// This can be used to check whether updates to the tile cache made by the visitor
+// were made correctly. Any errors returned here are most likely to be due to
+// the cache attempting to read an existing tile which is being updated.
 func (tc *tileWriteCache) Err() error {
 	return errors.Join(tc.err...)
 }
