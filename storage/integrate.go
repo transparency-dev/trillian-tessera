@@ -158,7 +158,6 @@ func (t *TreeBuilder) Integrate(ctx context.Context, fromSize uint64, entries []
 type tileReadCache struct {
 	sync.RWMutex
 
-	hits    int
 	entries map[string]*fullTile
 }
 
@@ -174,9 +173,6 @@ func (r *tileReadCache) Get(tileID TileID, treeSize uint64) (*fullTile, bool) {
 	defer r.RUnlock()
 	k := layout.TilePath(uint64(tileID.Level), tileID.Index, treeSize)
 	e, ok := r.entries[k]
-	if ok {
-		r.hits++
-	}
 	return e, ok
 }
 
