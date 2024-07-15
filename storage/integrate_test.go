@@ -52,7 +52,7 @@ func TestNewRangeFetchesTiles(t *testing.T) {
 
 func TestTileVisit(t *testing.T) {
 	ctx := context.Background()
-	m := newMemTileStore[fullTile]()
+	m := newMemTileStore[populatedTile]()
 	treeSize := uint64(0x102030)
 
 	for _, test := range []struct {

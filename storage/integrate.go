@@ -30,8 +30,8 @@ import (
 	"k8s.io/klog/v2"
 )
 
-// getFullTileFunc is the signature of a function which can return a fully populated tile for the given tile coords.
-type getFullTileFunc func(ctx context.Context, tileID TileID, treeSize uint64) (*fullTile, error)
+// getPopulatedTileFunc is the signature of a function which can return a fully populated tile for the given tile coords.
+type getPopulatedTileFunc func(ctx context.Context, tileID TileID, treeSize uint64) (*populatedTile, error)
 
 // TreeBuilder constructs Merkle trees.
 //
@@ -41,7 +41,7 @@ type getFullTileFunc func(ctx context.Context, tileID TileID, treeSize uint64) (
 // is responsible for integrating entries for a number of contiguous trees), the lifetime should be bounded so as not
 // to leak memory.
 type TreeBuilder struct {
-	getTile getFullTileFunc
+	getTile getPopulatedTileFunc
 	rf      *compact.RangeFactory
 }
 
@@ -51,7 +51,7 @@ type TreeBuilder struct {
 // (either directly, or wrapped) if the requested tile was not found.
 func NewTreeBuilder(getTile func(ctx context.Context, tileID TileID, treeSize uint64) (*api.HashTile, error)) *TreeBuilder {
 	readCache := newTileReadCache()
-	getFullTile := func(ctx context.Context, tileID TileID, treeSize uint64) (*fullTile, error) {
+	getPopulatedTile := func(ctx context.Context, tileID TileID, treeSize uint64) (*populatedTile, error) {
 		r, ok := readCache.Get(tileID, treeSize)
 		if ok {
 			return r, nil
@@ -60,7 +60,7 @@ func NewTreeBuilder(getTile func(ctx context.Context, tileID TileID, treeSize ui
 		if err != nil {
 			return nil, err
 		}
-		ft, err := newFullTile(t)
+		ft, err := newPopulatedTile(t)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create fulltile: %v", err)
 		}
@@ -68,7 +68,7 @@ func NewTreeBuilder(getTile func(ctx context.Context, tileID TileID, treeSize ui
 		return ft, nil
 	}
 	return &TreeBuilder{
-		getTile: getFullTile,
+		getTile: getPopulatedTile,
 		rf:      &compact.RangeFactory{Hash: rfc6962.DefaultHasher.HashChildren},
 	}
 }
@@ -160,17 +160,17 @@ func (t *TreeBuilder) Integrate(ctx context.Context, fromSize uint64, entries []
 type tileReadCache struct {
 	sync.RWMutex
 
-	entries map[string]*fullTile
+	entries map[string]*populatedTile
 }
 
 func newTileReadCache() tileReadCache {
 	return tileReadCache{
-		entries: make(map[string]*fullTile),
+		entries: make(map[string]*populatedTile),
 	}
 }
 
 // Get returns a previously set tile and true, or, if no such tile is in the cache, returns nil and false.
-func (r *tileReadCache) Get(tileID TileID, treeSize uint64) (*fullTile, bool) {
+func (r *tileReadCache) Get(tileID TileID, treeSize uint64) (*populatedTile, bool) {
 	r.RLock()
 	defer r.RUnlock()
 	k := layout.TilePath(uint64(tileID.Level), tileID.Index, treeSize)
@@ -179,7 +179,7 @@ func (r *tileReadCache) Get(tileID TileID, treeSize uint64) (*fullTile, bool) {
 }
 
 // Set associates the given tileID with a tile.
-func (r *tileReadCache) Set(tileID TileID, treeSize uint64, t *fullTile) {
+func (r *tileReadCache) Set(tileID TileID, treeSize uint64, t *populatedTile) {
 	r.Lock()
 	defer r.Unlock()
 	k := layout.TilePath(uint64(tileID.Level), tileID.Index, treeSize)
@@ -200,18 +200,18 @@ func (r *tileReadCache) Set(tileID TileID, treeSize uint64, t *fullTile) {
 // Note that by itself, this cache does not update any persisted state.
 type tileWriteCache struct {
 	sync.Mutex
-	m   map[TileID]*fullTile
+	m   map[TileID]*populatedTile
 	err []error
 
 	treeSize uint64
-	getTile  getFullTileFunc
+	getTile  getPopulatedTileFunc
 }
 
 // newtileWriteCache creates a new cache for the given treeSize, and uses the provided
 // function to fetch existing tiles which are being updated by the Visitor func.
-func newTileWriteCache(treeSize uint64, getTile getFullTileFunc) *tileWriteCache {
+func newTileWriteCache(treeSize uint64, getTile getPopulatedTileFunc) *tileWriteCache {
 	return &tileWriteCache{
-		m:        make(map[TileID]*fullTile),
+		m:        make(map[TileID]*populatedTile),
 		treeSize: treeSize,
 		getTile:  getTile,
 	}
@@ -248,7 +248,7 @@ func (tc *tileWriteCache) Visitor(ctx context.Context) compact.VisitFn {
 					return
 				}
 				// No tile found in storage: this is a brand new tile being created due to tree growth.
-				tile, err = newFullTile(nil)
+				tile, err = newPopulatedTile(nil)
 				if err != nil {
 					tc.err = append(tc.err, err)
 					return
@@ -271,18 +271,18 @@ func (tc *tileWriteCache) Tiles() map[TileID]*api.HashTile {
 	return newTiles
 }
 
-// fullTile represents a "fully populated" tile, i.e. it has all non-ephemeral internaly nodes
+// populatedTile represents a "fully populated" tile, i.e. it has all non-ephemeral internaly nodes
 // implied by the leaves.
-type fullTile struct {
+type populatedTile struct {
 	sync.RWMutex
 
 	inner  map[compact.NodeID][]byte
 	leaves [][]byte
 }
 
-// newFullTile creates and populates a fullTile struct based on the passed in HashTile data.
-func newFullTile(h *api.HashTile) (*fullTile, error) {
-	ft := &fullTile{
+// newPopulatedTile creates and populates a fullTile struct based on the passed in HashTile data.
+func newPopulatedTile(h *api.HashTile) (*populatedTile, error) {
+	ft := &populatedTile{
 		inner:  make(map[compact.NodeID][]byte),
 		leaves: make([][]byte, 0, 256),
 	}
@@ -301,7 +301,7 @@ func newFullTile(h *api.HashTile) (*fullTile, error) {
 
 // Set allows setting of individual leaf/inner nodes.
 // It's intended to be used as a visitor for compact.Range.
-func (f *fullTile) Set(id compact.NodeID, hash []byte) {
+func (f *populatedTile) Set(id compact.NodeID, hash []byte) {
 	f.Lock()
 	defer f.Unlock()
 
@@ -319,7 +319,7 @@ func (f *fullTile) Set(id compact.NodeID, hash []byte) {
 }
 
 // Get allows access to individual leaf/inner nodes.
-func (f *fullTile) Get(id compact.NodeID) []byte {
+func (f *populatedTile) Get(id compact.NodeID) []byte {
 	f.RLock()
 	defer f.RUnlock()
 
@@ -332,6 +332,6 @@ func (f *fullTile) Get(id compact.NodeID) []byte {
 	return f.inner[id]
 }
 
-func (f *fullTile) Equals(other *fullTile) bool {
+func (f *populatedTile) Equals(other *populatedTile) bool {
 	return reflect.DeepEqual(f, other)
 }
