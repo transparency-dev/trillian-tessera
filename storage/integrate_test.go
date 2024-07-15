@@ -29,7 +29,7 @@ import (
 func TestNewRangeFetchesTiles(t *testing.T) {
 	ctx := context.Background()
 	m := newMemTileStore[api.HashTile]()
-	tb := NewTreeBuilder(m.getTile)
+	tb := NewTreeBuilder(m.getTiles)
 
 	treeSize := uint64(0x102030)
 	wantIDs := []TileID{
@@ -156,6 +156,22 @@ func (m *memTileStore[T]) getTile(_ context.Context, id TileID, treeSize uint64)
 		return nil, fmt.Errorf("tile %q: %w", k, os.ErrNotExist)
 	}
 	return d, nil
+}
+
+func (m *memTileStore[T]) getTiles(_ context.Context, ids []TileID, treeSize uint64) ([]*T, error) {
+	m.RLock()
+	defer m.RUnlock()
+
+	r := []*T{}
+	for _, id := range ids {
+		k := memTileStoreKey{id: id, treeSize: treeSize}
+		d, ok := m.mem[k]
+		if !ok {
+			return nil, fmt.Errorf("tile %q: %w", k, os.ErrNotExist)
+		}
+		r = append(r, d)
+	}
+	return r, nil
 }
 
 func (m *memTileStore[T]) setTile(_ context.Context, id TileID, treeSize uint64, t *T) error {

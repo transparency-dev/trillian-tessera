@@ -26,7 +26,7 @@ import (
 	"github.com/transparency-dev/merkle/rfc6962"
 	"github.com/transparency-dev/trillian-tessera/api"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
-	"golang.org/x/sync/errgroup"
+	"golang.org/x/exp/maps"
 	"k8s.io/klog/v2"
 )
 
@@ -41,62 +41,49 @@ type getPopulatedTileFunc func(ctx context.Context, tileID TileID, treeSize uint
 // is responsible for integrating entries for a number of contiguous trees), the lifetime should be bounded so as not
 // to leak memory.
 type TreeBuilder struct {
-	getTile getPopulatedTileFunc
-	rf      *compact.RangeFactory
+	readCache *tileReadCache
+	getTile   getPopulatedTileFunc
+	rf        *compact.RangeFactory
 }
 
 // NewTreeBuilder creates a new instance of TreeBuilder.
 //
 // The getTile param must know how to fetch the specified tile from storage. It must return an instance of os.ErrNotExist
-// (either directly, or wrapped) if the requested tile was not found.
-func NewTreeBuilder(getTile func(ctx context.Context, tileID TileID, treeSize uint64) (*api.HashTile, error)) *TreeBuilder {
-	readCache := newTileReadCache()
-	getPopulatedTile := func(ctx context.Context, tileID TileID, treeSize uint64) (*populatedTile, error) {
-		r, ok := readCache.Get(tileID, treeSize)
-		if ok {
-			return r, nil
-		}
-		t, err := getTile(ctx, tileID, treeSize)
-		if err != nil {
-			return nil, err
-		}
-		ft, err := newPopulatedTile(t)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create fulltile: %v", err)
-		}
-		readCache.Set(tileID, treeSize, ft)
-		return ft, nil
+// (either directly, or wrapped) if any of the the requested tiles were not found.
+func NewTreeBuilder(getTiles func(ctx context.Context, tileIDs []TileID, treeSize uint64) ([]*api.HashTile, error)) *TreeBuilder {
+	readCache := newTileReadCache(getTiles)
+	r := &TreeBuilder{
+		readCache: &readCache,
+		rf:        &compact.RangeFactory{Hash: rfc6962.DefaultHasher.HashChildren},
 	}
-	return &TreeBuilder{
-		getTile: getPopulatedTile,
-		rf:      &compact.RangeFactory{Hash: rfc6962.DefaultHasher.HashChildren},
-	}
+
+	return r
 }
 
 // newRange creates a new compact.Range for the specified treeSize, fetching tiles as necessary.
 func (t *TreeBuilder) newRange(ctx context.Context, treeSize uint64) (*compact.Range, error) {
 	rangeNodes := compact.RangeNodes(0, treeSize, nil)
-	errG := errgroup.Group{}
-	hashes := make([][]byte, len(rangeNodes))
-	for i, id := range rangeNodes {
-		i := i
-		id := id
-		errG.Go(func() error {
-			tLevel, tIndex, nLevel, nIndex := layout.NodeCoordsToTileAddress(uint64(id.Level), id.Index)
-			ft, err := t.getTile(ctx, TileID{Level: tLevel, Index: tIndex}, treeSize)
-			if err != nil {
-				return err
-			}
-			h := ft.Get(compact.NodeID{Level: nLevel, Index: nIndex})
-			if h == nil {
-				return fmt.Errorf("missing node: [%d/%d@%d]", id.Level, id.Index, treeSize)
-			}
-			hashes[i] = h
-			return nil
-		})
+	toFetch := make(map[TileID]struct{})
+	for _, id := range rangeNodes {
+		tLevel, tIndex, _, _ := layout.NodeCoordsToTileAddress(uint64(id.Level), id.Index)
+		toFetch[TileID{Level: tLevel, Index: tIndex}] = struct{}{}
 	}
-	if err := errG.Wait(); err != nil {
-		return nil, err
+	if err := t.readCache.Prewarm(ctx, maps.Keys(toFetch), treeSize); err != nil {
+		return nil, fmt.Errorf("Prewarm: %v", err)
+	}
+
+	hashes := make([][]byte, 0, len(rangeNodes))
+	for _, id := range rangeNodes {
+		tLevel, tIndex, nLevel, nIndex := layout.NodeCoordsToTileAddress(uint64(id.Level), id.Index)
+		ft, err := t.readCache.Get(ctx, TileID{Level: tLevel, Index: tIndex}, treeSize)
+		if err != nil {
+			return nil, err
+		}
+		h := ft.Get(compact.NodeID{Level: nLevel, Index: nIndex})
+		if h == nil {
+			return nil, fmt.Errorf("missing node: [%d/%d@%d]", id.Level, id.Index, treeSize)
+		}
+		hashes = append(hashes, h)
 	}
 	return t.rf.NewRange(0, treeSize, hashes)
 }
@@ -160,34 +147,56 @@ func (t *TreeBuilder) Integrate(ctx context.Context, fromSize uint64, entries []
 type tileReadCache struct {
 	sync.RWMutex
 
-	entries map[string]*populatedTile
+	entries  map[string]*populatedTile
+	getTiles func(ctx context.Context, tileIDs []TileID, treeSize uint64) ([]*api.HashTile, error)
 }
 
-func newTileReadCache() tileReadCache {
+func newTileReadCache(getTiles func(ctx context.Context, tileIDs []TileID, treeSize uint64) ([]*api.HashTile, error)) tileReadCache {
 	return tileReadCache{
-		entries: make(map[string]*populatedTile),
+		entries:  make(map[string]*populatedTile),
+		getTiles: getTiles,
 	}
 }
 
-// Get returns a previously set tile and true, or, if no such tile is in the cache, returns nil and false.
-func (r *tileReadCache) Get(tileID TileID, treeSize uint64) (*populatedTile, bool) {
-	r.RLock()
-	defer r.RUnlock()
-	k := layout.TilePath(uint64(tileID.Level), tileID.Index, treeSize)
-	e, ok := r.entries[k]
-	return e, ok
-}
-
-// Set associates the given tileID with a tile.
-func (r *tileReadCache) Set(tileID TileID, treeSize uint64, t *populatedTile) {
+// Get returns a previously set tile and true, or, if no such tile is in the cache, attempt to fetch it.
+func (r *tileReadCache) Get(ctx context.Context, tileID TileID, treeSize uint64) (*populatedTile, error) {
 	r.Lock()
 	defer r.Unlock()
 	k := layout.TilePath(uint64(tileID.Level), tileID.Index, treeSize)
-	if e, ok := r.entries[k]; ok && !e.Equals(t) {
-		klog.Infof("OVERWRITE TILE %v:\nExisting:%x\nNew\n%x", k, e, t)
-		panic(fmt.Errorf("Attempting to overwrite %v with different content", k))
+	e, ok := r.entries[k]
+	if !ok {
+		t, err := r.getTiles(ctx, []TileID{tileID}, treeSize)
+		if err != nil {
+			return nil, err
+		}
+		e, err = newPopulatedTile(t[0])
+		if err != nil {
+			return nil, fmt.Errorf("failed to create fulltile: %v", err)
+		}
+		r.entries[k] = e
 	}
-	r.entries[k] = t
+	return e, nil
+}
+
+// Preward fills the cache by fetching the given tilesIDs.
+//
+// Returns an error if any of the tiles couldn't be fetched.
+func (r *tileReadCache) Prewarm(ctx context.Context, tileIDs []TileID, treeSize uint64) error {
+	r.Lock()
+	defer r.Unlock()
+	t, err := r.getTiles(ctx, tileIDs, treeSize)
+	if err != nil {
+		return err
+	}
+	for i, tile := range t {
+		e, err := newPopulatedTile(tile)
+		if err != nil {
+			return fmt.Errorf("failed to create fulltile: %v", err)
+		}
+		k := layout.TilePath(uint64(tileIDs[i].Level), tileIDs[i].Index, treeSize)
+		r.entries[k] = e
+	}
+	return nil
 }
 
 // tileWriteCache is a simple cache for storing the newly created tiles produced by

@@ -9,6 +9,7 @@ require (
 	github.com/google/go-cmp v0.6.0
 	github.com/transparency-dev/merkle v0.0.2
 	google.golang.org/api v0.188.0
+	golang.org/x/exp v0.0.0-20220827204233-334a2380cb91
 	google.golang.org/grpc v1.65.0
 	k8s.io/klog/v2 v2.130.1
 )
