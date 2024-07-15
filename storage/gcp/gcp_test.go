@@ -55,7 +55,7 @@ func newSpannerDB(t *testing.T) func() {
 
 }
 
-func TestSpannerSequencer(t *testing.T) {
+func TestSpannerSequencerAssignEntries(t *testing.T) {
 	ctx := context.Background()
 	close := newSpannerDB(t)
 	defer close()
@@ -79,6 +79,51 @@ func TestSpannerSequencer(t *testing.T) {
 			t.Errorf("Chunk %d got seq %d, want %d", chunks, got, want)
 		}
 		want += uint64(len(entries))
+	}
+}
+
+func TestSpannerSequencerRoundTrip(t *testing.T) {
+	ctx := context.Background()
+	close := newSpannerDB(t)
+	defer close()
+
+	s, err := newSpannerSequencer(ctx, "projects/p/instances/i/databases/d")
+	if err != nil {
+		t.Fatalf("newSpannerSequencer: %v", err)
+	}
+
+	seq := 0
+	for chunks := 0; chunks < 10; chunks++ {
+		entries := [][]byte{}
+		for i := 0; i < 10+chunks; i++ {
+			entries = append(entries, []byte(fmt.Sprintf("item %d", seq)))
+			seq++
+		}
+		if _, err := s.assignEntries(ctx, entries); err != nil {
+			t.Fatalf("assignEntries: %v", err)
+		}
+	}
+
+	seenIdx := uint64(0)
+	f := func(_ context.Context, fromSeq uint64, entries [][]byte) error {
+		if fromSeq != seenIdx {
+			return fmt.Errorf("f called with fromSeq %d, want %d", fromSeq, seenIdx)
+		}
+		for i, e := range entries {
+			if !bytes.Equal(e, []byte(fmt.Sprintf("item %d", i))) {
+				return fmt.Errorf("entry %d+%d != %d", fromSeq, i, seenIdx)
+			}
+			seenIdx++
+		}
+		return nil
+	}
+
+	more, err := s.consumeEntries(ctx, 7, f)
+	if err != nil {
+		t.Errorf("consumeEntries: %v", err)
+	}
+	if !more {
+		t.Errorf("more: false, expected true")
 	}
 }
 
