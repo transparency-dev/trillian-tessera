@@ -33,3 +33,10 @@ CREATE TABLE IF NOT EXISTS `Subtree` (
   `nodes` MEDIUMBLOB NOT NULL,
   PRIMARY KEY(`level`, `index`)
 );
+
+-- "TiledLeaves" table stores the data committed to by the leaves of the tree. Follows the same evolution as Subtree.
+CREATE TABLE IF NOT EXISTS `TiledLeaves` (
+  `tile_index` BIGINT UNSIGNED NOT NULL,
+  `data`       LONGBLOB NOT NULL,
+  PRIMARY KEY(`tile_index`)
+);

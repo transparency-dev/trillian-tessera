@@ -27,6 +27,7 @@ const (
 	selectCheckpointByIDSQL         = "SELECT `note` FROM `Checkpoint` WHERE `id` = ?"
 	replaceCheckpointSQL            = "REPLACE INTO `Checkpoint` (`id`, `note`) VALUES (?, ?)"
 	selectSubtreeByLevelAndIndexSQL = "SELECT `nodes` FROM `Subtree` WHERE `level` = ? AND `index` = ?"
+	selectTiledLeavesSQL            = "SELECT `data` FROM `TiledLeaves` WHERE `tile_index` = ?"
 
 	checkpointID = 0
 )
@@ -97,6 +98,7 @@ func (s *Storage) writeCheckpoint(ctx context.Context, rawCheckpoint []byte) err
 	return tx.Commit()
 }
 
+// ReadTile returns a full tile or a partial tile at the given level and index.
 func (s *Storage) ReadTile(ctx context.Context, level, index uint64) ([]byte, error) {
 	row := s.db.QueryRowContext(ctx, selectSubtreeByLevelAndIndexSQL, level, index)
 	if err := row.Err(); err != nil {
@@ -105,4 +107,15 @@ func (s *Storage) ReadTile(ctx context.Context, level, index uint64) ([]byte, er
 
 	var tile []byte
 	return tile, row.Scan(&tile)
+}
+
+// ReadEntryBundle returns the log entries at the given index.
+func (s *Storage) ReadEntryBundle(ctx context.Context, index uint64) ([]byte, error) {
+	row := s.db.QueryRowContext(ctx, selectTiledLeavesSQL, index)
+	if err := row.Err(); err != nil {
+		return nil, err
+	}
+
+	var entryBundle []byte
+	return entryBundle, row.Scan(&entryBundle)
 }
