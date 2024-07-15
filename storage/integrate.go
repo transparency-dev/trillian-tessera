@@ -45,7 +45,7 @@ type TreeBuilder struct {
 // The getTile param must know how to fetch the specified tile from storage. It must return an instance of os.ErrNotExist
 // (either directly, or wrapped) if the requested tile was not found.
 func NewTreeBuilder(getTile func(ctx context.Context, tileID compact.NodeID, treeSize uint64) (*api.HashTile, error)) *TreeBuilder {
-	readCache := newTileReadCache() // getFullTile just
+	readCache := newTileReadCache()
 	getFullTile := func(ctx context.Context, tileID compact.NodeID, treeSize uint64) (*fullTile, error) {
 		r, ok := readCache.Get(tileID, treeSize)
 		if ok {
@@ -68,6 +68,7 @@ func NewTreeBuilder(getTile func(ctx context.Context, tileID compact.NodeID, tre
 	}
 }
 
+// newRange creates a new compact.Range for the specified treeSize, fetching tiles as necessary.
 func (t *TreeBuilder) newRange(ctx context.Context, treeSize uint64) (*compact.Range, error) {
 	rangeNodes := compact.RangeNodes(0, treeSize, nil)
 	errG := errgroup.Group{}
