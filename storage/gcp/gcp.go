@@ -45,11 +45,14 @@ import (
 	"github.com/transparency-dev/trillian-tessera/api"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
 	"github.com/transparency-dev/trillian-tessera/storage"
+	"golang.org/x/sync/errgroup"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/iterator"
 	"google.golang.org/grpc/codes"
 	"k8s.io/klog/v2"
 )
+
+const entryBundleSize = 256
 
 // Storage is a GCP based storage implementation for Tessera.
 type Storage struct {
@@ -158,22 +161,39 @@ func (s *Storage) setTile(ctx context.Context, level, index, logSize uint64, til
 	return s.objStore.setObject(ctx, tPath, data, &gcs.Conditions{DoesNotExist: true})
 }
 
-// getTile returns the tile at the given tile-level and tile-index for the specified log size.
+// getTiles returns the tiles with the given tile-coords for the specified log size.
 //
-// Returns a wrapped os.ErrNotExist if the tile does not exist.
-func (s *Storage) getTile(ctx context.Context, level, index, logSize uint64) (*api.HashTile, error) {
-	objName := layout.TilePath(level, index, logSize)
-	data, _, err := s.objStore.getObject(ctx, objName)
-	if err != nil {
-		if errors.Is(err, gcs.ErrObjectNotExist) {
-			// Return the generic NotExist error so that higher levels can differentiate
-			// between this and other errors.
-			return nil, fmt.Errorf("%v: %w", objName, os.ErrNotExist)
-		}
+// Returns a wrapped os.ErrNotExist if any of the tiles do not exist.
+func (s *Storage) getTiles(ctx context.Context, tileIDs []storage.TileID, logSize uint64) ([]*api.HashTile, error) {
+	r := make([]*api.HashTile, len(tileIDs))
+	errG := errgroup.Group{}
+	for i, id := range tileIDs {
+		i := i
+		id := id
+		errG.Go(func() error {
+			objName := layout.TilePath(id.Level, id.Index, logSize)
+			data, _, err := s.objStore.getObject(ctx, objName)
+			if err != nil {
+				if errors.Is(err, gcs.ErrObjectNotExist) {
+					// Return the generic NotExist error so that higher levels can differentiate
+					// between this and other errors.
+					return fmt.Errorf("%v: %w", objName, os.ErrNotExist)
+				}
+				return err
+			}
+			t := &api.HashTile{}
+			if err := t.UnmarshalText(data); err != nil {
+				return fmt.Errorf("unmarshal(%q): %v", objName, err)
+			}
+			r[i] = t
+			return nil
+		})
+	}
+	if err := errG.Wait(); err != nil {
 		return nil, err
 	}
-	t := &api.HashTile{}
-	return t, t.UnmarshalText(data)
+	return r, nil
+
 }
 
 // getEntryBundle returns the entry bundle at the location implied by the given index and treeSize.
@@ -217,7 +237,102 @@ func (s *Storage) setEntryBundle(ctx context.Context, bundleIndex uint64, logSiz
 
 // integrate incorporates the provided entries into the log starting at fromSeq.
 func (s *Storage) integrate(ctx context.Context, fromSeq uint64, entries [][]byte) error {
-	return nil
+	tb := storage.NewTreeBuilder(func(ctx context.Context, tileIDs []storage.TileID, treeSize uint64) ([]*api.HashTile, error) {
+		n, err := s.getTiles(ctx, tileIDs, treeSize)
+		if err != nil {
+			return nil, fmt.Errorf("getTiles: %w", err)
+		}
+		return n, nil
+	})
+
+	errG := errgroup.Group{}
+
+	errG.Go(func() error {
+		if err := s.updateEntryBundles(ctx, fromSeq, entries); err != nil {
+			return fmt.Errorf("updateEntryBundles: %v", err)
+		}
+		return nil
+	})
+
+	errG.Go(func() error {
+		newSize, newRoot, tiles, err := tb.Integrate(ctx, fromSeq, entries)
+		if err != nil {
+			return fmt.Errorf("Integrate: %v", err)
+		}
+		for k, v := range tiles {
+			func(ctx context.Context, k storage.TileID, v *api.HashTile) {
+				errG.Go(func() error {
+					return s.setTile(ctx, uint64(k.Level), k.Index, newSize, v)
+				})
+			}(ctx, k, v)
+		}
+		errG.Go(func() error {
+			//TODO: write out checkpoint
+			klog.Infof("New CP: %d, %x", newSize, newRoot)
+			return nil
+		})
+
+		return nil
+	})
+
+	return errG.Wait()
+}
+
+// updateEntryBundles adds the entries being integrated into the entry bundles.
+//
+// The right-most bundle will be grown, if it's partial, and/or new bundles will be created as required.
+func (s *Storage) updateEntryBundles(ctx context.Context, fromSeq uint64, entries [][]byte) error {
+	numAdded := uint64(0)
+	bundleIndex, entriesInBundle := fromSeq/entryBundleSize, fromSeq%entryBundleSize
+	bundle := &api.EntryBundle{}
+	if entriesInBundle > 0 {
+		// If the latest bundle is partial, we need to read the data it contains in for our newer, larger, bundle.
+		part, err := s.getEntryBundle(ctx, uint64(bundleIndex), uint64(entriesInBundle))
+		if err != nil {
+			return err
+		}
+		bundle = part
+	}
+
+	seqErr := errgroup.Group{}
+
+	// goSetEntryBundle is a function which uses seqErr to spin off a go-routine to write out an entry bundle.
+	// It's used in the for loop below.
+	goSetEntryBundle := func(ctx context.Context, bundleIndex uint64, fromSeq uint64, bundle api.EntryBundle) {
+		seqErr.Go(func() error {
+			if err := s.setEntryBundle(ctx, bundleIndex, fromSeq, &bundle); err != nil {
+				if !errors.Is(os.ErrExist, err) {
+					return err
+				}
+			}
+			return nil
+		})
+	}
+
+	// Add new entries to the bundle
+	for _, e := range entries {
+		bundle.Entries = append(bundle.Entries, e)
+		entriesInBundle++
+		fromSeq++
+		numAdded++
+		if entriesInBundle == entryBundleSize {
+			//  This bundle is full, so we need to write it out...
+			klog.V(1).Infof("Bundle idx %d is full", bundleIndex)
+			goSetEntryBundle(ctx, bundleIndex, fromSeq, *bundle)
+			// ... and prepare the next entry bundle for any remaining entries in the batch
+			bundleIndex++
+			entriesInBundle = 0
+			bundle = &api.EntryBundle{}
+			klog.V(1).Infof("Starting bundle idx %d", bundleIndex)
+		}
+	}
+	// If we have a partial bundle remaining once we've added all the entries from the batch,
+	// this needs writing out too.
+	if entriesInBundle > 0 {
+		klog.V(1).Infof("Writing partial bundle idx %d.%d", bundleIndex, entriesInBundle)
+		goSetEntryBundle(ctx, bundleIndex, fromSeq, *bundle)
+	}
+	return seqErr.Wait()
 }
 
 // spannerSequencer uses Cloud Spanner to provide
