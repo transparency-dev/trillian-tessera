@@ -99,15 +99,15 @@ func (t *TreeBuilder) Integrate(ctx context.Context, fromSize uint64, entries []
 	if err != nil {
 		return 0, nil, nil, fmt.Errorf("invalid log state, unable to recalculate root: %w", err)
 	}
-
-	klog.V(1).Infof("Loaded state with roothash %x", r)
-	// Create a new compact range which represents the update to the tree
-	newRange := t.rf.NewEmptyRange(fromSize)
 	if len(entries) == 0 {
 		klog.V(1).Infof("Nothing to do.")
 		// Nothing to do, nothing done.
 		return fromSize, r, nil, nil
 	}
+
+	klog.V(1).Infof("Loaded state with roothash %x", r)
+	// Create a new compact range which represents the update to the tree
+	newRange := t.rf.NewEmptyRange(fromSize)
 	tc := newTileWriteCache(fromSize, t.getTile)
 	visitor := tc.Visitor(ctx)
 	for _, e := range entries {
@@ -118,10 +118,19 @@ func (t *TreeBuilder) Integrate(ctx context.Context, fromSize uint64, entries []
 		}
 
 	}
+	// Check whether the visitor had any problems building the update range
+	if err := tc.Err(); err != nil {
+		return 0, nil, nil, err
+	}
 
 	// Merge the update range into the old tree
 	if err := baseRange.AppendRange(newRange, visitor); err != nil {
 		return 0, nil, nil, fmt.Errorf("failed to merge new range onto existing log: %w", err)
+	}
+
+	// Check whether the visitor had any problems when merging the new range into the tree
+	if err := tc.Err(); err != nil {
+		return 0, nil, nil, err
 	}
 
 	// Calculate the new root hash - don't pass in the tileCache visitor here since
@@ -129,10 +138,6 @@ func (t *TreeBuilder) Integrate(ctx context.Context, fromSize uint64, entries []
 	newRoot, err := baseRange.GetRootHash(nil)
 	if err != nil {
 		return 0, nil, nil, fmt.Errorf("failed to calculate new root hash: %w", err)
-	}
-
-	if err := tc.Err(); err != nil {
-		return 0, nil, nil, err
 	}
 
 	// All calculation is now complete, all that remains is to store the new
@@ -143,7 +148,7 @@ func (t *TreeBuilder) Integrate(ctx context.Context, fromSize uint64, entries []
 
 }
 
-// tileReadCache is a structure which provides a very simple thread-safe map of tiles.
+// tileReadCache is a structure which provides a very simple thread-safe read-through cache based on a map of tiles.
 type tileReadCache struct {
 	sync.RWMutex
 
@@ -208,7 +213,6 @@ func (r *tileReadCache) Prewarm(ctx context.Context, tileIDs []TileID, treeSize 
 //
 // Note that by itself, this cache does not update any persisted state.
 type tileWriteCache struct {
-	sync.Mutex
 	m   map[TileID]*populatedTile
 	err []error
 
@@ -235,16 +239,12 @@ func (tc *tileWriteCache) Err() error {
 	return errors.Join(tc.err...)
 }
 
-// Visit should be called once for each newly set non-ephemeral node in the
-// tree.
+// Visitor returns a function suitable for use with the compact.Range visitor pattern.
 //
-// If the tile containing id has not been seen before, this method will fetch
-// it from disk (or create a new empty in-memory tile if it doesn't exist), and
-// update it by setting the node corresponding to id to the value hash.
+// The returned function is expected to be called sequentially to set one or nodes
+// to their corresponding hash values.
 func (tc *tileWriteCache) Visitor(ctx context.Context) compact.VisitFn {
 	return func(id compact.NodeID, hash []byte) {
-		tc.Lock()
-		defer tc.Unlock()
 		tileLevel, tileIndex, nodeLevel, nodeIndex := layout.NodeCoordsToTileAddress(uint64(id.Level), uint64(id.Index))
 		tileID := TileID{Level: tileLevel, Index: tileIndex}
 		tile := tc.m[tileID]
@@ -280,7 +280,7 @@ func (tc *tileWriteCache) Tiles() map[TileID]*api.HashTile {
 	return newTiles
 }
 
-// populatedTile represents a "fully populated" tile, i.e. it has all non-ephemeral internaly nodes
+// populatedTile represents a "fully populated" tile, i.e. it has all non-ephemeral internal nodes
 // implied by the leaves.
 type populatedTile struct {
 	sync.RWMutex
