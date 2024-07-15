@@ -167,7 +167,7 @@ func (m *memTileStore[T]) setTile(_ context.Context, id compact.NodeID, treeSize
 	if ok {
 		return fmt.Errorf("%q is already present", k)
 	}
-
-	m.mem[k] = &(*t)
+	d := *t
+	m.mem[k] = &d
 	return nil
 }
