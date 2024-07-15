@@ -31,7 +31,7 @@ import (
 )
 
 // getFullTileFunc is the signature of a function which can return a fully populated tile for the given tile coords.
-type getFullTileFunc func(ctx context.Context, tileID compact.NodeID, treeSize uint64) (*fullTile, error)
+type getFullTileFunc func(ctx context.Context, tileID TileID, treeSize uint64) (*fullTile, error)
 
 // TreeBuilder constructs Merkle trees.
 type TreeBuilder struct {
@@ -44,9 +44,9 @@ type TreeBuilder struct {
 //
 // The getTile param must know how to fetch the specified tile from storage. It must return an instance of os.ErrNotExist
 // (either directly, or wrapped) if the requested tile was not found.
-func NewTreeBuilder(getTile func(ctx context.Context, tileID compact.NodeID, treeSize uint64) (*api.HashTile, error)) *TreeBuilder {
+func NewTreeBuilder(getTile func(ctx context.Context, tileID TileID, treeSize uint64) (*api.HashTile, error)) *TreeBuilder {
 	readCache := newTileReadCache()
-	getFullTile := func(ctx context.Context, tileID compact.NodeID, treeSize uint64) (*fullTile, error) {
+	getFullTile := func(ctx context.Context, tileID TileID, treeSize uint64) (*fullTile, error) {
 		r, ok := readCache.Get(tileID, treeSize)
 		if ok {
 			return r, nil
@@ -78,7 +78,7 @@ func (t *TreeBuilder) newRange(ctx context.Context, treeSize uint64) (*compact.R
 		id := id
 		errG.Go(func() error {
 			tLevel, tIndex, nLevel, nIndex := layout.NodeCoordsToTileAddress(uint64(id.Level), id.Index)
-			ft, err := t.getTile(ctx, compact.NodeID{Level: uint(tLevel), Index: tIndex}, treeSize)
+			ft, err := t.getTile(ctx, TileID{Level: tLevel, Index: tIndex}, treeSize)
 			if err != nil {
 				return err
 			}
@@ -96,7 +96,7 @@ func (t *TreeBuilder) newRange(ctx context.Context, treeSize uint64) (*compact.R
 	return t.rf.NewRange(0, treeSize, hashes)
 }
 
-func (t *TreeBuilder) Integrate(ctx context.Context, fromSize uint64, entries [][]byte) (newSize uint64, rootHash []byte, tiles map[compact.NodeID]*api.HashTile, err error) {
+func (t *TreeBuilder) Integrate(ctx context.Context, fromSize uint64, entries [][]byte) (newSize uint64, rootHash []byte, tiles map[TileID]*api.HashTile, err error) {
 	t.Lock()
 	defer t.Unlock()
 
@@ -169,7 +169,7 @@ func newTileReadCache() tileReadCache {
 }
 
 // Get returns a previously set tile and true, or, if no such tile is in the cache, returns nil and false.
-func (r *tileReadCache) Get(tileID compact.NodeID, treeSize uint64) (*fullTile, bool) {
+func (r *tileReadCache) Get(tileID TileID, treeSize uint64) (*fullTile, bool) {
 	r.RLock()
 	defer r.RUnlock()
 	k := layout.TilePath(uint64(tileID.Level), tileID.Index, treeSize)
@@ -181,7 +181,7 @@ func (r *tileReadCache) Get(tileID compact.NodeID, treeSize uint64) (*fullTile, 
 }
 
 // Set associates the given tileID with a tile.
-func (r *tileReadCache) Set(tileID compact.NodeID, treeSize uint64, t *fullTile) {
+func (r *tileReadCache) Set(tileID TileID, treeSize uint64, t *fullTile) {
 	r.Lock()
 	defer r.Unlock()
 	k := layout.TilePath(uint64(tileID.Level), tileID.Index, treeSize)
@@ -202,7 +202,7 @@ func (r *tileReadCache) Set(tileID compact.NodeID, treeSize uint64, t *fullTile)
 // Note that by itself, this cache does not update any persisted state.
 type tileWriteCache struct {
 	sync.Mutex
-	m   map[compact.NodeID]*fullTile
+	m   map[TileID]*fullTile
 	err []error
 
 	treeSize uint64
@@ -213,7 +213,7 @@ type tileWriteCache struct {
 // function to fetch existing tiles which are being updated by the Visitor func.
 func newTileWriteCache(treeSize uint64, getTile getFullTileFunc) *tileWriteCache {
 	return &tileWriteCache{
-		m:        make(map[compact.NodeID]*fullTile),
+		m:        make(map[TileID]*fullTile),
 		treeSize: treeSize,
 		getTile:  getTile,
 	}
@@ -239,7 +239,7 @@ func (tc *tileWriteCache) Visitor(ctx context.Context) compact.VisitFn {
 		tc.Lock()
 		defer tc.Unlock()
 		tileLevel, tileIndex, nodeLevel, nodeIndex := layout.NodeCoordsToTileAddress(uint64(id.Level), uint64(id.Index))
-		tileID := compact.NodeID{Level: uint(tileLevel), Index: tileIndex}
+		tileID := TileID{Level: tileLevel, Index: tileIndex}
 		tile := tc.m[tileID]
 		if tile == nil {
 			var err error
@@ -265,8 +265,8 @@ func (tc *tileWriteCache) Visitor(ctx context.Context) compact.VisitFn {
 }
 
 // Tiles returns all visited tiles.
-func (tc *tileWriteCache) Tiles() map[compact.NodeID]*api.HashTile {
-	newTiles := make(map[compact.NodeID]*api.HashTile)
+func (tc *tileWriteCache) Tiles() map[TileID]*api.HashTile {
+	newTiles := make(map[TileID]*api.HashTile)
 	for k, t := range tc.m {
 		newTiles[k] = &api.HashTile{Nodes: t.leaves}
 	}

@@ -32,7 +32,7 @@ func TestNewRangeFetchesTiles(t *testing.T) {
 	tb := NewTreeBuilder(m.getTile)
 
 	treeSize := uint64(0x102030)
-	wantIDs := []compact.NodeID{
+	wantIDs := []TileID{
 		{Level: 0, Index: 0x1020},
 		{Level: 1, Index: 0x10},
 		{Level: 2, Index: 0x0},
@@ -58,30 +58,30 @@ func TestTileVisit(t *testing.T) {
 	for _, test := range []struct {
 		name      string
 		visits    map[compact.NodeID][]byte
-		wantTiles map[compact.NodeID]*api.HashTile
+		wantTiles map[TileID]*api.HashTile
 	}{
 		{
 			name: "ok - single tile",
 			visits: map[compact.NodeID][]byte{
-				compact.NewNodeID(0, 0): {0},
-				compact.NewNodeID(0, 1): {1},
-				compact.NewNodeID(1, 1): {2},
+				{Level: 0, Index: 0}: {0},
+				{Level: 0, Index: 1}: {1},
+				{Level: 1, Index: 1}: {2},
 			},
-			wantTiles: map[compact.NodeID]*api.HashTile{
-				compact.NewNodeID(0, 0): {Nodes: [][]byte{{0}, {1}}},
+			wantTiles: map[TileID]*api.HashTile{
+				{Level: 0, Index: 0}: {Nodes: [][]byte{{0}, {1}}},
 			},
 		},
 		{
 			name: "ok - multiple tiles",
 			visits: map[compact.NodeID][]byte{
-				compact.NewNodeID(0, 0):     {0},
-				compact.NewNodeID(0, 1*256): {1},
-				compact.NewNodeID(8, 2*256): {2},
+				{Level: 0, Index: 0}:       {0},
+				{Level: 0, Index: 1 * 256}: {1},
+				{Level: 8, Index: 2 * 256}: {2},
 			},
-			wantTiles: map[compact.NodeID]*api.HashTile{
-				compact.NewNodeID(0, 0): {Nodes: [][]byte{{0}}},
-				compact.NewNodeID(0, 1): {Nodes: [][]byte{{1}}},
-				compact.NewNodeID(1, 2): {Nodes: [][]byte{{2}}},
+			wantTiles: map[TileID]*api.HashTile{
+				{Level: 0, Index: 0}: {Nodes: [][]byte{{0}}},
+				{Level: 0, Index: 1}: {Nodes: [][]byte{{1}}},
+				{Level: 1, Index: 2}: {Nodes: [][]byte{{2}}},
 			},
 		},
 	} {
@@ -127,7 +127,7 @@ func zeroTile(size uint64) *api.HashTile {
 }
 
 type memTileStoreKey struct {
-	id       compact.NodeID
+	id       TileID
 	treeSize uint64
 }
 
@@ -146,7 +146,7 @@ func newMemTileStore[T any]() *memTileStore[T] {
 	}
 }
 
-func (m *memTileStore[T]) getTile(_ context.Context, id compact.NodeID, treeSize uint64) (*T, error) {
+func (m *memTileStore[T]) getTile(_ context.Context, id TileID, treeSize uint64) (*T, error) {
 	m.RLock()
 	defer m.RUnlock()
 
@@ -158,7 +158,7 @@ func (m *memTileStore[T]) getTile(_ context.Context, id compact.NodeID, treeSize
 	return d, nil
 }
 
-func (m *memTileStore[T]) setTile(_ context.Context, id compact.NodeID, treeSize uint64, t *T) error {
+func (m *memTileStore[T]) setTile(_ context.Context, id TileID, treeSize uint64, t *T) error {
 	m.Lock()
 	defer m.Unlock()
 
