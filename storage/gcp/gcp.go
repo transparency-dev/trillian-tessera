@@ -163,7 +163,7 @@ func (s *Storage) setTile(ctx context.Context, level, index, logSize uint64, til
 
 // getTiles returns the tiles with the given tile-coords for the specified log size.
 //
-// Returns a wrapped os.ErrNotExist if any of the tiles do not exist.
+// Tiles are returned in the same order as they're requested, nils represent tiles which were not found.
 func (s *Storage) getTiles(ctx context.Context, tileIDs []storage.TileID, logSize uint64) ([]*api.HashTile, error) {
 	r := make([]*api.HashTile, len(tileIDs))
 	errG := errgroup.Group{}
@@ -175,9 +175,9 @@ func (s *Storage) getTiles(ctx context.Context, tileIDs []storage.TileID, logSiz
 			data, _, err := s.objStore.getObject(ctx, objName)
 			if err != nil {
 				if errors.Is(err, gcs.ErrObjectNotExist) {
-					// Return the generic NotExist error so that higher levels can differentiate
-					// between this and other errors.
-					return fmt.Errorf("%v: %w", objName, os.ErrNotExist)
+					// Depending on context, this may be ok.
+					// We'll signal to higher levels that it wasn't found by retuning a nil for this tile.
+					return nil
 				}
 				return err
 			}

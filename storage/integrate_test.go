@@ -17,7 +17,6 @@ package storage
 import (
 	"context"
 	"fmt"
-	"os"
 	"reflect"
 	"sync"
 	"testing"
@@ -190,10 +189,7 @@ func (m *memTileStore[T]) getTile(_ context.Context, id TileID, treeSize uint64)
 	defer m.RUnlock()
 
 	k := layout.TilePath(id.Level, id.Index, treeSize)
-	d, ok := m.mem[k]
-	if !ok {
-		return nil, fmt.Errorf("tile %q: %w", k, os.ErrNotExist)
-	}
+	d := m.mem[k]
 	return d, nil
 }
 
@@ -201,15 +197,15 @@ func (m *memTileStore[T]) getTiles(_ context.Context, ids []TileID, treeSize uin
 	m.RLock()
 	defer m.RUnlock()
 
-	r := []*T{}
-	for _, id := range ids {
+	r := make([]*T, len(ids))
+	for i, id := range ids {
 		k := layout.TilePath(id.Level, id.Index, treeSize)
 		klog.V(1).Infof("mem.getTile(%q, %d)", k, treeSize)
 		d, ok := m.mem[k]
 		if !ok {
-			return nil, fmt.Errorf("tile %q: %w", k, os.ErrNotExist)
+			continue
 		}
-		r = append(r, d)
+		r[i] = d
 	}
 	return r, nil
 }
