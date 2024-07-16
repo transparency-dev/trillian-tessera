@@ -301,9 +301,7 @@ func (s *Storage) updateEntryBundles(ctx context.Context, fromSeq uint64, entrie
 	goSetEntryBundle := func(ctx context.Context, bundleIndex uint64, fromSeq uint64, bundle api.EntryBundle) {
 		seqErr.Go(func() error {
 			if err := s.setEntryBundle(ctx, bundleIndex, fromSeq, &bundle); err != nil {
-				if !errors.Is(os.ErrExist, err) {
-					return err
-				}
+				return err
 			}
 			return nil
 		})
