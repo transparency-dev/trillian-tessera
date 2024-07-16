@@ -24,6 +24,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/transparency-dev/merkle/compact"
 	"github.com/transparency-dev/merkle/rfc6962"
+	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/api"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
 	"k8s.io/klog/v2"
@@ -130,10 +131,10 @@ func TestIntegrate(t *testing.T) {
 	seq := uint64(0)
 	for chunk := 0; chunk < numChunks; chunk++ {
 		oldSeq := seq
-		c := make([][]byte, chunkSize)
+		c := make([]tessera.Entry, chunkSize)
 		for i := range c {
 			leaf := []byte{byte(seq)}
-			c[i] = leaf
+			c[i] = tessera.NewEntry(leaf)
 			if err := cr.Append(rfc6962.DefaultHasher.HashLeaf(leaf), nil); err != nil {
 				t.Fatalf("compact Append: %v", err)
 			}

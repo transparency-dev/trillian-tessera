@@ -16,7 +16,9 @@
 package tessera
 
 import (
+	"crypto/sha256"
 	"encoding/binary"
+	"fmt"
 
 	"github.com/transparency-dev/merkle/rfc6962"
 )
@@ -39,6 +41,10 @@ func NewEntry(data []byte, opts ...EntryOpt) Entry {
 	}
 	for _, opt := range opts {
 		opt(&e)
+	}
+	if e.identity == nil {
+		h := sha256.Sum256(e.data)
+		e.identity = h[:]
 	}
 	if e.leafHash == nil {
 		e.leafHash = rfc6962.DefaultHasher.HashLeaf(e.data)
@@ -68,6 +74,9 @@ func (e *Entry) UnmarshalBinary(buf []byte) error {
 	l, n = binary.Varint(buf)
 	buf = buf[n:]
 	e.leafHash, buf = buf[:l], buf[l:]
+	if l := len(buf); l != 0 {
+		return fmt.Errorf("%d trailing bytes", l)
+	}
 	return nil
 }
 

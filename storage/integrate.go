@@ -23,6 +23,7 @@ import (
 
 	"github.com/transparency-dev/merkle/compact"
 	"github.com/transparency-dev/merkle/rfc6962"
+	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/api"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
 	"golang.org/x/exp/maps"
@@ -86,7 +87,7 @@ func (t *TreeBuilder) newRange(ctx context.Context, treeSize uint64) (*compact.R
 	return t.rf.NewRange(0, treeSize, hashes)
 }
 
-func (t *TreeBuilder) Integrate(ctx context.Context, fromSize uint64, entries [][]byte) (newSize uint64, rootHash []byte, tiles map[TileID]*api.HashTile, err error) {
+func (t *TreeBuilder) Integrate(ctx context.Context, fromSize uint64, entries []tessera.Entry) (newSize uint64, rootHash []byte, tiles map[TileID]*api.HashTile, err error) {
 	baseRange, err := t.newRange(ctx, fromSize)
 	if err != nil {
 		return 0, nil, nil, fmt.Errorf("failed to create range covering existing log: %w", err)
@@ -109,9 +110,8 @@ func (t *TreeBuilder) Integrate(ctx context.Context, fromSize uint64, entries []
 	tc := newTileWriteCache(fromSize, t.readCache.Get)
 	visitor := tc.Visitor(ctx)
 	for _, e := range entries {
-		lh := rfc6962.DefaultHasher.HashLeaf(e)
 		// Update range and set nodes
-		if err := newRange.Append(lh, visitor); err != nil {
+		if err := newRange.Append(e.LeafHash(), visitor); err != nil {
 			return 0, nil, nil, fmt.Errorf("newRange.Append(): %v", err)
 		}
 

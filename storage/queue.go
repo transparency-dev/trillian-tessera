@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/globocom/go-buffer"
+	tessera "github.com/transparency-dev/trillian-tessera"
 )
 
 // Queue knows how to queue up a number of entries in order, taking care of deduplication as they're added.
@@ -47,7 +48,7 @@ type IndexFunc func() (idx uint64, err error)
 
 // FlushFunc is the signature of a function which will receive the slice of queued entries.
 // It should return the index assigned to the first entry in the provided slice.
-type FlushFunc func(ctx context.Context, entries [][]byte) (index uint64, err error)
+type FlushFunc func(ctx context.Context, entries []tessera.Entry) (index uint64, err error)
 
 // NewQueue creates a new queue with the specified maximum age and size.
 //
@@ -69,11 +70,11 @@ func NewQueue(maxAge time.Duration, maxSize uint, f FlushFunc) *Queue {
 
 // squashDupes keeps track of all in-flight requests, enabling dupe squashing for entries currently in the queue.
 // Returns an entry struct, and a bool which is true if the provided entry is a dupe and should NOT be added to the queue.
-func (q *Queue) squashDupes(e []byte) (*entry, bool) {
+func (q *Queue) squashDupes(e tessera.Entry) (*entry, bool) {
 	q.inFlightMu.Lock()
 	defer q.inFlightMu.Unlock()
 
-	k := string(e)
+	k := string(e.Identity())
 	entry, isKnown := q.inFlight[k]
 	if !isKnown {
 		entry = newEntry(e)
@@ -83,7 +84,7 @@ func (q *Queue) squashDupes(e []byte) (*entry, bool) {
 }
 
 // Add places e into the queue, and returns a func which may be called to retrieve the assigned index.
-func (q *Queue) Add(ctx context.Context, e []byte) IndexFunc {
+func (q *Queue) Add(ctx context.Context, e tessera.Entry) IndexFunc {
 	entry, isDupe := q.squashDupes(e)
 	if isDupe {
 		// This entry is already in the queue, so no need to add it again.
@@ -102,7 +103,7 @@ func (q *Queue) Add(ctx context.Context, e []byte) IndexFunc {
 // separate goroutine.
 func (q *Queue) doFlush(items []interface{}) {
 	entries := make([]*entry, len(items))
-	entriesData := make([][]byte, len(items))
+	entriesData := make([]tessera.Entry, len(items))
 	for i, t := range items {
 		entries[i] = t.(*entry)
 		entriesData[i] = entries[i].data
@@ -117,7 +118,7 @@ func (q *Queue) doFlush(items []interface{}) {
 
 		for i, e := range entries {
 			e.assign(s+uint64(i), err)
-			k := string(e.data)
+			k := string(e.data.Identity())
 			delete(q.inFlight, k)
 		}
 	}()
@@ -128,13 +129,13 @@ func (q *Queue) doFlush(items []interface{}) {
 // The index field acts as a Future for the entry's assigned index/error, and will
 // hang until assign is called.
 type entry struct {
-	data  []byte
+	data  tessera.Entry
 	c     chan IndexFunc
 	index IndexFunc
 }
 
 // newEntry creates a new entry for the provided data.
-func newEntry(data []byte) *entry {
+func newEntry(data tessera.Entry) *entry {
 	e := &entry{
 		data: data,
 		c:    make(chan IndexFunc, 1),

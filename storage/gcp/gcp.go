@@ -42,6 +42,7 @@ import (
 	"cloud.google.com/go/spanner"
 	"cloud.google.com/go/spanner/apiv1/spannerpb"
 	gcs "cloud.google.com/go/storage"
+	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/api"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
 	"github.com/transparency-dev/trillian-tessera/storage"
@@ -77,7 +78,7 @@ type objStore interface {
 type sequencer interface {
 	// assignEntries should durably allocate contiguous index numbers to the provided entries,
 	// and return the lowest assigned index.
-	assignEntries(ctx context.Context, entries [][]byte) (uint64, error)
+	assignEntries(ctx context.Context, entries []tessera.Entry) (uint64, error)
 	// consumeEntries should call the provided function with up to limit previously sequenced entries.
 	// If the call to consumeFunc returns no error, the entries should be considered to have been consumed.
 	// If any entries were successfully consumed, the implementation should also return true; this
@@ -86,7 +87,7 @@ type sequencer interface {
 }
 
 // consumeFunc is the signature of a function which can consume entries from the sequencer.
-type consumeFunc func(ctx context.Context, from uint64, entries [][]byte) error
+type consumeFunc func(ctx context.Context, from uint64, entries []tessera.Entry) error
 
 // Config holds GCP project and resource configuration for a storage instance.
 type Config struct {
@@ -147,6 +148,11 @@ func New(ctx context.Context, cfg Config) (*Storage, error) {
 	}()
 
 	return r, nil
+}
+
+// Add is the entrypoint for adding entries to a sequencing log.
+func (s *Storage) Add(ctx context.Context, e tessera.Entry) (uint64, error) {
+	return s.queue.Add(ctx, e)()
 }
 
 // setTile idempotently stores the provided tile at the location implied by the given level, index, and treeSize.
@@ -236,7 +242,7 @@ func (s *Storage) setEntryBundle(ctx context.Context, bundleIndex uint64, logSiz
 }
 
 // integrate incorporates the provided entries into the log starting at fromSeq.
-func (s *Storage) integrate(ctx context.Context, fromSeq uint64, entries [][]byte) error {
+func (s *Storage) integrate(ctx context.Context, fromSeq uint64, entries []tessera.Entry) error {
 	tb := storage.NewTreeBuilder(func(ctx context.Context, tileIDs []storage.TileID, treeSize uint64) ([]*api.HashTile, error) {
 		n, err := s.getTiles(ctx, tileIDs, treeSize)
 		if err != nil {
@@ -281,7 +287,7 @@ func (s *Storage) integrate(ctx context.Context, fromSeq uint64, entries [][]byt
 // updateEntryBundles adds the entries being integrated into the entry bundles.
 //
 // The right-most bundle will be grown, if it's partial, and/or new bundles will be created as required.
-func (s *Storage) updateEntryBundles(ctx context.Context, fromSeq uint64, entries [][]byte) error {
+func (s *Storage) updateEntryBundles(ctx context.Context, fromSeq uint64, entries []tessera.Entry) error {
 	numAdded := uint64(0)
 	bundleIndex, entriesInBundle := fromSeq/entryBundleSize, fromSeq%entryBundleSize
 	bundle := &api.EntryBundle{}
@@ -309,7 +315,7 @@ func (s *Storage) updateEntryBundles(ctx context.Context, fromSeq uint64, entrie
 
 	// Add new entries to the bundle
 	for _, e := range entries {
-		bundle.Entries = append(bundle.Entries, e)
+		bundle.Entries = append(bundle.Entries, e.Data())
 		entriesInBundle++
 		fromSeq++
 		numAdded++
@@ -408,7 +414,7 @@ func (s *spannerSequencer) initDB(ctx context.Context) error {
 // Entries are allocated contiguous indices, in the order in which they appear in the entries parameter.
 // This is achieved by storing the passed-in entries in the Seq table in Spanner, keyed by the
 // index assigned to the first entry in the batch.
-func (s *spannerSequencer) assignEntries(ctx context.Context, entries [][]byte) (uint64, error) {
+func (s *spannerSequencer) assignEntries(ctx context.Context, entries []tessera.Entry) (uint64, error) {
 	// Flatted the entries into a single slice of bytes which we can store in the Seq.v column.
 	b := &bytes.Buffer{}
 	e := gob.NewEncoder(b)
@@ -481,7 +487,7 @@ func (s *spannerSequencer) consumeEntries(ctx context.Context, limit uint64, f c
 		defer rows.Stop()
 
 		seqsConsumed := []int64{}
-		entries := make([][]byte, 0, limit)
+		entries := make([]tessera.Entry, 0, limit)
 		orderCheck := fromSeq
 		for {
 			row, err := rows.Next()
@@ -500,7 +506,7 @@ func (s *spannerSequencer) consumeEntries(ctx context.Context, limit uint64, f c
 			}
 
 			g := gob.NewDecoder(bytes.NewReader(vGob))
-			b := [][]byte{}
+			b := []tessera.Entry{}
 			if err := g.Decode(&b); err != nil {
 				return fmt.Errorf("failed to deserialise v: %v", err)
 			}

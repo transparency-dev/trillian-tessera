@@ -15,14 +15,15 @@
 package storage_test
 
 import (
-	"bytes"
 	"context"
 	"fmt"
+	"reflect"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/storage"
 )
 
@@ -52,12 +53,12 @@ func TestQueue(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			assignMu := sync.Mutex{}
-			assignedItems := make([][]byte, test.numItems)
+			assignedItems := make([]tessera.Entry, test.numItems)
 			assignedIndex := uint64(0)
 
 			// flushFunc mimics sequencing storage - it takes entries, assigns them to
 			// positions in assignedItems and returns the first assigned positition for each batch.
-			flushFunc := func(_ context.Context, entries [][]byte) (uint64, error) {
+			flushFunc := func(_ context.Context, entries []tessera.Entry) (uint64, error) {
 				assignMu.Lock()
 				defer assignMu.Unlock()
 
@@ -74,9 +75,9 @@ func TestQueue(t *testing.T) {
 
 			// Now submit a bunch of entries
 			adds := make([]storage.IndexFunc, test.numItems)
-			wantEntries := make([][]byte, test.numItems)
+			wantEntries := make([]tessera.Entry, test.numItems)
 			for i := uint64(0); i < test.numItems; i++ {
-				wantEntries[i] = []byte(fmt.Sprintf("item %d", i))
+				wantEntries[i] = tessera.NewEntry([]byte(fmt.Sprintf("item %d", i)))
 				adds[i] = q.Add(context.TODO(), wantEntries[i])
 			}
 
@@ -86,9 +87,7 @@ func TestQueue(t *testing.T) {
 					t.Errorf("Add: %v", err)
 					return
 				}
-				if item := assignedItems[N]; item == nil {
-					t.Errorf("Item %d was not present", N)
-				} else if got, want := item, wantEntries[i]; !bytes.Equal(got, want) {
+				if got, want := assignedItems[N], wantEntries[i]; !reflect.DeepEqual(got, want) {
 					t.Errorf("Got item@%d %q, want %q", N, got, want)
 				}
 			}
@@ -99,7 +98,7 @@ func TestQueue(t *testing.T) {
 func TestDedup(t *testing.T) {
 	idx := atomic.Uint64{}
 
-	q := storage.NewQueue(time.Second, 10 /*maxSize*/, func(ctx context.Context, entries [][]byte) (index uint64, err error) {
+	q := storage.NewQueue(time.Second, 10 /*maxSize*/, func(ctx context.Context, entries []tessera.Entry) (index uint64, err error) {
 		r := idx.Load()
 		idx.Add(1)
 		return r, nil
@@ -108,7 +107,7 @@ func TestDedup(t *testing.T) {
 	numEntries := 10
 	adds := []storage.IndexFunc{}
 	for i := 0; i < numEntries; i++ {
-		adds = append(adds, q.Add(context.TODO(), []byte("Have I seen this before?")))
+		adds = append(adds, q.Add(context.TODO(), tessera.NewEntry([]byte("Have I seen this before?"))))
 	}
 
 	firstN, err := adds[0]()
