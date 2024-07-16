@@ -15,7 +15,11 @@
 // Package tessera provides an implementation of a tile-based logging framework.
 package tessera
 
-import "github.com/transparency-dev/merkle/rfc6962"
+import (
+	"encoding/binary"
+
+	"github.com/transparency-dev/merkle/rfc6962"
+)
 
 // Entry represents an entry in a log.
 type Entry struct {
@@ -41,6 +45,30 @@ func NewEntry(data []byte, opts ...EntryOpt) Entry {
 
 	}
 	return e
+}
+
+func (e *Entry) MarshalBinary() ([]byte, error) {
+	buf := make([]byte, 0, len(e.data)+len(e.identity)+len(e.leafHash)+12)
+	buf = binary.AppendVarint(buf, int64(len(e.data)))
+	buf = append(buf, e.data...)
+	buf = binary.AppendVarint(buf, int64(len(e.identity)))
+	buf = append(buf, e.identity...)
+	buf = binary.AppendVarint(buf, int64(len(e.leafHash)))
+	buf = append(buf, e.leafHash...)
+	return buf, nil
+}
+
+func (e *Entry) UnmarshalBinary(buf []byte) error {
+	l, n := binary.Varint(buf)
+	buf = buf[n:]
+	e.data, buf = buf[:l], buf[l:]
+	l, n = binary.Varint(buf)
+	buf = buf[n:]
+	e.identity, buf = buf[:l], buf[l:]
+	l, n = binary.Varint(buf)
+	buf = buf[n:]
+	e.leafHash, buf = buf[:l], buf[l:]
+	return nil
 }
 
 // EntryOpt is the signature of options for creating new Entry instances.
