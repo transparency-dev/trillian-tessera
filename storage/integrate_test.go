@@ -22,8 +22,12 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/transparency-dev/merkle/compact"
+	"github.com/transparency-dev/merkle/rfc6962"
 	"github.com/transparency-dev/trillian-tessera/api"
+	"github.com/transparency-dev/trillian-tessera/api/layout"
+	"k8s.io/klog/v2"
 )
 
 func TestNewRangeFetchesTiles(t *testing.T) {
@@ -115,6 +119,50 @@ func TestTileVisit(t *testing.T) {
 	}
 }
 
+func TestIntegrate(t *testing.T) {
+	ctx := context.Background()
+	m := newMemTileStore[api.HashTile]()
+	tb := NewTreeBuilder(m.getTiles)
+
+	cr := (&compact.RangeFactory{Hash: rfc6962.DefaultHasher.HashChildren}).NewEmptyRange(0)
+
+	chunkSize := 200
+	numChunks := 1000
+	seq := uint64(0)
+	for chunk := 0; chunk < numChunks; chunk++ {
+		oldSeq := seq
+		c := make([][]byte, chunkSize)
+		for i := range c {
+			leaf := []byte{byte(seq)}
+			c[i] = leaf
+			if err := cr.Append(rfc6962.DefaultHasher.HashLeaf(leaf), nil); err != nil {
+				t.Fatalf("compact Append: %v", err)
+			}
+			seq++
+		}
+		wantRoot, err := cr.GetRootHash(nil)
+		if err != nil {
+			t.Fatalf("[%d] compactRange: %v", chunk, err)
+		}
+		gotSize, gotRoot, gotTiles, err := tb.Integrate(ctx, oldSeq, c)
+		if err != nil {
+			t.Fatalf("[%d] Integrate: %v", chunk, err)
+		}
+		if wantSize := seq; gotSize != wantSize {
+			t.Errorf("[%d] Got size %d, want %d", chunk, gotSize, wantSize)
+		}
+		if !cmp.Equal(gotRoot, wantRoot) {
+			t.Errorf("[%d] Got root %x, want %x", chunk, gotRoot, wantRoot)
+		}
+		for k, tile := range gotTiles {
+			if err := m.setTile(ctx, k, seq, tile); err != nil {
+				t.Fatalf("setTile: %v", err)
+			}
+		}
+	}
+
+}
+
 // zerotile creates a new api.HashTile of the provided size, whose leaves are all a single zero byte.
 func zeroTile(size uint64) *api.HashTile {
 	r := &api.HashTile{
@@ -126,23 +174,14 @@ func zeroTile(size uint64) *api.HashTile {
 	return r
 }
 
-type memTileStoreKey struct {
-	id       TileID
-	treeSize uint64
-}
-
-func (k memTileStoreKey) String() string {
-	return fmt.Sprintf("[L: 0x%x, I: 0x%x, S: 0x%x]", k.id.Level, k.id.Index, k.treeSize)
-}
-
 type memTileStore[T any] struct {
 	sync.RWMutex
-	mem map[memTileStoreKey]*T
+	mem map[string]*T
 }
 
 func newMemTileStore[T any]() *memTileStore[T] {
 	return &memTileStore[T]{
-		mem: make(map[memTileStoreKey]*T),
+		mem: make(map[string]*T),
 	}
 }
 
@@ -150,7 +189,7 @@ func (m *memTileStore[T]) getTile(_ context.Context, id TileID, treeSize uint64)
 	m.RLock()
 	defer m.RUnlock()
 
-	k := memTileStoreKey{id: id, treeSize: treeSize}
+	k := layout.TilePath(id.Level, id.Index, treeSize)
 	d, ok := m.mem[k]
 	if !ok {
 		return nil, fmt.Errorf("tile %q: %w", k, os.ErrNotExist)
@@ -164,7 +203,8 @@ func (m *memTileStore[T]) getTiles(_ context.Context, ids []TileID, treeSize uin
 
 	r := []*T{}
 	for _, id := range ids {
-		k := memTileStoreKey{id: id, treeSize: treeSize}
+		k := layout.TilePath(id.Level, id.Index, treeSize)
+		klog.V(1).Infof("mem.getTile(%q, %d)", k, treeSize)
 		d, ok := m.mem[k]
 		if !ok {
 			return nil, fmt.Errorf("tile %q: %w", k, os.ErrNotExist)
@@ -178,7 +218,8 @@ func (m *memTileStore[T]) setTile(_ context.Context, id TileID, treeSize uint64,
 	m.Lock()
 	defer m.Unlock()
 
-	k := memTileStoreKey{id: id, treeSize: treeSize}
+	k := layout.TilePath(id.Level, id.Index, treeSize)
+	klog.V(1).Infof("mem.setTile(%q, %d)", k, treeSize)
 	_, ok := m.mem[k]
 	if ok {
 		return fmt.Errorf("%q is already present", k)
