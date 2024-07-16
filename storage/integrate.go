@@ -18,7 +18,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"reflect"
 	"sync"
 
@@ -47,8 +46,8 @@ type TreeBuilder struct {
 
 // NewTreeBuilder creates a new instance of TreeBuilder.
 //
-// The getTile param must know how to fetch the specified tile from storage. It must return an instance of os.ErrNotExist
-// (either directly, or wrapped) if any of the the requested tiles were not found.
+// The getTiles param must know how to fetch the specified tiles from storage. It must return tiles in the same order as the
+// provided tileIDs, substituing nil for any tiles which were not found.
 func NewTreeBuilder(getTiles func(ctx context.Context, tileIDs []TileID, treeSize uint64) ([]*api.HashTile, error)) *TreeBuilder {
 	readCache := newTileReadCache(getTiles)
 	r := &TreeBuilder{
@@ -252,10 +251,10 @@ func (tc *tileWriteCache) Visitor(ctx context.Context) compact.VisitFn {
 			var err error
 			tile, err = tc.getTile(ctx, tileID, tc.treeSize)
 			if err != nil {
-				if !errors.Is(err, os.ErrNotExist) {
-					tc.err = append(tc.err, err)
-					return
-				}
+				tc.err = append(tc.err, err)
+				return
+			}
+			if tile == nil {
 				// No tile found in storage: this is a brand new tile being created due to tree growth.
 				tile, err = newPopulatedTile(nil)
 				if err != nil {
@@ -263,8 +262,8 @@ func (tc *tileWriteCache) Visitor(ctx context.Context) compact.VisitFn {
 					return
 				}
 			}
-			tc.m[tileID] = tile
 		}
+		tc.m[tileID] = tile
 		// Update the tile with the new node hash.
 		idx := compact.NodeID{Level: nodeLevel, Index: nodeIndex}
 		tile.Set(idx, hash)

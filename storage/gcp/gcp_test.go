@@ -30,6 +30,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/transparency-dev/trillian-tessera/api"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
+	"github.com/transparency-dev/trillian-tessera/storage"
 )
 
 func newSpannerDB(t *testing.T) func() {
@@ -171,11 +172,11 @@ func TestTileRoundtrip(t *testing.T) {
 				t.Fatalf("want tile at %v but found none", expPath)
 			}
 
-			got, err := s.getTile(ctx, test.level, test.index, test.logSize)
+			got, err := s.getTiles(ctx, []storage.TileID{{Level: test.level, Index: test.index}}, test.logSize)
 			if err != nil {
 				t.Fatalf("getTile: %v", err)
 			}
-			if !cmp.Equal(got, wantTile) {
+			if !cmp.Equal(got[0], wantTile) {
 				t.Fatal("roundtrip returned different data")
 			}
 		})
