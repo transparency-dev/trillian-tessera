@@ -42,7 +42,6 @@ type getPopulatedTileFunc func(ctx context.Context, tileID TileID, treeSize uint
 // to leak memory.
 type TreeBuilder struct {
 	readCache *tileReadCache
-	getTile   getPopulatedTileFunc
 	rf        *compact.RangeFactory
 }
 
@@ -108,7 +107,7 @@ func (t *TreeBuilder) Integrate(ctx context.Context, fromSize uint64, entries []
 	klog.V(1).Infof("Loaded state with roothash %x", r)
 	// Create a new compact range which represents the update to the tree
 	newRange := t.rf.NewEmptyRange(fromSize)
-	tc := newTileWriteCache(fromSize, t.getTile)
+	tc := newTileWriteCache(fromSize, t.readCache.Get)
 	visitor := tc.Visitor(ctx)
 	for _, e := range entries {
 		lh := rfc6962.DefaultHasher.HashLeaf(e)
@@ -170,6 +169,7 @@ func (r *tileReadCache) Get(ctx context.Context, tileID TileID, treeSize uint64)
 	k := layout.TilePath(uint64(tileID.Level), tileID.Index, treeSize)
 	e, ok := r.entries[k]
 	if !ok {
+		klog.V(1).Infof("Readcache miss: %q", k)
 		t, err := r.getTiles(ctx, []TileID{tileID}, treeSize)
 		if err != nil {
 			return nil, err
