@@ -284,7 +284,15 @@ func (s *Storage) integrate(ctx context.Context, fromSeq uint64, entries []tesse
 					return fmt.Errorf("newCP: %v", err)
 				}
 				if err := s.objStore.setObject(ctx, layout.CheckpointPath, cpRaw, nil); err != nil {
-					return fmt.Errorf("writeCheckpoint: %v", err)
+					switch ee := err.(type) {
+					case *googleapi.Error:
+						if ee.Code == http.StatusTooManyRequests {
+							// TODO(al): still need to ensure it does get updated, either by the next integrate or some other mechanism.
+							klog.Infof("checkpoint write rejected: %v, continuing anyway", err)
+						}
+					default:
+						return fmt.Errorf("writeCheckpoint: %v", err)
+					}
 				}
 			}
 			return nil
