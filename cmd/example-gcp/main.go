@@ -20,6 +20,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"flag"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -46,7 +47,7 @@ func main() {
 		Bucket:    *bucket,
 		Spanner:   *spanner,
 	}
-	_, err := gcp.New(ctx, gcpCfg)
+	storage, err := gcp.New(ctx, gcpCfg)
 	if err != nil {
 		klog.Exitf("Failed to create new GCP storage: %v", err)
 	}
@@ -60,9 +61,13 @@ func main() {
 		defer r.Body.Close()
 
 		id := sha256.Sum256(b)
-		_ = tessera.NewEntry(b, tessera.WithIdentity(id[:]))
-
-		// TODO: Add entry to log and return assigned index.
+		idx, err := storage.Add(r.Context(), tessera.NewEntry(b, tessera.WithIdentity(id[:])))
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte(err.Error()))
+			return
+		}
+		_, _ = w.Write([]byte(fmt.Sprintf("%d", idx)))
 	})
 
 	if err := http.ListenAndServe(*listen, http.DefaultServeMux); err != nil {

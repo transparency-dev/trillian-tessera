@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"reflect"
 	"sync"
 	"testing"
 
@@ -28,6 +29,7 @@ import (
 	"cloud.google.com/go/spanner/spansql"
 	gcs "cloud.google.com/go/storage"
 	"github.com/google/go-cmp/cmp"
+	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/api"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
 	"github.com/transparency-dev/trillian-tessera/storage"
@@ -68,9 +70,9 @@ func TestSpannerSequencerAssignEntries(t *testing.T) {
 
 	want := uint64(0)
 	for chunks := 0; chunks < 10; chunks++ {
-		entries := [][]byte{}
+		entries := []tessera.Entry{}
 		for i := 0; i < 10+chunks; i++ {
-			entries = append(entries, []byte(fmt.Sprintf("item %d/%d", chunks, i)))
+			entries = append(entries, tessera.NewEntry([]byte(fmt.Sprintf("item %d/%d", chunks, i))))
 		}
 		got, err := seq.assignEntries(ctx, entries)
 		if err != nil {
@@ -95,9 +97,9 @@ func TestSpannerSequencerRoundTrip(t *testing.T) {
 
 	seq := 0
 	for chunks := 0; chunks < 10; chunks++ {
-		entries := [][]byte{}
+		entries := []tessera.Entry{}
 		for i := 0; i < 10+chunks; i++ {
-			entries = append(entries, []byte(fmt.Sprintf("item %d", seq)))
+			entries = append(entries, tessera.NewEntry([]byte(fmt.Sprintf("item %d", seq))))
 			seq++
 		}
 		if _, err := s.assignEntries(ctx, entries); err != nil {
@@ -106,12 +108,12 @@ func TestSpannerSequencerRoundTrip(t *testing.T) {
 	}
 
 	seenIdx := uint64(0)
-	f := func(_ context.Context, fromSeq uint64, entries [][]byte) error {
+	f := func(_ context.Context, fromSeq uint64, entries []tessera.Entry) error {
 		if fromSeq != seenIdx {
 			return fmt.Errorf("f called with fromSeq %d, want %d", fromSeq, seenIdx)
 		}
 		for i, e := range entries {
-			if !bytes.Equal(e, []byte(fmt.Sprintf("item %d", i))) {
+			if !reflect.DeepEqual(e, tessera.NewEntry([]byte(fmt.Sprintf("item %d", i)))) {
 				return fmt.Errorf("entry %d+%d != %d", fromSeq, i, seenIdx)
 			}
 			seenIdx++
