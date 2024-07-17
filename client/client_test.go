@@ -33,7 +33,7 @@ import (
 var (
 	testOrigin      = "example.com/log/testdata"
 	testLogVerifier = mustMakeVerifier("example.com/log/testdata+33d7b496+AeHTu4Q3hEIMHNqc6fASMsq3rKNx280NI+oO5xCFkkSx")
-	// Built using serverless/testdata/build_log.sh
+	// Built using testdata/build_log.sh
 	testRawCheckpoints, testCheckpoints = mustLoadTestCheckpoints()
 )
 

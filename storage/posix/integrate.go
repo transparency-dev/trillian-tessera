@@ -1,18 +1,17 @@
-// Copyright 2021 Google LLC. All Rights Reserved.
+// Copyright 2024 The Tessera authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
-package writer
+package posix
 
 import (
 	"context"
@@ -22,19 +21,19 @@ import (
 
 	"github.com/transparency-dev/merkle"
 	"github.com/transparency-dev/merkle/compact"
-	"github.com/transparency-dev/serverless-log/api"
-	"github.com/transparency-dev/serverless-log/api/layout"
-	"github.com/transparency-dev/serverless-log/client"
+	"github.com/transparency-dev/trillian-tessera/api"
+	"github.com/transparency-dev/trillian-tessera/api/layout"
+	"github.com/transparency-dev/trillian-tessera/client"
 	"k8s.io/klog/v2"
 )
 
 // IntegrateStorage represents the set of functions needed by the integrate function.
 type IntegrateStorage interface {
 	// GetTile returns the tile at the given level & index.
-	GetTile(ctx context.Context, level, index, logSize uint64) (*api.Tile, error)
+	GetTile(ctx context.Context, level, index, logSize uint64) (*api.HashTile, error)
 
 	// StoreTile stores the tile at the given level & index.
-	StoreTile(ctx context.Context, level, index uint64, tile *api.Tile) error
+	StoreTile(ctx context.Context, level, index, logSize uint64, tile *api.HashTile) error
 
 	GetEntryBundle(ctx context.Context, index uint64, size uint64) ([]byte, error)
 }
@@ -52,11 +51,11 @@ var (
 // Integrate adds all sequenced entries greater than fromSize into the tree.
 // Returns an updated Checkpoint, or an error.
 func Integrate(ctx context.Context, fromSize uint64, batch [][]byte, st IntegrateStorage, h merkle.LogHasher) (uint64, []byte, error) {
-	getTile := func(l, i uint64) (*api.Tile, error) {
+	getTile := func(l, i uint64) (*api.HashTile, error) {
 		return st.GetTile(ctx, l, i, fromSize)
 	}
 
-	hashes, err := client.FetchRangeNodes(ctx, fromSize, func(_ context.Context, l, i uint64) (*api.Tile, error) {
+	hashes, err := client.FetchRangeNodes(ctx, fromSize, func(_ context.Context, l, i uint64) (*api.HashTile, error) {
 		return getTile(l, i)
 	})
 	if err != nil {
@@ -79,7 +78,7 @@ func Integrate(ctx context.Context, fromSize uint64, batch [][]byte, st Integrat
 
 	// Create a new compact range which represents the update to the tree
 	newRange := rf.NewEmptyRange(fromSize)
-	tc := tileCache{m: make(map[tileKey]*api.Tile), getTile: getTile}
+	tc := tileCache{m: make(map[tileKey]*api.HashTile), getTile: getTile}
 	if len(batch) == 0 {
 		klog.V(1).Infof("Nothing to do.")
 		// Nothing to do, nothing done.
@@ -111,7 +110,7 @@ func Integrate(ctx context.Context, fromSize uint64, batch [][]byte, st Integrat
 	klog.V(1).Infof("New log state: size 0x%x hash: %x", baseRange.End(), newRoot)
 
 	for k, t := range tc.m {
-		if err := st.StoreTile(ctx, k.level, k.index, t); err != nil {
+		if err := st.StoreTile(ctx, k.level, k.index, baseRange.End(), t); err != nil {
 			return 0, nil, fmt.Errorf("failed to store tile at level %d index %d: %w", k.level, k.index, err)
 		}
 	}
@@ -134,9 +133,9 @@ type tileKey struct {
 //
 // Note that by itself, this cache does not update any on-disk state.
 type tileCache struct {
-	m map[tileKey]*api.Tile
+	m map[tileKey]*api.HashTile
 
-	getTile func(level, index uint64) (*api.Tile, error)
+	getTile func(level, index uint64) (*api.HashTile, error)
 }
 
 // Visit should be called once for each newly set non-ephemeral node in the
@@ -147,6 +146,10 @@ type tileCache struct {
 // update it by setting the node corresponding to id to the value hash.
 func (tc tileCache) Visit(id compact.NodeID, hash []byte) {
 	tileLevel, tileIndex, nodeLevel, nodeIndex := layout.NodeCoordsToTileAddress(uint64(id.Level), uint64(id.Index))
+	if nodeLevel > 0 {
+		// We only need to set leaf nodes in tiles
+		return
+	}
 	tileKey := tileKey{level: tileLevel, index: tileIndex}
 	tile := tc.m[tileKey]
 	if tile == nil {
@@ -161,21 +164,16 @@ func (tc tileCache) Visit(id compact.NodeID, hash []byte) {
 			}
 			// This is a brand new tile.
 			created = true
-			tile = &api.Tile{
-				Nodes: make([][]byte, 0, 256*2),
+			tile = &api.HashTile{
+				Nodes: make([][]byte, 0, 256),
 			}
 		}
 		klog.V(2).Infof("GetTile: %v new: %v", tileKey, created)
 		tc.m[tileKey] = tile
 	}
 	// Update the tile with the new node hash.
-	idx := api.TileNodeKey(nodeLevel, nodeIndex)
-	if l := uint(len(tile.Nodes)); idx >= l {
-		tile.Nodes = append(tile.Nodes, make([][]byte, idx-l+1)...)
+	if l := int(nodeIndex) - len(tile.Nodes); l >= 0 {
+		tile.Nodes = append(tile.Nodes, make([][]byte, l+1)...)
 	}
-	tile.Nodes[idx] = hash
-	// Update the number of 'tile leaves', if necessary.
-	if nodeLevel == 0 && nodeIndex >= uint64(tile.NumLeaves) {
-		tile.NumLeaves = uint(nodeIndex + 1)
-	}
+	tile.Nodes[nodeIndex] = hash
 }

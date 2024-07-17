@@ -1,4 +1,4 @@
-// Copyright 2021 Google LLC. All Rights Reserved.
+// Copyright 2024 The Tessera authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package main provides a command line tool for integrating sequenced
-// entries into a serverless log.
+// example-posix is a command line tool for adding entries to a local
+// tlog-tiles log stored on a posix filesystem.
 package main
 
 import (
@@ -24,21 +24,27 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/transparency-dev/serverless-log/internal/storage/fs"
 	"golang.org/x/mod/sumdb/note"
 
 	"github.com/transparency-dev/merkle/rfc6962"
-	"github.com/transparency-dev/serverless-log/pkg/log"
+	"github.com/transparency-dev/trillian-tessera/api/layout"
+	"github.com/transparency-dev/trillian-tessera/storage/posix"
 	"k8s.io/klog/v2"
 
 	fmtlog "github.com/transparency-dev/formats/log"
 )
 
+const (
+	dirPerm = 0o755
+)
+
 var (
-	storageDir = flag.String("storage_dir", "", "Root directory to store log data.")
-	entries    = flag.String("entries", "", "File path glob of entries to add to the log.")
-	pubKeyFile = flag.String("public_key", "", "Location of public key file. If unset, uses the contents of the SERVERLESS_LOG_PUBLIC_KEY environment variable.")
-	origin     = flag.String("origin", "", "Log origin string to check for in checkpoint.")
+	storageDir  = flag.String("storage_dir", "", "Root directory to store log data.")
+	initialise  = flag.Bool("initialise", false, "Set when creating a new log to initialise the structure.")
+	entries     = flag.String("entries", "", "File path glob of entries to add to the log.")
+	pubKeyFile  = flag.String("public_key", "", "Location of public key file. If unset, uses the contents of the LOG_PUBLIC_KEY environment variable.")
+	privKeyFile = flag.String("private_key", "", "Location of private key file. If unset, uses the contents of the LOG_PRIVATE_KEY environment variable.")
+	origin      = flag.String("origin", "", "Log origin string to check for in checkpoint.")
 )
 
 func main() {
@@ -47,17 +53,48 @@ func main() {
 
 	// Read log public key from file or environment variable
 	var pubKey string
+	var err error
 	if len(*pubKeyFile) > 0 {
-		k, err := os.ReadFile(*pubKeyFile)
+		pubKey, err = getKeyFile(*pubKeyFile)
 		if err != nil {
-			klog.Exitf("failed to read public_key file: %q", err)
+			klog.Exitf("Unable to get public key: %q", err)
 		}
-		pubKey = string(k)
 	} else {
-		pubKey = os.Getenv("SERVERLESS_LOG_PUBLIC_KEY")
+		pubKey = os.Getenv("LOG_PUBLIC_KEY")
 		if len(pubKey) == 0 {
-			klog.Exit("supply public key file path using --public_key or set SERVERLESS_LOG_PUBLIC_KEY environment variable")
+			klog.Exit("Supply public key file path using --public_key or set LOG_PUBLIC_KEY environment variable")
 		}
+	}
+	// Read log private key from file or environment variable
+	var privKey string
+	if len(*privKeyFile) > 0 {
+		privKey, err = getKeyFile(*privKeyFile)
+		if err != nil {
+			klog.Exitf("Unable to get private key: %q", err)
+		}
+	} else {
+		privKey = os.Getenv("LOG_PRIVATE_KEY")
+		if len(privKey) == 0 {
+			klog.Exit("Supply private key file path using --private_key or set LOG_PRIVATE_KEY environment variable")
+		}
+	}
+
+	var cpNote note.Note
+	s, err := note.NewSigner(privKey)
+	if err != nil {
+		klog.Exitf("Failed to instantiate signer: %q", err)
+	}
+	if *initialise {
+		if err := os.MkdirAll(*storageDir, dirPerm); err != nil {
+			klog.Exitf("Failed to create log directory: %q", err)
+		}
+		cp := fmtlog.Checkpoint{
+			Hash: rfc6962.DefaultHasher.EmptyRoot(),
+		}
+		if err := signAndWrite(&cp, cpNote, s, *storageDir); err != nil {
+			klog.Exitf("Failed to sign: %q", err)
+		}
+		os.Exit(0)
 	}
 
 	toAdd, err := filepath.Glob(*entries)
@@ -68,10 +105,7 @@ func main() {
 		klog.Exit("Sequence must be run with at least one valid entry")
 	}
 
-	h := rfc6962.DefaultHasher
-	// init storage
-
-	cpRaw, err := fs.ReadCheckpoint(*storageDir)
+	cpRaw, err := posix.ReadCheckpoint(*storageDir)
 	if err != nil {
 		klog.Exitf("Failed to read log checkpoint: %q", err)
 	}
@@ -81,15 +115,27 @@ func main() {
 	if err != nil {
 		klog.Exitf("Failed to instantiate Verifier: %q", err)
 	}
-	cp, _, _, err := fmtlog.ParseCheckpoint(cpRaw, *origin, v)
-	if err != nil {
-		klog.Exitf("Failed to parse Checkpoint: %q", err)
-	}
 
-	st, err := fs.Load(*storageDir, cp.Size)
-	if err != nil {
-		klog.Exitf("Failed to load storage: %q", err)
+	readCP := func() (uint64, []byte, error) {
+		cp, _, _, err := fmtlog.ParseCheckpoint(cpRaw, *origin, v)
+		if err != nil {
+			return 0, []byte{}, fmt.Errorf("Failed to parse Checkpoint: %q", err)
+		}
+		return cp.Size, cp.Hash, nil
 	}
+	writeCP := func(size uint64, root []byte) error {
+		cp := &fmtlog.Checkpoint{
+			Origin: s.Name(),
+			Size:   size,
+			Hash:   root,
+		}
+		n, err := note.Sign(&note.Note{Text: string(cp.Marshal())}, s)
+		if err != nil {
+			return err
+		}
+		return posix.WriteCheckpoint(*storageDir, n)
+	}
+	st := posix.New(*storageDir, readCP, writeCP)
 
 	// sequence entries
 
@@ -115,11 +161,10 @@ func main() {
 
 	for entry := range entries {
 		// ask storage to sequence
-		lh := h.HashLeaf(entry.b)
 		dupe := false
-		seq, err := st.Sequence(context.Background(), lh, entry.b)
+		seq, err := st.Sequence(context.Background(), entry.b)
 		if err != nil {
-			if errors.Is(err, log.ErrDupeLeaf) {
+			if errors.Is(err, posix.ErrDupeLeaf) {
 				dupe = true
 			} else {
 				klog.Exitf("failed to sequence %q: %q", entry.name, err)
@@ -131,4 +176,27 @@ func main() {
 		}
 		klog.Info(l)
 	}
+}
+
+func getKeyFile(path string) (string, error) {
+	k, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("failed to read key file: %w", err)
+	}
+	return string(k), nil
+}
+
+func signAndWrite(cp *fmtlog.Checkpoint, cpNote note.Note, s note.Signer, dir string) error {
+	cp.Origin = *origin
+	cpNote.Text = string(cp.Marshal())
+	cpNoteSigned, err := note.Sign(&cpNote, s)
+	if err != nil {
+		return fmt.Errorf("failed to sign Checkpoint: %w", err)
+	}
+
+	cpPath := filepath.Join(dir, layout.CheckpointPath)
+	if err := os.WriteFile(cpPath, cpNoteSigned, 0o644); err != nil {
+		return fmt.Errorf("failed to store new log checkpoint: %w", err)
+	}
+	return nil
 }

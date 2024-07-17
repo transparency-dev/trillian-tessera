@@ -1,9 +1,20 @@
+// Copyright 2024 The Tessera authors. All Rights Reserved.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//	http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 package posix
 
 import (
-	"bytes"
 	"context"
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -11,13 +22,10 @@ import (
 	"path/filepath"
 	"sync"
 	"syscall"
-	"time"
 
-	"github.com/AlCutter/betty/log"
-	"github.com/AlCutter/betty/log/writer"
 	"github.com/transparency-dev/merkle/rfc6962"
-	"github.com/transparency-dev/serverless-log/api"
-	"github.com/transparency-dev/serverless-log/api/layout"
+	"github.com/transparency-dev/trillian-tessera/api"
+	"github.com/transparency-dev/trillian-tessera/api/layout"
 	"k8s.io/klog/v2"
 )
 
@@ -30,9 +38,8 @@ const (
 // It leverages the POSIX atomic operations.
 type Storage struct {
 	sync.Mutex
-	params log.Params
-	path   string
-	pool   *writer.Pool
+	path string
+	pool *Pool
 
 	cpFile *os.File
 
@@ -49,19 +56,18 @@ type NewTreeFunc func(size uint64, root []byte) error
 type CurrentTreeFunc func() (uint64, []byte, error)
 
 // New creates a new POSIX storage.
-func New(path string, params log.Params, batchMaxAge time.Duration, curTree CurrentTreeFunc, newTree NewTreeFunc) *Storage {
+func New(path string, curTree CurrentTreeFunc, newTree NewTreeFunc) *Storage {
 	curSize, _, err := curTree()
 	if err != nil {
 		panic(err)
 	}
 	r := &Storage{
 		path:    path,
-		params:  params,
 		curSize: curSize,
 		curTree: curTree,
 		newTree: newTree,
 	}
-	r.pool = writer.NewPool(params.EntryBundleSize, batchMaxAge, r.sequenceBatch)
+	r.pool = NewPool(r.sequenceBatch)
 
 	return r
 }
@@ -112,14 +118,9 @@ func (s *Storage) Sequence(ctx context.Context, b []byte) (uint64, error) {
 	return s.pool.Add(b)
 }
 
-// GetEntryBundle retrieves the Nth entries bundle.
-// If size is != the max size of the bundle, a partial bundle is returned.
-func (s *Storage) GetEntryBundle(ctx context.Context, index, size uint64) ([]byte, error) {
-	bd, bf := layout.SeqPath(s.path, index)
-	if size < uint64(s.params.EntryBundleSize) {
-		bf = fmt.Sprintf("%s.%d", bf, size)
-	}
-	return os.ReadFile(filepath.Join(bd, bf))
+// GetEntryBundle retrieves the Nth entries bundle for a log of the given size.
+func (s *Storage) GetEntryBundle(ctx context.Context, index, logSize uint64) ([]byte, error) {
+	return os.ReadFile(filepath.Join(s.path, layout.EntriesPath(index, logSize)))
 }
 
 // sequenceBatch writes the entries from the provided batch into the entry bundle files of the log.
@@ -128,7 +129,7 @@ func (s *Storage) GetEntryBundle(ctx context.Context, index, size uint64) ([]byt
 // sequenced entries are contiguous from the zeroth entry (i.e left-hand dense).
 // We try to minimise the number of partially complete entry bundles by writing entries in chunks rather
 // than one-by-one.
-func (s *Storage) sequenceBatch(ctx context.Context, batch writer.Batch) (uint64, error) {
+func (s *Storage) sequenceBatch(ctx context.Context, batch Batch) (uint64, error) {
 	// Double locking:
 	// - The mutex `Lock()` ensures that multiple concurrent calls to this function within a task are serialised.
 	// - The POSIX `LockCP()` ensures that distinct tasks are serialised.
@@ -152,51 +153,56 @@ func (s *Storage) sequenceBatch(ctx context.Context, batch writer.Batch) (uint64
 	if len(batch.Entries) == 0 {
 		return 0, nil
 	}
+	currTile := api.EntryBundle{}
+	newSize := s.curSize + uint64(len(batch.Entries))
 	seq := s.curSize
-	bundleIndex, entriesInBundle := seq/uint64(s.params.EntryBundleSize), seq%uint64(s.params.EntryBundleSize)
-	bundle := &bytes.Buffer{}
+	bundleIndex, entriesInBundle := seq/uint64(256), seq%uint64(256)
 	if entriesInBundle > 0 {
 		// If the latest bundle is partial, we need to read the data it contains in for our newer, larger, bundle.
-		part, err := s.GetEntryBundle(ctx, bundleIndex, entriesInBundle)
+		part, err := s.GetEntryBundle(ctx, bundleIndex, s.curSize)
 		if err != nil {
 			return 0, err
 		}
-		bundle.Write(part)
+		if err := currTile.UnmarshalText(part); err != nil {
+			return 0, fmt.Errorf("failed to parse existing partial bundle for %d: %v", bundleIndex, err)
+		}
+	}
+	writeBundle := func(bundleIndex uint64) error {
+		bf := filepath.Join(s.path, layout.EntriesPath(bundleIndex, newSize))
+		if err := os.MkdirAll(filepath.Dir(bf), dirPerm); err != nil {
+			return fmt.Errorf("failed to make entries directory structure: %w", err)
+		}
+		data, err := currTile.MarshalText()
+		if err != nil {
+			return fmt.Errorf("failed to serialize bundle: %v", err)
+		}
+		if err := createExclusive(bf, data); err != nil {
+			if !errors.Is(os.ErrExist, err) {
+				return err
+			}
+		}
+		return nil
 	}
 	// Add new entries to the bundle
 	for _, e := range batch.Entries {
-		bundle.WriteString(base64.StdEncoding.EncodeToString(e))
-		bundle.WriteString("\n")
+		currTile.Entries = append(currTile.Entries, e)
 		entriesInBundle++
-		if entriesInBundle == uint64(s.params.EntryBundleSize) {
+		if entriesInBundle == uint64(256) {
 			//  This bundle is full, so we need to write it out...
-			bd, bf := layout.SeqPath(s.path, bundleIndex)
-			if err := os.MkdirAll(bd, dirPerm); err != nil {
-				return 0, fmt.Errorf("failed to make seq directory structure: %w", err)
-			}
-			if err := createExclusive(filepath.Join(bd, bf), bundle.Bytes()); err != nil {
-				if !errors.Is(os.ErrExist, err) {
-					return 0, err
-				}
-			}
 			// ... and prepare the next entry bundle for any remaining entries in the batch
+			if err := writeBundle(bundleIndex); err != nil {
+				return 0, err
+			}
 			bundleIndex++
 			entriesInBundle = 0
-			bundle = &bytes.Buffer{}
+			currTile = api.EntryBundle{}
 		}
 	}
 	// If we have a partial bundle remaining once we've added all the entries from the batch,
 	// this needs writing out too.
 	if entriesInBundle > 0 {
-		bd, bf := layout.SeqPath(s.path, bundleIndex)
-		bf = fmt.Sprintf("%s.%d", bf, entriesInBundle)
-		if err := os.MkdirAll(bd, dirPerm); err != nil {
-			return 0, fmt.Errorf("failed to make seq directory structure: %w", err)
-		}
-		if err := createExclusive(filepath.Join(bd, bf), bundle.Bytes()); err != nil {
-			if !errors.Is(os.ErrExist, err) {
-				return 0, err
-			}
+		if err := writeBundle(bundleIndex); err != nil {
+			return 0, err
 		}
 	}
 
@@ -206,7 +212,7 @@ func (s *Storage) sequenceBatch(ctx context.Context, batch writer.Batch) (uint64
 
 // doIntegrate handles integrating new entries into the log, and updating the checkpoint.
 func (s *Storage) doIntegrate(ctx context.Context, from uint64, batch [][]byte) error {
-	newSize, newRoot, err := writer.Integrate(ctx, from, batch, s, rfc6962.DefaultHasher)
+	newSize, newRoot, err := Integrate(ctx, from, batch, s, rfc6962.DefaultHasher)
 	if err != nil {
 		klog.Errorf("Failed to integrate: %v", err)
 		return err
@@ -220,9 +226,8 @@ func (s *Storage) doIntegrate(ctx context.Context, from uint64, batch [][]byte) 
 // GetTile returns the tile at the given tile-level and tile-index.
 // If no complete tile exists at that location, it will attempt to find a
 // partial tile for the given tree size at that location.
-func (s *Storage) GetTile(_ context.Context, level, index, logSize uint64) (*api.Tile, error) {
-	tileSize := layout.PartialTileSize(level, index, logSize)
-	p := filepath.Join(layout.TilePath(s.path, level, index, tileSize))
+func (s *Storage) GetTile(_ context.Context, level, index, logSize uint64) (*api.HashTile, error) {
+	p := filepath.Join(s.path, layout.TilePath(level, index, logSize))
 	t, err := os.ReadFile(p)
 	if err != nil {
 		if !errors.Is(err, os.ErrNotExist) {
@@ -231,7 +236,7 @@ func (s *Storage) GetTile(_ context.Context, level, index, logSize uint64) (*api
 		return nil, err
 	}
 
-	var tile api.Tile
+	var tile api.HashTile
 	if err := tile.UnmarshalText(t); err != nil {
 		return nil, fmt.Errorf("failed to parse tile: %w", err)
 	}
@@ -242,8 +247,8 @@ func (s *Storage) GetTile(_ context.Context, level, index, logSize uint64) (*api
 // Fully populated tiles are stored at the path corresponding to the level &
 // index parameters, partially populated (i.e. right-hand edge) tiles are
 // stored with a .xx suffix where xx is the number of "tile leaves" in hex.
-func (s *Storage) StoreTile(_ context.Context, level, index uint64, tile *api.Tile) error {
-	tileSize := uint64(tile.NumLeaves)
+func (s *Storage) StoreTile(_ context.Context, level, index, logSize uint64, tile *api.HashTile) error {
+	tileSize := uint64(len(tile.Nodes))
 	klog.V(2).Infof("StoreTile: level %d index %x ts: %x", level, index, tileSize)
 	if tileSize == 0 || tileSize > 256 {
 		return fmt.Errorf("tileSize %d must be > 0 and <= 256", tileSize)
@@ -253,9 +258,8 @@ func (s *Storage) StoreTile(_ context.Context, level, index uint64, tile *api.Ti
 		return fmt.Errorf("failed to marshal tile: %w", err)
 	}
 
-	tDir, tFile := layout.TilePath(s.path, level, index, tileSize%256)
-	tPath := filepath.Join(tDir, tFile)
-
+	tPath := filepath.Join(s.path, layout.TilePath(level, index, logSize))
+	tDir := filepath.Dir(tPath)
 	if err := os.MkdirAll(tDir, dirPerm); err != nil {
 		return fmt.Errorf("failed to create directory %q: %w", tDir, err)
 	}
