@@ -238,6 +238,12 @@ func (tc *tileWriteCache) Err() error {
 	return errors.Join(tc.err...)
 }
 
+// minImpliedTreeSize returns the smallest possible tree size implied by the existence of a tile
+// with the given ID.
+func minImpliedTreeSize(id TileID) uint64 {
+	return (id.Index * 256) << (id.Level * 8)
+}
+
 // Visitor returns a function suitable for use with the compact.Range visitor pattern.
 //
 // The returned function is expected to be called sequentially to set one or nodes
@@ -249,10 +255,16 @@ func (tc *tileWriteCache) Visitor(ctx context.Context) compact.VisitFn {
 		tile := tc.m[tileID]
 		if tile == nil {
 			var err error
-			tile, err = tc.getTile(ctx, tileID, tc.treeSize)
-			if err != nil {
-				tc.err = append(tc.err, err)
-				return
+			// If this tile implies a larger tree size than we started integrating at, we don't
+			// need to try to fetch the tile since it probably doesn't exist.
+			// If it _does_ exist, e.g. due to an earlier crash during integration, we'll discover
+			// any non-idempotency issues when we come to flush these new tiles out.
+			if iSize := minImpliedTreeSize(tileID); iSize <= tc.treeSize {
+				tile, err = tc.getTile(ctx, tileID, tc.treeSize)
+				if err != nil {
+					tc.err = append(tc.err, err)
+					return
+				}
 			}
 			if tile == nil {
 				// No tile found in storage: this is a brand new tile being created due to tree growth.
