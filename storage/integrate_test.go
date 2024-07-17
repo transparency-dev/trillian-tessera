@@ -131,7 +131,7 @@ func TestIntegrate(t *testing.T) {
 	seq := uint64(0)
 	for chunk := 0; chunk < numChunks; chunk++ {
 		oldSeq := seq
-		c := make([]tessera.Entry, chunkSize)
+		c := make([]*tessera.Entry, chunkSize)
 		for i := range c {
 			leaf := []byte{byte(seq)}
 			c[i] = tessera.NewEntry(leaf)

@@ -67,9 +67,11 @@ type EntryBundle struct {
 }
 
 // MarshalText implements encoding/TextMarshaller and writes out an EntryBundle
-// instance as sequences of big-endian uint16 length-prefixed log entries,
-// as specified by the tlog-tiles spec.
-// TODO(#41): this _may_ need to be changed to support CT
+// instance as sequences of serialised Entries.
+//
+// Entries must serialise to a "stream"-ready format (i.e. they should be self-describing
+// enough to allow correct deserialisation of multiple concatenated entries without
+// the need for any further demarcation.
 func (t EntryBundle) MarshalText() ([]byte, error) {
 	r := &bytes.Buffer{}
 	sizeBs := make([]byte, 2)

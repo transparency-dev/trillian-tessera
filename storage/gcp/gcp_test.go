@@ -70,7 +70,7 @@ func TestSpannerSequencerAssignEntries(t *testing.T) {
 
 	want := uint64(0)
 	for chunks := 0; chunks < 10; chunks++ {
-		entries := []tessera.Entry{}
+		entries := []*tessera.Entry{}
 		for i := 0; i < 10+chunks; i++ {
 			entries = append(entries, tessera.NewEntry([]byte(fmt.Sprintf("item %d/%d", chunks, i))))
 		}
@@ -97,7 +97,7 @@ func TestSpannerSequencerRoundTrip(t *testing.T) {
 
 	seq := 0
 	for chunks := 0; chunks < 10; chunks++ {
-		entries := []tessera.Entry{}
+		entries := []*tessera.Entry{}
 		for i := 0; i < 10+chunks; i++ {
 			entries = append(entries, tessera.NewEntry([]byte(fmt.Sprintf("item %d", seq))))
 			seq++
@@ -108,7 +108,7 @@ func TestSpannerSequencerRoundTrip(t *testing.T) {
 	}
 
 	seenIdx := uint64(0)
-	f := func(_ context.Context, fromSeq uint64, entries []tessera.Entry) error {
+	f := func(_ context.Context, fromSeq uint64, entries []*tessera.Entry) error {
 		if fromSeq != seenIdx {
 			return fmt.Errorf("f called with fromSeq %d, want %d", fromSeq, seenIdx)
 		}

@@ -78,9 +78,8 @@ type objStore interface {
 
 // sequencer describes a type which knows how to sequence entries.
 type sequencer interface {
-	// assignEntries should durably allocate contiguous index numbers to the provided entries,
-	// and return the lowest assigned index.
-	assignEntries(ctx context.Context, entries []tessera.Entry) (uint64, error)
+	// assignEntries should durably allocate contiguous index numbers to the provided entries.
+	assignEntries(ctx context.Context, entries []*tessera.Entry) error
 	// consumeEntries should call the provided function with up to limit previously sequenced entries.
 	// If the call to consumeFunc returns no error, the entries should be considered to have been consumed.
 	// If any entries were successfully consumed, the implementation should also return true; this
@@ -89,7 +88,7 @@ type sequencer interface {
 }
 
 // consumeFunc is the signature of a function which can consume entries from the sequencer.
-type consumeFunc func(ctx context.Context, from uint64, entries []tessera.Entry) error
+type consumeFunc func(ctx context.Context, from uint64, entries []*tessera.Entry) error
 
 // Config holds GCP project and resource configuration for a storage instance.
 type Config struct {
@@ -155,7 +154,7 @@ func New(ctx context.Context, cfg Config, opts ...func(*tessera.StorageOptions))
 }
 
 // Add is the entrypoint for adding entries to a sequencing log.
-func (s *Storage) Add(ctx context.Context, e tessera.Entry) (uint64, error) {
+func (s *Storage) Add(ctx context.Context, e *tessera.Entry) (uint64, error) {
 	return s.queue.Add(ctx, e)()
 }
 
@@ -219,7 +218,7 @@ func (s *Storage) getTiles(ctx context.Context, tileIDs []storage.TileID, logSiz
 // getEntryBundle returns the entry bundle at the location implied by the given index and treeSize.
 //
 // Returns a wrapped os.ErrNotExist if the bundle does not exist.
-func (s *Storage) getEntryBundle(ctx context.Context, bundleIndex uint64, logSize uint64) (*api.EntryBundle, error) {
+func (s *Storage) getEntryBundle(ctx context.Context, bundleIndex uint64, logSize uint64) ([]byte, error) {
 	objName := layout.EntriesPath(bundleIndex, logSize)
 	data, _, err := s.objStore.getObject(ctx, objName)
 	if err != nil {
@@ -256,7 +255,7 @@ func (s *Storage) setEntryBundle(ctx context.Context, bundleIndex uint64, logSiz
 }
 
 // integrate incorporates the provided entries into the log starting at fromSeq.
-func (s *Storage) integrate(ctx context.Context, fromSeq uint64, entries []tessera.Entry) error {
+func (s *Storage) integrate(ctx context.Context, fromSeq uint64, entries []*tessera.Entry) error {
 	tb := storage.NewTreeBuilder(func(ctx context.Context, tileIDs []storage.TileID, treeSize uint64) ([]*api.HashTile, error) {
 		n, err := s.getTiles(ctx, tileIDs, treeSize)
 		if err != nil {
@@ -317,7 +316,7 @@ func (s *Storage) integrate(ctx context.Context, fromSeq uint64, entries []tesse
 // updateEntryBundles adds the entries being integrated into the entry bundles.
 //
 // The right-most bundle will be grown, if it's partial, and/or new bundles will be created as required.
-func (s *Storage) updateEntryBundles(ctx context.Context, fromSeq uint64, entries []tessera.Entry) error {
+func (s *Storage) updateEntryBundles(ctx context.Context, fromSeq uint64, entries []*tessera.Entry) error {
 	numAdded := uint64(0)
 	bundleIndex, entriesInBundle := fromSeq/entryBundleSize, fromSeq%entryBundleSize
 	bundle := &api.EntryBundle{}
@@ -444,16 +443,7 @@ func (s *spannerSequencer) initDB(ctx context.Context) error {
 // Entries are allocated contiguous indices, in the order in which they appear in the entries parameter.
 // This is achieved by storing the passed-in entries in the Seq table in Spanner, keyed by the
 // index assigned to the first entry in the batch.
-func (s *spannerSequencer) assignEntries(ctx context.Context, entries []tessera.Entry) (uint64, error) {
-	// Flatted the entries into a single slice of bytes which we can store in the Seq.v column.
-	b := &bytes.Buffer{}
-	e := gob.NewEncoder(b)
-	if err := e.Encode(entries); err != nil {
-		return 0, fmt.Errorf("failed to serialise batch: %v", err)
-	}
-	data := b.Bytes()
-	num := len(entries)
-
+func (s *spannerSequencer) assignEntries(ctx context.Context, entries []*tessera.Entry) error {
 	var next int64 // Unfortunately, Spanner doesn't support uint64 so we'll have to cast around a bit.
 
 	_, err := s.dbPool.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
@@ -466,8 +456,23 @@ func (s *spannerSequencer) assignEntries(ctx context.Context, entries []tessera.
 		if err := row.Columns(&id, &next); err != nil {
 			return fmt.Errorf("failed to parse id column: %v", err)
 		}
-
 		next := uint64(next) // Shadow next with a uint64 version of the same value to save on casts.
+
+		// Assign provisional sequence numbers to entries.
+		// We need to do this here in order to support serialisations which include the log position.
+		for i := range entries {
+			entries[i].AssignIndex(next + uint64(i))
+		}
+
+		// Flatten the entries into a single slice of bytes which we can store in the Seq.v column.
+		b := &bytes.Buffer{}
+		e := gob.NewEncoder(b)
+		if err := e.Encode(entries); err != nil {
+			return fmt.Errorf("failed to serialise batch: %v", err)
+		}
+		data := b.Bytes()
+		num := len(entries)
+
 		// TODO(al): think about whether aligning bundles to tile boundaries would be a good idea or not.
 		m := []*spanner.Mutation{
 			// Insert our newly sequenced batch of entries into Seq,
@@ -517,7 +522,7 @@ func (s *spannerSequencer) consumeEntries(ctx context.Context, limit uint64, f c
 		defer rows.Stop()
 
 		seqsConsumed := []int64{}
-		entries := make([]tessera.Entry, 0, limit)
+		entries := make([]*tessera.Entry, 0, limit)
 		orderCheck := fromSeq
 		for {
 			row, err := rows.Next()
@@ -536,7 +541,7 @@ func (s *spannerSequencer) consumeEntries(ctx context.Context, limit uint64, f c
 			}
 
 			g := gob.NewDecoder(bytes.NewReader(vGob))
-			b := []tessera.Entry{}
+			b := []*tessera.Entry{}
 			if err := g.Decode(&b); err != nil {
 				return fmt.Errorf("failed to deserialise v: %v", err)
 			}
