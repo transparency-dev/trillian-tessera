@@ -26,7 +26,6 @@ import (
 
 	"github.com/transparency-dev/formats/log"
 	"github.com/transparency-dev/merkle/compact"
-	"github.com/transparency-dev/merkle/rfc6962"
 	"github.com/transparency-dev/trillian-tessera/api"
 	"golang.org/x/mod/sumdb/note"
 )
@@ -202,8 +201,6 @@ func TestCheckLogStateTracker(t *testing.T) {
 func TestCheckConsistency(t *testing.T) {
 	ctx := context.Background()
 
-	h := rfc6962.DefaultHasher
-
 	for _, test := range []struct {
 		desc    string
 		cp      []log.Checkpoint
@@ -303,7 +300,7 @@ func TestCheckConsistency(t *testing.T) {
 		},
 	} {
 		t.Run(test.desc, func(t *testing.T) {
-			err := CheckConsistency(ctx, h, testLogFetcher, test.cp)
+			err := CheckConsistency(ctx, testLogFetcher, test.cp)
 			if gotErr := err != nil; gotErr != test.wantErr {
 				t.Fatalf("wantErr: %t, got %v", test.wantErr, err)
 			}

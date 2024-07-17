@@ -12,10 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package client provides client support for interacting with a serverless
-// log.
-//
-// See the /cmd/client package in this repo for an example of using this.
+// Package client provides client support for interacting with logs that
+// uses the tlog-tiles API.
 package client
 
 import (
@@ -27,7 +25,6 @@ import (
 	"sort"
 
 	"github.com/transparency-dev/formats/log"
-	"github.com/transparency-dev/merkle"
 	"github.com/transparency-dev/merkle/compact"
 	"github.com/transparency-dev/merkle/proof"
 	"github.com/transparency-dev/merkle/rfc6962"
@@ -181,7 +178,7 @@ func FetchRangeNodes(ctx context.Context, s uint64, gt GetTileFunc) ([][]byte, e
 }
 
 // FetchLeafHashes fetches N consecutive leaf hashes starting with the leaf at index first.
-func FetchLeafHashes(ctx context.Context, f Fetcher, h compact.HashFn, first, N, logSize uint64) ([][]byte, error) {
+func FetchLeafHashes(ctx context.Context, f Fetcher, first, N, logSize uint64) ([][]byte, error) {
 	nc := newNodeCache(newTileFetcher(f, logSize), logSize)
 	ret := make([][]byte, 0, N)
 	for i, seq := uint64(0), first; i < N; i, seq = i+1, seq+1 {
@@ -204,7 +201,6 @@ type nodeCache struct {
 	ephemeral map[compact.NodeID][]byte
 	tiles     map[tileKey]api.HashTile
 	getTile   GetTileFunc
-	hasher    compact.HashFn
 }
 
 // GetTileFunc is the signature of a function which knows how to fetch a
@@ -224,7 +220,6 @@ func newNodeCache(f GetTileFunc, logSize uint64) nodeCache {
 		ephemeral: make(map[compact.NodeID][]byte),
 		tiles:     make(map[tileKey]api.HashTile),
 		getTile:   f,
-		hasher:    rfc6962.DefaultHasher.HashChildren,
 	}
 }
 
@@ -261,7 +256,7 @@ func (n *nodeCache) GetNode(ctx context.Context, id compact.NodeID) ([]byte, err
 	if lastLeaf > len(t.Nodes) {
 		return nil, fmt.Errorf("require leaf nodes [%d, %d) but only got %d leaves", firstLeaf, lastLeaf, len(t.Nodes))
 	}
-	rf := compact.RangeFactory{Hash: n.hasher}
+	rf := compact.RangeFactory{Hash: hasher.HashChildren}
 	r := rf.NewEmptyRange(0)
 	for _, l := range t.Nodes[firstLeaf:lastLeaf] {
 		if err := r.Append(l, nil); err != nil {
@@ -318,7 +313,6 @@ func GetLeaf(ctx context.Context, f Fetcher, i, logSize uint64) ([]byte, error) 
 // This tracker handles verification that updates to the tracked log state are
 // consistent with previously seen states.
 type LogStateTracker struct {
-	Hasher  merkle.LogHasher
 	Fetcher Fetcher
 	// Origin is the expected first line of checkpoints from the log.
 	Origin              string
@@ -344,7 +338,6 @@ func NewLogStateTracker(ctx context.Context, f Fetcher, checkpointRaw []byte, nV
 	ret := LogStateTracker{
 		ConsensusCheckpoint: cc,
 		Fetcher:             f,
-		Hasher:              hasher,
 		LatestConsistent:    log.Checkpoint{},
 		CheckpointNote:      nil,
 		CpSigVerifier:       nV,
@@ -413,7 +406,7 @@ func (lst *LogStateTracker) Update(ctx context.Context) ([]byte, [][]byte, []byt
 		if err != nil {
 			return nil, nil, nil, err
 		}
-		if err := proof.VerifyConsistency(lst.Hasher, lst.LatestConsistent.Size, c.Size, p, lst.LatestConsistent.Hash, c.Hash); err != nil {
+		if err := proof.VerifyConsistency(hasher, lst.LatestConsistent.Size, c.Size, p, lst.LatestConsistent.Hash, c.Hash); err != nil {
 			return nil, nil, nil, ErrInconsistency{
 				SmallerRaw: lst.LatestConsistentRaw,
 				LargerRaw:  cRaw,
@@ -431,7 +424,7 @@ func (lst *LogStateTracker) Update(ctx context.Context) ([]byte, [][]byte, []byt
 }
 
 // CheckConsistency is a wapper function which simplifies verifying consistency between two or more checkpoints.
-func CheckConsistency(ctx context.Context, h merkle.LogHasher, f Fetcher, cp []log.Checkpoint) error {
+func CheckConsistency(ctx context.Context, f Fetcher, cp []log.Checkpoint) error {
 	if l := len(cp); l < 2 {
 		return fmt.Errorf("passed %d checkpoints, need at least 2", l)
 	}
@@ -457,7 +450,7 @@ func CheckConsistency(ctx context.Context, h merkle.LogHasher, f Fetcher, cp []l
 			if err != nil {
 				return fmt.Errorf("failed to fetch consistency between sizes %d, %d: %v", a.Size, b.Size, err)
 			}
-			if err := proof.VerifyConsistency(h, a.Size, b.Size, cp, a.Hash, b.Hash); err != nil {
+			if err := proof.VerifyConsistency(hasher, a.Size, b.Size, cp, a.Hash, b.Hash); err != nil {
 				return fmt.Errorf("invalid consistency proof between sizes %d, %d: %v", a.Size, b.Size, err)
 			}
 		}
