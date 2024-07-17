@@ -22,8 +22,10 @@ import (
 	"golang.org/x/mod/sumdb/note"
 )
 
+// NewCPFunc is the signature of a function which knows how to format and sign checkpoints.
 type NewCPFunc func(size uint64, hash []byte) ([]byte, error)
 
+// StorageOptions holds optional settings for all storage implementations.
 type StorageOptions struct {
 	NewCP NewCPFunc
 
@@ -31,6 +33,7 @@ type StorageOptions struct {
 	BatchMaxSize uint
 }
 
+// ResolveStorageOptions turns a variadic array of storage options into a StorageOptions instance.
 func ResolveStorageOptions(defaults *StorageOptions, opts ...func(*StorageOptions)) *StorageOptions {
 	if defaults == nil {
 		defaults = &StorageOptions{}
@@ -41,6 +44,10 @@ func ResolveStorageOptions(defaults *StorageOptions, opts ...func(*StorageOption
 	return defaults
 }
 
+// WithCheckpointSigner is an option for setting the note signer to use when creating checkpoints.
+//
+// Checkpoints signed by this signer will be standard checkpoints as defined by https://c2sp.org/tlog-checkpoint.
+// The provided signer's name will be used as the Origin line on the checkpoint.
 func WithCheckpointSigner(s note.Signer) func(*StorageOptions) {
 	return func(o *StorageOptions) {
 		o.NewCP = func(size uint64, hash []byte) ([]byte, error) {
@@ -59,6 +66,7 @@ func WithCheckpointSigner(s note.Signer) func(*StorageOptions) {
 	}
 }
 
+// WithBatching enables batching of write requests.
 func WithBatching(maxSize uint, maxAge time.Duration) func(*StorageOptions) {
 	return func(o *StorageOptions) {
 		o.BatchMaxAge = maxAge
