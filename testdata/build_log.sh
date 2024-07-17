@@ -10,9 +10,9 @@ exit 1
 DIR=$(cd $(dirname "${BASH_SOURCE[0]}") && pwd)
 
 export LOG=${DIR}/log/
-export SERVERLESS_LOG_PRIVATE_KEY="PRIVATE+KEY+astra+cad5a3d2+ASgwwenlc0uuYcdy7kI44pQvuz1fw8cS5NqS8RkZBXoy"
-export SERVERLESS_LOG_PUBLIC_KEY="astra+cad5a3d2+AZJqeuyE/GnknsCNh1eCtDtwdAwKBddOlS8M2eI1Jt4b"
-export ORIGIN="astra"
+export SERVERLESS_LOG_PRIVATE_KEY="PRIVATE+KEY+example.com/log/testdata+33d7b496+AeymY/SZAX0jZcJ8enZ5FY1Dz+wTML2yWSkK+9DSF3eg"
+export SERVERLESS_LOG_PUBLIC_KEY="example.com/log/testdata+33d7b496+AeHTu4Q3hEIMHNqc6fASMsq3rKNx280NI+oO5xCFkkSx"
+export ORIGIN="example.com/log/testdata"
 
 cd ${DIR}
 rm -fr log

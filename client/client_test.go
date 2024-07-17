@@ -31,8 +31,8 @@ import (
 )
 
 var (
-	testOrigin      = "astra"
-	testLogVerifier = mustMakeVerifier("astra+cad5a3d2+AZJqeuyE/GnknsCNh1eCtDtwdAwKBddOlS8M2eI1Jt4b")
+	testOrigin      = "example.com/log/testdata"
+	testLogVerifier = mustMakeVerifier("example.com/log/testdata+33d7b496+AeHTu4Q3hEIMHNqc6fASMsq3rKNx280NI+oO5xCFkkSx")
 	// Built using serverless/testdata/build_log.sh
 	testRawCheckpoints, testCheckpoints = mustLoadTestCheckpoints()
 )
