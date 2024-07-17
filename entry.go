@@ -81,7 +81,11 @@ func (e *Entry) UnmarshalBinary(buf []byte) error {
 // EntryOpt is the signature of options for creating new Entry instances.
 type EntryOpt func(e *Entry)
 
-// NewEntryWithIdentity creates a new Entry with leaf data and a semantic identity.
+// WithIdentity is an option to create Entries with an explicit identity.
+//
+// The provided identity may be used to deduplicate entries as they're being
+// added to the log, if such behaviour is supported and enabled on the
+// storage implementation.
 func WithIdentity(identity []byte) EntryOpt {
 	return func(e *Entry) {
 		e.internal.Identity = identity
