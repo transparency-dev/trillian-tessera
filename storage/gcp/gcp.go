@@ -103,7 +103,7 @@ type Config struct {
 
 // New creates a new instance of the GCP based Storage.
 func New(ctx context.Context, cfg Config, opts ...func(*tessera.StorageOptions)) (*Storage, error) {
-	c, err := gcs.NewClient(ctx)
+	c, err := gcs.NewClient(ctx, gcs.WithJSONReads())
 	if err != nil {
 		return nil, fmt.Errorf("failed to create GCS client: %v", err)
 	}
@@ -296,12 +296,24 @@ func (s *Storage) integrate(ctx context.Context, fromSeq uint64, entries []tesse
 	return errG.Wait()
 }
 
+// writeCheckpoint creates or updates the checkpoint stored in GCS.
+//
+// This method checks the generation on the previously existing checkpoint (if any),
+// and asserts that generation is still current during the write.
 func (s *Storage) writeCheckpoint(ctx context.Context, cpRaw []byte) error {
+	conds := &gcs.Conditions{}
+
 	_, oldGen, err := s.objStore.getObject(ctx, layout.CheckpointPath)
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("get: %v", err)
+	if err != nil {
+		if !errors.Is(err, gcs.ErrObjectNotExist) {
+			return fmt.Errorf("get: %v", err)
+		}
+		conds.DoesNotExist = true
+	} else {
+		conds.GenerationMatch = oldGen
 	}
-	if err := s.objStore.setObject(ctx, layout.CheckpointPath, cpRaw, &gcs.Conditions{GenerationMatch: oldGen}); err != nil {
+
+	if err := s.objStore.setObject(ctx, layout.CheckpointPath, cpRaw, conds); err != nil {
 		return fmt.Errorf("set: %v", err)
 	}
 	return nil
@@ -605,13 +617,12 @@ func (s *gcsStorage) getObject(ctx context.Context, obj string) ([]byte, int64, 
 	if err != nil {
 		return nil, -1, fmt.Errorf("getObject: failed to create reader for object %q in bucket %q: %w", obj, s.bucket, err)
 	}
-	defer r.Close()
 
 	d, err := io.ReadAll(r)
 	if err != nil {
 		return nil, -1, fmt.Errorf("failed to read %q: %v", obj, err)
 	}
-	return d, r.Attrs.Generation, nil
+	return d, r.Attrs.Generation, r.Close()
 }
 
 // setObject stores the provided data in the specified object, optionally gated by a condition.
