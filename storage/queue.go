@@ -47,8 +47,9 @@ type Queue struct {
 type IndexFunc func() (idx uint64, err error)
 
 // FlushFunc is the signature of a function which will receive the slice of queued entries.
-// It should return the index assigned to the first entry in the provided slice.
-type FlushFunc func(ctx context.Context, entries []tessera.Entry) (index uint64, err error)
+// It should return call AssignIndex to each entry with its assigned index *before* durably
+// persisting the assignment.
+type FlushFunc func(ctx context.Context, entries []*tessera.Entry) error
 
 // NewQueue creates a new queue with the specified maximum age and size.
 //
@@ -98,7 +99,7 @@ func NewQueue(ctx context.Context, maxAge time.Duration, maxSize uint, f FlushFu
 
 // squashDupes keeps track of all in-flight requests, enabling dupe squashing for entries currently in the queue.
 // Returns an entry struct, and a bool which is true if the provided entry is a dupe and should NOT be added to the queue.
-func (q *Queue) squashDupes(e tessera.Entry) (*entry, bool) {
+func (q *Queue) squashDupes(e *tessera.Entry) (*entry, bool) {
 	q.inFlightMu.Lock()
 	defer q.inFlightMu.Unlock()
 
@@ -112,33 +113,33 @@ func (q *Queue) squashDupes(e tessera.Entry) (*entry, bool) {
 }
 
 // Add places e into the queue, and returns a func which may be called to retrieve the assigned index.
-func (q *Queue) Add(ctx context.Context, e tessera.Entry) IndexFunc {
+func (q *Queue) Add(ctx context.Context, e *tessera.Entry) IndexFunc {
 	entry, isDupe := q.squashDupes(e)
 	if isDupe {
 		// This entry is already in the queue, so no need to add it again.
 		return entry.index
 	}
 	if err := q.buf.Push(entry); err != nil {
-		entry.assign(0, err)
+		entry.notify(err)
 	}
 	return entry.index
 }
 
 // doFlush handles the queue flush, and sending notifications of assigned log indices.
 func (q *Queue) doFlush(ctx context.Context, entries []*entry) {
-	entriesData := make([]tessera.Entry, 0, len(entries))
+	entriesData := make([]*tessera.Entry, 0, len(entries))
 	for _, e := range entries {
 		entriesData = append(entriesData, e.data)
 	}
 
-	s, err := q.flush(ctx, entriesData)
+	err := q.flush(ctx, entriesData)
 
 	// Send assigned indices to all the waiting Add() requests, including dupes.
 	q.inFlightMu.Lock()
 	defer q.inFlightMu.Unlock()
 
-	for i, e := range entries {
-		e.assign(s+uint64(i), err)
+	for _, e := range entries {
+		e.notify(err)
 		k := string(e.data.Identity())
 		delete(q.inFlight, k)
 	}
@@ -149,13 +150,13 @@ func (q *Queue) doFlush(ctx context.Context, entries []*entry) {
 // The index field acts as a Future for the entry's assigned index/error, and will
 // hang until assign is called.
 type entry struct {
-	data  tessera.Entry
+	data  *tessera.Entry
 	c     chan IndexFunc
 	index IndexFunc
 }
 
 // newEntry creates a new entry for the provided data.
-func newEntry(data tessera.Entry) *entry {
+func newEntry(data *tessera.Entry) *entry {
 	e := &entry{
 		data: data,
 		c:    make(chan IndexFunc, 1),
@@ -170,8 +171,12 @@ func newEntry(data tessera.Entry) *entry {
 //
 // This func must only be called once, and will cause any current or future callers of index()
 // to be given the values provided here.
-func (e *entry) assign(idx uint64, err error) {
+func (e *entry) notify(err error) {
 	e.c <- func() (uint64, error) {
+		idx := uint64(0)
+		if err != nil {
+			idx = *e.data.Index()
+		}
 		return idx, err
 	}
 	close(e.c)

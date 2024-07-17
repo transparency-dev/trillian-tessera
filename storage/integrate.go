@@ -87,7 +87,7 @@ func (t *TreeBuilder) newRange(ctx context.Context, treeSize uint64) (*compact.R
 	return t.rf.NewRange(0, treeSize, hashes)
 }
 
-func (t *TreeBuilder) Integrate(ctx context.Context, fromSize uint64, entries []tessera.Entry) (newSize uint64, rootHash []byte, tiles map[TileID]*api.HashTile, err error) {
+func (t *TreeBuilder) Integrate(ctx context.Context, fromSize uint64, entries []*tessera.Entry) (newSize uint64, rootHash []byte, tiles map[TileID]*api.HashTile, err error) {
 	baseRange, err := t.newRange(ctx, fromSize)
 	if err != nil {
 		return 0, nil, nil, fmt.Errorf("failed to create range covering existing log: %w", err)

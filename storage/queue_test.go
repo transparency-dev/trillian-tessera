@@ -54,12 +54,12 @@ func TestQueue(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			ctx := context.Background()
 			assignMu := sync.Mutex{}
-			assignedItems := make([]tessera.Entry, test.numItems)
+			assignedItems := make([]*tessera.Entry, test.numItems)
 			assignedIndex := uint64(0)
 
 			// flushFunc mimics sequencing storage - it takes entries, assigns them to
-			// positions in assignedItems and returns the first assigned positition for each batch.
-			flushFunc := func(_ context.Context, entries []tessera.Entry) (uint64, error) {
+			// positions in assignedItems.
+			flushFunc := func(_ context.Context, entries []*tessera.Entry) error {
 				assignMu.Lock()
 				defer assignMu.Unlock()
 
@@ -76,9 +76,10 @@ func TestQueue(t *testing.T) {
 
 			// Now submit a bunch of entries
 			adds := make([]storage.IndexFunc, test.numItems)
-			wantEntries := make([]tessera.Entry, test.numItems)
+			wantEntries := make([]*tessera.Entry, test.numItems)
 			for i := uint64(0); i < test.numItems; i++ {
-				wantEntries[i] = tessera.NewEntry([]byte(fmt.Sprintf("item %d", i)))
+				d := []byte(fmt.Sprintf("item %d", i))
+				wantEntries[i] = tessera.NewEntry(d, tessera.WithIdentity(d))
 				adds[i] = q.Add(ctx, wantEntries[i])
 			}
 
@@ -89,7 +90,7 @@ func TestQueue(t *testing.T) {
 					return
 				}
 				if got, want := assignedItems[N], wantEntries[i]; !reflect.DeepEqual(got, want) {
-					t.Errorf("Got item@%d %q, want %q", N, got, want)
+					t.Errorf("Got item@%d %v, want %v", N, got, want)
 				}
 			}
 		})
@@ -100,10 +101,9 @@ func TestDedup(t *testing.T) {
 	ctx := context.Background()
 	idx := atomic.Uint64{}
 
-	q := storage.NewQueue(ctx, time.Second, 10 /*maxSize*/, func(ctx context.Context, entries []tessera.Entry) (index uint64, err error) {
-		r := idx.Load()
+	q := storage.NewQueue(ctx, time.Second, 10 /*maxSize*/, func(ctx context.Context, entries []*tessera.Entry) error {
 		idx.Add(1)
-		return r, nil
+		return nil
 	})
 
 	numEntries := 10
