@@ -62,6 +62,8 @@ type Storage struct {
 	projectID string
 	bucket    string
 
+	newCP tessera.NewCPFunc
+
 	sequencer sequencer
 	objStore  objStore
 
@@ -100,7 +102,7 @@ type Config struct {
 }
 
 // New creates a new instance of the GCP based Storage.
-func New(ctx context.Context, cfg Config) (*Storage, error) {
+func New(ctx context.Context, cfg Config, opts ...func(*tessera.StorageOptions)) (*Storage, error) {
 	c, err := gcs.NewClient(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create GCS client: %v", err)
@@ -114,12 +116,14 @@ func New(ctx context.Context, cfg Config) (*Storage, error) {
 		return nil, fmt.Errorf("failed to create Spanner sequencer: %v", err)
 	}
 
+	opt := tessera.ResolveStorageOptions(nil, opts...)
 	r := &Storage{
 		gcsClient: c,
 		projectID: cfg.ProjectID,
 		bucket:    cfg.Bucket,
 		objStore:  gcsStorage,
 		sequencer: seq,
+		newCP:     opt.NewCP,
 	}
 	// TODO(al): make queue options configurable:
 	r.queue = storage.NewQueue(time.Second, 256, r.sequencer.assignEntries)
@@ -273,8 +277,16 @@ func (s *Storage) integrate(ctx context.Context, fromSeq uint64, entries []tesse
 			}(ctx, k, v)
 		}
 		errG.Go(func() error {
-			//TODO: write out checkpoint
 			klog.Infof("New CP: %d, %x", newSize, newRoot)
+			if s.newCP != nil {
+				cpRaw, err := s.newCP(newSize, newRoot)
+				if err != nil {
+					return fmt.Errorf("newCP: %v", err)
+				}
+				if err := s.writeCheckpoint(ctx, cpRaw); err != nil {
+					return fmt.Errorf("writeCheckpoint: %v", err)
+				}
+			}
 			return nil
 		})
 
@@ -282,6 +294,17 @@ func (s *Storage) integrate(ctx context.Context, fromSeq uint64, entries []tesse
 	})
 
 	return errG.Wait()
+}
+
+func (s *Storage) writeCheckpoint(ctx context.Context, cpRaw []byte) error {
+	_, oldGen, err := s.objStore.getObject(ctx, layout.CheckpointPath)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("get: %v", err)
+	}
+	if err := s.objStore.setObject(ctx, layout.CheckpointPath, cpRaw, &gcs.Conditions{GenerationMatch: oldGen}); err != nil {
+		return fmt.Errorf("set: %v", err)
+	}
+	return nil
 }
 
 // updateEntryBundles adds the entries being integrated into the entry bundles.
