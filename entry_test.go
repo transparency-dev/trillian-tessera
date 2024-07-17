@@ -20,23 +20,20 @@ import (
 )
 
 func TestEntryMarshalRoundTrip(t *testing.T) {
-	e := &Entry{
-		data:     []byte("this is data"),
-		identity: []byte("I am who I am"),
-		leafHash: []byte("lettuce"),
-	}
+	e := NewEntry([]byte("this is data"), WithIdentity([]byte("I am who I am")))
+	e.internal.LeafHash = []byte("lettuce")
 
 	raw, err := e.MarshalBinary()
 	if err != nil {
 		t.Fatalf("MarshalBinary: %v", err)
 	}
 
-	e2 := &Entry{}
-	if err := e2.UnmarshalBinary(raw); err != nil {
+	e2 := Entry{}
+	if err := (&e2).UnmarshalBinary(raw); err != nil {
 		t.Fatalf("UnmarshalBinary: %v", err)
 	}
 
 	if !reflect.DeepEqual(e, e2) {
-		t.Fatalf("got %#v, want %#v", e2, e)
+		t.Fatalf("got %+v, want %+v", e2, e)
 	}
 }

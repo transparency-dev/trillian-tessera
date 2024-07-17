@@ -16,68 +16,66 @@
 package tessera
 
 import (
+	"bytes"
 	"crypto/sha256"
-	"encoding/binary"
-	"fmt"
+	"encoding/gob"
 
 	"github.com/transparency-dev/merkle/rfc6962"
 )
 
 // Entry represents an entry in a log.
 type Entry struct {
-	data     []byte
-	identity []byte
-	leafHash []byte
+	// We keep the all data in exported fields inside an unexported interal struct.
+	// This allows us to use gob to serialise the entry data (relying on the backwards-compatibility
+	// it provides), while also keeping these fields private which allows us to deter bad practice
+	// by forcing use of the API to set these values to safe values.
+	internal struct {
+		Data     []byte
+		Identity []byte
+		LeafHash []byte
+	}
 }
 
-func (e Entry) Data() []byte     { return e.data }
-func (e Entry) Identity() []byte { return e.identity }
-func (e Entry) LeafHash() []byte { return e.leafHash }
+// Data returns the raw entry bytes which will form the entry in the log.
+func (e Entry) Data() []byte { return e.internal.Data }
+
+// Identity returns an identity which may be used to de-duplicate entries and they are being added to the log.
+func (e Entry) Identity() []byte { return e.internal.Identity }
+
+// LeafHash is the Merkle leaf hash which will be used for this entry in the log.
+// Note that in almost all cases, this should be the RFC6962 definition of a leaf hash.
+func (e Entry) LeafHash() []byte { return e.internal.LeafHash }
 
 // NewEntry creates a new Entry object with leaf data.
 func NewEntry(data []byte, opts ...EntryOpt) Entry {
-	e := Entry{
-		data: data,
-	}
+	e := Entry{}
+	e.internal.Data = data
 	for _, opt := range opts {
 		opt(&e)
 	}
-	if e.identity == nil {
-		h := sha256.Sum256(e.data)
-		e.identity = h[:]
+	if e.internal.Identity == nil {
+		h := sha256.Sum256(e.internal.Data)
+		e.internal.Identity = h[:]
 	}
-	if e.leafHash == nil {
-		e.leafHash = rfc6962.DefaultHasher.HashLeaf(e.data)
+	if e.internal.LeafHash == nil {
+		e.internal.LeafHash = rfc6962.DefaultHasher.HashLeaf(e.internal.Data)
 
 	}
 	return e
 }
 
 func (e *Entry) MarshalBinary() ([]byte, error) {
-	buf := make([]byte, 0, len(e.data)+len(e.identity)+len(e.leafHash)+12)
-	buf = binary.AppendVarint(buf, int64(len(e.data)))
-	buf = append(buf, e.data...)
-	buf = binary.AppendVarint(buf, int64(len(e.identity)))
-	buf = append(buf, e.identity...)
-	buf = binary.AppendVarint(buf, int64(len(e.leafHash)))
-	buf = append(buf, e.leafHash...)
-	return buf, nil
+	b := &bytes.Buffer{}
+	enc := gob.NewEncoder(b)
+	if err := enc.Encode(e.internal); err != nil {
+		return nil, err
+	}
+	return b.Bytes(), nil
 }
 
 func (e *Entry) UnmarshalBinary(buf []byte) error {
-	l, n := binary.Varint(buf)
-	buf = buf[n:]
-	e.data, buf = buf[:l], buf[l:]
-	l, n = binary.Varint(buf)
-	buf = buf[n:]
-	e.identity, buf = buf[:l], buf[l:]
-	l, n = binary.Varint(buf)
-	buf = buf[n:]
-	e.leafHash, buf = buf[:l], buf[l:]
-	if l := len(buf); l != 0 {
-		return fmt.Errorf("%d trailing bytes", l)
-	}
-	return nil
+	dec := gob.NewDecoder(bytes.NewReader(buf))
+	return dec.Decode(&e.internal)
 }
 
 // EntryOpt is the signature of options for creating new Entry instances.
@@ -86,6 +84,6 @@ type EntryOpt func(e *Entry)
 // NewEntryWithIdentity creates a new Entry with leaf data and a semantic identity.
 func WithIdentity(identity []byte) EntryOpt {
 	return func(e *Entry) {
-		e.identity = identity
+		e.internal.Identity = identity
 	}
 }
