@@ -24,6 +24,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strings"
 
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/storage/gcp"
@@ -71,6 +72,21 @@ func main() {
 		}
 		_, _ = w.Write([]byte(fmt.Sprintf("%d", idx)))
 	})
+
+	// TODO: remove this proxy
+	serveGCS := func(w http.ResponseWriter, r *http.Request) {
+		resource := strings.TrimLeft(r.URL.Path, "/")
+		b, err := storage.Get(r.Context(), resource)
+		if err != nil {
+			klog.V(1).Infof("Get: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(fmt.Sprintf("Get: %v", err)))
+			return
+		}
+		_, _ = w.Write(b)
+	}
+	http.HandleFunc("GET /checkpoint", serveGCS)
+	http.HandleFunc("GET /tile/", serveGCS)
 
 	if err := http.ListenAndServe(*listen, http.DefaultServeMux); err != nil {
 		klog.Exitf("ListenAndServe: %v", err)

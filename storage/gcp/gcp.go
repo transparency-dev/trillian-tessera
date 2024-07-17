@@ -159,7 +159,17 @@ func (s *Storage) Add(ctx context.Context, e tessera.Entry) (uint64, error) {
 	return s.queue.Add(ctx, e)()
 }
 
+// Get returns the requested object.
+//
+// This is indended to be used to proxy read requests through the personality for debug/testing purposes.
+func (s *Storage) Get(ctx context.Context, path string) ([]byte, error) {
+	d, _, err := s.objStore.getObject(ctx, path)
+	return d, err
+}
+
 // setTile idempotently stores the provided tile at the location implied by the given level, index, and treeSize.
+//
+// The location to which the tile is written is defined by the tile layout spec.
 func (s *Storage) setTile(ctx context.Context, level, index, logSize uint64, tile *api.HashTile) error {
 	data, err := tile.MarshalText()
 	if err != nil {
