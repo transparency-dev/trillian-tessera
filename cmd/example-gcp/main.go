@@ -27,6 +27,7 @@ import (
 
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/storage/gcp"
+	"golang.org/x/mod/sumdb/note"
 	"k8s.io/klog/v2"
 )
 
@@ -35,6 +36,7 @@ var (
 	listen  = flag.String("listen", ":2024", "Address:port to listen on")
 	project = flag.String("project", os.Getenv("GOOGLE_CLOUD_PROJECT"), "GCP Project, take from env if unset")
 	spanner = flag.String("spanner", "", "Spanner resource URI ('projects/.../...')")
+	signer  = flag.String("signer", "", "Path to file containing log private key")
 )
 
 func main() {
@@ -47,7 +49,7 @@ func main() {
 		Bucket:    *bucket,
 		Spanner:   *spanner,
 	}
-	storage, err := gcp.New(ctx, gcpCfg)
+	storage, err := gcp.New(ctx, gcpCfg, tessera.WithCheckpointSigner(signerFromFlags()))
 	if err != nil {
 		klog.Exitf("Failed to create new GCP storage: %v", err)
 	}
@@ -73,4 +75,16 @@ func main() {
 	if err := http.ListenAndServe(*listen, http.DefaultServeMux); err != nil {
 		klog.Exitf("ListenAndServe: %v", err)
 	}
+}
+
+func signerFromFlags() note.Signer {
+	raw, err := os.ReadFile(*signer)
+	if err != nil {
+		klog.Exitf("Failed to read secret key file %q: %v", *signer, err)
+	}
+	signer, err := note.NewSigner(string(raw))
+	if err != nil {
+		klog.Exitf("Failed to create new signer: %v", err)
+	}
+	return signer
 }

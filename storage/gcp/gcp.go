@@ -62,6 +62,8 @@ type Storage struct {
 	projectID string
 	bucket    string
 
+	newCP tessera.NewCPFunc
+
 	sequencer sequencer
 	objStore  objStore
 
@@ -100,8 +102,8 @@ type Config struct {
 }
 
 // New creates a new instance of the GCP based Storage.
-func New(ctx context.Context, cfg Config) (*Storage, error) {
-	c, err := gcs.NewClient(ctx)
+func New(ctx context.Context, cfg Config, opts ...func(*tessera.StorageOptions)) (*Storage, error) {
+	c, err := gcs.NewClient(ctx, gcs.WithJSONReads())
 	if err != nil {
 		return nil, fmt.Errorf("failed to create GCS client: %v", err)
 	}
@@ -114,12 +116,14 @@ func New(ctx context.Context, cfg Config) (*Storage, error) {
 		return nil, fmt.Errorf("failed to create Spanner sequencer: %v", err)
 	}
 
+	opt := tessera.ResolveStorageOptions(nil, opts...)
 	r := &Storage{
 		gcsClient: c,
 		projectID: cfg.ProjectID,
 		bucket:    cfg.Bucket,
 		objStore:  gcsStorage,
 		sequencer: seq,
+		newCP:     opt.NewCP,
 	}
 	// TODO(al): make queue options configurable:
 	r.queue = storage.NewQueue(time.Second, 256, r.sequencer.assignEntries)
@@ -273,8 +277,16 @@ func (s *Storage) integrate(ctx context.Context, fromSeq uint64, entries []tesse
 			}(ctx, k, v)
 		}
 		errG.Go(func() error {
-			//TODO: write out checkpoint
 			klog.Infof("New CP: %d, %x", newSize, newRoot)
+			if s.newCP != nil {
+				cpRaw, err := s.newCP(newSize, newRoot)
+				if err != nil {
+					return fmt.Errorf("newCP: %v", err)
+				}
+				if err := s.objStore.setObject(ctx, layout.CheckpointPath, cpRaw, nil); err != nil {
+					return fmt.Errorf("writeCheckpoint: %v", err)
+				}
+			}
 			return nil
 		})
 
@@ -582,13 +594,12 @@ func (s *gcsStorage) getObject(ctx context.Context, obj string) ([]byte, int64, 
 	if err != nil {
 		return nil, -1, fmt.Errorf("getObject: failed to create reader for object %q in bucket %q: %w", obj, s.bucket, err)
 	}
-	defer r.Close()
 
 	d, err := io.ReadAll(r)
 	if err != nil {
 		return nil, -1, fmt.Errorf("failed to read %q: %v", obj, err)
 	}
-	return d, r.Attrs.Generation, nil
+	return d, r.Attrs.Generation, r.Close()
 }
 
 // setObject stores the provided data in the specified object, optionally gated by a condition.

@@ -7,7 +7,7 @@ require (
 	cloud.google.com/go/storage v1.43.0
 	github.com/globocom/go-buffer v1.2.2
 	github.com/google/go-cmp v0.6.0
-	github.com/transparency-dev/formats v0.0.0-20240708083310-9b0b58067af6
+	github.com/transparency-dev/formats v0.0.0-20240715203801-9ff9b9e3905f
 	github.com/transparency-dev/merkle v0.0.2
 	golang.org/x/exp v0.0.0-20220827204233-334a2380cb91
 	golang.org/x/mod v0.19.0
