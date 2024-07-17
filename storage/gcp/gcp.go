@@ -283,7 +283,7 @@ func (s *Storage) integrate(ctx context.Context, fromSeq uint64, entries []tesse
 				if err != nil {
 					return fmt.Errorf("newCP: %v", err)
 				}
-				if err := s.writeCheckpoint(ctx, cpRaw); err != nil {
+				if err := s.objStore.setObject(ctx, layout.CheckpointPath, cpRaw, nil); err != nil {
 					return fmt.Errorf("writeCheckpoint: %v", err)
 				}
 			}
@@ -294,29 +294,6 @@ func (s *Storage) integrate(ctx context.Context, fromSeq uint64, entries []tesse
 	})
 
 	return errG.Wait()
-}
-
-// writeCheckpoint creates or updates the checkpoint stored in GCS.
-//
-// This method checks the generation on the previously existing checkpoint (if any),
-// and asserts that generation is still current during the write.
-func (s *Storage) writeCheckpoint(ctx context.Context, cpRaw []byte) error {
-	conds := &gcs.Conditions{}
-
-	_, oldGen, err := s.objStore.getObject(ctx, layout.CheckpointPath)
-	if err != nil {
-		if !errors.Is(err, gcs.ErrObjectNotExist) {
-			return fmt.Errorf("get: %v", err)
-		}
-		conds.DoesNotExist = true
-	} else {
-		conds.GenerationMatch = oldGen
-	}
-
-	if err := s.objStore.setObject(ctx, layout.CheckpointPath, cpRaw, conds); err != nil {
-		return fmt.Errorf("set: %v", err)
-	}
-	return nil
 }
 
 // updateEntryBundles adds the entries being integrated into the entry bundles.
