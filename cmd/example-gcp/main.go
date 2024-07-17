@@ -80,11 +80,10 @@ func main() {
 		if err != nil {
 			klog.V(1).Infof("Get: %v", err)
 			w.WriteHeader(http.StatusBadRequest)
-			w.Write([]byte(fmt.Sprintf("Get: %v", err)))
+			_, _ = w.Write([]byte(fmt.Sprintf("Get: %v", err)))
 			return
 		}
-		w.Write(b)
-		return
+		_, _ = w.Write(b)
 	}
 	http.HandleFunc("GET /checkpoint", serveGCS)
 	http.HandleFunc("GET /tile/", serveGCS)
