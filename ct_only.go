@@ -15,21 +15,23 @@
 package tessera
 
 import (
+	"context"
+
 	"github.com/transparency-dev/trillian-tessera/ctonly"
 )
 
 type Storage interface {
-	Add(Entry) (uint64, error)
+	Add(context.Context, *Entry) (uint64, error)
 }
 
-func NewCertificateTransparencySequencedWriter(s Storage) func(e ctonly.Entry) (uint64, error) {
-	return func(e ctonly.Entry) (uint64, error) {
-		return s.Add(convertCTEntry(e))
+func NewCertificateTransparencySequencedWriter(s Storage) func(context.Context, *ctonly.Entry) (uint64, error) {
+	return func(ctx context.Context, e *ctonly.Entry) (uint64, error) {
+		return s.Add(ctx, convertCTEntry(e))
 	}
 }
 
-func convertCTEntry(e ctonly.Entry) Entry {
-	r := Entry{}
+func convertCTEntry(e *ctonly.Entry) *Entry {
+	r := &Entry{}
 	r.internal.Identity = e.Identity()
 	r.indexFunc = func(idx uint64) {
 		r.internal.LeafHash = e.MerkleLeafHash(idx)
