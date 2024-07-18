@@ -42,6 +42,7 @@ import (
 	"cloud.google.com/go/spanner"
 	"cloud.google.com/go/spanner/apiv1/spannerpb"
 	gcs "cloud.google.com/go/storage"
+	"github.com/google/go-cmp/cmp"
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/api"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
@@ -352,7 +353,8 @@ func (s *Storage) updateEntryBundles(ctx context.Context, fromSeq uint64, entrie
 			// ... and prepare the next entry bundle for any remaining entries in the batch
 			bundleIndex++
 			entriesInBundle = 0
-			bundleWriter.Reset()
+			// Don't use Reset/Truncate here - the backing []bytes is still being used by goSetEntryBundle above.
+			bundleWriter = &bytes.Buffer{}
 			klog.V(1).Infof("Starting bundle idx %d", bundleIndex)
 		}
 	}
@@ -659,6 +661,7 @@ func (s *gcsStorage) setObject(ctx context.Context, objName string, data []byte,
 				return fmt.Errorf("failed to fetch existing content for %q (@%d): %v", objName, existingGen, err)
 			}
 			if !bytes.Equal(existing, data) {
+				klog.Errorf("Resource %q non-idempotent write:\n%s", objName, cmp.Diff(existing, data))
 				return fmt.Errorf("precondition failed: resource content for %q differs from data to-be-written", objName)
 			}
 
