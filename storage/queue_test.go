@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"reflect"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -63,12 +62,12 @@ func TestQueue(t *testing.T) {
 				assignMu.Lock()
 				defer assignMu.Unlock()
 
-				s := assignedIndex
 				for _, e := range entries {
+					e.AssignIndex(assignedIndex)
 					assignedItems[assignedIndex] = e
 					assignedIndex++
 				}
-				return s, nil
+				return nil
 			}
 
 			// Create the Queue
@@ -89,7 +88,7 @@ func TestQueue(t *testing.T) {
 					t.Errorf("Add: %v", err)
 					return
 				}
-				if got, want := assignedItems[N], wantEntries[i]; !reflect.DeepEqual(got, want) {
+				if got, want := assignedItems[N].Data(), wantEntries[i].Data(); !reflect.DeepEqual(got, want) {
 					t.Errorf("Got item@%d %v, want %v", N, got, want)
 				}
 			}
@@ -99,10 +98,13 @@ func TestQueue(t *testing.T) {
 
 func TestDedup(t *testing.T) {
 	ctx := context.Background()
-	idx := atomic.Uint64{}
+	idx := uint64(0)
 
 	q := storage.NewQueue(ctx, time.Second, 10 /*maxSize*/, func(ctx context.Context, entries []*tessera.Entry) error {
-		idx.Add(1)
+		for _, e := range entries {
+			e.AssignIndex(idx)
+			idx++
+		}
 		return nil
 	})
 

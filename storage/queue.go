@@ -176,11 +176,10 @@ func newEntry(data *tessera.Entry) *entry {
 // to be given the values provided here.
 func (e *entry) notify(err error) {
 	e.c <- func() (uint64, error) {
-		idx := uint64(0)
 		if err != nil {
-			idx = *e.data.Index()
+			return 0, err
 		}
-		return idx, err
+		return *e.data.Index(), nil
 	}
 	close(e.c)
 }
