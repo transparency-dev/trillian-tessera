@@ -69,7 +69,7 @@ func parseChainOrPreChain(ctx context.Context, reqBody io.ReadCloser) (e *ctonly
 	notBefore := time.Date(2000, 0, 0, 0, 0, 0, 0, time.UTC)
 	notAfter := time.Date(3000, 0, 0, 0, 0, 0, 0, time.UTC)
 
-	chain, err := ctfe.ValidateChain(req.Chain, ctfe.NewCertValidationOpts(nil, time.Time{}, false, false, &notBefore, &notAfter, false, []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}))
+	chain, err := ctfe.ValidateChain(req.Chain, ctfe.NewCertValidationOpts(rootsPool, time.Time{}, false, false, &notBefore, &notAfter, false, []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}))
 	if err != nil {
 		return nil, http.StatusBadRequest, fmt.Errorf("invalid chain: %w", err)
 	}

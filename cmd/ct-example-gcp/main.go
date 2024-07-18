@@ -24,6 +24,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/google/certificate-transparency-go/x509util"
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/storage/gcp"
 	"golang.org/x/mod/sumdb/note"
@@ -36,6 +37,10 @@ var (
 	project = flag.String("project", os.Getenv("GOOGLE_CLOUD_PROJECT"), "GCP Project, take from env if unset")
 	spanner = flag.String("spanner", "", "Spanner resource URI ('projects/.../...')")
 	signer  = flag.String("signer", "", "Path to file containing log private key")
+)
+
+var (
+	rootsPool = getRoots()
 )
 
 func main() {
@@ -105,4 +110,29 @@ func signerFromFlags() note.Signer {
 		klog.Exitf("Failed to create new signer: %v", err)
 	}
 	return signer
+}
+
+func getRoots() *x509util.PEMCertPool {
+	certDir := "/etc/ssl/certs/"
+	files, err := os.ReadDir(certDir)
+	if err != nil {
+		klog.Fatal(err)
+	}
+
+	roots := []byte{}
+
+	for _, file := range files {
+		if file.IsDir() {
+			continue
+		}
+		pem, err := os.ReadFile(certDir + file.Name())
+		if err != nil {
+			klog.Fatalf("Read(%q): %v", file.Name, err)
+		}
+		roots = append(roots, pem...)
+	}
+	pool := x509util.NewPEMCertPool()
+	pool.AppendCertsFromPEM(roots)
+
+	return pool
 }
