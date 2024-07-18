@@ -114,6 +114,7 @@ func main() {
 
 		entryBundle, err := storage.ReadEntryBundle(r.Context(), index)
 		if err != nil {
+			// TODO: Move this error back into storage implementation.
 			if err == sql.ErrNoRows {
 				w.WriteHeader(http.StatusNotFound)
 				return
@@ -124,10 +125,7 @@ func main() {
 			return
 		}
 
-		// TODO: when the number of entries in the returned tile match the requested tile width.
-		// This ensures the response will not be cached when returning a partial tile on a full tile request.
-
-		// TODO: Add immutable Cache-Control header
+		// TODO: Add immutable Cache-Control header.
 
 		if _, err := w.Write(entryBundle); err != nil {
 			klog.Errorf("/tile/entries/{index...}: %v", err)
