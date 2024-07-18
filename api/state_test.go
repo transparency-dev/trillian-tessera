@@ -16,11 +16,13 @@
 package api_test
 
 import (
+	"bytes"
 	"crypto/rand"
 	"fmt"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/api"
 )
 
@@ -80,27 +82,28 @@ func TestLeafBundle_MarshalTileRoundtrip(t *testing.T) {
 		},
 	} {
 		t.Run(fmt.Sprintf("tile size %d", test.size), func(t *testing.T) {
-			tile := api.EntryBundle{Entries: make([][]byte, 0, test.size)}
+			bundleRaw := &bytes.Buffer{}
+			want := make([][]byte, test.size)
 			for i := 0; i < test.size; i++ {
 				// Fill in the leaf index
-				tile.Entries = append(tile.Entries, make([]byte, i*100))
-				if _, err := rand.Read(tile.Entries[i]); err != nil {
+				want[i] = make([]byte, i*100)
+				if _, err := rand.Read(want[i]); err != nil {
 					t.Error(err)
+				}
+				if err := tessera.NewEntry(want[i]).WriteBundleEntry(bundleRaw); err != nil {
+					t.Fatalf("Write: %v", err)
 				}
 			}
 
-			raw, err := tile.MarshalText()
-			if err != nil {
-				t.Fatalf("MarshalText() = %v", err)
-			}
-
 			tile2 := api.EntryBundle{}
-			if err := tile2.UnmarshalText(raw); err != nil {
+			if err := tile2.UnmarshalText(bundleRaw.Bytes()); err != nil {
 				t.Fatalf("UnmarshalText() = %v", err)
 			}
 
-			if diff := cmp.Diff(tile, tile2); len(diff) != 0 {
-				t.Fatalf("Got tile with diff: %s", diff)
+			for i := 0; i < test.size; i++ {
+				if got, want := tile2.Entries[i], want[i]; !bytes.Equal(got, want) {
+					t.Errorf("%d: want %x, got %x", i, got, want)
+				}
 			}
 		})
 	}
