@@ -215,7 +215,7 @@ func (s *Storage) getTiles(ctx context.Context, tileIDs []storage.TileID, logSiz
 
 }
 
-// getEntryBundle returns the entry bundle at the location implied by the given index and treeSize.
+// getEntryBundle returns the serialised entry bundle at the location implied by the given index and treeSize.
 //
 // Returns a wrapped os.ErrNotExist if the bundle does not exist.
 func (s *Storage) getEntryBundle(ctx context.Context, bundleIndex uint64, logSize uint64) ([]byte, error) {
@@ -230,24 +230,16 @@ func (s *Storage) getEntryBundle(ctx context.Context, bundleIndex uint64, logSiz
 		return nil, err
 	}
 
-	r := &api.EntryBundle{}
-	if err := r.UnmarshalText(data); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal %q: %v", objName, err)
-	}
-	return r, nil
+	return data, nil
 }
 
-// setEntryBundle idempotently stores the entry bundle at the location implied by the bundleIndex and treeSize.
-func (s *Storage) setEntryBundle(ctx context.Context, bundleIndex uint64, logSize uint64, bundle *api.EntryBundle) error {
+// setEntryBundle idempotently stores the serialised entry bundle at the location implied by the bundleIndex and treeSize.
+func (s *Storage) setEntryBundle(ctx context.Context, bundleIndex uint64, logSize uint64, bundleRaw []byte) error {
 	objName := layout.EntriesPath(bundleIndex, logSize)
-	data, err := bundle.MarshalText()
-	if err != nil {
-		return err
-	}
 	// Note that setObject does an idempotent interpretation of DoesNotExist - it only
 	// returns an error if the named object exists _and_ contains different data to what's
 	// passed in here.
-	if err := s.objStore.setObject(ctx, objName, data, &gcs.Conditions{DoesNotExist: true}); err != nil {
+	if err := s.objStore.setObject(ctx, objName, bundleRaw, &gcs.Conditions{DoesNotExist: true}); err != nil {
 		return fmt.Errorf("setObject(%q): %v", objName, err)
 
 	}
@@ -319,23 +311,26 @@ func (s *Storage) integrate(ctx context.Context, fromSeq uint64, entries []*tess
 func (s *Storage) updateEntryBundles(ctx context.Context, fromSeq uint64, entries []*tessera.Entry) error {
 	numAdded := uint64(0)
 	bundleIndex, entriesInBundle := fromSeq/entryBundleSize, fromSeq%entryBundleSize
-	bundle := &api.EntryBundle{}
+	bundleWriter := &bytes.Buffer{}
 	if entriesInBundle > 0 {
 		// If the latest bundle is partial, we need to read the data it contains in for our newer, larger, bundle.
 		part, err := s.getEntryBundle(ctx, uint64(bundleIndex), uint64(entriesInBundle))
 		if err != nil {
 			return err
 		}
-		bundle = part
+
+		if _, err := bundleWriter.Write(part); err != nil {
+			return fmt.Errorf("bundleWriter: %v", err)
+		}
 	}
 
 	seqErr := errgroup.Group{}
 
 	// goSetEntryBundle is a function which uses seqErr to spin off a go-routine to write out an entry bundle.
 	// It's used in the for loop below.
-	goSetEntryBundle := func(ctx context.Context, bundleIndex uint64, fromSeq uint64, bundle api.EntryBundle) {
+	goSetEntryBundle := func(ctx context.Context, bundleIndex uint64, fromSeq uint64, bundleRaw []byte) {
 		seqErr.Go(func() error {
-			if err := s.setEntryBundle(ctx, bundleIndex, fromSeq, &bundle); err != nil {
+			if err := s.setEntryBundle(ctx, bundleIndex, fromSeq, bundleRaw); err != nil {
 				return err
 			}
 			return nil
@@ -344,18 +339,18 @@ func (s *Storage) updateEntryBundles(ctx context.Context, fromSeq uint64, entrie
 
 	// Add new entries to the bundle
 	for _, e := range entries {
-		bundle.Entries = append(bundle.Entries, e.Data())
+		e.WriteBundleEntry(bundleWriter)
 		entriesInBundle++
 		fromSeq++
 		numAdded++
 		if entriesInBundle == entryBundleSize {
 			//  This bundle is full, so we need to write it out...
 			klog.V(1).Infof("Bundle idx %d is full", bundleIndex)
-			goSetEntryBundle(ctx, bundleIndex, fromSeq, *bundle)
+			goSetEntryBundle(ctx, bundleIndex, fromSeq, bundleWriter.Bytes())
 			// ... and prepare the next entry bundle for any remaining entries in the batch
 			bundleIndex++
 			entriesInBundle = 0
-			bundle = &api.EntryBundle{}
+			bundleWriter.Reset()
 			klog.V(1).Infof("Starting bundle idx %d", bundleIndex)
 		}
 	}
@@ -363,7 +358,7 @@ func (s *Storage) updateEntryBundles(ctx context.Context, fromSeq uint64, entrie
 	// this needs writing out too.
 	if entriesInBundle > 0 {
 		klog.V(1).Infof("Writing partial bundle idx %d.%d", bundleIndex, entriesInBundle)
-		goSetEntryBundle(ctx, bundleIndex, fromSeq, *bundle)
+		goSetEntryBundle(ctx, bundleIndex, fromSeq, bundleWriter.Bytes())
 	}
 	return seqErr.Wait()
 }
