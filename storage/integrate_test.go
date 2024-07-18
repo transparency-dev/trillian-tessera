@@ -131,10 +131,14 @@ func TestIntegrate(t *testing.T) {
 	seq := uint64(0)
 	for chunk := 0; chunk < numChunks; chunk++ {
 		oldSeq := seq
-		c := make([]*tessera.Entry, chunkSize)
+		c := make([]SequencedEntry, chunkSize)
 		for i := range c {
 			leaf := []byte{byte(seq)}
-			c[i] = tessera.NewEntry(leaf)
+			entry := tessera.NewEntry(leaf)
+			c[i] = SequencedEntry{
+				BundleData: entry.MarshalBundleData(seq),
+				LeafHash:   entry.LeafHash(),
+			}
 			if err := cr.Append(rfc6962.DefaultHasher.HashLeaf(leaf), nil); err != nil {
 				t.Fatalf("compact Append: %v", err)
 			}

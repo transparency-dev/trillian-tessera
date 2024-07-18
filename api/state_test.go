@@ -90,9 +90,7 @@ func TestLeafBundle_MarshalTileRoundtrip(t *testing.T) {
 				if _, err := rand.Read(want[i]); err != nil {
 					t.Error(err)
 				}
-				if err := tessera.NewEntry(want[i]).WriteBundleEntry(bundleRaw); err != nil {
-					t.Fatalf("Write: %v", err)
-				}
+				_, _ = bundleRaw.Write(tessera.NewEntry(want[i]).MarshalBundleData(uint64(i)))
 			}
 
 			tile2 := api.EntryBundle{}

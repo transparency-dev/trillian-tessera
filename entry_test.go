@@ -15,25 +15,24 @@
 package tessera
 
 import (
-	"reflect"
+	"bytes"
+	"fmt"
 	"testing"
 )
 
-func TestEntryMarshalRoundTrip(t *testing.T) {
-	e := NewEntry([]byte("this is data"), WithIdentity([]byte("I am who I am")))
-	e.internal.LeafHash = []byte("lettuce")
+func TestEntryMarshalBundleDelegates(t *testing.T) {
+	const wantIdx = uint64(143)
+	wantBundle := []byte(fmt.Sprintf("Yes %d", wantIdx))
 
-	raw, err := e.MarshalBinary()
-	if err != nil {
-		t.Fatalf("MarshalBinary: %v", err)
+	e := NewEntry([]byte("this is data"))
+	e.marshalBundle = func() []byte {
+		if gotIdx := *e.internal.Index; gotIdx != wantIdx {
+			t.Fatalf("Got idx %d, want %d", gotIdx, wantIdx)
+		}
+		return wantBundle
 	}
 
-	e2 := Entry{}
-	if err := (&e2).UnmarshalBinary(raw); err != nil {
-		t.Fatalf("UnmarshalBinary: %v", err)
-	}
-
-	if !reflect.DeepEqual(e.internal, e2.internal) {
-		t.Fatalf("got %+v, want %+v", e2, e)
+	if got, want := e.MarshalBundleData(wantIdx), wantBundle; !bytes.Equal(got, want) {
+		t.Fatalf("Got %q, want %q", got, want)
 	}
 }

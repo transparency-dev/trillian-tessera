@@ -88,7 +88,7 @@ type sequencer interface {
 }
 
 // consumeFunc is the signature of a function which can consume entries from the sequencer.
-type consumeFunc func(ctx context.Context, from uint64, entries []*tessera.Entry) error
+type consumeFunc func(ctx context.Context, from uint64, entries []storage.SequencedEntry) error
 
 // Config holds GCP project and resource configuration for a storage instance.
 type Config struct {
@@ -247,7 +247,7 @@ func (s *Storage) setEntryBundle(ctx context.Context, bundleIndex uint64, logSiz
 }
 
 // integrate incorporates the provided entries into the log starting at fromSeq.
-func (s *Storage) integrate(ctx context.Context, fromSeq uint64, entries []*tessera.Entry) error {
+func (s *Storage) integrate(ctx context.Context, fromSeq uint64, entries []storage.SequencedEntry) error {
 	tb := storage.NewTreeBuilder(func(ctx context.Context, tileIDs []storage.TileID, treeSize uint64) ([]*api.HashTile, error) {
 		n, err := s.getTiles(ctx, tileIDs, treeSize)
 		if err != nil {
@@ -308,7 +308,7 @@ func (s *Storage) integrate(ctx context.Context, fromSeq uint64, entries []*tess
 // updateEntryBundles adds the entries being integrated into the entry bundles.
 //
 // The right-most bundle will be grown, if it's partial, and/or new bundles will be created as required.
-func (s *Storage) updateEntryBundles(ctx context.Context, fromSeq uint64, entries []*tessera.Entry) error {
+func (s *Storage) updateEntryBundles(ctx context.Context, fromSeq uint64, entries []storage.SequencedEntry) error {
 	numAdded := uint64(0)
 	bundleIndex, entriesInBundle := fromSeq/entryBundleSize, fromSeq%entryBundleSize
 	bundleWriter := &bytes.Buffer{}
@@ -339,7 +339,9 @@ func (s *Storage) updateEntryBundles(ctx context.Context, fromSeq uint64, entrie
 
 	// Add new entries to the bundle
 	for _, e := range entries {
-		e.WriteBundleEntry(bundleWriter)
+		if _, err := bundleWriter.Write(e.BundleData); err != nil {
+			return fmt.Errorf("Write: %v", err)
+		}
 		entriesInBundle++
 		fromSeq++
 		numAdded++
@@ -453,16 +455,20 @@ func (s *spannerSequencer) assignEntries(ctx context.Context, entries []*tessera
 		}
 		next := uint64(next) // Shadow next with a uint64 version of the same value to save on casts.
 
+		sequencedEntries := make([]storage.SequencedEntry, len(entries))
 		// Assign provisional sequence numbers to entries.
 		// We need to do this here in order to support serialisations which include the log position.
-		for i := range entries {
-			entries[i].AssignIndex(next + uint64(i))
+		for i, e := range entries {
+			sequencedEntries[i] = storage.SequencedEntry{
+				BundleData: e.MarshalBundleData(next + uint64(i)),
+				LeafHash:   e.LeafHash(),
+			}
 		}
 
 		// Flatten the entries into a single slice of bytes which we can store in the Seq.v column.
 		b := &bytes.Buffer{}
 		e := gob.NewEncoder(b)
-		if err := e.Encode(entries); err != nil {
+		if err := e.Encode(sequencedEntries); err != nil {
 			return fmt.Errorf("failed to serialise batch: %v", err)
 		}
 		data := b.Bytes()
@@ -517,7 +523,7 @@ func (s *spannerSequencer) consumeEntries(ctx context.Context, limit uint64, f c
 		defer rows.Stop()
 
 		seqsConsumed := []int64{}
-		entries := make([]*tessera.Entry, 0, limit)
+		entries := make([]storage.SequencedEntry, 0, limit)
 		orderCheck := fromSeq
 		for {
 			row, err := rows.Next()
@@ -536,7 +542,7 @@ func (s *spannerSequencer) consumeEntries(ctx context.Context, limit uint64, f c
 			}
 
 			g := gob.NewDecoder(bytes.NewReader(vGob))
-			b := []*tessera.Entry{}
+			b := []storage.SequencedEntry{}
 			if err := g.Decode(&b); err != nil {
 				return fmt.Errorf("failed to deserialise v: %v", err)
 			}

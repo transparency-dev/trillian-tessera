@@ -63,7 +63,7 @@ func TestQueue(t *testing.T) {
 				defer assignMu.Unlock()
 
 				for _, e := range entries {
-					e.AssignIndex(assignedIndex)
+					_ = e.MarshalBundleData(assignedIndex)
 					assignedItems[assignedIndex] = e
 					assignedIndex++
 				}
@@ -102,7 +102,7 @@ func TestDedup(t *testing.T) {
 
 	q := storage.NewQueue(ctx, time.Second, 10 /*maxSize*/, func(ctx context.Context, entries []*tessera.Entry) error {
 		for _, e := range entries {
-			e.AssignIndex(idx)
+			_ = e.MarshalBundleData(idx)
 			idx++
 		}
 		return nil
