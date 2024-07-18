@@ -185,13 +185,16 @@ func TestTileRoundtrip(t *testing.T) {
 	}
 }
 
-func makeBundle(t *testing.T, size uint64) *api.EntryBundle {
+func makeBundle(t *testing.T, size uint64) []byte {
 	t.Helper()
-	r := &api.EntryBundle{Entries: make([][]byte, size)}
+	r := &bytes.Buffer{}
 	for i := uint64(0); i < size; i++ {
-		r.Entries[i] = []byte(fmt.Sprintf("%d", i))
+		e := tessera.NewEntry([]byte(fmt.Sprintf("%d", i)))
+		if err := e.WriteBundleEntry(r); err != nil {
+			t.Fatalf("WriteBundleEntry: %v", err)
+		}
 	}
-	return r
+	return r.Bytes()
 }
 
 func TestBundleRoundtrip(t *testing.T) {
