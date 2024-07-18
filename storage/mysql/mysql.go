@@ -99,17 +99,44 @@ func (s *Storage) writeCheckpoint(ctx context.Context, rawCheckpoint []byte) err
 }
 
 // ReadTile returns a full tile or a partial tile at the given level and index.
-func (s *Storage) ReadTile(ctx context.Context, level, index uint64) ([]byte, error) {
+//
+// TODO: Handle the following scenarios:
+// 1. Full tile request with full tile output: Return full tile.
+// 2. Full tile request with partial tile output: Return error.
+// 3. Partial tile request with full/larger partial tile output: Return trimmed partial tile with correct tile width.
+// 4. Partial tile request with partial tile (same width) output: Return partial tile.
+// 5. Partial tile request with smaller partial tile output: Return error.
+func (s *Storage) ReadTile(ctx context.Context, level, index, width uint64) ([]byte, error) {
 	row := s.db.QueryRowContext(ctx, selectSubtreeByLevelAndIndexSQL, level, index)
 	if err := row.Err(); err != nil {
 		return nil, err
 	}
 
 	var tile []byte
-	return tile, row.Scan(&tile)
+	if err := row.Scan(&tile); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+
+		return nil, err
+	}
+
+	// Return nil when returning a partial tile on a full tile request.
+	if width == 256 && len(tile)/32 != int(width) {
+		return nil, nil
+	}
+
+	return tile, nil
 }
 
 // ReadEntryBundle returns the log entries at the given index.
+//
+// TODO: Handle the following scenarios:
+// 1. Full tile request with full tile output: Return full tile.
+// 2. Full tile request with partial tile output: Return error.
+// 3. Partial tile request with full/larger partial tile output: Return trimmed partial tile with correct tile width.
+// 4. Partial tile request with partial tile (same width) output: Return partial tile.
+// 5. Partial tile request with smaller partial tile output: Return error.
 func (s *Storage) ReadEntryBundle(ctx context.Context, index uint64) ([]byte, error) {
 	row := s.db.QueryRowContext(ctx, selectTiledLeavesSQL, index)
 	if err := row.Err(); err != nil {

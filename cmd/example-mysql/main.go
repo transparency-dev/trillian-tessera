@@ -82,7 +82,7 @@ func main() {
 			return
 		}
 
-		tile, err := storage.ReadTile(r.Context(), level, index)
+		tile, err := storage.ReadTile(r.Context(), level, index, width)
 		if err != nil {
 			if err == sql.ErrNoRows {
 				w.WriteHeader(http.StatusNotFound)
@@ -94,11 +94,7 @@ func main() {
 			return
 		}
 
-		// Only add the immutable Cache-Control header when the number of hash in the returned tile match the requested tile width.
-		// This ensures the response will not be cached when returning a partial tile on a full tile request.
-		if len(tile)/32 == int(width) {
-			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
-		}
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 
 		if _, err := w.Write(tile); err != nil {
 			klog.Errorf("/tile/{level}/{index...}: %v", err)
@@ -128,8 +124,10 @@ func main() {
 			return
 		}
 
-		// TODO: Add immutable Cache-Control header when the number of entries in the returned tile match the requested tile width.
+		// TODO: when the number of entries in the returned tile match the requested tile width.
 		// This ensures the response will not be cached when returning a partial tile on a full tile request.
+
+		// TODO: Add immutable Cache-Control header
 
 		if _, err := w.Write(entryBundle); err != nil {
 			klog.Errorf("/tile/entries/{index...}: %v", err)
