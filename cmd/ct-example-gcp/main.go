@@ -62,16 +62,19 @@ func main() {
 	handler := func(w http.ResponseWriter, r *http.Request) {
 		e, code, err := parseChainOrPreChain(r.Context(), r.Body)
 		if err != nil {
+			klog.V(3).Infof("parseChain: %v", err)
 			http.Error(w, err.Error(), code)
 			return
 		}
 		seq, err := add(r.Context(), e)
 		if err != nil {
+			klog.V(3).Infof("add: %v", err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		rsp, code, err := buildResponse(r.Context(), seq, e.Timestamp, e.MerkleLeafHash(seq))
 		if err != nil {
+			klog.V(3).Infof("buildResponse: %v", err)
 			http.Error(w, err.Error(), code)
 			return
 		}
