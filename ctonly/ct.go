@@ -121,7 +121,7 @@ func (c Entry) Identity() []byte {
 
 func addExtensions(b *cryptobyte.Builder, leafIndex uint64) {
 	b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
-		ext, err := extensions{LeafIndex: leafIndex}.Marshal()
+		ext, err := Extensions{LeafIndex: leafIndex}.Marshal()
 		if err != nil {
 			b.SetError(err)
 			return
@@ -130,13 +130,13 @@ func addExtensions(b *cryptobyte.Builder, leafIndex uint64) {
 	})
 }
 
-// extensions is the CTExtensions field of SignedCertificateTimestamp and
+// Extensions is the CTExtensions field of SignedCertificateTimestamp and
 // TimestampedEntry, according to c2sp.org/static-ct-api.
-type extensions struct {
+type Extensions struct {
 	LeafIndex uint64
 }
 
-func (c extensions) Marshal() ([]byte, error) {
+func (c Extensions) Marshal() ([]byte, error) {
 	// enum {
 	//     leaf_index(0), (255)
 	// } ExtensionType;
