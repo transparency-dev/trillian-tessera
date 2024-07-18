@@ -33,7 +33,7 @@ func TestEntryMarshalRoundTrip(t *testing.T) {
 		t.Fatalf("UnmarshalBinary: %v", err)
 	}
 
-	if !reflect.DeepEqual(e, e2) {
+	if !reflect.DeepEqual(e.internal, e2.internal) {
 		t.Fatalf("got %+v, want %+v", e2, e)
 	}
 }

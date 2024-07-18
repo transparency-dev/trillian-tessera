@@ -483,10 +483,10 @@ func (s *spannerSequencer) assignEntries(ctx context.Context, entries []*tessera
 	})
 
 	if err != nil {
-		return 0, fmt.Errorf("failed to flush batch: %v", err)
+		return fmt.Errorf("failed to flush batch: %v", err)
 	}
 
-	return uint64(next), nil
+	return nil
 }
 
 // consumeEntries calls f with previously sequenced entries.

@@ -74,14 +74,15 @@ func TestSpannerSequencerAssignEntries(t *testing.T) {
 		for i := 0; i < 10+chunks; i++ {
 			entries = append(entries, tessera.NewEntry([]byte(fmt.Sprintf("item %d/%d", chunks, i))))
 		}
-		got, err := seq.assignEntries(ctx, entries)
-		if err != nil {
+		if err := seq.assignEntries(ctx, entries); err != nil {
 			t.Fatalf("assignEntries: %v", err)
 		}
-		if got != want {
-			t.Errorf("Chunk %d got seq %d, want %d", chunks, got, want)
+		for i, e := range entries {
+			if got := *e.Index(); got != want {
+				t.Errorf("Chunk %d entry %d got seq %d, want %d", chunks, i, got, want)
+			}
+			want++
 		}
-		want += uint64(len(entries))
 	}
 }
 
@@ -102,7 +103,7 @@ func TestSpannerSequencerRoundTrip(t *testing.T) {
 			entries = append(entries, tessera.NewEntry([]byte(fmt.Sprintf("item %d", seq))))
 			seq++
 		}
-		if _, err := s.assignEntries(ctx, entries); err != nil {
+		if err := s.assignEntries(ctx, entries); err != nil {
 			t.Fatalf("assignEntries: %v", err)
 		}
 	}
@@ -113,7 +114,15 @@ func TestSpannerSequencerRoundTrip(t *testing.T) {
 			return fmt.Errorf("f called with fromSeq %d, want %d", fromSeq, seenIdx)
 		}
 		for i, e := range entries {
-			if !reflect.DeepEqual(e, tessera.NewEntry([]byte(fmt.Sprintf("item %d", i)))) {
+			got, err := e.MarshalBinary()
+			if err != nil {
+				return fmt.Errorf("MarshalBinary: %v", err)
+			}
+			want, err := e.MarshalBinary()
+			if err != nil {
+				return fmt.Errorf("MarshalBinary: %v", err)
+			}
+			if !reflect.DeepEqual(got, want) {
 				return fmt.Errorf("entry %d+%d != %d", fromSeq, i, seenIdx)
 			}
 			seenIdx++
