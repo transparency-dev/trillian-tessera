@@ -97,10 +97,16 @@ func TestSpannerSequencerRoundTrip(t *testing.T) {
 	}
 
 	seq := 0
+	wantEntries := []storage.SequencedEntry{}
 	for chunks := 0; chunks < 10; chunks++ {
 		entries := []*tessera.Entry{}
 		for i := 0; i < 10+chunks; i++ {
-			entries = append(entries, tessera.NewEntry([]byte(fmt.Sprintf("item %d", seq))))
+			e := tessera.NewEntry([]byte(fmt.Sprintf("item %d", seq)))
+			entries = append(entries, e)
+			wantEntries = append(wantEntries, storage.SequencedEntry{
+				BundleData: e.MarshalBundleData(uint64(seq)),
+				LeafHash:   e.LeafHash(),
+			})
 			seq++
 		}
 		if err := s.assignEntries(ctx, entries); err != nil {
@@ -109,20 +115,13 @@ func TestSpannerSequencerRoundTrip(t *testing.T) {
 	}
 
 	seenIdx := uint64(0)
-	f := func(_ context.Context, fromSeq uint64, entries []*tessera.Entry) error {
+	f := func(_ context.Context, fromSeq uint64, entries []storage.SequencedEntry) error {
 		if fromSeq != seenIdx {
 			return fmt.Errorf("f called with fromSeq %d, want %d", fromSeq, seenIdx)
 		}
 		for i, e := range entries {
-			got, err := e.MarshalBinary()
-			if err != nil {
-				return fmt.Errorf("MarshalBinary: %v", err)
-			}
-			want, err := e.MarshalBinary()
-			if err != nil {
-				return fmt.Errorf("MarshalBinary: %v", err)
-			}
-			if !reflect.DeepEqual(got, want) {
+
+			if got, want := e, wantEntries[i]; !reflect.DeepEqual(got, want) {
 				return fmt.Errorf("entry %d+%d != %d", fromSeq, i, seenIdx)
 			}
 			seenIdx++
@@ -199,8 +198,8 @@ func makeBundle(t *testing.T, size uint64) []byte {
 	r := &bytes.Buffer{}
 	for i := uint64(0); i < size; i++ {
 		e := tessera.NewEntry([]byte(fmt.Sprintf("%d", i)))
-		if err := e.WriteBundleEntry(r); err != nil {
-			t.Fatalf("WriteBundleEntry: %v", err)
+		if _, err := r.Write(e.MarshalBundleData(i)); err != nil {
+			t.Fatalf("MarshalBundleEntry: %v", err)
 		}
 	}
 	return r.Bytes()

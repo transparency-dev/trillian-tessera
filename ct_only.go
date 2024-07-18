@@ -15,9 +15,6 @@
 package tessera
 
 import (
-	"fmt"
-	"io"
-
 	"github.com/transparency-dev/trillian-tessera/ctonly"
 )
 
@@ -38,13 +35,8 @@ func convertCTEntry(e ctonly.Entry) Entry {
 		r.internal.LeafHash = e.MerkleLeafHash(idx)
 		r.internal.Data = e.LeafData(idx)
 	}
-	r.writeBundleEntry = func(w io.Writer) error {
-		if n, err := w.Write(r.internal.Data); err != nil {
-			return err
-		} else if l := len(r.internal.Data); n != l {
-			return fmt.Errorf("short write % bytes, want %d", n, l)
-		}
-		return nil
+	r.marshalBundle = func() []byte {
+		return r.internal.Data
 	}
 
 	return r

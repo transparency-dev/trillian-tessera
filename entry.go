@@ -16,12 +16,8 @@
 package tessera
 
 import (
-	"bytes"
 	"crypto/sha256"
 	"encoding/binary"
-	"encoding/gob"
-	"fmt"
-	"io"
 
 	"github.com/transparency-dev/merkle/rfc6962"
 )
@@ -42,8 +38,8 @@ type Entry struct {
 	// indexFunc will be called when an index is assigned to the entry.
 	indexFunc func(index uint64)
 
-	// writeBundleEntry knows how to writeBundleEntry this bundle in the correct format for appending to a serialised bundle.
-	writeBundleEntry func(io.Writer) error
+	// marshalBundle knows how to convert this entry's Data into a marshalled bundle entry.
+	marshalBundle func() []byte
 }
 
 // Data returns the raw entry bytes which will form the entry in the log.
@@ -59,12 +55,13 @@ func (e Entry) LeafHash() []byte { return e.internal.LeafHash }
 // Index returns the index assigned to the entry in the log, or nil if no index has been assigned.
 func (e Entry) Index() *uint64 { return e.internal.Index }
 
-// AssignIndex will be called by the log when an index is assigned to the entry.
-func (e *Entry) AssignIndex(index uint64) {
+// MarshalBundleData returns this entry's data in a format ready to be appended to an EntryBundle.
+func (e *Entry) MarshalBundleData(index uint64) []byte {
 	e.internal.Index = &index
 	if e.indexFunc != nil {
 		e.indexFunc(index)
 	}
+	return e.marshalBundle()
 }
 
 // NewEntry creates a new Entry object with leaf data.
@@ -81,42 +78,17 @@ func NewEntry(data []byte, opts ...EntryOpt) *Entry {
 	if e.internal.LeafHash == nil {
 		e.internal.LeafHash = rfc6962.DefaultHasher.HashLeaf(e.internal.Data)
 	}
-	if e.writeBundleEntry == nil {
+	if e.marshalBundle == nil {
 		// By default we will marshal ourselves into a bundle using the mechanism described
 		// by https://c2sp.org/tlog-tiles:
-		e.writeBundleEntry = func(w io.Writer) error {
-			if err := binary.Write(w, binary.BigEndian, uint16(len(e.internal.Data))); err != nil {
-				return err
-			}
-			if n, err := w.Write(e.internal.Data); err != nil {
-				return err
-			} else if l := len(e.internal.Data); n != l {
-				return fmt.Errorf("short write %d bytes, want %d", n, l)
-			}
-			return nil
+		e.marshalBundle = func() []byte {
+			r := make([]byte, 0, 2+len(e.internal.Data))
+			r = binary.BigEndian.AppendUint16(r, uint16(len(e.internal.Data)))
+			r = append(r, e.internal.Data...)
+			return r
 		}
 	}
 	return e
-}
-
-// WriteBundleEntry serialises the data this Entry contains into a suitable format for
-// adding to an EntryBundle.
-func (e Entry) WriteBundleEntry(w io.Writer) error {
-	return e.writeBundleEntry(w)
-}
-
-func (e Entry) MarshalBinary() ([]byte, error) {
-	b := &bytes.Buffer{}
-	enc := gob.NewEncoder(b)
-	if err := enc.Encode(e.internal); err != nil {
-		return nil, err
-	}
-	return b.Bytes(), nil
-}
-
-func (e *Entry) UnmarshalBinary(buf []byte) error {
-	dec := gob.NewDecoder(bytes.NewReader(buf))
-	return dec.Decode(&e.internal)
 }
 
 // EntryOpt is the signature of options for creating new Entry instances.
