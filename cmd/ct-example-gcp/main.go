@@ -18,6 +18,9 @@ package main
 
 import (
 	"context"
+	"crypto"
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"flag"
 	"fmt"
 	"net/http"
@@ -27,6 +30,7 @@ import (
 	"github.com/google/certificate-transparency-go/x509util"
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/storage/gcp"
+	"golang.org/x/crypto/hkdf"
 	"golang.org/x/mod/sumdb/note"
 	"k8s.io/klog/v2"
 )
@@ -53,35 +57,36 @@ func main() {
 		Bucket:    *bucket,
 		Spanner:   *spanner,
 	}
-	storage, err := gcp.New(ctx, gcpCfg, tessera.WithCheckpointSigner(signerFromFlags()))
+	signer, logK := signerFromFlags()
+	storage, err := gcp.New(ctx, gcpCfg, tessera.WithCheckpointSigner(signer))
 	add := tessera.NewCertificateTransparencySequencedWriter(storage)
 	if err != nil {
 		klog.Exitf("Failed to create new GCP storage: %v", err)
 	}
 
-	handler := func(w http.ResponseWriter, r *http.Request) {
-		e, code, err := parseChainOrPreChain(r.Context(), r.Body)
+	l := log{
+		k:   logK,
+		add: add,
+	}
+
+	http.HandleFunc("POST /ct/v1/add-chain", func(w http.ResponseWriter, r *http.Request) {
+		rsp, code, err := l.parseAddChain(r)
 		if err != nil {
-			klog.V(3).Infof("parseChain: %v", err)
-			http.Error(w, err.Error(), code)
-			return
-		}
-		seq, err := add(r.Context(), e)
-		if err != nil {
-			klog.V(3).Infof("add: %v", err)
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		rsp, code, err := buildResponse(r.Context(), seq, e.Timestamp, e.MerkleLeafHash(seq))
-		if err != nil {
-			klog.V(3).Infof("buildResponse: %v", err)
+			klog.V(3).Infof("parseAddChain: %v", err)
 			http.Error(w, err.Error(), code)
 			return
 		}
 		_, _ = w.Write(rsp)
-	}
-	http.HandleFunc("POST /ct/v1/add-chain", handler)
-	http.HandleFunc("POST /ct/v1/add-pre-chain", handler)
+	})
+	http.HandleFunc("POST /ct/v1/add-pre-chain", func(w http.ResponseWriter, r *http.Request) {
+		rsp, code, err := l.parsePreChain(r)
+		if err != nil {
+			klog.V(3).Infof("parsePreChain: %v", err)
+			http.Error(w, err.Error(), code)
+			return
+		}
+		_, _ = w.Write(rsp)
+	})
 
 	// TODO: remove this proxy
 	serveGCS := func(w http.ResponseWriter, r *http.Request) {
@@ -103,7 +108,7 @@ func main() {
 	}
 }
 
-func signerFromFlags() note.Signer {
+func signerFromFlags() (note.Signer, *ecdsa.PrivateKey) {
 	raw, err := os.ReadFile(*signer)
 	if err != nil {
 		klog.Exitf("Failed to read secret key file %q: %v", *signer, err)
@@ -112,7 +117,13 @@ func signerFromFlags() note.Signer {
 	if err != nil {
 		klog.Exitf("Failed to create new signer: %v", err)
 	}
-	return signer
+
+	// Look away now. 🙈
+	logK, err := ecdsa.GenerateKey(elliptic.P256(), hkdf.New(crypto.SHA256.New, raw, []byte("log key"), nil))
+	if err != nil {
+		panic(fmt.Errorf("failed to generate log key: %v", err))
+	}
+	return signer, logK
 }
 
 func getRoots() *x509util.PEMCertPool {

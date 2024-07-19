@@ -89,6 +89,10 @@ func (c Entry) LeafData(idx uint64) []byte {
 // Note that we embed an SCT extension which captures the index of the entry in the log according to
 // the mechanism specified in https://c2sp.org/ct-static-api.
 func (c Entry) MerkleLeafHash(leafIndex uint64) []byte {
+	return rfc6962.DefaultHasher.HashLeaf(c.MerkleLeaf(leafIndex))
+}
+
+func (c Entry) MerkleLeaf(leafIndex uint64) []byte {
 	b := &cryptobyte.Builder{}
 	b.AddUint8(0 /* version = v1 */)
 	b.AddUint8(0 /* leaf_type = timestamped_entry */)
@@ -106,7 +110,7 @@ func (c Entry) MerkleLeafHash(leafIndex uint64) []byte {
 		})
 	}
 	addExtensions(b, leafIndex)
-	return rfc6962.DefaultHasher.HashLeaf(b.BytesOrPanic())
+	return b.BytesOrPanic()
 }
 
 func (c Entry) Identity() []byte {

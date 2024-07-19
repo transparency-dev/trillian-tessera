@@ -16,6 +16,8 @@ package main
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
@@ -28,10 +30,17 @@ import (
 	"github.com/google/certificate-transparency-go/trillian/ctfe"
 	"github.com/google/certificate-transparency-go/x509"
 	"github.com/transparency-dev/trillian-tessera/ctonly"
+	"golang.org/x/crypto/cryptobyte"
+	"k8s.io/klog/v2"
 )
 
-func parseAddChain(r *http.Request) (e *ctonly.Entry, code int, err error) {
-	e, code, err = parseChainOrPreChain(r.Context(), r.Body)
+type log struct {
+	k   *ecdsa.PrivateKey
+	add func(context.Context, *ctonly.Entry) (uint64, error)
+}
+
+func (l *log) parseAddChain(r *http.Request) (rsp []byte, code int, err error) {
+	e, rsp, code, err := l.parseChainOrPreChain(r.Context(), r.Body)
 	if err != nil {
 		return nil, code, err
 	}
@@ -41,8 +50,8 @@ func parseAddChain(r *http.Request) (e *ctonly.Entry, code int, err error) {
 	return
 }
 
-func parsePreChain(r *http.Request) (e *ctonly.Entry, code int, err error) {
-	e, code, err = parseChainOrPreChain(r.Context(), r.Body)
+func (l *log) parsePreChain(r *http.Request) (rsp []byte, code int, err error) {
+	e, rsp, code, err := l.parseChainOrPreChain(r.Context(), r.Body)
 	if err != nil {
 		return nil, code, err
 	}
@@ -52,34 +61,34 @@ func parsePreChain(r *http.Request) (e *ctonly.Entry, code int, err error) {
 	return
 }
 
-func parseChainOrPreChain(ctx context.Context, reqBody io.ReadCloser) (e *ctonly.Entry, code int, err error) {
+func (l *log) parseChainOrPreChain(ctx context.Context, reqBody io.ReadCloser) (e *ctonly.Entry, rsp []byte, code int, err error) {
 	body, err := io.ReadAll(reqBody)
 	if err != nil {
-		return nil, http.StatusInternalServerError, fmt.Errorf("failed to read body: %w", err)
+		return nil, nil, http.StatusInternalServerError, fmt.Errorf("failed to read body: %w", err)
 	}
 	var req struct {
 		Chain [][]byte
 	}
 	if err := json.Unmarshal(body, &req); err != nil {
-		return nil, http.StatusBadRequest, fmt.Errorf("failed to parse request: %w", err)
+		return nil, nil, http.StatusBadRequest, fmt.Errorf("failed to parse request: %w", err)
 	}
 	if len(req.Chain) == 0 {
-		return nil, http.StatusBadRequest, fmt.Errorf("empty chain")
+		return nil, nil, http.StatusBadRequest, fmt.Errorf("empty chain")
 	}
 	notBefore := time.Date(2000, 0, 0, 0, 0, 0, 0, time.UTC)
 	notAfter := time.Date(3000, 0, 0, 0, 0, 0, 0, time.UTC)
 
 	chain, err := ctfe.ValidateChain(req.Chain, ctfe.NewCertValidationOpts(rootsPool, time.Time{}, false, false, &notBefore, &notAfter, false, []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}))
 	if err != nil {
-		return nil, http.StatusBadRequest, fmt.Errorf("invalid chain: %w", err)
+		return nil, nil, http.StatusBadRequest, fmt.Errorf("invalid chain: %w", err)
 	}
 	e = &ctonly.Entry{Certificate: chain[0].Raw}
 	issuers := chain[1:]
 	if isPrecert, err := ctfe.IsPrecertificate(chain[0]); err != nil {
-		return nil, http.StatusBadRequest, fmt.Errorf("invalid precertificate: %w", err)
+		return nil, nil, http.StatusBadRequest, fmt.Errorf("invalid precertificate: %w", err)
 	} else if isPrecert {
 		if len(issuers) == 0 {
-			return nil, http.StatusBadRequest, fmt.Errorf("missing precertificate issuer")
+			return nil, nil, http.StatusBadRequest, fmt.Errorf("missing precertificate issuer")
 		}
 
 		var preIssuer *x509.Certificate
@@ -87,13 +96,13 @@ func parseChainOrPreChain(ctx context.Context, reqBody io.ReadCloser) (e *ctonly
 			preIssuer = issuers[0]
 			issuers = issuers[1:]
 			if len(issuers) == 0 {
-				return nil, http.StatusBadRequest, fmt.Errorf("missing precertificate signing certificate issuer")
+				return nil, nil, http.StatusBadRequest, fmt.Errorf("missing precertificate signing certificate issuer")
 			}
 		}
 
 		defangedTBS, err := x509.BuildPrecertTBS(chain[0].RawTBSCertificate, preIssuer)
 		if err != nil {
-			return nil, http.StatusInternalServerError, fmt.Errorf("failed to build TBSCertificate: %w", err)
+			return nil, nil, http.StatusInternalServerError, fmt.Errorf("failed to build TBSCertificate: %w", err)
 		}
 
 		e.IsPrecert = true
@@ -106,34 +115,60 @@ func parseChainOrPreChain(ctx context.Context, reqBody io.ReadCloser) (e *ctonly
 		e.IssuerKeyHash = kh[:]
 	}
 
-	return e, 0, nil
-}
-
-func buildResponse(ctx context.Context, seq uint64, timestamp uint64, merkleLeaf []byte) (resp []byte, code int, err error) {
+	seq, err := l.add(ctx, e)
+	if err != nil {
+		klog.V(3).Infof("add: %v", err)
+		return nil, nil, http.StatusInternalServerError, fmt.Errorf("failed to add entry: %v", err)
+	}
 
 	ext, err := ctonly.Extensions{LeafIndex: seq}.Marshal()
 	if err != nil {
-		return nil, http.StatusInternalServerError, fmt.Errorf("failed to encode extensions: %w", err)
+		return nil, nil, http.StatusInternalServerError, fmt.Errorf("failed to encode extensions: %w", err)
 	}
 	// The digitally-signed data of an SCT is technically not a MerkleTreeLeaf,
 	// but it's a completely identical structure, except for the second field,
 	// which is a SignatureType of value 0 and length 1 instead of a
 	// MerkleLeafType of value 0 and length 1.
-	sctSignature := []byte("signature")
+	sctSignature, err := l.digitallySign(e.MerkleLeaf(seq))
 	if err != nil {
-		return nil, http.StatusInternalServerError, fmt.Errorf("failed to sign SCT: %w", err)
+		return nil, nil, http.StatusInternalServerError, fmt.Errorf("failed to sign SCT: %w", err)
 	}
 
-	rsp, err := json.Marshal(&ct.AddChainResponse{
+	rsp, err = json.Marshal(&ct.AddChainResponse{
 		SCTVersion: ct.V1,
-		Timestamp:  uint64(timestamp),
+		Timestamp:  uint64(e.Timestamp),
 		ID:         []byte("LogID"),
 		Extensions: base64.StdEncoding.EncodeToString(ext),
 		Signature:  sctSignature,
 	})
 	if err != nil {
-		return nil, http.StatusInternalServerError, fmt.Errorf("failed to encode response: %w", err)
+		return nil, nil, http.StatusInternalServerError, fmt.Errorf("failed to encode response: %w", err)
 	}
 
-	return rsp, http.StatusOK, nil
+	return e, rsp, http.StatusOK, nil
+}
+
+// digitallySign produces an encoded digitally-signed signature.
+//
+// It reimplements tls.CreateSignature and tls.Marshal from
+// github.com/google/certificate-transparency-go/tls, in part to limit
+// complexity and in part because tls.CreateSignature expects non-pointer
+// {rsa,ecdsa}.PrivateKey types, which is unusual.
+//
+// We use deterministic RFC 6979 ECDSA signatures so that when fetching a
+// previous SCT's timestamp and index from the deduplication cache, the new SCT
+// we produce is identical.
+func (l *log) digitallySign(msg []byte) ([]byte, error) {
+	h := sha256.Sum256(msg)
+	sig, err := ecdsa.SignASN1(rand.Reader, l.k, h[:])
+	if err != nil {
+		return nil, err
+	}
+	var b cryptobyte.Builder
+	b.AddUint8(4 /* hash = sha256 */)
+	b.AddUint8(3 /* signature = ecdsa */)
+	b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
+		b.AddBytes(sig)
+	})
+	return b.Bytes()
 }
