@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"golang.org/x/mod/sumdb/note"
@@ -159,14 +160,27 @@ func main() {
 		close(entries)
 	}()
 
-	for entry := range entries {
-		// ask storage to sequence
-		seq, err := st.Add(context.Background(), entry.e)
-		if err != nil {
-			klog.Exitf("failed to sequence %q: %q", entry.name, err)
-		}
-		klog.Infof("%d: %v", seq, entry.name)
+	numWorkers := 256
+	if l := len(toAdd); l < numWorkers {
+		numWorkers = l
 	}
+
+	wg := sync.WaitGroup{}
+	for i := 0; i < numWorkers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for entry := range entries {
+				// ask storage to sequence
+				seq, err := st.Add(context.Background(), entry.e)
+				if err != nil {
+					klog.Exitf("failed to sequence %q: %q", entry.name, err)
+				}
+				klog.Infof("%d: %v", seq, entry.name)
+			}
+		}()
+	}
+	wg.Wait()
 }
 
 func getKeyFile(path string) (string, error) {
