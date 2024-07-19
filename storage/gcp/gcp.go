@@ -353,7 +353,8 @@ func (s *Storage) updateEntryBundles(ctx context.Context, fromSeq uint64, entrie
 			// ... and prepare the next entry bundle for any remaining entries in the batch
 			bundleIndex++
 			entriesInBundle = 0
-			bundleWriter.Reset()
+			// Don't use Reset/Truncate here - the backing []bytes is still being used by goSetEntryBundle above.
+			bundleWriter = &bytes.Buffer{}
 			klog.V(1).Infof("Starting bundle idx %d", bundleIndex)
 		}
 	}
