@@ -82,7 +82,7 @@ func NewQueue(ctx context.Context, maxAge time.Duration, maxSize uint, f FlushFu
 		buffer.WithFlusher(buffer.FlusherFunc(toWork)),
 	)
 
-	// This will allow
+	// Spin off a worker thread to write the queue flushes to storage.
 	go func(ctx context.Context) {
 		for {
 			select {
