@@ -216,7 +216,12 @@ func (s *Storage) sequenceBatch(ctx context.Context, entries []*tessera.Entry) e
 	}
 
 	// For simplicitly, well in-line the integration of these new entries into the Merkle structure too.
-	return s.doIntegrate(ctx, seq, seqEntries)
+	if err := s.doIntegrate(ctx, seq, seqEntries); err != nil {
+		klog.Errorf("Integrate failed: %v", err)
+		return err
+	}
+	return nil
+
 }
 
 // doIntegrate handles integrating new entries into the log, and updating the checkpoint.
@@ -231,6 +236,7 @@ func (s *Storage) doIntegrate(ctx context.Context, fromSeq uint64, entries []sto
 
 	newSize, newRoot, tiles, err := tb.Integrate(ctx, fromSeq, entries)
 	if err != nil {
+		klog.Errorf("Integrate: %v", err)
 		return fmt.Errorf("Integrate: %v", err)
 	}
 	for k, v := range tiles {
@@ -264,8 +270,9 @@ func (s *Storage) GetTile(_ context.Context, level, index, logSize uint64) (*api
 	p := filepath.Join(s.path, layout.TilePath(level, index, logSize))
 	t, err := os.ReadFile(p)
 	if err != nil {
-		if !errors.Is(err, os.ErrNotExist) {
-			return nil, fmt.Errorf("failed to read tile at %q: %w", p, err)
+		if errors.Is(err, os.ErrNotExist) {
+			// We'll signal to higher levels that it wasn't found by retuning a nil for this tile.
+			return nil, nil
 		}
 		return nil, err
 	}

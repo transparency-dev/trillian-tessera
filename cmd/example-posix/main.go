@@ -18,7 +18,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -27,6 +26,7 @@ import (
 	"golang.org/x/mod/sumdb/note"
 
 	"github.com/transparency-dev/merkle/rfc6962"
+	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/storage/posix"
 	"k8s.io/klog/v2"
 
@@ -48,6 +48,8 @@ var (
 func main() {
 	klog.InitFlags(nil)
 	flag.Parse()
+
+	ctx := context.Background()
 
 	// Read log public key from file or environment variable
 	var pubKey string
@@ -131,7 +133,7 @@ func main() {
 		}
 		return cp.Size, cp.Hash, nil
 	}
-	st := posix.New(*storageDir, readCP, writeCP)
+	st := posix.New(ctx, *storageDir, readCP, writeCP)
 
 	// sequence entries
 
@@ -141,7 +143,7 @@ func main() {
 	// sequence numbers assigned to the data from the provided input files.
 	type entryInfo struct {
 		name string
-		b    []byte
+		e    *tessera.Entry
 	}
 	entries := make(chan entryInfo, 100)
 	go func() {
@@ -150,27 +152,18 @@ func main() {
 			if err != nil {
 				klog.Exitf("Failed to read entry file %q: %q", fp, err)
 			}
-			entries <- entryInfo{name: fp, b: b}
+			entries <- entryInfo{name: fp, e: tessera.NewEntry(b)}
 		}
 		close(entries)
 	}()
 
 	for entry := range entries {
 		// ask storage to sequence
-		dupe := false
-		seq, err := st.Sequence(context.Background(), entry.b)
+		seq, err := st.Add(context.Background(), entry.e)
 		if err != nil {
-			if errors.Is(err, posix.ErrDupeLeaf) {
-				dupe = true
-			} else {
-				klog.Exitf("failed to sequence %q: %q", entry.name, err)
-			}
+			klog.Exitf("failed to sequence %q: %q", entry.name, err)
 		}
-		l := fmt.Sprintf("%d: %v", seq, entry.name)
-		if dupe {
-			l += " (dupe)"
-		}
-		klog.Info(l)
+		klog.Infof("%d: %v", seq, entry.name)
 	}
 }
 
