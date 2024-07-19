@@ -42,6 +42,7 @@ import (
 	"cloud.google.com/go/spanner"
 	"cloud.google.com/go/spanner/apiv1/spannerpb"
 	gcs "cloud.google.com/go/storage"
+	"github.com/google/go-cmp/cmp"
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/api"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
@@ -659,6 +660,7 @@ func (s *gcsStorage) setObject(ctx context.Context, objName string, data []byte,
 				return fmt.Errorf("failed to fetch existing content for %q (@%d): %v", objName, existingGen, err)
 			}
 			if !bytes.Equal(existing, data) {
+				klog.Errorf("Resource %q non-idempotent write:\n%s", objName, cmp.Diff(existing, data))
 				return fmt.Errorf("precondition failed: resource content for %q differs from data to-be-written", objName)
 			}
 
