@@ -120,7 +120,6 @@ func (q *Queue) Add(ctx context.Context, e tessera.Entry) IndexFunc {
 	}
 	if err := q.buf.Push(entry); err != nil {
 		entry.assign(0, err)
-		close(entry.c)
 	}
 	return entry.index
 }
