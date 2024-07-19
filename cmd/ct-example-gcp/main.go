@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/google/certificate-transparency-go/x509util"
@@ -41,6 +42,7 @@ var (
 	project = flag.String("project", os.Getenv("GOOGLE_CLOUD_PROJECT"), "GCP Project, take from env if unset")
 	spanner = flag.String("spanner", "", "Spanner resource URI ('projects/.../...')")
 	signer  = flag.String("signer", "", "Path to file containing log private key")
+	roots   = flag.String("roots", "/etc/ssl/certs/*", "Glob of files to use for root certs (PEM format). Individual files may contain multiple PEM entries")
 )
 
 var (
@@ -127,21 +129,17 @@ func signerFromFlags() (note.Signer, *ecdsa.PrivateKey) {
 }
 
 func getRoots() *x509util.PEMCertPool {
-	certDir := "/etc/ssl/certs/"
-	files, err := os.ReadDir(certDir)
+	files, err := filepath.Glob(*roots)
 	if err != nil {
-		klog.Fatal(err)
+		klog.Errorf("glob(%q): %v", *roots, err)
 	}
 
 	roots := []byte{}
 
 	for _, file := range files {
-		if file.IsDir() {
-			continue
-		}
-		pem, err := os.ReadFile(certDir + file.Name())
+		pem, err := os.ReadFile(file)
 		if err != nil {
-			klog.Fatalf("Read(%q): %v", file.Name, err)
+			klog.Fatalf("Read(%q): %v", file, err)
 		}
 		roots = append(roots, pem...)
 	}
