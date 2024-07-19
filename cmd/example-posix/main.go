@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"golang.org/x/mod/sumdb/note"
 
@@ -133,7 +134,7 @@ func main() {
 		}
 		return cp.Size, cp.Hash, nil
 	}
-	st := posix.New(ctx, *storageDir, readCP, writeCP)
+	st := posix.New(ctx, *storageDir, readCP, tessera.WithCheckpointSigner(s), tessera.WithBatching(256, time.Second))
 
 	// sequence entries
 

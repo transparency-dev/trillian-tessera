@@ -23,7 +23,6 @@ import (
 	"path/filepath"
 	"sync"
 	"syscall"
-	"time"
 
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/api"
@@ -47,9 +46,9 @@ type Storage struct {
 	cpFile *os.File
 
 	curTree CurrentTreeFunc
-	newTree NewTreeFunc
 
 	curSize uint64
+	newCP   tessera.NewCPFunc
 }
 
 // NewTreeFunc is the signature of a function which receives information about newly integrated trees.
@@ -59,18 +58,20 @@ type NewTreeFunc func(size uint64, root []byte) error
 type CurrentTreeFunc func() (uint64, []byte, error)
 
 // New creates a new POSIX storage.
-func New(ctx context.Context, path string, curTree CurrentTreeFunc, newTree NewTreeFunc) *Storage {
+func New(ctx context.Context, path string, curTree func() (uint64, []byte, error), opts ...func(*tessera.StorageOptions)) *Storage {
 	curSize, _, err := curTree()
 	if err != nil {
 		panic(err)
 	}
+	opt := tessera.ResolveStorageOptions(nil, opts...)
+
 	r := &Storage{
 		path:    path,
 		curSize: curSize,
 		curTree: curTree,
-		newTree: newTree,
+		newCP:   opt.NewCP,
 	}
-	r.queue = storage.NewQueue(ctx, time.Second, 256, r.sequenceBatch)
+	r.queue = storage.NewQueue(ctx, opt.BatchMaxAge, opt.BatchMaxSize, r.sequenceBatch)
 
 	return r
 }
@@ -245,9 +246,17 @@ func (s *Storage) doIntegrate(ctx context.Context, fromSeq uint64, entries []sto
 		}
 	}
 
-	if err := s.newTree(newSize, newRoot); err != nil {
-		return fmt.Errorf("newTree: %v", err)
+	klog.Infof("New CP: %d, %x", newSize, newRoot)
+	if s.newCP != nil {
+		cpRaw, err := s.newCP(newSize, newRoot)
+		if err != nil {
+			return fmt.Errorf("newCP: %v", err)
+		}
+		if err := WriteCheckpoint(s.path, cpRaw); err != nil {
+			return fmt.Errorf("failed to write new checkpoint: %v", err)
+		}
 	}
+
 	return nil
 }
 
