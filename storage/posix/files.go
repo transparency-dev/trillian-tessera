@@ -153,6 +153,7 @@ func (s *Storage) sequenceBatch(ctx context.Context, entries []*tessera.Entry) e
 		return err
 	}
 	s.curSize = size
+	klog.V(1).Infof("Sequencing from %d", s.curSize)
 
 	if len(entries) == 0 {
 		return nil

@@ -112,6 +112,7 @@ func main() {
 	if err != nil {
 		klog.Exitf("Failed to glob entries %q: %q", *entries, err)
 	}
+	klog.V(1).Infof("toAdd: %v", toAdd)
 	if len(toAdd) == 0 {
 		klog.Exit("Sequence must be run with at least one valid entry")
 	}
