@@ -55,16 +55,44 @@ type FlushFunc func(ctx context.Context, entries []tessera.Entry) (index uint64,
 // The provided FlushFunc will be called with a slice containing the contents of the queue, in
 // the same order as they were added, when either the oldest entry in the queue has been there
 // for maxAge, or the size of the queue reaches maxSize.
-func NewQueue(maxAge time.Duration, maxSize uint, f FlushFunc) *Queue {
+func NewQueue(ctx context.Context, maxAge time.Duration, maxSize uint, f FlushFunc) *Queue {
 	q := &Queue{
 		flush:    f,
 		inFlight: make(map[string]*entry, maxSize),
 	}
+
+	// The underlying queue implementation blocks additions during a flush.
+	// This blocks the filling of the next batch unnecessarily, so we'll
+	// decouple the queue flush and storage write by handling the later in
+	// a worker goroutine.
+	// This same worker thread will also handle the callbacks to f.
+	work := make(chan []*entry, 1)
+	toWork := func(items []interface{}) {
+		entries := make([]*entry, len(items))
+		for i, t := range items {
+			entries[i] = t.(*entry)
+		}
+		work <- entries
+
+	}
+
 	q.buf = buffer.New(
 		buffer.WithSize(maxSize),
 		buffer.WithFlushInterval(maxAge),
-		buffer.WithFlusher(buffer.FlusherFunc(q.doFlush)),
+		buffer.WithFlusher(buffer.FlusherFunc(toWork)),
 	)
+
+	// This will allow
+	go func(ctx context.Context) {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case entries := <-work:
+				q.doFlush(ctx, entries)
+			}
+		}
+	}(ctx)
 	return q
 }
 
@@ -101,27 +129,23 @@ func (q *Queue) Add(ctx context.Context, e tessera.Entry) IndexFunc {
 //
 // To prevent blocking the queue longer than necessary, the notifications happen in a
 // separate goroutine.
-func (q *Queue) doFlush(items []interface{}) {
-	entries := make([]*entry, len(items))
-	entriesData := make([]tessera.Entry, len(items))
-	for i, t := range items {
-		entries[i] = t.(*entry)
-		entriesData[i] = entries[i].data
+func (q *Queue) doFlush(ctx context.Context, entries []*entry) {
+	entriesData := make([]tessera.Entry, 0, len(entries))
+	for _, e := range entries {
+		entriesData = append(entriesData, e.data)
 	}
 
-	go func() {
-		s, err := q.flush(context.TODO(), entriesData)
+	s, err := q.flush(ctx, entriesData)
 
-		// Send assigned indices to all the waiting Add() requests, including dupes.
-		q.inFlightMu.Lock()
-		defer q.inFlightMu.Unlock()
+	// Send assigned indices to all the waiting Add() requests, including dupes.
+	q.inFlightMu.Lock()
+	defer q.inFlightMu.Unlock()
 
-		for i, e := range entries {
-			e.assign(s+uint64(i), err)
-			k := string(e.data.Identity())
-			delete(q.inFlight, k)
-		}
-	}()
+	for i, e := range entries {
+		e.assign(s+uint64(i), err)
+		k := string(e.data.Identity())
+		delete(q.inFlight, k)
+	}
 }
 
 // entry represents an in-flight entry in the queue.

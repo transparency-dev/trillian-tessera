@@ -126,7 +126,7 @@ func New(ctx context.Context, cfg Config, opts ...func(*tessera.StorageOptions))
 		newCP:     opt.NewCP,
 	}
 	// TODO(al): make queue options configurable:
-	r.queue = storage.NewQueue(time.Second, 256, r.sequencer.assignEntries)
+	r.queue = storage.NewQueue(ctx, time.Second, 256, r.sequencer.assignEntries)
 
 	go func() {
 		t := time.NewTicker(1 * time.Second)

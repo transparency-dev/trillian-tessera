@@ -52,6 +52,7 @@ func TestQueue(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			ctx := context.Background()
 			assignMu := sync.Mutex{}
 			assignedItems := make([]tessera.Entry, test.numItems)
 			assignedIndex := uint64(0)
@@ -71,14 +72,14 @@ func TestQueue(t *testing.T) {
 			}
 
 			// Create the Queue
-			q := storage.NewQueue(test.maxWait, uint(test.maxEntries), flushFunc)
+			q := storage.NewQueue(ctx, test.maxWait, uint(test.maxEntries), flushFunc)
 
 			// Now submit a bunch of entries
 			adds := make([]storage.IndexFunc, test.numItems)
 			wantEntries := make([]tessera.Entry, test.numItems)
 			for i := uint64(0); i < test.numItems; i++ {
 				wantEntries[i] = tessera.NewEntry([]byte(fmt.Sprintf("item %d", i)))
-				adds[i] = q.Add(context.TODO(), wantEntries[i])
+				adds[i] = q.Add(ctx, wantEntries[i])
 			}
 
 			for i, r := range adds {
@@ -96,9 +97,10 @@ func TestQueue(t *testing.T) {
 }
 
 func TestDedup(t *testing.T) {
+	ctx := context.Background()
 	idx := atomic.Uint64{}
 
-	q := storage.NewQueue(time.Second, 10 /*maxSize*/, func(ctx context.Context, entries []tessera.Entry) (index uint64, err error) {
+	q := storage.NewQueue(ctx, time.Second, 10 /*maxSize*/, func(ctx context.Context, entries []tessera.Entry) (index uint64, err error) {
 		r := idx.Load()
 		idx.Add(1)
 		return r, nil
@@ -107,7 +109,7 @@ func TestDedup(t *testing.T) {
 	numEntries := 10
 	adds := []storage.IndexFunc{}
 	for i := 0; i < numEntries; i++ {
-		adds = append(adds, q.Add(context.TODO(), tessera.NewEntry([]byte("Have I seen this before?"))))
+		adds = append(adds, q.Add(ctx, tessera.NewEntry([]byte("Have I seen this before?"))))
 	}
 
 	firstN, err := adds[0]()
