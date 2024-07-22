@@ -63,7 +63,7 @@ func NewQueue(ctx context.Context, maxAge time.Duration, maxSize uint, f FlushFu
 
 	// The underlying queue implementation blocks additions during a flush.
 	// This blocks the filling of the next batch unnecessarily, so we'll
-	// decouple the queue flush and storage write by handling the later in
+	// decouple the queue flush and storage write by handling the latter in
 	// a worker goroutine.
 	// This same worker thread will also handle the callbacks to f.
 	work := make(chan []*entry, 1)
@@ -125,9 +125,6 @@ func (q *Queue) Add(ctx context.Context, e tessera.Entry) IndexFunc {
 }
 
 // doFlush handles the queue flush, and sending notifications of assigned log indices.
-//
-// To prevent blocking the queue longer than necessary, the notifications happen in a
-// separate goroutine.
 func (q *Queue) doFlush(ctx context.Context, entries []*entry) {
 	entriesData := make([]tessera.Entry, 0, len(entries))
 	for _, e := range entries {
