@@ -35,16 +35,8 @@ type Entry struct {
 		Index    *uint64
 	}
 
-	// indexFunc will be called when a (potential) index is assigned to the entry.
-	// This is only intended to be used for schemes where the leaf image being logged is
-	// somehow dependendent on its position in the log.
-	//
-	// Implementation of this function should not modify internal.Index, this will be
-	// done elsewhere.
-	indexFunc func(index uint64)
-
 	// marshalBundle knows how to convert this entry's Data into a marshalled bundle entry.
-	marshalBundle func() []byte
+	marshalBundle func(index uint64) []byte
 }
 
 // Data returns the raw entry bytes which will form the entry in the log.
@@ -67,10 +59,7 @@ func (e Entry) Index() *uint64 { return e.internal.Index }
 // be considered final until the storage Add method has returned successfully with the durably assigned index.
 func (e *Entry) MarshalBundleData(index uint64) []byte {
 	e.internal.Index = &index
-	if e.indexFunc != nil {
-		e.indexFunc(index)
-	}
-	return e.marshalBundle()
+	return e.marshalBundle(index)
 }
 
 // NewEntry creates a new Entry object with leaf data.
@@ -90,7 +79,7 @@ func NewEntry(data []byte, opts ...EntryOpt) *Entry {
 	if e.marshalBundle == nil {
 		// By default we will marshal ourselves into a bundle using the mechanism described
 		// by https://c2sp.org/tlog-tiles:
-		e.marshalBundle = func() []byte {
+		e.marshalBundle = func(_ uint64) []byte {
 			r := make([]byte, 0, 2+len(e.internal.Data))
 			r = binary.BigEndian.AppendUint16(r, uint16(len(e.internal.Data)))
 			r = append(r, e.internal.Data...)
