@@ -43,7 +43,6 @@ var (
 	entries     = flag.String("entries", "", "File path glob of entries to add to the log.")
 	pubKeyFile  = flag.String("public_key", "", "Location of public key file. If unset, uses the contents of the LOG_PUBLIC_KEY environment variable.")
 	privKeyFile = flag.String("private_key", "", "Location of private key file. If unset, uses the contents of the LOG_PRIVATE_KEY environment variable.")
-	origin      = flag.String("origin", "", "Log origin string to check for in checkpoint.")
 )
 
 func main() {
@@ -82,10 +81,11 @@ func main() {
 	if err != nil {
 		klog.Exitf("Failed to instantiate signer: %q", err)
 	}
+	origin := s.Name()
 
 	writeCP := func(size uint64, root []byte) error {
 		cp := &fmtlog.Checkpoint{
-			Origin: s.Name(),
+			Origin: origin,
 			Size:   size,
 			Hash:   root,
 		}
@@ -125,7 +125,7 @@ func main() {
 	}
 
 	readCP := func() (uint64, []byte, error) {
-		cp, _, _, err := fmtlog.ParseCheckpoint(cpRaw, *origin, v)
+		cp, _, _, err := fmtlog.ParseCheckpoint(cpRaw, origin, v)
 		if err != nil {
 			return 0, []byte{}, fmt.Errorf("Failed to parse Checkpoint: %q", err)
 		}
