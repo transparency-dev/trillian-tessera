@@ -24,7 +24,7 @@ import (
 type Storage interface {
 	// Add should duably assign an index to the provided Entry, and return it.
 	//
-	// Implementations MUST call MarshalBundleData method on the entry before marshaling and persisting it.
+	// Implementations MUST call MarshalBundleData method on the entry before persisting/integrating it.
 	Add(context.Context, *Entry) (uint64, error)
 }
 
