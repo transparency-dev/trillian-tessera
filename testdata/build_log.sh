@@ -4,14 +4,11 @@
 
 set -e # exit on any error codes from sub-commands
 
-echo https://github.com/mhutchinson/trillian-tessera/tree/log-posix needs to be merged before test data can be regenerated
-exit 1
-
 DIR=$(cd $(dirname "${BASH_SOURCE[0]}") && pwd)
 
 export LOG=${DIR}/log/
-export SERVERLESS_LOG_PRIVATE_KEY="PRIVATE+KEY+example.com/log/testdata+33d7b496+AeymY/SZAX0jZcJ8enZ5FY1Dz+wTML2yWSkK+9DSF3eg"
-export SERVERLESS_LOG_PUBLIC_KEY="example.com/log/testdata+33d7b496+AeHTu4Q3hEIMHNqc6fASMsq3rKNx280NI+oO5xCFkkSx"
+export LOG_PRIVATE_KEY="PRIVATE+KEY+example.com/log/testdata+33d7b496+AeymY/SZAX0jZcJ8enZ5FY1Dz+wTML2yWSkK+9DSF3eg"
+export LOG_PUBLIC_KEY="example.com/log/testdata+33d7b496+AeHTu4Q3hEIMHNqc6fASMsq3rKNx280NI+oO5xCFkkSx"
 export ORIGIN="example.com/log/testdata"
 
 cd ${DIR}
