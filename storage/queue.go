@@ -41,7 +41,7 @@ type Queue struct {
 	flush FlushFunc
 
 	inFlightMu sync.Mutex
-	inFlight   map[string]*entry
+	inFlight   map[string]*queueItem
 }
 
 // IndexFunc is a function which returns an assigned log index, or an error.
@@ -62,7 +62,7 @@ type FlushFunc func(ctx context.Context, entries []*tessera.Entry) error
 func NewQueue(ctx context.Context, maxAge time.Duration, maxSize uint, f FlushFunc) *Queue {
 	q := &Queue{
 		flush:    f,
-		inFlight: make(map[string]*entry, maxSize),
+		inFlight: make(map[string]*queueItem, maxSize),
 	}
 
 	// The underlying queue implementation blocks additions during a flush.
@@ -70,11 +70,11 @@ func NewQueue(ctx context.Context, maxAge time.Duration, maxSize uint, f FlushFu
 	// decouple the queue flush and storage write by handling the latter in
 	// a worker goroutine.
 	// This same worker thread will also handle the callbacks to f.
-	work := make(chan []*entry, 1)
+	work := make(chan []*queueItem, 1)
 	toWork := func(items []interface{}) {
-		entries := make([]*entry, len(items))
+		entries := make([]*queueItem, len(items))
 		for i, t := range items {
-			entries[i] = t.(*entry)
+			entries[i] = t.(*queueItem)
 		}
 		work <- entries
 
@@ -102,7 +102,7 @@ func NewQueue(ctx context.Context, maxAge time.Duration, maxSize uint, f FlushFu
 
 // squashDupes keeps track of all in-flight requests, enabling dupe squashing for entries currently in the queue.
 // Returns an entry struct, and a bool which is true if the provided entry is a dupe and should NOT be added to the queue.
-func (q *Queue) squashDupes(e *tessera.Entry) (*entry, bool) {
+func (q *Queue) squashDupes(e *tessera.Entry) (*queueItem, bool) {
 	q.inFlightMu.Lock()
 	defer q.inFlightMu.Unlock()
 
@@ -129,10 +129,10 @@ func (q *Queue) Add(ctx context.Context, e *tessera.Entry) IndexFunc {
 }
 
 // doFlush handles the queue flush, and sending notifications of assigned log indices.
-func (q *Queue) doFlush(ctx context.Context, entries []*entry) {
+func (q *Queue) doFlush(ctx context.Context, entries []*queueItem) {
 	entriesData := make([]*tessera.Entry, 0, len(entries))
 	for _, e := range entries {
-		entriesData = append(entriesData, e.data)
+		entriesData = append(entriesData, e.entry)
 	}
 
 	err := q.flush(ctx, entriesData)
@@ -142,30 +142,30 @@ func (q *Queue) doFlush(ctx context.Context, entries []*entry) {
 	defer q.inFlightMu.Unlock()
 
 	for _, e := range entries {
-		if e.data.Index() == nil {
+		if e.entry.Index() == nil {
 			panic(errors.New("Logic error: flush complete, but entry was not assigned an index - did storage fail to call entry.MarshalBundleData?"))
 		}
 		e.notify(err)
-		k := string(e.data.Identity())
+		k := string(e.entry.Identity())
 		delete(q.inFlight, k)
 	}
 }
 
-// entry represents an in-flight entry in the queue.
+// queueItem represents an in-flight queueItem in the queue.
 //
-// The index field acts as a Future for the entry's assigned index/error, and will
+// The index field acts as a Future for the queueItem's assigned index/error, and will
 // hang until assign is called.
-type entry struct {
-	data  *tessera.Entry
+type queueItem struct {
+	entry *tessera.Entry
 	c     chan IndexFunc
 	index IndexFunc
 }
 
 // newEntry creates a new entry for the provided data.
-func newEntry(data *tessera.Entry) *entry {
-	e := &entry{
-		data: data,
-		c:    make(chan IndexFunc, 1),
+func newEntry(data *tessera.Entry) *queueItem {
+	e := &queueItem{
+		entry: data,
+		c:     make(chan IndexFunc, 1),
 	}
 	e.index = sync.OnceValues(func() (uint64, error) {
 		return (<-e.c)()
@@ -177,12 +177,12 @@ func newEntry(data *tessera.Entry) *entry {
 //
 // This func must only be called once, and will cause any current or future callers of index()
 // to be given the values provided here.
-func (e *entry) notify(err error) {
+func (e *queueItem) notify(err error) {
 	e.c <- func() (uint64, error) {
 		if err != nil {
 			return 0, err
 		}
-		return *e.data.Index(), nil
+		return *e.entry.Index(), nil
 	}
 	close(e.c)
 }
