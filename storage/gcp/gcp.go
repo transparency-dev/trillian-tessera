@@ -42,6 +42,7 @@ import (
 	"cloud.google.com/go/spanner"
 	"cloud.google.com/go/spanner/apiv1/spannerpb"
 	gcs "cloud.google.com/go/storage"
+	"github.com/google/go-cmp/cmp"
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/api"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
@@ -78,9 +79,8 @@ type objStore interface {
 
 // sequencer describes a type which knows how to sequence entries.
 type sequencer interface {
-	// assignEntries should durably allocate contiguous index numbers to the provided entries,
-	// and return the lowest assigned index.
-	assignEntries(ctx context.Context, entries []tessera.Entry) (uint64, error)
+	// assignEntries should durably allocate contiguous index numbers to the provided entries.
+	assignEntries(ctx context.Context, entries []*tessera.Entry) error
 	// consumeEntries should call the provided function with up to limit previously sequenced entries.
 	// If the call to consumeFunc returns no error, the entries should be considered to have been consumed.
 	// If any entries were successfully consumed, the implementation should also return true; this
@@ -89,7 +89,7 @@ type sequencer interface {
 }
 
 // consumeFunc is the signature of a function which can consume entries from the sequencer.
-type consumeFunc func(ctx context.Context, from uint64, entries []tessera.Entry) error
+type consumeFunc func(ctx context.Context, from uint64, entries []storage.SequencedEntry) error
 
 // Config holds GCP project and resource configuration for a storage instance.
 type Config struct {
@@ -155,7 +155,7 @@ func New(ctx context.Context, cfg Config, opts ...func(*tessera.StorageOptions))
 }
 
 // Add is the entrypoint for adding entries to a sequencing log.
-func (s *Storage) Add(ctx context.Context, e tessera.Entry) (uint64, error) {
+func (s *Storage) Add(ctx context.Context, e *tessera.Entry) (uint64, error) {
 	return s.queue.Add(ctx, e)()
 }
 
@@ -216,10 +216,10 @@ func (s *Storage) getTiles(ctx context.Context, tileIDs []storage.TileID, logSiz
 
 }
 
-// getEntryBundle returns the entry bundle at the location implied by the given index and treeSize.
+// getEntryBundle returns the serialised entry bundle at the location implied by the given index and treeSize.
 //
 // Returns a wrapped os.ErrNotExist if the bundle does not exist.
-func (s *Storage) getEntryBundle(ctx context.Context, bundleIndex uint64, logSize uint64) (*api.EntryBundle, error) {
+func (s *Storage) getEntryBundle(ctx context.Context, bundleIndex uint64, logSize uint64) ([]byte, error) {
 	objName := layout.EntriesPath(bundleIndex, logSize)
 	data, _, err := s.objStore.getObject(ctx, objName)
 	if err != nil {
@@ -231,24 +231,16 @@ func (s *Storage) getEntryBundle(ctx context.Context, bundleIndex uint64, logSiz
 		return nil, err
 	}
 
-	r := &api.EntryBundle{}
-	if err := r.UnmarshalText(data); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal %q: %v", objName, err)
-	}
-	return r, nil
+	return data, nil
 }
 
-// setEntryBundle idempotently stores the entry bundle at the location implied by the bundleIndex and treeSize.
-func (s *Storage) setEntryBundle(ctx context.Context, bundleIndex uint64, logSize uint64, bundle *api.EntryBundle) error {
+// setEntryBundle idempotently stores the serialised entry bundle at the location implied by the bundleIndex and treeSize.
+func (s *Storage) setEntryBundle(ctx context.Context, bundleIndex uint64, logSize uint64, bundleRaw []byte) error {
 	objName := layout.EntriesPath(bundleIndex, logSize)
-	data, err := bundle.MarshalText()
-	if err != nil {
-		return err
-	}
 	// Note that setObject does an idempotent interpretation of DoesNotExist - it only
 	// returns an error if the named object exists _and_ contains different data to what's
 	// passed in here.
-	if err := s.objStore.setObject(ctx, objName, data, &gcs.Conditions{DoesNotExist: true}); err != nil {
+	if err := s.objStore.setObject(ctx, objName, bundleRaw, &gcs.Conditions{DoesNotExist: true}); err != nil {
 		return fmt.Errorf("setObject(%q): %v", objName, err)
 
 	}
@@ -256,7 +248,7 @@ func (s *Storage) setEntryBundle(ctx context.Context, bundleIndex uint64, logSiz
 }
 
 // integrate incorporates the provided entries into the log starting at fromSeq.
-func (s *Storage) integrate(ctx context.Context, fromSeq uint64, entries []tessera.Entry) error {
+func (s *Storage) integrate(ctx context.Context, fromSeq uint64, entries []storage.SequencedEntry) error {
 	tb := storage.NewTreeBuilder(func(ctx context.Context, tileIDs []storage.TileID, treeSize uint64) ([]*api.HashTile, error) {
 		n, err := s.getTiles(ctx, tileIDs, treeSize)
 		if err != nil {
@@ -317,26 +309,29 @@ func (s *Storage) integrate(ctx context.Context, fromSeq uint64, entries []tesse
 // updateEntryBundles adds the entries being integrated into the entry bundles.
 //
 // The right-most bundle will be grown, if it's partial, and/or new bundles will be created as required.
-func (s *Storage) updateEntryBundles(ctx context.Context, fromSeq uint64, entries []tessera.Entry) error {
+func (s *Storage) updateEntryBundles(ctx context.Context, fromSeq uint64, entries []storage.SequencedEntry) error {
 	numAdded := uint64(0)
 	bundleIndex, entriesInBundle := fromSeq/entryBundleSize, fromSeq%entryBundleSize
-	bundle := &api.EntryBundle{}
+	bundleWriter := &bytes.Buffer{}
 	if entriesInBundle > 0 {
 		// If the latest bundle is partial, we need to read the data it contains in for our newer, larger, bundle.
 		part, err := s.getEntryBundle(ctx, uint64(bundleIndex), uint64(entriesInBundle))
 		if err != nil {
 			return err
 		}
-		bundle = part
+
+		if _, err := bundleWriter.Write(part); err != nil {
+			return fmt.Errorf("bundleWriter: %v", err)
+		}
 	}
 
 	seqErr := errgroup.Group{}
 
 	// goSetEntryBundle is a function which uses seqErr to spin off a go-routine to write out an entry bundle.
 	// It's used in the for loop below.
-	goSetEntryBundle := func(ctx context.Context, bundleIndex uint64, fromSeq uint64, bundle api.EntryBundle) {
+	goSetEntryBundle := func(ctx context.Context, bundleIndex uint64, fromSeq uint64, bundleRaw []byte) {
 		seqErr.Go(func() error {
-			if err := s.setEntryBundle(ctx, bundleIndex, fromSeq, &bundle); err != nil {
+			if err := s.setEntryBundle(ctx, bundleIndex, fromSeq, bundleRaw); err != nil {
 				return err
 			}
 			return nil
@@ -345,18 +340,21 @@ func (s *Storage) updateEntryBundles(ctx context.Context, fromSeq uint64, entrie
 
 	// Add new entries to the bundle
 	for _, e := range entries {
-		bundle.Entries = append(bundle.Entries, e.Data())
+		if _, err := bundleWriter.Write(e.BundleData); err != nil {
+			return fmt.Errorf("Write: %v", err)
+		}
 		entriesInBundle++
 		fromSeq++
 		numAdded++
 		if entriesInBundle == entryBundleSize {
 			//  This bundle is full, so we need to write it out...
 			klog.V(1).Infof("Bundle idx %d is full", bundleIndex)
-			goSetEntryBundle(ctx, bundleIndex, fromSeq, *bundle)
+			goSetEntryBundle(ctx, bundleIndex, fromSeq, bundleWriter.Bytes())
 			// ... and prepare the next entry bundle for any remaining entries in the batch
 			bundleIndex++
 			entriesInBundle = 0
-			bundle = &api.EntryBundle{}
+			// Don't use Reset/Truncate here - the backing []bytes is still being used by goSetEntryBundle above.
+			bundleWriter = &bytes.Buffer{}
 			klog.V(1).Infof("Starting bundle idx %d", bundleIndex)
 		}
 	}
@@ -364,7 +362,7 @@ func (s *Storage) updateEntryBundles(ctx context.Context, fromSeq uint64, entrie
 	// this needs writing out too.
 	if entriesInBundle > 0 {
 		klog.V(1).Infof("Writing partial bundle idx %d.%d", bundleIndex, entriesInBundle)
-		goSetEntryBundle(ctx, bundleIndex, fromSeq, *bundle)
+		goSetEntryBundle(ctx, bundleIndex, fromSeq, bundleWriter.Bytes())
 	}
 	return seqErr.Wait()
 }
@@ -444,16 +442,7 @@ func (s *spannerSequencer) initDB(ctx context.Context) error {
 // Entries are allocated contiguous indices, in the order in which they appear in the entries parameter.
 // This is achieved by storing the passed-in entries in the Seq table in Spanner, keyed by the
 // index assigned to the first entry in the batch.
-func (s *spannerSequencer) assignEntries(ctx context.Context, entries []tessera.Entry) (uint64, error) {
-	// Flatted the entries into a single slice of bytes which we can store in the Seq.v column.
-	b := &bytes.Buffer{}
-	e := gob.NewEncoder(b)
-	if err := e.Encode(entries); err != nil {
-		return 0, fmt.Errorf("failed to serialise batch: %v", err)
-	}
-	data := b.Bytes()
-	num := len(entries)
-
+func (s *spannerSequencer) assignEntries(ctx context.Context, entries []*tessera.Entry) error {
 	var next int64 // Unfortunately, Spanner doesn't support uint64 so we'll have to cast around a bit.
 
 	_, err := s.dbPool.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
@@ -466,8 +455,27 @@ func (s *spannerSequencer) assignEntries(ctx context.Context, entries []tessera.
 		if err := row.Columns(&id, &next); err != nil {
 			return fmt.Errorf("failed to parse id column: %v", err)
 		}
-
 		next := uint64(next) // Shadow next with a uint64 version of the same value to save on casts.
+
+		sequencedEntries := make([]storage.SequencedEntry, len(entries))
+		// Assign provisional sequence numbers to entries.
+		// We need to do this here in order to support serialisations which include the log position.
+		for i, e := range entries {
+			sequencedEntries[i] = storage.SequencedEntry{
+				BundleData: e.MarshalBundleData(next + uint64(i)),
+				LeafHash:   e.LeafHash(),
+			}
+		}
+
+		// Flatten the entries into a single slice of bytes which we can store in the Seq.v column.
+		b := &bytes.Buffer{}
+		e := gob.NewEncoder(b)
+		if err := e.Encode(sequencedEntries); err != nil {
+			return fmt.Errorf("failed to serialise batch: %v", err)
+		}
+		data := b.Bytes()
+		num := len(entries)
+
 		// TODO(al): think about whether aligning bundles to tile boundaries would be a good idea or not.
 		m := []*spanner.Mutation{
 			// Insert our newly sequenced batch of entries into Seq,
@@ -483,10 +491,10 @@ func (s *spannerSequencer) assignEntries(ctx context.Context, entries []tessera.
 	})
 
 	if err != nil {
-		return 0, fmt.Errorf("failed to flush batch: %v", err)
+		return fmt.Errorf("failed to flush batch: %v", err)
 	}
 
-	return uint64(next), nil
+	return nil
 }
 
 // consumeEntries calls f with previously sequenced entries.
@@ -517,7 +525,7 @@ func (s *spannerSequencer) consumeEntries(ctx context.Context, limit uint64, f c
 		defer rows.Stop()
 
 		seqsConsumed := []int64{}
-		entries := make([]tessera.Entry, 0, limit)
+		entries := make([]storage.SequencedEntry, 0, limit)
 		orderCheck := fromSeq
 		for {
 			row, err := rows.Next()
@@ -536,7 +544,7 @@ func (s *spannerSequencer) consumeEntries(ctx context.Context, limit uint64, f c
 			}
 
 			g := gob.NewDecoder(bytes.NewReader(vGob))
-			b := []tessera.Entry{}
+			b := []storage.SequencedEntry{}
 			if err := g.Decode(&b); err != nil {
 				return fmt.Errorf("failed to deserialise v: %v", err)
 			}
@@ -653,6 +661,7 @@ func (s *gcsStorage) setObject(ctx context.Context, objName string, data []byte,
 				return fmt.Errorf("failed to fetch existing content for %q (@%d): %v", objName, existingGen, err)
 			}
 			if !bytes.Equal(existing, data) {
+				klog.Errorf("Resource %q non-idempotent write:\n%s", objName, cmp.Diff(existing, data))
 				return fmt.Errorf("precondition failed: resource content for %q differs from data to-be-written", objName)
 			}
 

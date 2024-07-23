@@ -19,6 +19,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/binary"
+	"errors"
 	"fmt"
 )
 
@@ -66,23 +67,8 @@ type EntryBundle struct {
 	Entries [][]byte
 }
 
-// MarshalText implements encoding/TextMarshaller and writes out an EntryBundle
-// instance as sequences of big-endian uint16 length-prefixed log entries,
-// as specified by the tlog-tiles spec.
-// TODO(#41): this _may_ need to be changed to support CT
-func (t EntryBundle) MarshalText() ([]byte, error) {
-	r := &bytes.Buffer{}
-	sizeBs := make([]byte, 2)
-	for _, n := range t.Entries {
-		binary.BigEndian.PutUint16(sizeBs, uint16(len(n)))
-		if _, err := r.Write(sizeBs); err != nil {
-			return nil, err
-		}
-		if _, err := r.Write(n); err != nil {
-			return nil, err
-		}
-	}
-	return r.Bytes(), nil
+func (t *EntryBundle) MarshalText() ([]byte, error) {
+	return nil, errors.New("unimplemented")
 }
 
 // UnmarshalText implements encoding/TextUnmarshaler and reads EntryBundles

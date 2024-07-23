@@ -16,9 +16,8 @@
 package tessera
 
 import (
-	"bytes"
 	"crypto/sha256"
-	"encoding/gob"
+	"encoding/binary"
 
 	"github.com/transparency-dev/merkle/rfc6962"
 )
@@ -33,7 +32,11 @@ type Entry struct {
 		Data     []byte
 		Identity []byte
 		LeafHash []byte
+		Index    *uint64
 	}
+
+	// marshalForBundle knows how to convert this entry's Data into a marshalled bundle entry.
+	marshalForBundle func(index uint64) []byte
 }
 
 // Data returns the raw entry bytes which will form the entry in the log.
@@ -46,12 +49,25 @@ func (e Entry) Identity() []byte { return e.internal.Identity }
 // Note that in almost all cases, this should be the RFC6962 definition of a leaf hash.
 func (e Entry) LeafHash() []byte { return e.internal.LeafHash }
 
+// Index returns the index assigned to the entry in the log, or nil if no index has been assigned.
+func (e Entry) Index() *uint64 { return e.internal.Index }
+
+// MarshalBundleData returns this entry's data in a format ready to be appended to an EntryBundle.
+//
+// Note that MarshalBundleData _may_ be called multiple times, potentially with different values for index
+// (e.g. if there's a failure in the storage when trying to persist the assignment), so index should not
+// be considered final until the storage Add method has returned successfully with the durably assigned index.
+func (e *Entry) MarshalBundleData(index uint64) []byte {
+	e.internal.Index = &index
+	return e.marshalForBundle(index)
+}
+
 // NewEntry creates a new Entry object with leaf data.
-func NewEntry(data []byte, opts ...EntryOpt) Entry {
-	e := Entry{}
+func NewEntry(data []byte, opts ...EntryOpt) *Entry {
+	e := &Entry{}
 	e.internal.Data = data
 	for _, opt := range opts {
-		opt(&e)
+		opt(e)
 	}
 	if e.internal.Identity == nil {
 		h := sha256.Sum256(e.internal.Data)
@@ -59,23 +75,18 @@ func NewEntry(data []byte, opts ...EntryOpt) Entry {
 	}
 	if e.internal.LeafHash == nil {
 		e.internal.LeafHash = rfc6962.DefaultHasher.HashLeaf(e.internal.Data)
-
+	}
+	if e.marshalForBundle == nil {
+		// By default we will marshal ourselves into a bundle using the mechanism described
+		// by https://c2sp.org/tlog-tiles:
+		e.marshalForBundle = func(_ uint64) []byte {
+			r := make([]byte, 0, 2+len(e.internal.Data))
+			r = binary.BigEndian.AppendUint16(r, uint16(len(e.internal.Data)))
+			r = append(r, e.internal.Data...)
+			return r
+		}
 	}
 	return e
-}
-
-func (e *Entry) MarshalBinary() ([]byte, error) {
-	b := &bytes.Buffer{}
-	enc := gob.NewEncoder(b)
-	if err := enc.Encode(e.internal); err != nil {
-		return nil, err
-	}
-	return b.Bytes(), nil
-}
-
-func (e *Entry) UnmarshalBinary(buf []byte) error {
-	dec := gob.NewDecoder(bytes.NewReader(buf))
-	return dec.Decode(&e.internal)
 }
 
 // EntryOpt is the signature of options for creating new Entry instances.
