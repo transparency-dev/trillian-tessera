@@ -47,8 +47,10 @@ type Queue struct {
 type IndexFunc func() (idx uint64, err error)
 
 // FlushFunc is the signature of a function which will receive the slice of queued entries.
-// It should return call AssignIndex to each entry with its assigned index *before* durably
-// persisting the assignment.
+// Normally, this function would be provided by storage implementations. It's important to note
+// that the implementation MUST call each entry's MarshalBundleData function before attempting
+// to integrate it into the tree.
+// See the comment on Entry.MarshalBundleData for further info.
 type FlushFunc func(ctx context.Context, entries []*tessera.Entry) error
 
 // NewQueue creates a new queue with the specified maximum age and size.
