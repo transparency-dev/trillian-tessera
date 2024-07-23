@@ -74,7 +74,7 @@ func TestQueue(t *testing.T) {
 			q := storage.NewQueue(ctx, test.maxWait, uint(test.maxEntries), flushFunc)
 
 			// Now submit a bunch of entries
-			adds := make([]storage.IndexFunc, test.numItems)
+			adds := make([]storage.Future, test.numItems)
 			wantEntries := make([]*tessera.Entry, test.numItems)
 			for i := uint64(0); i < test.numItems; i++ {
 				d := []byte(fmt.Sprintf("item %d", i))
@@ -109,7 +109,7 @@ func TestDedup(t *testing.T) {
 	})
 
 	numEntries := 10
-	adds := []storage.IndexFunc{}
+	adds := []storage.Future{}
 	for i := 0; i < numEntries; i++ {
 		adds = append(adds, q.Add(ctx, tessera.NewEntry([]byte("Have I seen this before?"))))
 	}

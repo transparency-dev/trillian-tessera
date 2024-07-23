@@ -44,8 +44,8 @@ type Queue struct {
 	inFlight   map[string]*queueItem
 }
 
-// IndexFunc is a function which returns an assigned log index, or an error.
-type IndexFunc func() (idx uint64, err error)
+// Future is a function which returns an assigned log index, or an error.
+type Future func() (idx uint64, err error)
 
 // FlushFunc is the signature of a function which will receive the slice of queued entries.
 // Normally, this function would be provided by storage implementations. It's important to note
@@ -116,16 +116,16 @@ func (q *Queue) squashDupes(e *tessera.Entry) (*queueItem, bool) {
 }
 
 // Add places e into the queue, and returns a func which may be called to retrieve the assigned index.
-func (q *Queue) Add(ctx context.Context, e *tessera.Entry) IndexFunc {
+func (q *Queue) Add(ctx context.Context, e *tessera.Entry) Future {
 	entry, isDupe := q.squashDupes(e)
 	if isDupe {
 		// This entry is already in the queue, so no need to add it again.
-		return entry.index
+		return entry.f
 	}
 	if err := q.buf.Push(entry); err != nil {
 		entry.notify(err)
 	}
-	return entry.index
+	return entry.f
 }
 
 // doFlush handles the queue flush, and sending notifications of assigned log indices.
@@ -153,21 +153,21 @@ func (q *Queue) doFlush(ctx context.Context, entries []*queueItem) {
 
 // queueItem represents an in-flight queueItem in the queue.
 //
-// The index field acts as a Future for the queueItem's assigned index/error, and will
+// The f field acts as a future for the queueItem's assigned index/error, and will
 // hang until assign is called.
 type queueItem struct {
 	entry *tessera.Entry
-	c     chan IndexFunc
-	index IndexFunc
+	c     chan Future
+	f     Future
 }
 
 // newEntry creates a new entry for the provided data.
 func newEntry(data *tessera.Entry) *queueItem {
 	e := &queueItem{
 		entry: data,
-		c:     make(chan IndexFunc, 1),
+		c:     make(chan Future, 1),
 	}
-	e.index = sync.OnceValues(func() (uint64, error) {
+	e.f = sync.OnceValues(func() (uint64, error) {
 		return (<-e.c)()
 	})
 	return e
