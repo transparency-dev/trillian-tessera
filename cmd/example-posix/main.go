@@ -27,7 +27,6 @@ import (
 	"golang.org/x/mod/sumdb/note"
 
 	"github.com/transparency-dev/merkle/rfc6962"
-	"github.com/transparency-dev/trillian-tessera/api/layout"
 	"github.com/transparency-dev/trillian-tessera/storage/posix"
 	"k8s.io/klog/v2"
 
@@ -79,20 +78,29 @@ func main() {
 		}
 	}
 
-	var cpNote note.Note
 	s, err := note.NewSigner(privKey)
 	if err != nil {
 		klog.Exitf("Failed to instantiate signer: %q", err)
+	}
+
+	writeCP := func(size uint64, root []byte) error {
+		cp := &fmtlog.Checkpoint{
+			Origin: s.Name(),
+			Size:   size,
+			Hash:   root,
+		}
+		n, err := note.Sign(&note.Note{Text: string(cp.Marshal())}, s)
+		if err != nil {
+			return err
+		}
+		return posix.WriteCheckpoint(*storageDir, n)
 	}
 	if *initialise {
 		if err := os.MkdirAll(*storageDir, dirPerm); err != nil {
 			klog.Exitf("Failed to create log directory: %q", err)
 		}
-		cp := fmtlog.Checkpoint{
-			Hash: rfc6962.DefaultHasher.EmptyRoot(),
-		}
-		if err := signAndWrite(&cp, cpNote, s, *storageDir); err != nil {
-			klog.Exitf("Failed to sign: %q", err)
+		if err := writeCP(0, rfc6962.DefaultHasher.EmptyRoot()); err != nil {
+			klog.Exitf("Failed to write empty checkpoint")
 		}
 		os.Exit(0)
 	}
@@ -122,18 +130,6 @@ func main() {
 			return 0, []byte{}, fmt.Errorf("Failed to parse Checkpoint: %q", err)
 		}
 		return cp.Size, cp.Hash, nil
-	}
-	writeCP := func(size uint64, root []byte) error {
-		cp := &fmtlog.Checkpoint{
-			Origin: s.Name(),
-			Size:   size,
-			Hash:   root,
-		}
-		n, err := note.Sign(&note.Note{Text: string(cp.Marshal())}, s)
-		if err != nil {
-			return err
-		}
-		return posix.WriteCheckpoint(*storageDir, n)
 	}
 	st := posix.New(*storageDir, readCP, writeCP)
 
@@ -184,19 +180,4 @@ func getKeyFile(path string) (string, error) {
 		return "", fmt.Errorf("failed to read key file: %w", err)
 	}
 	return string(k), nil
-}
-
-func signAndWrite(cp *fmtlog.Checkpoint, cpNote note.Note, s note.Signer, dir string) error {
-	cp.Origin = *origin
-	cpNote.Text = string(cp.Marshal())
-	cpNoteSigned, err := note.Sign(&cpNote, s)
-	if err != nil {
-		return fmt.Errorf("failed to sign Checkpoint: %w", err)
-	}
-
-	cpPath := filepath.Join(dir, layout.CheckpointPath)
-	if err := os.WriteFile(cpPath, cpNoteSigned, 0o644); err != nil {
-		return fmt.Errorf("failed to store new log checkpoint: %w", err)
-	}
-	return nil
 }
