@@ -20,7 +20,6 @@ import (
 	"database/sql"
 
 	_ "github.com/go-sql-driver/mysql"
-	"github.com/transparency-dev/formats/log"
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"k8s.io/klog/v2"
 )
@@ -40,8 +39,6 @@ type Storage struct {
 
 	newCheckpoint tessera.NewCPFunc
 }
-
-type WriteCheckpointFunc func(ctx context.Context, checkpoint log.Checkpoint) error
 
 // New creates a new instance of the MySQL-based Storage.
 func New(ctx context.Context, db *sql.DB, opts ...func(*tessera.StorageOptions)) (*Storage, error) {
