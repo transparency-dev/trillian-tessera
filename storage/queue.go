@@ -17,6 +17,7 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"time"
 
@@ -141,6 +142,9 @@ func (q *Queue) doFlush(ctx context.Context, entries []*entry) {
 	defer q.inFlightMu.Unlock()
 
 	for _, e := range entries {
+		if e.data.Index() == nil {
+			panic(errors.New("Logic error: flush complete, but entry was not assigned an index - did storage fail to call entry.MarshalBundleData?"))
+		}
 		e.notify(err)
 		k := string(e.data.Identity())
 		delete(q.inFlight, k)
