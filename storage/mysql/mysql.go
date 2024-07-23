@@ -20,6 +20,8 @@ import (
 	"database/sql"
 
 	_ "github.com/go-sql-driver/mysql"
+	"github.com/transparency-dev/formats/log"
+	tessera "github.com/transparency-dev/trillian-tessera"
 	"k8s.io/klog/v2"
 )
 
@@ -35,12 +37,18 @@ const (
 // Storage is a MySQL-based storage implementation for Tessera.
 type Storage struct {
 	db *sql.DB
+
+	newCheckpoint tessera.NewCPFunc
 }
 
+type WriteCheckpointFunc func(ctx context.Context, checkpoint log.Checkpoint) error
+
 // New creates a new instance of the MySQL-based Storage.
-func New(ctx context.Context, db *sql.DB) (*Storage, error) {
+func New(ctx context.Context, db *sql.DB, opts ...func(*tessera.StorageOptions)) (*Storage, error) {
+	opt := tessera.ResolveStorageOptions(nil, opts...)
 	s := &Storage{
-		db: db,
+		db:            db,
+		newCheckpoint: opt.NewCP,
 	}
 	if err := s.db.Ping(); err != nil {
 		klog.Errorf("Failed to ping database: %v", err)
@@ -55,8 +63,23 @@ func New(ctx context.Context, db *sql.DB) (*Storage, error) {
 		}
 
 		klog.Infof("Initializing checkpoint")
-		if err := s.writeCheckpoint(ctx, []byte("")); err != nil {
+		// Get a Tx for making transaction requests.
+		tx, err := s.db.BeginTx(ctx, nil)
+		if err != nil {
+			return nil, err
+		}
+		// Defer a rollback in case anything fails.
+		defer func() {
+			if err := tx.Rollback(); err != nil && err != sql.ErrTxDone {
+				klog.Errorf("Failed to rollback in write initial checkpoint: %v", err)
+			}
+		}()
+		if err := s.writeCheckpoint(ctx, tx, 0, []byte("")); err != nil {
 			klog.Errorf("Failed to write initial checkpoint: %v", err)
+			return nil, err
+		}
+		// Commit the transaction.
+		if err := tx.Commit(); err != nil {
 			return nil, err
 		}
 	}
@@ -75,27 +98,19 @@ func (s *Storage) ReadCheckpoint(ctx context.Context) ([]byte, error) {
 	return checkpoint, row.Scan(&checkpoint)
 }
 
-// writeCheckpoint stores a raw log checkpoint.
-func (s *Storage) writeCheckpoint(ctx context.Context, rawCheckpoint []byte) error {
-	// Get a Tx for making transaction requests.
-	tx, err := s.db.BeginTx(ctx, nil)
+// writeCheckpoint stores the log signed checkpoint.
+func (s *Storage) writeCheckpoint(ctx context.Context, tx *sql.Tx, size uint64, rootHash []byte) error {
+	rawCheckpoint, err := s.newCheckpoint(size, rootHash)
 	if err != nil {
 		return err
 	}
-	// Defer a rollback in case anything fails.
-	defer func() {
-		if err := tx.Rollback(); err != nil && err != sql.ErrTxDone {
-			klog.Errorf("Failed to rollback in writeCheckpoint: %v", err)
-		}
-	}()
 
 	if _, err := tx.ExecContext(ctx, replaceCheckpointSQL, checkpointID, rawCheckpoint); err != nil {
 		klog.Errorf("Failed to execute replaceCheckpointSQL: %v", err)
 		return err
 	}
 
-	// Commit the transaction.
-	return tx.Commit()
+	return nil
 }
 
 // ReadTile returns a full tile or a partial tile at the given level and index.
