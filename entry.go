@@ -35,7 +35,12 @@ type Entry struct {
 		Index    *uint64
 	}
 
-	// indexFunc will be called when an index is assigned to the entry.
+	// indexFunc will be called when a (potential) index is assigned to the entry.
+	// This is only intended to be used for schemes where the leaf image being logged is
+	// somehow dependendent on its position in the log.
+	//
+	// Implementation of this function should not modify internal.Index, this will be
+	// done elsewhere.
 	indexFunc func(index uint64)
 
 	// marshalBundle knows how to convert this entry's Data into a marshalled bundle entry.
@@ -56,6 +61,10 @@ func (e Entry) LeafHash() []byte { return e.internal.LeafHash }
 func (e Entry) Index() *uint64 { return e.internal.Index }
 
 // MarshalBundleData returns this entry's data in a format ready to be appended to an EntryBundle.
+//
+// Note that MarshalBundleData _may_ be called multiple times, potentially with different values for index
+// (e.g. if there's a failure in the storage when trying to persist the assignment), so index should not
+// be considered final until the storage Add method has returned successfully with the durably assigned index.
 func (e *Entry) MarshalBundleData(index uint64) []byte {
 	e.internal.Index = &index
 	if e.indexFunc != nil {
