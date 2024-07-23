@@ -35,8 +35,8 @@ type Entry struct {
 		Index    *uint64
 	}
 
-	// marshalBundle knows how to convert this entry's Data into a marshalled bundle entry.
-	marshalBundle func(index uint64) []byte
+	// marshalForBundle knows how to convert this entry's Data into a marshalled bundle entry.
+	marshalForBundle func(index uint64) []byte
 }
 
 // Data returns the raw entry bytes which will form the entry in the log.
@@ -59,7 +59,7 @@ func (e Entry) Index() *uint64 { return e.internal.Index }
 // be considered final until the storage Add method has returned successfully with the durably assigned index.
 func (e *Entry) MarshalBundleData(index uint64) []byte {
 	e.internal.Index = &index
-	return e.marshalBundle(index)
+	return e.marshalForBundle(index)
 }
 
 // NewEntry creates a new Entry object with leaf data.
@@ -76,10 +76,10 @@ func NewEntry(data []byte, opts ...EntryOpt) *Entry {
 	if e.internal.LeafHash == nil {
 		e.internal.LeafHash = rfc6962.DefaultHasher.HashLeaf(e.internal.Data)
 	}
-	if e.marshalBundle == nil {
+	if e.marshalForBundle == nil {
 		// By default we will marshal ourselves into a bundle using the mechanism described
 		// by https://c2sp.org/tlog-tiles:
-		e.marshalBundle = func(_ uint64) []byte {
+		e.marshalForBundle = func(_ uint64) []byte {
 			r := make([]byte, 0, 2+len(e.internal.Data))
 			r = binary.BigEndian.AppendUint16(r, uint16(len(e.internal.Data)))
 			r = append(r, e.internal.Data...)

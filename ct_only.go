@@ -48,7 +48,7 @@ func NewCertificateTransparencySequencedWriter(s Storage) func(context.Context, 
 func convertCTEntry(e *ctonly.Entry) *Entry {
 	r := &Entry{}
 	r.internal.Identity = e.Identity()
-	r.marshalBundle = func(idx uint64) []byte {
+	r.marshalForBundle = func(idx uint64) []byte {
 		r.internal.LeafHash = e.MerkleLeafHash(idx)
 		r.internal.Data = e.LeafData(idx)
 		return r.internal.Data

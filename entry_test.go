@@ -25,7 +25,7 @@ func TestEntryMarshalBundleDelegates(t *testing.T) {
 	wantBundle := []byte(fmt.Sprintf("Yes %d", wantIdx))
 
 	e := NewEntry([]byte("this is data"))
-	e.marshalBundle = func(gotIdx uint64) []byte {
+	e.marshalForBundle = func(gotIdx uint64) []byte {
 		if gotIdx != wantIdx {
 			t.Fatalf("Got idx %d, want %d", gotIdx, wantIdx)
 		}
