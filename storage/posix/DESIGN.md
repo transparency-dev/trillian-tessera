@@ -19,10 +19,10 @@ the tree is synchronous.
 In the description below, when we talk about writing to files - either appending or creating new ones,
 the _actual_ process used always follows the following pattern:
 1. Create a temporary file on the same filesystem as the target location
-1. If we're appening data, copy the contents of the prefix location into the temporary file
+1. If we're appending data, copy the contents of the prefix location into the temporary file
 1. Write any new/additional data into the temporary file
 1. Close the temporary file
-1. Rename the temporary file into the target location.
+1. Rename the temporary file into the target location
 
 The final step in the dance above is atomic according to the POSIX spec, so in performing this sequence
 of actions we can avoid corrupt or partially written files being part of the tree.
