@@ -136,7 +136,7 @@ func main() {
 		}
 		return cp.Size, cp.Hash, nil
 	}
-	st := posix.New(ctx, *storageDir, readCP, tessera.WithCheckpointSigner(s), tessera.WithBatching(256, time.Second))
+	st := posix.New(ctx, *storageDir, readCP, tessera.WithCheckpointSignerVerifier(s, v), tessera.WithBatching(256, time.Second))
 
 	// sequence entries
 
