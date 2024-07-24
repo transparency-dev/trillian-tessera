@@ -23,12 +23,14 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
 
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/storage/mysql"
+	"golang.org/x/mod/sumdb/note"
 	"k8s.io/klog/v2"
 )
 
@@ -38,6 +40,7 @@ var (
 	dbMaxOpenConns    = flag.Int("db_max_open_conns", 64, "")
 	dbMaxIdleConns    = flag.Int("db_max_idle_conns", 64, "")
 	listen            = flag.String("listen", ":2024", "Address:port to listen on")
+	privateKeyPath    = flag.String("private_key_path", "", "Location of private key file")
 )
 
 func main() {
@@ -53,7 +56,16 @@ func main() {
 	db.SetMaxOpenConns(*dbMaxOpenConns)
 	db.SetMaxIdleConns(*dbMaxIdleConns)
 
-	storage, err := mysql.New(ctx, db)
+	rawPrivateKey, err := os.ReadFile(*privateKeyPath)
+	if err != nil {
+		klog.Exitf("Failed to read private key file %q: %v", *privateKeyPath, err)
+	}
+	noteSigner, err := note.NewSigner(string(rawPrivateKey))
+	if err != nil {
+		klog.Exitf("Failed to create new signer: %v", err)
+	}
+
+	storage, err := mysql.New(ctx, db, tessera.WithCheckpointSigner(noteSigner))
 	if err != nil {
 		klog.Exitf("Failed to create new MySQL storage: %v", err)
 	}
