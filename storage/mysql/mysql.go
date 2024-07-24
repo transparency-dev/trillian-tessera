@@ -20,6 +20,7 @@ import (
 	"database/sql"
 
 	_ "github.com/go-sql-driver/mysql"
+	"github.com/transparency-dev/merkle/rfc6962"
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"k8s.io/klog/v2"
 )
@@ -71,7 +72,7 @@ func New(ctx context.Context, db *sql.DB, opts ...func(*tessera.StorageOptions))
 				klog.Errorf("Failed to rollback in write initial checkpoint: %v", err)
 			}
 		}()
-		if err := s.writeCheckpoint(ctx, tx, 0, []byte("")); err != nil {
+		if err := s.writeCheckpoint(ctx, tx, 0, rfc6962.DefaultHasher.EmptyRoot()); err != nil {
 			klog.Errorf("Failed to write initial checkpoint: %v", err)
 			return nil, err
 		}
