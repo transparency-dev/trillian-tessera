@@ -148,16 +148,16 @@ func main() {
 		name string
 		e    *tessera.Entry
 	}
-	entries := make(chan entryInfo, 100)
+	entryChan := make(chan entryInfo, 100)
 	go func() {
 		for _, fp := range toAdd {
 			b, err := os.ReadFile(fp)
 			if err != nil {
 				klog.Exitf("Failed to read entry file %q: %q", fp, err)
 			}
-			entries <- entryInfo{name: fp, e: tessera.NewEntry(b)}
+			entryChan <- entryInfo{name: fp, e: tessera.NewEntry(b)}
 		}
-		close(entries)
+		close(entryChan)
 	}()
 
 	numWorkers := 256
@@ -170,7 +170,7 @@ func main() {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			for entry := range entries {
+			for entry := range entryChan {
 				// ask storage to sequence
 				seq, err := st.Add(context.Background(), entry.e)
 				if err != nil {
