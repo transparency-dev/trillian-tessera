@@ -25,9 +25,13 @@ import (
 // NewCPFunc is the signature of a function which knows how to format and sign checkpoints.
 type NewCPFunc func(size uint64, hash []byte) ([]byte, error)
 
+// ParseCPFunc is the signature of a function which knows how to verify and parse checkpoints.
+type ParseCPFunc func(raw []byte) (*f_log.Checkpoint, error)
+
 // StorageOptions holds optional settings for all storage implementations.
 type StorageOptions struct {
-	NewCP NewCPFunc
+	NewCP   NewCPFunc
+	ParseCP ParseCPFunc
 
 	BatchMaxAge  time.Duration
 	BatchMaxSize uint
@@ -44,11 +48,11 @@ func ResolveStorageOptions(defaults *StorageOptions, opts ...func(*StorageOption
 	return defaults
 }
 
-// WithCheckpointSigner is an option for setting the note signer to use when creating checkpoints.
+// WithCheckpointSignerVerifier is an option for setting the note signer and verifier to use when creating and parsing checkpoints.
 //
-// Checkpoints signed by this signer will be standard checkpoints as defined by https://c2sp.org/tlog-checkpoint.
+// Checkpoints signed by this signer and verified by this verifier will be standard checkpoints as defined by https://c2sp.org/tlog-checkpoint.
 // The provided signer's name will be used as the Origin line on the checkpoint.
-func WithCheckpointSigner(s note.Signer) func(*StorageOptions) {
+func WithCheckpointSignerVerifier(s note.Signer, v note.Verifier) func(*StorageOptions) {
 	return func(o *StorageOptions) {
 		o.NewCP = func(size uint64, hash []byte) ([]byte, error) {
 			cpRaw := f_log.Checkpoint{
@@ -59,9 +63,17 @@ func WithCheckpointSigner(s note.Signer) func(*StorageOptions) {
 
 			n, err := note.Sign(&note.Note{Text: string(cpRaw)}, s)
 			if err != nil {
-				return nil, fmt.Errorf("Sign: %v", err)
+				return nil, fmt.Errorf("note.Sign: %w", err)
 			}
 			return n, nil
+		}
+
+		o.ParseCP = func(raw []byte) (*f_log.Checkpoint, error) {
+			cp, _, _, err := f_log.ParseCheckpoint(raw, v.Name(), v)
+			if err != nil {
+				return nil, fmt.Errorf("f_log.ParseCheckpoint: %w", err)
+			}
+			return cp, nil
 		}
 	}
 }
