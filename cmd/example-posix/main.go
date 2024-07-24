@@ -18,15 +18,17 @@ package main
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
+	"time"
 
 	"golang.org/x/mod/sumdb/note"
 
 	"github.com/transparency-dev/merkle/rfc6962"
+	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/storage/posix"
 	"k8s.io/klog/v2"
 
@@ -48,6 +50,8 @@ var (
 func main() {
 	klog.InitFlags(nil)
 	flag.Parse()
+
+	ctx := context.Background()
 
 	// Read log public key from file or environment variable
 	var pubKey string
@@ -109,6 +113,7 @@ func main() {
 	if err != nil {
 		klog.Exitf("Failed to glob entries %q: %q", *entries, err)
 	}
+	klog.V(1).Infof("toAdd: %v", toAdd)
 	if len(toAdd) == 0 {
 		klog.Exit("Sequence must be run with at least one valid entry")
 	}
@@ -131,7 +136,7 @@ func main() {
 		}
 		return cp.Size, cp.Hash, nil
 	}
-	st := posix.New(*storageDir, readCP, writeCP)
+	st := posix.New(ctx, *storageDir, readCP, tessera.WithCheckpointSignerVerifier(s, v), tessera.WithBatching(256, time.Second))
 
 	// sequence entries
 
@@ -141,37 +146,41 @@ func main() {
 	// sequence numbers assigned to the data from the provided input files.
 	type entryInfo struct {
 		name string
-		b    []byte
+		e    *tessera.Entry
 	}
-	entries := make(chan entryInfo, 100)
+	entryChan := make(chan entryInfo, 100)
 	go func() {
 		for _, fp := range toAdd {
 			b, err := os.ReadFile(fp)
 			if err != nil {
 				klog.Exitf("Failed to read entry file %q: %q", fp, err)
 			}
-			entries <- entryInfo{name: fp, b: b}
+			entryChan <- entryInfo{name: fp, e: tessera.NewEntry(b)}
 		}
-		close(entries)
+		close(entryChan)
 	}()
 
-	for entry := range entries {
-		// ask storage to sequence
-		dupe := false
-		seq, err := st.Sequence(context.Background(), entry.b)
-		if err != nil {
-			if errors.Is(err, posix.ErrDupeLeaf) {
-				dupe = true
-			} else {
-				klog.Exitf("failed to sequence %q: %q", entry.name, err)
-			}
-		}
-		l := fmt.Sprintf("%d: %v", seq, entry.name)
-		if dupe {
-			l += " (dupe)"
-		}
-		klog.Info(l)
+	numWorkers := 256
+	if l := len(toAdd); l < numWorkers {
+		numWorkers = l
 	}
+
+	wg := sync.WaitGroup{}
+	for i := 0; i < numWorkers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for entry := range entryChan {
+				// ask storage to sequence
+				seq, err := st.Add(context.Background(), entry.e)
+				if err != nil {
+					klog.Exitf("failed to sequence %q: %q", entry.name, err)
+				}
+				klog.Infof("%d: %v", seq, entry.name)
+			}
+		}()
+	}
+	wg.Wait()
 }
 
 func getKeyFile(path string) (string, error) {

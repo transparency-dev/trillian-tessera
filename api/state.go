@@ -19,7 +19,6 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/binary"
-	"errors"
 	"fmt"
 )
 
@@ -65,10 +64,6 @@ func (t *HashTile) UnmarshalText(raw []byte) error {
 type EntryBundle struct {
 	// Entries stores the leaf entries of the log, in order.
 	Entries [][]byte
-}
-
-func (t *EntryBundle) MarshalText() ([]byte, error) {
-	return nil, errors.New("unimplemented")
 }
 
 // UnmarshalText implements encoding/TextUnmarshaler and reads EntryBundles
