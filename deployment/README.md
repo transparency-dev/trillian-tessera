@@ -26,7 +26,7 @@ export GOOGLE_PROJECT={VALUE}
 ```
 
 Eventually, customize the region (defaults to "us-east1"), and bucket name prefix
-(defaults to "trillian-tessera"):
+(defaults to "tessera"):
 ```bash
 export GOOGLE_REGION={VALUE}
 export TESSERA_BASE_NAME={VALUE}
