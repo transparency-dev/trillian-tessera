@@ -5,7 +5,7 @@ terraform {
 locals {
   project_id = get_env("GOOGLE_PROJECT")
   location   = get_env("GOOGLE_REGION", "us-central1")
-  base_name   = get_env("TESSERA_BASE_NAME", "tessera")
+  base_name   = get_env("TESSERA_BASE_NAME", "tessera-example")
 }
 
 inputs = merge(
