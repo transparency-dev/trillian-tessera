@@ -50,7 +50,7 @@ func main() {
 		Bucket:    *bucket,
 		Spanner:   *spanner,
 	}
-	storage, err := gcp.New(ctx, gcpCfg, tessera.WithCheckpointSigner(signerFromFlags()))
+	storage, err := gcp.New(ctx, gcpCfg, tessera.WithCheckpointSignerVerifier(signerFromFlags(), nil))
 	if err != nil {
 		klog.Exitf("Failed to create new GCP storage: %v", err)
 	}

@@ -41,6 +41,7 @@ var (
 	dbMaxIdleConns    = flag.Int("db_max_idle_conns", 64, "")
 	listen            = flag.String("listen", ":2024", "Address:port to listen on")
 	privateKeyPath    = flag.String("private_key_path", "", "Location of private key file")
+	publicKeyPath     = flag.String("public_key_path", "", "Location of public key file")
 )
 
 func main() {
@@ -64,8 +65,16 @@ func main() {
 	if err != nil {
 		klog.Exitf("Failed to create new signer: %v", err)
 	}
+	rawPublicKey, err := os.ReadFile(*publicKeyPath)
+	if err != nil {
+		klog.Exitf("Failed to read public key file %q: %v", *publicKeyPath, err)
+	}
+	noteVerifier, err := note.NewVerifier(string(rawPublicKey))
+	if err != nil {
+		klog.Exitf("Failed to create new verifier: %v", err)
+	}
 
-	storage, err := mysql.New(ctx, db, tessera.WithCheckpointSigner(noteSigner))
+	storage, err := mysql.New(ctx, db, tessera.WithCheckpointSignerVerifier(noteSigner, noteVerifier))
 	if err != nil {
 		klog.Exitf("Failed to create new MySQL storage: %v", err)
 	}
