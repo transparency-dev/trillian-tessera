@@ -17,7 +17,6 @@ package main
 
 import (
 	"context"
-	"crypto/sha256"
 	"database/sql"
 	"flag"
 	"fmt"
@@ -166,8 +165,7 @@ func main() {
 			}
 		}()
 
-		id := sha256.Sum256(b)
-		idx, err := storage.Add(r.Context(), tessera.NewEntry(b, tessera.WithIdentity(id[:])))
+		idx, err := storage.Add(r.Context(), tessera.NewEntry(b))
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			_, _ = w.Write([]byte(err.Error()))
