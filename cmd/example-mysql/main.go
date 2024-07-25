@@ -17,7 +17,6 @@ package main
 
 import (
 	"context"
-	"crypto/sha256"
 	"database/sql"
 	"flag"
 	"fmt"
@@ -160,12 +159,22 @@ func main() {
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
-		defer r.Body.Close()
+		defer func() {
+			if err := r.Body.Close(); err != nil {
+				klog.Warningf("/add: %v", err)
+			}
+		}()
 
-		id := sha256.Sum256(b)
-		_ = tessera.NewEntry(b, tessera.WithIdentity(id[:]))
-
-		// TODO: Add entry to log and return assigned index.
+		idx, err := storage.Add(r.Context(), tessera.NewEntry(b))
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte(err.Error()))
+			return
+		}
+		if _, err = w.Write([]byte(fmt.Sprintf("%d", idx))); err != nil {
+			klog.Errorf("/add: %v", err)
+			return
+		}
 	})
 
 	if err := http.ListenAndServe(*listen, http.DefaultServeMux); err != nil {
