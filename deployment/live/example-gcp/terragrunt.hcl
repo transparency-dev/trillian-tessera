@@ -3,7 +3,7 @@ terraform {
 }
 
 locals {
-  project_id = get_env("GOOGLE_PROJECT", "trillian-example")
+  project_id = get_env("GOOGLE_PROJECT", "trillian-tessera")
   location   = get_env("GOOGLE_REGION", "us-central1")
   base_name   = get_env("TESSERA_BASE_NAME", "example-gcp")
 }

@@ -6,13 +6,13 @@ the project:
 gcloud auth application-default login
 ```
 
-Then, specify your Google Cloud project ID:
+Set your GCP project ID with:
 ```bash
 export GOOGLE_PROJECT={VALUE}
 ```
 
-Eventually, customize the region (defaults to "us-central1"), and bucket name prefix
-(defaults to "tessera-example"):
+Eventually, customize the GCP region (defaults to "us-central1"),
+and bucket name prefix (defaults to "example-gcp"):
 ```bash
 export GOOGLE_REGION={VALUE}
 export TESSERA_BASE_NAME={VALUE}
