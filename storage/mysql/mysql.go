@@ -185,7 +185,7 @@ func (s *Storage) ReadEntryBundle(ctx context.Context, index uint64) ([]byte, er
 
 // Add is the entrypoint for adding entries to a sequencing log.
 func (s *Storage) Add(ctx context.Context, entry *tessera.Entry) (uint64, error) {
-	// TODO: Return index if the value is already stored.
+	// TODO(#21): Return index if the value is already stored.
 
 	return s.queue.Add(ctx, entry)()
 }
@@ -197,7 +197,7 @@ func (s *Storage) Add(ctx context.Context, entry *tessera.Entry) (uint64, error)
 // We try to minimise the number of partially complete entry bundles by writing entries in chunks rather
 // than one-by-one.
 //
-// TODO: Separate sequencing and integration for better performance.
+// TODO(#21): Separate sequencing and integration for better performance.
 func (s *Storage) sequenceBatch(ctx context.Context, entries []*tessera.Entry) error {
 	// Return when there is no entry to sequence.
 	if len(entries) == 0 {
@@ -272,7 +272,7 @@ func (s *Storage) integrate(ctx context.Context, tx *sql.Tx, fromSeq uint64, ent
 		return r, nil
 	})
 
-	// TODO: Add sequenced entries to entry bundles.
+	// TODO(#21): Add sequenced entries to entry bundles.
 
 	sequencedEntries := make([]storage.SequencedEntry, len(entries))
 	// Assign provisional sequence numbers to entries.
