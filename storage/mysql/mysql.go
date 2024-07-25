@@ -31,12 +31,13 @@ import (
 )
 
 const (
-	selectCheckpointByIDSQL         = "SELECT `note` FROM `Checkpoint` WHERE `id` = ?"
-	replaceCheckpointSQL            = "REPLACE INTO `Checkpoint` (`id`, `note`) VALUES (?, ?)"
-	selectSubtreeByLevelAndIndexSQL = "SELECT `nodes` FROM `Subtree` WHERE `level` = ? AND `index` = ?"
-	replaceSubtreeSQL               = "REPLACE INTO `Subtree` (`level`, `index`, `nodes`) VALUES (?, ?, ?)"
-	selectTiledLeavesSQL            = "SELECT `data` FROM `TiledLeaves` WHERE `tile_index` = ?"
-	replaceTiledLeavesSQL           = "REPLACE INTO `TiledLeaves` (`tile_index`, `data`) VALUES (?, ?)"
+	selectCheckpointByIDSQL          = "SELECT `note` FROM `Checkpoint` WHERE `id` = ?"
+	selectCheckpointByIDForUpdateSQL = selectCheckpointByIDSQL + " FOR UPDATE"
+	replaceCheckpointSQL             = "REPLACE INTO `Checkpoint` (`id`, `note`) VALUES (?, ?)"
+	selectSubtreeByLevelAndIndexSQL  = "SELECT `nodes` FROM `Subtree` WHERE `level` = ? AND `index` = ?"
+	replaceSubtreeSQL                = "REPLACE INTO `Subtree` (`level`, `index`, `nodes`) VALUES (?, ?, ?)"
+	selectTiledLeavesSQL             = "SELECT `data` FROM `TiledLeaves` WHERE `tile_index` = ?"
+	replaceTiledLeavesSQL            = "REPLACE INTO `TiledLeaves` (`tile_index`, `data`) VALUES (?, ?)"
 
 	checkpointID           = 0
 	defaultEntryBundleSize = 256
@@ -220,9 +221,9 @@ func (s *Storage) sequenceBatch(ctx context.Context, entries []*tessera.Entry) e
 		}
 	}()
 
-	// Get tree size from checkpoint.
+	// Get tree size from checkpoint. Note that "SELECT ... FOR UPDATE" is used for row-level locking.
 	// TODO(#21): Optimize how we get the tree size without parsing and verifying the checkpoints every time.
-	row := tx.QueryRowContext(ctx, selectCheckpointByIDSQL, checkpointID)
+	row := tx.QueryRowContext(ctx, selectCheckpointByIDForUpdateSQL, checkpointID)
 	if err := row.Err(); err != nil {
 		return err
 	}
