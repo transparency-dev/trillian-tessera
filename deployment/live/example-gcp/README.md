@@ -11,7 +11,7 @@ Set your GCP project ID with:
 export GOOGLE_PROJECT={VALUE}
 ```
 
-Eventually, customize the GCP region (defaults to "us-central1"),
+Optionally, customize the GCP region (defaults to "us-central1"),
 and bucket name prefix (defaults to "example-gcp"):
 ```bash
 export GOOGLE_REGION={VALUE}
