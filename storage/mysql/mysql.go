@@ -248,12 +248,13 @@ func (s *Storage) sequenceBatch(ctx context.Context, entries []*tessera.Entry) e
 func (s *Storage) integrate(ctx context.Context, tx *sql.Tx, fromSeq uint64, entries []*tessera.Entry) error {
 	tb := storage.NewTreeBuilder(func(ctx context.Context, tileIDs []storage.TileID, treeSize uint64) ([]*api.HashTile, error) {
 		r := make([]*api.HashTile, len(tileIDs))
+
+		// TODO(#21): Refactor the following to fully utilise the MySQL for fetching multiple tiles in one query with the same ordering.
 		errG := errgroup.Group{}
 		for i, id := range tileIDs {
 			i := i
 			id := id
 			errG.Go(func() error {
-				// TODO: Refactor the query into a function.
 				row := tx.QueryRowContext(ctx, selectSubtreeByLevelAndIndexSQL, id.Level, id.Index)
 				if err := row.Err(); err != nil {
 					return err
