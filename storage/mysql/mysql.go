@@ -221,6 +221,7 @@ func (s *Storage) sequenceBatch(ctx context.Context, entries []*tessera.Entry) e
 	}()
 
 	// Get tree size from checkpoint.
+	// TODO(#21): Optimize how we get the tree size without parsing and verifying the checkpoints every time.
 	row := tx.QueryRowContext(ctx, selectCheckpointByIDSQL, checkpointID)
 	if err := row.Err(); err != nil {
 		return err
