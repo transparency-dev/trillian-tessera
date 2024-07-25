@@ -38,8 +38,9 @@ const (
 	selectTiledLeavesSQL            = "SELECT `data` FROM `TiledLeaves` WHERE `tile_index` = ?"
 	replaceTiledLeavesSQL           = "REPLACE INTO `TiledLeaves` (`tile_index`, `data`) VALUES (?, ?)"
 
-	checkpointID    = 0
-	entryBundleSize = 256
+	checkpointID           = 0
+	defaultEntryBundleSize = 256
+	defaultQueueMaxAge     = time.Second
 )
 
 // Storage is a MySQL-based storage implementation for Tessera.
@@ -53,7 +54,10 @@ type Storage struct {
 
 // New creates a new instance of the MySQL-based Storage.
 func New(ctx context.Context, db *sql.DB, opts ...func(*tessera.StorageOptions)) (*Storage, error) {
-	opt := tessera.ResolveStorageOptions(nil, opts...)
+	opt := tessera.ResolveStorageOptions(&tessera.StorageOptions{
+		BatchMaxAge:  defaultQueueMaxAge,
+		BatchMaxSize: defaultEntryBundleSize,
+	}, opts...)
 	s := &Storage{
 		db:              db,
 		newCheckpoint:   opt.NewCP,
@@ -64,7 +68,7 @@ func New(ctx context.Context, db *sql.DB, opts ...func(*tessera.StorageOptions))
 		return nil, err
 	}
 
-	s.queue = storage.NewQueue(ctx, time.Second, entryBundleSize, s.sequenceBatch)
+	s.queue = storage.NewQueue(ctx, opt.BatchMaxAge, opt.BatchMaxSize, s.sequenceBatch)
 
 	// Initialize checkpoint if there is no row in the Checkpoint table.
 	if _, err := s.ReadCheckpoint(ctx); err != nil {
