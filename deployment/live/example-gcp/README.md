@@ -11,7 +11,7 @@ Then, specify your Google Cloud project ID:
 export GOOGLE_PROJECT={VALUE}
 ```
 
-Eventually, customize the region (defaults to "us-east1"), and bucket name prefix
+Eventually, customize the region (defaults to "us-central1"), and bucket name prefix
 (defaults to "tessera-example"):
 ```bash
 export GOOGLE_REGION={VALUE}
