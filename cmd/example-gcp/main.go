@@ -25,6 +25,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/storage/gcp"
@@ -50,7 +51,10 @@ func main() {
 		Bucket:    *bucket,
 		Spanner:   *spanner,
 	}
-	storage, err := gcp.New(ctx, gcpCfg, tessera.WithCheckpointSignerVerifier(signerFromFlags(), nil))
+	storage, err := gcp.New(ctx, gcpCfg,
+		tessera.WithCheckpointSignerVerifier(signerFromFlags(), nil),
+		tessera.WithBatching(1024, time.Second),
+	)
 	if err != nil {
 		klog.Exitf("Failed to create new GCP storage: %v", err)
 	}
