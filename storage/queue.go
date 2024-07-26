@@ -142,9 +142,6 @@ func (q *Queue) doFlush(ctx context.Context, entries []*queueItem) {
 	defer q.inFlightMu.Unlock()
 
 	for _, e := range entries {
-		if e.entry.Index() == nil {
-			panic(errors.New("Logic error: flush complete, but entry was not assigned an index - did storage fail to call entry.MarshalBundleData?"))
-		}
 		e.notify(err)
 		k := string(e.entry.Identity())
 		delete(q.inFlight, k)
@@ -181,6 +178,9 @@ func (e *queueItem) notify(err error) {
 	e.c <- func() (uint64, error) {
 		if err != nil {
 			return 0, err
+		}
+		if e.entry.Index() == nil {
+			panic(errors.New("Logic error: flush complete, but entry was not assigned an index - did storage fail to call entry.MarshalBundleData?"))
 		}
 		return *e.entry.Index(), nil
 	}
