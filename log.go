@@ -29,7 +29,7 @@ const DefaultBatchMaxSize = 1
 // entries with indices assigned but which have not yet been integrated into the tree.
 //
 // Personalities encountering this error should apply back-pressure to the source of new entries
-// in an appropriate manner (e.g. for HTTP services, return a 429 with a Retry-After header).
+// in an appropriate manner (e.g. for HTTP services, return a 503 with a Retry-After header).
 var ErrPushback = errors.New("too many unintegrated entries")
 
 // NewCPFunc is the signature of a function which knows how to format and sign checkpoints.

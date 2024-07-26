@@ -73,7 +73,7 @@ func main() {
 		if err != nil {
 			if errors.Is(err, tessera.ErrPushback) {
 				w.Header().Add("Retry-After", "1")
-				w.WriteHeader(http.StatusTooManyRequests)
+				w.WriteHeader(http.StatusServiceUnavailable)
 				return
 			}
 			w.WriteHeader(http.StatusInternalServerError)
