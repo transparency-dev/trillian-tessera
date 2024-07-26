@@ -54,7 +54,12 @@ import (
 	"k8s.io/klog/v2"
 )
 
-const entryBundleSize = 256
+const (
+	entryBundleSize = 256
+
+	DefaultPushbackMaxOutstanding = 4096
+	DefaultIntegrationSizeLimit   = 2048
+)
 
 // Storage is a GCP based storage implementation for Tessera.
 type Storage struct {
@@ -104,6 +109,9 @@ type Config struct {
 // New creates a new instance of the GCP based Storage.
 func New(ctx context.Context, cfg Config, opts ...func(*tessera.StorageOptions)) (*Storage, error) {
 	opt := tessera.ResolveStorageOptions(nil, opts...)
+	if opt.PushbackMaxOutstanding == 0 {
+		opt.PushbackMaxOutstanding = DefaultPushbackMaxOutstanding
+	}
 
 	c, err := gcs.NewClient(ctx, gcs.WithJSONReads())
 	if err != nil {
@@ -140,7 +148,7 @@ func New(ctx context.Context, cfg Config, opts ...func(*tessera.StorageOptions))
 			for {
 				cctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 				defer cancel()
-				if more, err := r.sequencer.consumeEntries(cctx, 2048 /*limit*/, r.integrate); err != nil {
+				if more, err := r.sequencer.consumeEntries(cctx, DefaultIntegrationSizeLimit, r.integrate); err != nil {
 					klog.Errorf("integrate: %v", err)
 					break
 				} else if !more {
