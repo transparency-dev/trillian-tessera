@@ -22,6 +22,8 @@ import (
 	"golang.org/x/mod/sumdb/note"
 )
 
+const DefaultBatchMaxSize = 1
+
 // NewCPFunc is the signature of a function which knows how to format and sign checkpoints.
 type NewCPFunc func(size uint64, hash []byte) ([]byte, error)
 
@@ -40,7 +42,9 @@ type StorageOptions struct {
 // ResolveStorageOptions turns a variadic array of storage options into a StorageOptions instance.
 func ResolveStorageOptions(defaults *StorageOptions, opts ...func(*StorageOptions)) *StorageOptions {
 	if defaults == nil {
-		defaults = &StorageOptions{}
+		defaults = &StorageOptions{
+			BatchMaxSize: DefaultBatchMaxSize,
+		}
 	}
 	for _, opt := range opts {
 		opt(defaults)
