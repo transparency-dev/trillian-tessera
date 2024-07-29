@@ -27,8 +27,8 @@ import (
 	"strings"
 	"time"
 
+	movingaverage "github.com/RobinUS2/golang-moving-average"
 	"github.com/gdamore/tcell/v2"
-	"github.com/mxmCherry/movavg"
 	"github.com/rivo/tview"
 	"github.com/transparency-dev/trillian-tessera/client"
 	"golang.org/x/mod/sumdb/note"
@@ -104,6 +104,7 @@ func NewHammer(tracker *client.LogStateTracker, f client.Fetcher, w LeafWriter) 
 	readThrottle := NewThrottle(*maxReadOpsPerSecond)
 	writeThrottle := NewThrottle(*maxWriteOpsPerSecond)
 	errChan := make(chan error, 20)
+	leafSampleChan := make(chan leafTime, 100)
 
 	gen := newLeafGenerator(tracker.LatestConsistent.Size, *leafMinSize)
 	randomReaders := newWorkerPool(func() worker {
@@ -112,27 +113,31 @@ func NewHammer(tracker *client.LogStateTracker, f client.Fetcher, w LeafWriter) 
 	fullReaders := newWorkerPool(func() worker {
 		return NewLeafReader(tracker, f, MonotonicallyIncreasingNextLeaf(), readThrottle.tokenChan, errChan)
 	})
-	writers := newWorkerPool(func() worker { return NewLogWriter(w, gen, writeThrottle.tokenChan, errChan) })
+	writers := newWorkerPool(func() worker { return NewLogWriter(w, gen, writeThrottle.tokenChan, errChan, leafSampleChan) })
 
 	return &Hammer{
-		randomReaders: randomReaders,
-		fullReaders:   fullReaders,
-		writers:       writers,
-		readThrottle:  readThrottle,
-		writeThrottle: writeThrottle,
-		tracker:       tracker,
-		errChan:       errChan,
+		randomReaders:   randomReaders,
+		fullReaders:     fullReaders,
+		writers:         writers,
+		readThrottle:    readThrottle,
+		writeThrottle:   writeThrottle,
+		tracker:         tracker,
+		errChan:         errChan,
+		leafSampleChan:  leafSampleChan,
+		integrationTime: movingaverage.New(10),
 	}
 }
 
 type Hammer struct {
-	randomReaders workerPool
-	fullReaders   workerPool
-	writers       workerPool
-	readThrottle  *Throttle
-	writeThrottle *Throttle
-	tracker       *client.LogStateTracker
-	errChan       chan error
+	randomReaders   workerPool
+	fullReaders     workerPool
+	writers         workerPool
+	readThrottle    *Throttle
+	writeThrottle   *Throttle
+	tracker         *client.LogStateTracker
+	errChan         chan error
+	leafSampleChan  chan leafTime
+	integrationTime *movingaverage.MovingAverage
 }
 
 func (h *Hammer) Run(ctx context.Context) {
@@ -183,6 +188,21 @@ func (h *Hammer) Run(ctx context.Context) {
 				if newSize > size {
 					klog.V(1).Infof("Updated checkpoint from %d to %d", size, newSize)
 				}
+				now := time.Now()
+				totalLatency := time.Duration(0)
+				numLeaves := 0
+				for {
+					l, ok := <-h.leafSampleChan
+					if !ok {
+						break
+					}
+					if l.at.After(now) {
+						break
+					}
+					totalLatency += now.Sub(l.at)
+					numLeaves++
+				}
+				h.integrationTime.Add(float64(totalLatency/time.Millisecond) / float64(numLeaves))
 			}
 		}
 	}()
@@ -280,7 +300,7 @@ func (t *Throttle) String() string {
 
 func hostUI(ctx context.Context, hammer *Hammer) {
 	grid := tview.NewGrid()
-	grid.SetRows(3, 0, 10).SetColumns(0).SetBorders(true)
+	grid.SetRows(4, 0, 10).SetColumns(0).SetBorders(true)
 	// Status box
 	statusView := tview.NewTextView()
 	grid.AddItem(statusView, 0, 0, 1, 1, 0, 0, false)
@@ -302,12 +322,12 @@ func hostUI(ctx context.Context, hammer *Hammer) {
 	grid.AddItem(helpView, 2, 0, 1, 1, 0, 0, false)
 
 	app := tview.NewApplication()
-	interval := time.Second
+	interval := 500 * time.Millisecond
 	ticker := time.NewTicker(interval)
 	go func() {
 		lastSize := hammer.tracker.LatestConsistent.Size
 		maSlots := 10
-		growth := movavg.NewSMA(maSlots)
+		growth := movingaverage.New(maSlots)
 		for {
 			select {
 			case <-ctx.Done():
@@ -316,7 +336,18 @@ func hostUI(ctx context.Context, hammer *Hammer) {
 				s := hammer.tracker.LatestConsistent.Size
 				growth.Add(float64(s - lastSize))
 				lastSize = s
-				text := fmt.Sprintf("Read: %s\nWrite: %s\nTreeSize: %d (Δ %.0fqps over %ds)", hammer.readThrottle.String(), hammer.writeThrottle.String(), s, growth.Avg(), maSlots*int(interval/time.Second))
+				ttiMin, _ := hammer.integrationTime.Min()
+				ttiMax, _ := hammer.integrationTime.Max()
+				ttiAvg := hammer.integrationTime.Avg()
+				qps := growth.Avg() * float64(time.Second/interval)
+				text := fmt.Sprintf("Read: %s\nWrite: %s\nTreeSize: %d (Δ %.0fqps over %ds)\nTime-to-integrate: %.0fms/%.0fms/%.0fms (min/avg/max)",
+					hammer.readThrottle.String(),
+					hammer.writeThrottle.String(),
+					s,
+					qps,
+					time.Duration(maSlots*int(interval))/time.Second,
+					ttiMin, ttiAvg, ttiMax,
+				)
 				statusView.SetText(text)
 				app.Draw()
 			}
