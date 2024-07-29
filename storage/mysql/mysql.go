@@ -16,6 +16,7 @@
 package mysql
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"fmt"
@@ -39,9 +40,10 @@ const (
 	selectTiledLeavesSQL             = "SELECT `data` FROM `TiledLeaves` WHERE `tile_index` = ?"
 	replaceTiledLeavesSQL            = "REPLACE INTO `TiledLeaves` (`tile_index`, `data`) VALUES (?, ?)"
 
-	checkpointID           = 0
-	defaultEntryBundleSize = 256
-	defaultQueueMaxAge     = time.Second
+	checkpointID        = 0
+	entryBundleSize     = 256
+	defaultBatchMaxSize = entryBundleSize
+	defaultQueueMaxAge  = time.Second
 )
 
 // Storage is a MySQL-based storage implementation for Tessera.
@@ -57,7 +59,7 @@ type Storage struct {
 func New(ctx context.Context, db *sql.DB, opts ...func(*tessera.StorageOptions)) (*Storage, error) {
 	opt := tessera.ResolveStorageOptions(&tessera.StorageOptions{
 		BatchMaxAge:  defaultQueueMaxAge,
-		BatchMaxSize: defaultEntryBundleSize,
+		BatchMaxSize: defaultBatchMaxSize,
 	}, opts...)
 	s := &Storage{
 		db:              db,
@@ -188,6 +190,15 @@ func (s *Storage) ReadEntryBundle(ctx context.Context, index uint64) ([]byte, er
 	return entryBundle, row.Scan(&entryBundle)
 }
 
+func (s *Storage) writeEntryBundle(ctx context.Context, tx *sql.Tx, index uint64, entryBundle []byte) error {
+	if _, err := tx.ExecContext(ctx, replaceTiledLeavesSQL, index, entryBundle); err != nil {
+		klog.Errorf("Failed to execute replaceTiledLeavesSQL: %v", err)
+		return err
+	}
+
+	return nil
+}
+
 // Add is the entrypoint for adding entries to a sequencing log.
 func (s *Storage) Add(ctx context.Context, entry *tessera.Entry) (uint64, error) {
 	// TODO(#21): Return index if the value is already stored.
@@ -279,8 +290,6 @@ func (s *Storage) integrate(ctx context.Context, tx *sql.Tx, fromSeq uint64, ent
 		return r, nil
 	})
 
-	// TODO(#21): Add sequenced entries to entry bundles.
-
 	sequencedEntries := make([]storage.SequencedEntry, len(entries))
 	// Assign provisional sequence numbers to entries.
 	// We need to do this here in order to support serialisations which include the log position.
@@ -288,6 +297,55 @@ func (s *Storage) integrate(ctx context.Context, tx *sql.Tx, fromSeq uint64, ent
 		sequencedEntries[i] = storage.SequencedEntry{
 			BundleData: e.MarshalBundleData(fromSeq + uint64(i)),
 			LeafHash:   e.LeafHash(),
+		}
+	}
+
+	// Add sequenced entries to entry bundles.
+	bundleIndex, entriesInBundle := fromSeq/entryBundleSize, fromSeq%entryBundleSize
+	bundleWriter := &bytes.Buffer{}
+
+	// If the latest bundle is partial, we need to read the data it contains in for our newer, larger, bundle.
+	if entriesInBundle > 0 {
+		row := tx.QueryRowContext(ctx, selectTiledLeavesSQL, bundleIndex)
+		if err := row.Err(); err != nil {
+			return err
+		}
+
+		var partialEntryBundle []byte
+		if err := row.Scan(&partialEntryBundle); err != nil {
+			return fmt.Errorf("row.Scan: %w", err)
+		}
+
+		if _, err := bundleWriter.Write(partialEntryBundle); err != nil {
+			return fmt.Errorf("bundleWriter: %w", err)
+		}
+	}
+
+	// Add new entries to the bundle.
+	for _, e := range sequencedEntries {
+		if _, err := bundleWriter.Write(e.BundleData); err != nil {
+			return fmt.Errorf("bundleWriter.Write: %w", err)
+		}
+		entriesInBundle++
+
+		// This bundle is full, so we need to write it out.
+		if entriesInBundle == entryBundleSize {
+			if err := s.writeEntryBundle(ctx, tx, bundleIndex, bundleWriter.Bytes()); err != nil {
+				return fmt.Errorf("writeEntryBundle: %w", err)
+			}
+
+			// Prepare the next entry bundle for any remaining entries in the batch.
+			bundleIndex++
+			entriesInBundle = 0
+			bundleWriter = &bytes.Buffer{}
+		}
+	}
+
+	// If we have a partial bundle remaining once we've added all the entries from the batch,
+	// this needs writing out too.
+	if entriesInBundle > 0 {
+		if err := s.writeEntryBundle(ctx, tx, bundleIndex, bundleWriter.Bytes()); err != nil {
+			return fmt.Errorf("writeEntryBundle: %w", err)
 		}
 	}
 
