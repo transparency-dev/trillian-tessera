@@ -15,6 +15,7 @@
 package tessera
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -23,6 +24,13 @@ import (
 )
 
 const DefaultBatchMaxSize = 1
+
+// ErrPushback is returned by underlying storage implementations when there are too many
+// entries with indices assigned but which have not yet been integrated into the tree.
+//
+// Personalities encountering this error should apply back-pressure to the source of new entries
+// in an appropriate manner (e.g. for HTTP services, return a 503 with a Retry-After header).
+var ErrPushback = errors.New("too many unintegrated entries")
 
 // NewCPFunc is the signature of a function which knows how to format and sign checkpoints.
 type NewCPFunc func(size uint64, hash []byte) ([]byte, error)
@@ -37,6 +45,8 @@ type StorageOptions struct {
 
 	BatchMaxAge  time.Duration
 	BatchMaxSize uint
+
+	PushbackMaxOutstanding uint
 }
 
 // ResolveStorageOptions turns a variadic array of storage options into a StorageOptions instance.
@@ -87,5 +97,15 @@ func WithBatching(maxSize uint, maxAge time.Duration) func(*StorageOptions) {
 	return func(o *StorageOptions) {
 		o.BatchMaxAge = maxAge
 		o.BatchMaxSize = maxSize
+	}
+}
+
+// WithPushback allows configuration of when the storage should start pushing back on add requests.
+//
+// maxOutstanding is the number of "in-flight" add requests - i.e. the number of entries with sequence numbers
+// assigned, but which are not yet integrated into the log.
+func WithPushback(maxOutstanding uint) func(*StorageOptions) {
+	return func(o *StorageOptions) {
+		o.PushbackMaxOutstanding = maxOutstanding
 	}
 }

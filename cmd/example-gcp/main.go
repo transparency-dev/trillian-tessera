@@ -19,6 +19,7 @@ package main
 import (
 	"context"
 	"crypto/sha256"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -70,6 +71,11 @@ func main() {
 		id := sha256.Sum256(b)
 		idx, err := storage.Add(r.Context(), tessera.NewEntry(b, tessera.WithIdentity(id[:])))
 		if err != nil {
+			if errors.Is(err, tessera.ErrPushback) {
+				w.Header().Add("Retry-After", "1")
+				w.WriteHeader(http.StatusServiceUnavailable)
+				return
+			}
 			w.WriteHeader(http.StatusInternalServerError)
 			_, _ = w.Write([]byte(err.Error()))
 			return

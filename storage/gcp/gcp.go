@@ -54,7 +54,12 @@ import (
 	"k8s.io/klog/v2"
 )
 
-const entryBundleSize = 256
+const (
+	entryBundleSize = 256
+
+	DefaultPushbackMaxOutstanding = 4096
+	DefaultIntegrationSizeLimit   = 2048
+)
 
 // Storage is a GCP based storage implementation for Tessera.
 type Storage struct {
@@ -103,6 +108,11 @@ type Config struct {
 
 // New creates a new instance of the GCP based Storage.
 func New(ctx context.Context, cfg Config, opts ...func(*tessera.StorageOptions)) (*Storage, error) {
+	opt := tessera.ResolveStorageOptions(nil, opts...)
+	if opt.PushbackMaxOutstanding == 0 {
+		opt.PushbackMaxOutstanding = DefaultPushbackMaxOutstanding
+	}
+
 	c, err := gcs.NewClient(ctx, gcs.WithJSONReads())
 	if err != nil {
 		return nil, fmt.Errorf("failed to create GCS client: %v", err)
@@ -111,12 +121,11 @@ func New(ctx context.Context, cfg Config, opts ...func(*tessera.StorageOptions))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create GCS storage: %v", err)
 	}
-	seq, err := newSpannerSequencer(ctx, cfg.Spanner)
+	seq, err := newSpannerSequencer(ctx, cfg.Spanner, uint64(opt.PushbackMaxOutstanding))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Spanner sequencer: %v", err)
 	}
 
-	opt := tessera.ResolveStorageOptions(nil, opts...)
 	r := &Storage{
 		gcsClient: c,
 		projectID: cfg.ProjectID,
@@ -139,7 +148,7 @@ func New(ctx context.Context, cfg Config, opts ...func(*tessera.StorageOptions))
 			for {
 				cctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 				defer cancel()
-				if more, err := r.sequencer.consumeEntries(cctx, 2048 /*limit*/, r.integrate); err != nil {
+				if more, err := r.sequencer.consumeEntries(cctx, DefaultIntegrationSizeLimit, r.integrate); err != nil {
 					klog.Errorf("integrate: %v", err)
 					break
 				} else if !more {
@@ -369,18 +378,20 @@ func (s *Storage) updateEntryBundles(ctx context.Context, fromSeq uint64, entrie
 // spannerSequencer uses Cloud Spanner to provide
 // a durable and thread/multi-process safe sequencer.
 type spannerSequencer struct {
-	dbPool *spanner.Client
+	dbPool         *spanner.Client
+	maxOutstanding uint64
 }
 
 // new SpannerSequencer returns a new spannerSequencer struct which uses the provided
 // spanner resource name for its spanner connection.
-func newSpannerSequencer(ctx context.Context, spannerDB string) (*spannerSequencer, error) {
+func newSpannerSequencer(ctx context.Context, spannerDB string, maxOutstanding uint64) (*spannerSequencer, error) {
 	dbPool, err := spanner.NewClient(ctx, spannerDB)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to Spanner: %v", err)
 	}
 	r := &spannerSequencer{
-		dbPool: dbPool,
+		dbPool:         dbPool,
+		maxOutstanding: maxOutstanding,
 	}
 	if err := r.initDB(ctx); err != nil {
 		return nil, fmt.Errorf("failed to initDB: %v", err)
@@ -442,6 +453,17 @@ func (s *spannerSequencer) initDB(ctx context.Context) error {
 // This is achieved by storing the passed-in entries in the Seq table in Spanner, keyed by the
 // index assigned to the first entry in the batch.
 func (s *spannerSequencer) assignEntries(ctx context.Context, entries []*tessera.Entry) error {
+	// First grab the treeSize in a non-locking read-only fashion (we don't want to block/collide with integration).
+	// We'll use this value to determine whether we need to apply back-pressure.
+	var treeSize int64
+	if row, err := s.dbPool.Single().ReadRow(ctx, "IntCoord", spanner.Key{0}, []string{"seq"}); err != nil {
+		return err
+	} else {
+		if err := row.Column(0, &treeSize); err != nil {
+			return fmt.Errorf("failed to read integration coordination info: %v", err)
+		}
+	}
+
 	var next int64 // Unfortunately, Spanner doesn't support uint64 so we'll have to cast around a bit.
 
 	_, err := s.dbPool.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
@@ -454,8 +476,14 @@ func (s *spannerSequencer) assignEntries(ctx context.Context, entries []*tessera
 		if err := row.Columns(&id, &next); err != nil {
 			return fmt.Errorf("failed to parse id column: %v", err)
 		}
-		next := uint64(next) // Shadow next with a uint64 version of the same value to save on casts.
 
+		// Check whether there are too many outstanding entries and we should apply
+		// back-pressure.
+		if outstanding := next - treeSize; outstanding > int64(s.maxOutstanding) {
+			return tessera.ErrPushback
+		}
+
+		next := uint64(next) // Shadow next with a uint64 version of the same value to save on casts.
 		sequencedEntries := make([]storage.SequencedEntry, len(entries))
 		// Assign provisional sequence numbers to entries.
 		// We need to do this here in order to support serialisations which include the log position.
@@ -490,7 +518,7 @@ func (s *spannerSequencer) assignEntries(ctx context.Context, entries []*tessera
 	})
 
 	if err != nil {
-		return fmt.Errorf("failed to flush batch: %v", err)
+		return fmt.Errorf("failed to flush batch: %w", err)
 	}
 
 	return nil
