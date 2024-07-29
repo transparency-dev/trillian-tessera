@@ -327,7 +327,6 @@ func (s *Storage) integrate(ctx context.Context, tx *sql.Tx, fromSeq uint64, ent
 			return fmt.Errorf("bundleWriter.Write: %w", err)
 		}
 		entriesInBundle++
-		fromSeq++
 
 		// This bundle is full, so we need to write it out.
 		if entriesInBundle == entryBundleSize {
