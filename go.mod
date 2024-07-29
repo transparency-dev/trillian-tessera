@@ -8,6 +8,7 @@ require (
 	github.com/gdamore/tcell/v2 v2.7.4
 	github.com/globocom/go-buffer v1.2.2
 	github.com/google/go-cmp v0.6.0
+	github.com/mxmCherry/movavg v1.1.0
 	github.com/rivo/tview v0.0.0-20240625185742-b0a7293b8130
 	github.com/transparency-dev/formats v0.0.0-20240715203801-9ff9b9e3905f
 	github.com/transparency-dev/merkle v0.0.2

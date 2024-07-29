@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"github.com/gdamore/tcell/v2"
+	"github.com/mxmCherry/movavg"
 	"github.com/rivo/tview"
 	"github.com/transparency-dev/trillian-tessera/client"
 	"golang.org/x/mod/sumdb/note"
@@ -301,14 +302,21 @@ func hostUI(ctx context.Context, hammer *Hammer) {
 	grid.AddItem(helpView, 2, 0, 1, 1, 0, 0, false)
 
 	app := tview.NewApplication()
-	ticker := time.NewTicker(1 * time.Second)
+	interval := time.Second
+	ticker := time.NewTicker(interval)
 	go func() {
+		lastSize := hammer.tracker.LatestConsistent.Size
+		maSlots := 10
+		growth := movavg.NewSMA(maSlots)
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				text := fmt.Sprintf("Read: %s\nWrite: %s", hammer.readThrottle.String(), hammer.writeThrottle.String())
+				s := hammer.tracker.LatestConsistent.Size
+				growth.Add(float64(s - lastSize))
+				lastSize = s
+				text := fmt.Sprintf("Read: %s\nWrite: %s\nTreeSize: %d (Δ %.0fqps over %ds)", hammer.readThrottle.String(), hammer.writeThrottle.String(), s, growth.Avg(), maSlots*int(interval/time.Second))
 				statusView.SetText(text)
 				app.Draw()
 			}
