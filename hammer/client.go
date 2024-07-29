@@ -25,6 +25,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/transparency-dev/trillian-tessera/client"
 	"k8s.io/klog/v2"
@@ -155,11 +156,19 @@ func (w httpLeafWriter) Write(ctx context.Context, newLeaf []byte) (uint64, erro
 	if err != nil {
 		return 0, fmt.Errorf("failed to read body: %v", err)
 	}
-	if resp.StatusCode != http.StatusOK {
+	switch resp.StatusCode {
+	case http.StatusOK:
+		if resp.Request.Method != http.MethodPost {
+			return 0, fmt.Errorf("write leaf was redirected to %s", resp.Request.URL)
+		}
+		// Continue below
+	case http.StatusServiceUnavailable, http.StatusBadGateway, http.StatusGatewayTimeout:
+		// These status codes may indicate a delay before retrying, so handle that here:
+		retryDelay(resp.Header.Get("RetryAfter"), time.Second)
+
+		return 0, fmt.Errorf("log not available. Status code: %d. Body: %q", resp.StatusCode, body)
+	default:
 		return 0, fmt.Errorf("write leaf was not OK. Status code: %d. Body: %q", resp.StatusCode, body)
-	}
-	if resp.Request.Method != http.MethodPost {
-		return 0, fmt.Errorf("write leaf was redirected to %s", resp.Request.URL)
 	}
 	parts := bytes.Split(body, []byte("\n"))
 	index, err := strconv.ParseUint(string(parts[0]), 10, 64)
@@ -167,6 +176,21 @@ func (w httpLeafWriter) Write(ctx context.Context, newLeaf []byte) (uint64, erro
 		return 0, fmt.Errorf("write leaf failed to parse response: %v", body)
 	}
 	return index, nil
+}
+
+func retryDelay(retryAfter string, defaultDur time.Duration) time.Duration {
+	if retryAfter == "" {
+		return defaultDur
+	}
+	d, err := time.Parse(http.TimeFormat, retryAfter)
+	if err == nil {
+		return time.Until(d)
+	}
+	s, err := strconv.Atoi(retryAfter)
+	if err == nil {
+		return time.Duration(s) * time.Second
+	}
+	return defaultDur
 }
 
 // roundRobinLeafWriter ensures that write requests are sent to all configured
