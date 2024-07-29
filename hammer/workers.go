@@ -201,7 +201,9 @@ func (w *LogWriter) Run(ctx context.Context) {
 		lt := leafTime{queuedAt: time.Now()}
 		index, err := w.writer(ctx, newLeaf)
 		if err != nil {
-			w.errChan <- fmt.Errorf("failed to create request: %v", err)
+			if !errors.Is(ErrRetry, err) {
+				w.errChan <- fmt.Errorf("failed to create request: %w", err)
+			}
 			continue
 		}
 		lt.idx, lt.assignedAt = index, time.Now()

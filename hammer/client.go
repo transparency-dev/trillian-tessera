@@ -17,6 +17,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -30,6 +31,8 @@ import (
 	"github.com/transparency-dev/trillian-tessera/client"
 	"k8s.io/klog/v2"
 )
+
+var ErrRetry = errors.New("retry")
 
 // newLogClientsFromFlags returns a fetcher and a writer that will read
 // and write leaves to all logs in the `log_url` flag set.
@@ -166,7 +169,7 @@ func (w httpLeafWriter) Write(ctx context.Context, newLeaf []byte) (uint64, erro
 		// These status codes may indicate a delay before retrying, so handle that here:
 		retryDelay(resp.Header.Get("RetryAfter"), time.Second)
 
-		return 0, fmt.Errorf("log not available. Status code: %d. Body: %q", resp.StatusCode, body)
+		return 0, fmt.Errorf("log not available. Status code: %d. Body: %q %w", resp.StatusCode, body, ErrRetry)
 	default:
 		return 0, fmt.Errorf("write leaf was not OK. Status code: %d. Body: %q", resp.StatusCode, body)
 	}
