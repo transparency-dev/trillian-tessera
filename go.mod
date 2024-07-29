@@ -3,7 +3,7 @@ module github.com/transparency-dev/trillian-tessera
 go 1.22.5
 
 require (
-	cloud.google.com/go/spanner v1.64.0
+	cloud.google.com/go/spanner v1.65.0
 	cloud.google.com/go/storage v1.43.0
 	github.com/globocom/go-buffer v1.2.2
 	github.com/google/go-cmp v0.6.0
@@ -20,7 +20,7 @@ require cloud.google.com/go/longrunning v0.5.9 // indirect
 
 require (
 	cel.dev/expr v0.15.0 // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20240701130421-f6361c86f094 // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20240722135656-d784300faade // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20240722135656-d784300faade // indirect
 )
 
@@ -49,7 +49,7 @@ require (
 	github.com/google/s2a-go v0.1.7 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.2 // indirect
-	github.com/googleapis/gax-go/v2 v2.12.5 // indirect
+	github.com/googleapis/gax-go/v2 v2.13.0 // indirect
 	go.opencensus.io v0.24.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.49.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.49.0 // indirect
