@@ -783,3 +783,66 @@ func (s *gcsStorage) lastModified(ctx context.Context, obj string) (time.Time, e
 	}
 	return r.Attrs.LastModified, r.Close()
 }
+
+// NewDedupeStorage returns a struct which can be used to store identity -> index mappings backed
+// by Spanner.
+//
+// Note that updates to this dedup storage is logically entriely separate from any updates
+// happening to the log storage.
+func NewDedupeStorage(ctx context.Context, spannerDB string) (*DedupStorage, error) {
+	/*
+	   Schema for reference:
+
+	   	CREATE TABLE IDSeq (
+	   	 id INT64 NOT NULL,
+	   	 h BYTES(MAX) NOT NULL,
+	   	 idx INT64 NOT NULL,
+	   	) PRIMARY KEY (id, h);
+	*/
+	dedupDB, err := spanner.NewClient(ctx, spannerDB)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to Spanner: %v", err)
+	}
+
+	return &DedupStorage{
+		dbPool: dedupDB,
+	}, nil
+}
+
+type DedupStorage struct {
+	dbPool *spanner.Client
+}
+
+func (d *DedupStorage) Index(ctx context.Context, h []byte) (*uint64, error) {
+	var idx int64
+	if row, err := d.dbPool.Single().ReadRow(ctx, "IDSeq", spanner.Key{0, h}, []string{"idx"}); err != nil {
+		if c := spanner.ErrCode(err); c == codes.NotFound {
+			return nil, nil
+		}
+		return nil, err
+	} else {
+		if err := row.Column(0, &idx); err != nil {
+			return nil, fmt.Errorf("failed to read dedup index: %v", err)
+		}
+		idx := uint64(idx)
+		return &idx, nil
+	}
+}
+
+func (d *DedupStorage) Set(ctx context.Context, entries []tessera.DedupEntry) error {
+	m := make([]*spanner.MutationGroup, 0, len(entries))
+	for _, e := range entries {
+		m = append(m, &spanner.MutationGroup{
+			Mutations: []*spanner.Mutation{spanner.Insert("IDSeq", []string{"id", "h", "idx"}, []interface{}{0, e.ID, int64(e.Idx)})},
+		})
+	}
+
+	i := d.dbPool.BatchWrite(ctx, m)
+	return i.Do(func(r *spannerpb.BatchWriteResponse) error {
+		s := r.GetStatus()
+		if c := codes.Code(s.Code); c != codes.OK && c != codes.AlreadyExists {
+			return fmt.Errorf("failed to write dedup record: %v (%v)", s.GetMessage(), c)
+		}
+		return nil
+	})
+}

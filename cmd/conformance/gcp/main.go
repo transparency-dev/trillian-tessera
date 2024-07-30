@@ -17,6 +17,7 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"flag"
 	"fmt"
@@ -67,6 +68,12 @@ func main() {
 	}
 	dedupeAdd := tessera.InMemoryDedupe(storage.Add, 256)
 
+	gcpDedup, err := gcp.NewDedupeStorage(ctx, fmt.Sprintf("%s_dedup", *spanner))
+	if err != nil {
+		klog.Exitf("Failed to create new GCP dedupe storage: %v", err)
+	}
+	dedup := tessera.NewDeduper(ctx, gcpDedup)
+
 	// Expose a HTTP handler for the conformance test writes.
 	// This should accept arbitrary bytes POSTed to /add, and return an ascii
 	// decimal representation of the index assigned to the entry.
@@ -74,6 +81,16 @@ func main() {
 		b, err := io.ReadAll(r.Body)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+
+		id := sha256.Sum256(b)
+		if idx, err := dedup.Index(r.Context(), id[:]); err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte(err.Error()))
+			return
+		} else if idx != nil {
+			_, _ = w.Write([]byte(fmt.Sprintf("%d", *idx)))
 			return
 		}
 
@@ -90,6 +107,9 @@ func main() {
 		}
 		// Write out the assigned index
 		_, _ = w.Write([]byte(fmt.Sprintf("%d", idx)))
+		if err := dedup.Set(r.Context(), id[:], idx); err != nil {
+			klog.Warningf("Failed to set dedup %x -> %d: %v", id, idx, err)
+		}
 	})
 
 	h2s := &http2.Server{}
