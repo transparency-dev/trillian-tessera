@@ -124,7 +124,7 @@ func NewHammer(tracker *client.LogStateTracker, f client.Fetcher, w LeafWriter) 
 		tracker:         tracker,
 		errChan:         errChan,
 		leafSampleChan:  leafSampleChan,
-		integrationTime: movingaverage.New(10),
+		integrationTime: movingaverage.New(30),
 	}
 }
 
@@ -326,7 +326,7 @@ func hostUI(ctx context.Context, hammer *Hammer) {
 	ticker := time.NewTicker(interval)
 	go func() {
 		lastSize := hammer.tracker.LatestConsistent.Size
-		maSlots := 10
+		maSlots := int((30 * time.Second) / interval)
 		growth := movingaverage.New(maSlots)
 		for {
 			select {
