@@ -1,0 +1,37 @@
+services:
+
+  tessera-example-mysql-db:
+    container_name: tessera-mysql-db
+    image: "mysql:8.4"
+    ports:
+      - "3306:3306"
+    environment:
+      - MYSQL_ROOT_PASSWORD=tessera
+      - MYSQL_DATABASE=tessera
+      - MYSQL_USER=tessera
+      - MYSQL_PASSWORD=tessera
+    restart: always
+    healthcheck:
+      test: mysql --user=$$MYSQL_USER --password=$$MYSQL_PASSWORD --silent --execute "SHOW DATABASES;"
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  tessera-example-mysql:
+    container_name: tessera-example-mysql
+    build:
+      context: ../../../
+      dockerfile: ./cmd/example-mysql/docker/Dockerfile
+    ports:
+      - "2024:2024"
+    command: [
+      "--mysql_uri=tessera:tessera@tcp(tessera-example-mysql-db:3306)/tessera",
+      "--init_schema_path=/schema.sql",
+      "--private_key_path=/key",
+      "--public_key_path=/key.pub",
+      "--alsologtostderr",
+    ]
+    restart: always
+    depends_on:
+      tessera-example-mysql-db:
+        condition: service_healthy
