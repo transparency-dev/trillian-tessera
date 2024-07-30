@@ -55,6 +55,7 @@ func main() {
 	storage, err := gcp.New(ctx, gcpCfg,
 		tessera.WithCheckpointSignerVerifier(signerFromFlags(), nil),
 		tessera.WithBatching(1024, time.Second),
+		tessera.WithPushback(10*4096),
 	)
 	if err != nil {
 		klog.Exitf("Failed to create new GCP storage: %v", err)
