@@ -9,7 +9,7 @@ RUN go mod download && go mod verify
 COPY . .
 RUN go build ./cmd/example-mysql
 
-FROM gcr.io/distroless/base-debian12@sha256:1aae189e3baecbb4044c648d356ddb75025b2ba8d14cdc9c2a19ba784c90bfb9
+FROM alpine:3.20@sha256:0a4eaa0eecf5f8c050e5bba433f58c052be7587ee8af3e8b3910ef9ab5fbe9f5
 
 COPY --from=build /build/example-mysql /
 COPY --from=build /build/cmd/example-mysql/docker/testdata/key /build/cmd/example-mysql/docker/testdata/key.pub /build/storage/mysql/schema.sql /
