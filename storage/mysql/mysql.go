@@ -259,11 +259,14 @@ func (s *Storage) sequenceBatch(ctx context.Context, entries []*tessera.Entry) e
 // integrate incorporates the provided entries into the log starting at fromSeq.
 func (s *Storage) integrate(ctx context.Context, tx *sql.Tx, fromSeq uint64, entries []*tessera.Entry) error {
 	tb := storage.NewTreeBuilder(func(ctx context.Context, tileIDs []storage.TileID, treeSize uint64) ([]*api.HashTile, error) {
-		hashTiles := make([]*api.HashTile, len(tileIDs))
+		hashTiles := make([]*api.HashTile, 0, len(tileIDs))
+		if len(tileIDs) == 0 {
+			return hashTiles, nil
+		}
 
 		// Build the SQL and args to fetch the hash tiles.
 		var sql strings.Builder
-		args := make([]uint64, 0, len(tileIDs)*2)
+		args := make([]any, 0, len(tileIDs)*2)
 		for i, id := range tileIDs {
 			if i != 0 {
 				sql.WriteString(" UNION ALL ")
@@ -275,7 +278,7 @@ func (s *Storage) integrate(ctx context.Context, tx *sql.Tx, fromSeq uint64, ent
 			args = append(args, id.Level, id.Index)
 		}
 
-		rows, err := tx.QueryContext(ctx, sql.String(), args)
+		rows, err := tx.QueryContext(ctx, sql.String(), args...)
 		if err != nil {
 			return nil, fmt.Errorf("failed to query the hash tiles with SQL (%s): %w", sql.String(), err)
 		}
