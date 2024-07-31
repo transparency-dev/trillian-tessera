@@ -1,7 +1,10 @@
-on: [push, pull_request]
 name: Test Go
+
+on: [push, pull_request]
+
 permissions:
   contents: read
+
 jobs:
   test:
     strategy:
@@ -9,10 +12,29 @@ jobs:
         go-version: [1.22.x]
         os: [ubuntu-latest]
     runs-on: ${{ matrix.os }}
+
     steps:
-    - uses: actions/setup-go@0a12ed9d6a96ab950c8f026ed9f722fe0da7ef32 # v5.0.2
-      with:
-        go-version: ${{ matrix.go-version }}
-    - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v3.1.0
-    - run: go test -v -race -covermode=atomic -coverprofile=coverage.out ./...
-    - uses: codecov/codecov-action@e28ff129e5465c2c0dcc6f003fc735cb6ae0c673 # v4.5.0
+      - uses: actions/setup-go@0a12ed9d6a96ab950c8f026ed9f722fe0da7ef32 # v5.0.2
+        with:
+          go-version: ${{ matrix.go-version }}
+      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v3.1.0
+      - run: go test -v -race -covermode=atomic -coverprofile=coverage.out ./...
+      - uses: codecov/codecov-action@e28ff129e5465c2c0dcc6f003fc735cb6ae0c673 # v4.5.0
+
+  test-mysql:
+    env:
+      DB_DATABASE: test_tessera
+      DB_USER: test_tessera
+      DB_PASSWORD: test_tessera
+
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v3.1.0
+      - name: Start MySQL
+        run: |
+          sudo /etc/init.d/mysql start
+          mysql -e "CREATE DATABASE IF NOT EXISTS $DB_DATABASE;" -u$DB_USER -p$DB_PASSWORD
+      - name: Test with Go
+        run: go test -v -race ./storage/mysql/...
