@@ -38,6 +38,7 @@ var (
 	dbConnMaxLifetime = flag.Duration("db_conn_max_lifetime", 3*time.Minute, "")
 	dbMaxOpenConns    = flag.Int("db_max_open_conns", 64, "")
 	dbMaxIdleConns    = flag.Int("db_max_idle_conns", 64, "")
+	initSchemaPath    = flag.String("init_schema_path", "", "Location of the schema file if database initialization is needed")
 	listen            = flag.String("listen", ":2024", "Address:port to listen on")
 	privateKeyPath    = flag.String("private_key_path", "", "Location of private key file")
 	publicKeyPath     = flag.String("public_key_path", "", "Location of public key file")
@@ -55,6 +56,8 @@ func main() {
 	db.SetConnMaxLifetime(*dbConnMaxLifetime)
 	db.SetMaxOpenConns(*dbMaxOpenConns)
 	db.SetMaxIdleConns(*dbMaxIdleConns)
+
+	initDatabaseSchema(ctx)
 
 	rawPrivateKey, err := os.ReadFile(*privateKeyPath)
 	if err != nil {
@@ -241,4 +244,30 @@ func parseTileIndexWidth(index string) (uint64, uint64, error) {
 	}
 
 	return i, w, nil
+}
+
+func initDatabaseSchema(ctx context.Context) {
+	if *initSchemaPath != "" {
+		klog.Infof("Initializing database schema")
+
+		db, err := sql.Open("mysql", *mysqlURI+"?multiStatements=true")
+		if err != nil {
+			klog.Exitf("Failed to connect to DB: %v", err)
+		}
+		defer func() {
+			if err := db.Close(); err != nil {
+				klog.Warningf("Failed to close db: %v", err)
+			}
+		}()
+
+		rawSchema, err := os.ReadFile(*initSchemaPath)
+		if err != nil {
+			klog.Exitf("Failed to read init schema file %q: %v", *initSchemaPath, err)
+		}
+		if _, err := db.ExecContext(ctx, string(rawSchema)); err != nil {
+			klog.Exitf("Failed to execute init database schema: %v", err)
+		}
+
+		klog.Infof("Database schema initialized")
+	}
 }
