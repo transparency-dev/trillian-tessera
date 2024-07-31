@@ -21,7 +21,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"net/http"
@@ -35,58 +34,18 @@ import (
 	"github.com/google/certificate-transparency-go/trillian/util"
 	"github.com/google/certificate-transparency-go/x509"
 	"github.com/google/certificate-transparency-go/x509util"
-	"github.com/google/trillian"
 	"github.com/google/trillian/monitoring"
-	"github.com/google/trillian/types"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/encoding/prototext"
+	"github.com/transparency-dev/trillian-tessera/ctonly"
 	"k8s.io/klog/v2"
 
 	ct "github.com/google/certificate-transparency-go"
 )
 
-var (
-	alignGetEntries   = flag.Bool("align_getentries", true, "Enable get-entries request alignment")
-	getEntriesMetrics = flag.Bool("getentries_metrics", false, "Export get-entries distribution metrics")
-)
-
 const (
-	// HTTP Cache-Control header
-	cacheControlHeader = "Cache-Control"
-	// Value for Cache-Control header when response contains immutable data, i.e. entries or proofs. Allows the response to be cached for 1 day.
-	cacheControlImmutable = "public, max-age=86400"
 	// HTTP content type header
 	contentTypeHeader string = "Content-Type"
 	// MIME content type for JSON
 	contentTypeJSON string = "application/json"
-	// The name of the JSON response map key in get-roots responses
-	jsonMapKeyCertificates string = "certificates"
-	// The name of the get-entries start parameter
-	getEntriesParamStart = "start"
-	// The name of the get-entries end parameter
-	getEntriesParamEnd = "end"
-	// The name of the get-proof-by-hash parameter
-	getProofParamHash = "hash"
-	// The name of the get-proof-by-hash tree size parameter
-	getProofParamTreeSize = "tree_size"
-	// The name of the get-sth-consistency first snapshot param
-	getSTHConsistencyParamFirst = "first"
-	// The name of the get-sth-consistency second snapshot param
-	getSTHConsistencyParamSecond = "second"
-	// The name of the get-entry-and-proof index parameter
-	getEntryAndProofParamLeafIndex = "leaf_index"
-	// The name of the get-entry-and-proof tree size parameter
-	getEntryAndProofParamTreeSize = "tree_size"
-)
-
-var (
-	// MaxGetEntriesAllowed is the number of entries we allow in a get-entries request
-	MaxGetEntriesAllowed int64 = 1000
-
-	// Use an explicitly empty slice for empty proofs so it gets JSON-encoded as
-	// '[]' rather than 'null'.
-	emptyProof = make([][]byte, 0)
 )
 
 // EntrypointName identifies a CT entrypoint as defined in section 4 of RFC 6962.
@@ -94,59 +53,36 @@ type EntrypointName string
 
 // Constants for entrypoint names, as exposed in statistics/logging.
 const (
-	AddChainName          = EntrypointName("AddChain")
-	AddPreChainName       = EntrypointName("AddPreChain")
-	GetSTHName            = EntrypointName("GetSTH")
-	GetSTHConsistencyName = EntrypointName("GetSTHConsistency")
-	GetProofByHashName    = EntrypointName("GetProofByHash")
-	GetEntriesName        = EntrypointName("GetEntries")
-	GetRootsName          = EntrypointName("GetRoots")
-	GetEntryAndProofName  = EntrypointName("GetEntryAndProof")
+	AddChainName    = EntrypointName("AddChain")
+	AddPreChainName = EntrypointName("AddPreChain")
 )
 
 var (
-	// Metrics are all per-log (label "logid"), but may also be
+	// Metrics are all per-log (label "origin"), but may also be
 	// per-entrypoint (label "ep") or per-return-code (label "rc").
-	once                       sync.Once
-	knownLogs                  monitoring.Gauge     // logid => value (always 1.0)
-	isMirrorLog                monitoring.Gauge     // logid => value (either 0.0 or 1.0)
-	maxMergeDelay              monitoring.Gauge     // logid => value
-	expMergeDelay              monitoring.Gauge     // logid => value
-	lastSCTTimestamp           monitoring.Gauge     // logid => value
-	lastSTHTimestamp           monitoring.Gauge     // logid => value
-	lastSTHTreeSize            monitoring.Gauge     // logid => value
-	frozenSTHTimestamp         monitoring.Gauge     // logid => value
-	reqsCounter                monitoring.Counter   // logid, ep => value
-	rspsCounter                monitoring.Counter   // logid, ep, rc => value
-	rspLatency                 monitoring.Histogram // logid, ep, rc => value
-	alignedGetEntries          monitoring.Counter   // logid, aligned => count
-	getEntriesStartPercentiles monitoring.Histogram // logid => percentile
+	once             sync.Once
+	knownLogs        monitoring.Gauge     // origin => value (always 1.0)
+	maxMergeDelay    monitoring.Gauge     // origin => value
+	expMergeDelay    monitoring.Gauge     // origin => value
+	lastSCTTimestamp monitoring.Gauge     // origin => value
+	reqsCounter      monitoring.Counter   // origin, ep => value
+	rspsCounter      monitoring.Counter   // origin, ep, rc => value
+	rspLatency       monitoring.Histogram // origin, ep, rc => value
 )
 
 // setupMetrics initializes all the exported metrics.
 func setupMetrics(mf monitoring.MetricFactory) {
 	knownLogs = mf.NewGauge("known_logs", "Set to 1 for known logs", "logid")
-	isMirrorLog = mf.NewGauge("is_mirror", "Set to 1 for mirror logs", "logid")
 	maxMergeDelay = mf.NewGauge("max_merge_delay", "Maximum Merge Delay in seconds", "logid")
 	expMergeDelay = mf.NewGauge("expected_merge_delay", "Expected Merge Delay in seconds", "logid")
 	lastSCTTimestamp = mf.NewGauge("last_sct_timestamp", "Time of last SCT in ms since epoch", "logid")
-	lastSTHTimestamp = mf.NewGauge("last_sth_timestamp", "Time of last STH in ms since epoch", "logid")
-	lastSTHTreeSize = mf.NewGauge("last_sth_treesize", "Size of tree at last STH", "logid")
-	frozenSTHTimestamp = mf.NewGauge("frozen_sth_timestamp", "Time of the frozen STH in ms since epoch", "logid")
 	reqsCounter = mf.NewCounter("http_reqs", "Number of requests", "logid", "ep")
 	rspsCounter = mf.NewCounter("http_rsps", "Number of responses", "logid", "ep", "rc")
 	rspLatency = mf.NewHistogram("http_latency", "Latency of responses in seconds", "logid", "ep", "rc")
-	alignedGetEntries = mf.NewCounter("aligned_get_entries", "Number of get-entries requests which were aligned to size limit boundaries", "logid", "aligned")
-	getEntriesStartPercentiles = mf.NewHistogramWithBuckets(
-		"get_leaves_start_percentiles",
-		"Start index of GetLeavesByRange request using percentage of current log size at the time",
-		monitoring.PercentileBuckets(5),
-		"logid",
-	)
 }
 
 // Entrypoints is a list of entrypoint names as exposed in statistics/logging.
-var Entrypoints = []EntrypointName{AddChainName, AddPreChainName, GetSTHName, GetSTHConsistencyName, GetProofByHashName, GetEntriesName, GetRootsName, GetEntryAndProofName}
+var Entrypoints = []EntrypointName{AddChainName, AddPreChainName}
 
 // PathHandlers maps from a path to the relevant AppHandler instance.
 type PathHandlers map[string]AppHandler
@@ -164,19 +100,19 @@ type AppHandler struct {
 // does additional common error and stats processing.
 func (a AppHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var statusCode int
-	label0 := strconv.FormatInt(a.Info.logID, 10)
+	label0 := a.Info.LogOrigin
 	label1 := string(a.Name)
 	reqsCounter.Inc(label0, label1)
 	startTime := a.Info.TimeSource.Now()
 	logCtx := a.Info.RequestLog.Start(r.Context())
-	a.Info.RequestLog.LogPrefix(logCtx, a.Info.LogPrefix)
+	a.Info.RequestLog.LogOrigin(logCtx, a.Info.LogOrigin)
 	defer func() {
 		latency := a.Info.TimeSource.Now().Sub(startTime).Seconds()
 		rspLatency.Observe(latency, label0, label1, strconv.Itoa(statusCode))
 	}()
-	klog.V(2).Infof("%s: request %v %q => %s", a.Info.LogPrefix, r.Method, r.URL, a.Name)
+	klog.V(2).Infof("%s: request %v %q => %s", a.Info.LogOrigin, r.Method, r.URL, a.Name)
 	if r.Method != a.Method {
-		klog.Warningf("%s: %s wrong HTTP method: %v", a.Info.LogPrefix, a.Name, r.Method)
+		klog.Warningf("%s: %s wrong HTTP method: %v", a.Info.LogOrigin, a.Name, r.Method)
 		a.Info.SendHTTPError(w, http.StatusMethodNotAllowed, fmt.Errorf("method not allowed: %s", r.Method))
 		a.Info.RequestLog.Status(logCtx, http.StatusMethodNotAllowed)
 		return
@@ -200,17 +136,17 @@ func (a AppHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var err error
 	statusCode, err = a.Handler(ctx, a.Info, w, r)
 	a.Info.RequestLog.Status(ctx, statusCode)
-	klog.V(2).Infof("%s: %s <= st=%d", a.Info.LogPrefix, a.Name, statusCode)
+	klog.V(2).Infof("%s: %s <= st=%d", a.Info.LogOrigin, a.Name, statusCode)
 	rspsCounter.Inc(label0, label1, strconv.Itoa(statusCode))
 	if err != nil {
-		klog.Warningf("%s: %s handler error: %v", a.Info.LogPrefix, a.Name, err)
+		klog.Warningf("%s: %s handler error: %v", a.Info.LogOrigin, a.Name, err)
 		a.Info.SendHTTPError(w, statusCode, err)
 		return
 	}
 
 	// Additional check, for consistency the handler must return an error for non-200 st
 	if statusCode != http.StatusOK {
-		klog.Warningf("%s: %s handler non 200 without error: %d %v", a.Info.LogPrefix, a.Name, statusCode, err)
+		klog.Warningf("%s: %s handler non 200 without error: %d %v", a.Info.LogOrigin, a.Name, statusCode, err)
 		a.Info.SendHTTPError(w, http.StatusInternalServerError, fmt.Errorf("http handler misbehaved, st: %d", statusCode))
 		return
 	}
@@ -256,15 +192,10 @@ func NewCertValidationOpts(trustedRoots *x509util.PEMCertPool, currentTime time.
 	return vOpts
 }
 
-type leafChainBuilder interface {
-	BuildLogLeaf(ctx context.Context, chain []*x509.Certificate, logPrefix string, merkleLeaf *ct.MerkleTreeLeaf, isPrecert bool) (*trillian.LogLeaf, error)
-	FixLogLeaf(ctx context.Context, leaf *trillian.LogLeaf) error
-}
-
 // logInfo holds information for a specific log instance.
 type logInfo struct {
-	// LogPrefix is a pre-formatted string identifying the log for diagnostics
-	LogPrefix string
+	// LogOrigin is a pre-formatted string identifying the log for diagnostics
+	LogOrigin string
 	// TimeSource is a util.TimeSource that can be injected for testing
 	TimeSource util.TimeSource
 	// RequestLog is a logger for various request / processing / response debug
@@ -273,18 +204,12 @@ type logInfo struct {
 
 	// Instance-wide options
 	instanceOpts InstanceOptions
-	// logID is the tree ID that identifies this log in node storage
-	logID int64
 	// validationOpts contains the certificate chain validation parameters
 	validationOpts CertValidationOpts
-	// rpcClient is the client used to communicate with the Trillian backend
-	rpcClient trillian.TrillianLogClient
+	// storage stores log data
+	storage Storage
 	// signer signs objects (e.g. STHs, SCTs) for regular logs
 	signer crypto.Signer
-	// sthGetter provides STHs for the log
-	sthGetter STHGetter
-	// issuanceChainService provides the issuance chain add and get operations
-	issuanceChainService leafChainBuilder
 }
 
 // newLogInfo creates a new instance of logInfo.
@@ -293,16 +218,13 @@ func newLogInfo(
 	validationOpts CertValidationOpts,
 	signer crypto.Signer,
 	timeSource util.TimeSource,
-	issuanceChainService leafChainBuilder,
 ) *logInfo {
 	vCfg := instanceOpts.Validated
 	cfg := vCfg.Config
 
-	logID, prefix := cfg.LogId, cfg.Prefix
 	li := &logInfo{
-		logID:          logID,
-		LogPrefix:      fmt.Sprintf("%s{%d}", prefix, logID),
-		rpcClient:      instanceOpts.Client,
+		LogOrigin:      cfg.Origin,
+		storage:        instanceOpts.Storage,
 		signer:         signer,
 		TimeSource:     timeSource,
 		instanceOpts:   instanceOpts,
@@ -311,34 +233,11 @@ func newLogInfo(
 	}
 
 	once.Do(func() { setupMetrics(instanceOpts.MetricFactory) })
-	label := strconv.FormatInt(logID, 10)
-	knownLogs.Set(1.0, label)
+	label := cfg.Origin
+	knownLogs.Set(1.0, cfg.Origin)
 
-	switch {
-	case vCfg.FrozenSTH != nil:
-		li.sthGetter = &FrozenSTHGetter{sth: vCfg.FrozenSTH}
-		frozenSTHTimestamp.Set(float64(vCfg.FrozenSTH.Timestamp), label)
-
-	case cfg.IsMirror:
-		st := instanceOpts.STHStorage
-		if st == nil {
-			st = DefaultMirrorSTHStorage{}
-		}
-		li.sthGetter = &MirrorSTHGetter{li: li, st: st}
-
-	default:
-		li.sthGetter = &LogSTHGetter{li: li}
-	}
-
-	if cfg.IsMirror {
-		isMirrorLog.Set(1.0, label)
-	} else {
-		isMirrorLog.Set(0.0, label)
-	}
 	maxMergeDelay.Set(float64(cfg.MaxMergeDelaySec), label)
 	expMergeDelay.Set(float64(cfg.ExpectedMergeDelaySec), label)
-
-	li.issuanceChainService = issuanceChainService
 
 	return li
 }
@@ -353,19 +252,8 @@ func (li *logInfo) Handlers(prefix string) PathHandlers {
 
 	// Bind the logInfo instance to give an AppHandler instance for each endpoint.
 	ph := PathHandlers{
-		prefix + ct.AddChainPath:          AppHandler{Info: li, Handler: addChain, Name: AddChainName, Method: http.MethodPost},
-		prefix + ct.AddPreChainPath:       AppHandler{Info: li, Handler: addPreChain, Name: AddPreChainName, Method: http.MethodPost},
-		prefix + ct.GetSTHPath:            AppHandler{Info: li, Handler: getSTH, Name: GetSTHName, Method: http.MethodGet},
-		prefix + ct.GetSTHConsistencyPath: AppHandler{Info: li, Handler: getSTHConsistency, Name: GetSTHConsistencyName, Method: http.MethodGet},
-		prefix + ct.GetProofByHashPath:    AppHandler{Info: li, Handler: getProofByHash, Name: GetProofByHashName, Method: http.MethodGet},
-		prefix + ct.GetEntriesPath:        AppHandler{Info: li, Handler: getEntries, Name: GetEntriesName, Method: http.MethodGet},
-		prefix + ct.GetRootsPath:          AppHandler{Info: li, Handler: getRoots, Name: GetRootsName, Method: http.MethodGet},
-		prefix + ct.GetEntryAndProofPath:  AppHandler{Info: li, Handler: getEntryAndProof, Name: GetEntryAndProofName, Method: http.MethodGet},
-	}
-	// Remove endpoints not provided by readonly logs and mirrors.
-	if li.instanceOpts.Validated.Config.IsReadonly || li.instanceOpts.Validated.Config.IsMirror {
-		delete(ph, prefix+ct.AddChainPath)
-		delete(ph, prefix+ct.AddPreChainPath)
+		prefix + ct.AddChainPath:    AppHandler{Info: li, Handler: addChain, Name: AddChainName, Method: http.MethodPost},
+		prefix + ct.AddPreChainPath: AppHandler{Info: li, Handler: addPreChain, Name: AddPreChainName, Method: http.MethodPost},
 	}
 
 	return ph
@@ -378,23 +266,6 @@ func (li *logInfo) SendHTTPError(w http.ResponseWriter, statusCode int, err erro
 		errorBody += fmt.Sprintf("\n%v", err)
 	}
 	http.Error(w, errorBody, statusCode)
-}
-
-// getSTH returns the current STH as known to the STH getter, and updates tree
-// size / timestamp metrics correspondingly.
-func (li *logInfo) getSTH(ctx context.Context) (*ct.SignedTreeHead, error) {
-	sth, err := li.sthGetter.GetSTH(ctx)
-	if err != nil {
-		return nil, err
-	}
-	logID := strconv.FormatInt(li.logID, 10)
-	lastSTHTimestamp.Set(float64(sth.Timestamp), logID)
-	lastSTHTreeSize.Set(float64(sth.TreeSize), logID)
-	return sth, nil
-}
-
-func (li *logInfo) buildLeaf(ctx context.Context, chain []*x509.Certificate, merkleLeaf *ct.MerkleTreeLeaf, isPrecert bool) (*trillian.LogLeaf, error) {
-	return li.issuanceChainService.BuildLogLeaf(ctx, chain, li.LogPrefix, merkleLeaf, isPrecert)
 }
 
 // ParseBodyAsJSONChain tries to extract cert-chain out of request.
@@ -420,44 +291,15 @@ func ParseBodyAsJSONChain(r *http.Request) (ct.AddChainRequest, error) {
 	return req, nil
 }
 
-// appendUserCharge adds the specified user to the passed in ChargeTo and
-// and returns the result.
-// If the passed-in ChargeTo is nil, then a new one is created with the passed
-// in user and returned.
-func appendUserCharge(a *trillian.ChargeTo, user string) *trillian.ChargeTo {
-	if a == nil {
-		a = &trillian.ChargeTo{}
-	}
-	a.User = append(a.User, user)
-	return a
-}
-
-// chargeUser returns a trillian.ChargeTo containing an ID for the remote User,
-// or nil if instanceOpts does not have a RemoteQuotaUser function set.
-func (li *logInfo) chargeUser(r *http.Request) *trillian.ChargeTo {
-	if li.instanceOpts.RemoteQuotaUser != nil {
-		return &trillian.ChargeTo{User: []string{li.instanceOpts.RemoteQuotaUser(r)}}
-	}
-	return nil
-}
-
 // addChainInternal is called by add-chain and add-pre-chain as the logic involved in
 // processing these requests is almost identical
 func addChainInternal(ctx context.Context, li *logInfo, w http.ResponseWriter, r *http.Request, isPrecert bool) (int, error) {
 	var method EntrypointName
-	var etype ct.LogEntryType
-	if isPrecert {
-		method = AddPreChainName
-		etype = ct.PrecertLogEntryType
-	} else {
-		method = AddChainName
-		etype = ct.X509LogEntryType
-	}
 
 	// Check the contents of the request and convert to slice of certificates.
 	addChainReq, err := ParseBodyAsJSONChain(r)
 	if err != nil {
-		return http.StatusBadRequest, fmt.Errorf("%s: failed to parse add-chain body: %s", li.LogPrefix, err)
+		return http.StatusBadRequest, fmt.Errorf("%s: failed to parse add-chain body: %s", li.LogOrigin, err)
 	}
 	// Log the DERs now because they might not parse as valid X.509.
 	for _, der := range addChainReq.Chain {
@@ -474,45 +316,21 @@ func addChainInternal(ctx context.Context, li *logInfo, w http.ResponseWriter, r
 	// epoch, and use this throughout.
 	timeMillis := uint64(li.TimeSource.Now().UnixNano() / millisPerNano)
 
-	// Build the MerkleTreeLeaf that gets sent to the backend, and make a trillian.LogLeaf for it.
-	merkleLeaf, err := ct.MerkleTreeLeafFromChain(chain, etype, timeMillis)
+	entry, err := entryFromChain(chain, isPrecert, timeMillis)
 	if err != nil {
 		return http.StatusBadRequest, fmt.Errorf("failed to build MerkleTreeLeaf: %s", err)
 	}
-	leaf, err := li.buildLeaf(ctx, chain, merkleLeaf, isPrecert)
-	if err != nil {
-		return http.StatusInternalServerError, err
-	}
 
-	// Send the Merkle tree leaf on to the Log server.
-	req := trillian.QueueLeafRequest{
-		LogId:    li.logID,
-		Leaf:     leaf,
-		ChargeTo: li.chargeUser(r),
-	}
-	if li.instanceOpts.CertificateQuotaUser != nil {
-		// TODO(al): ignore pre-issuers? Probably doesn't matter
-		for _, cert := range chain[1:] {
-			req.ChargeTo = appendUserCharge(req.ChargeTo, li.instanceOpts.CertificateQuotaUser(cert))
-		}
-	}
-
-	klog.V(2).Infof("%s: %s => grpc.QueueLeaves", li.LogPrefix, method)
-	rsp, err := li.rpcClient.QueueLeaf(ctx, &req)
-	klog.V(2).Infof("%s: %s <= grpc.QueueLeaves err=%v", li.LogPrefix, method, err)
+	klog.V(2).Infof("%s: %s => storage.Add", li.LogOrigin, method)
+	idx, err := li.storage.Add(ctx, entry)
 	if err != nil {
-		return li.toHTTPStatus(err), fmt.Errorf("backend QueueLeaves request failed: %s", err)
-	}
-	if rsp == nil {
-		return http.StatusInternalServerError, errors.New("missing QueueLeaves response")
-	}
-	if rsp.QueuedLeaf == nil {
-		return http.StatusInternalServerError, errors.New("QueueLeaf did not return the leaf")
+		return http.StatusInternalServerError, fmt.Errorf("couldn't store the leaf")
 	}
 
 	// Always use the returned leaf as the basis for an SCT.
 	var loggedLeaf ct.MerkleTreeLeaf
-	if rest, err := tls.Unmarshal(rsp.QueuedLeaf.Leaf.LeafValue, &loggedLeaf); err != nil {
+	leafValue := entry.MerkleTreeLeaf(idx)
+	if rest, err := tls.Unmarshal(leafValue, &loggedLeaf); err != nil {
 		return http.StatusInternalServerError, fmt.Errorf("failed to reconstruct MerkleTreeLeaf: %s", err)
 	} else if len(rest) > 0 {
 		return http.StatusInternalServerError, fmt.Errorf("extra data (%d bytes) on reconstructing MerkleTreeLeaf", len(rest))
@@ -520,6 +338,7 @@ func addChainInternal(ctx context.Context, li *logInfo, w http.ResponseWriter, r
 
 	// As the Log server has definitely got the Merkle tree leaf, we can
 	// generate an SCT and respond with it.
+	// TODO(phboneff): this should work, but double check
 	sct, err := buildV1SCT(li.signer, &loggedLeaf)
 	if err != nil {
 		return http.StatusInternalServerError, fmt.Errorf("failed to generate SCT: %s", err)
@@ -535,9 +354,9 @@ func addChainInternal(ctx context.Context, li *logInfo, w http.ResponseWriter, r
 		// reason is logged and http status is already set
 		return http.StatusInternalServerError, fmt.Errorf("failed to write response: %s", err)
 	}
-	klog.V(3).Infof("%s: %s <= SCT", li.LogPrefix, method)
+	klog.V(3).Infof("%s: %s <= SCT", li.LogOrigin, method)
 	if sct.Timestamp == timeMillis {
-		lastSCTTimestamp.Set(float64(sct.Timestamp), strconv.FormatInt(li.logID, 10))
+		lastSCTTimestamp.Set(float64(sct.Timestamp), li.LogOrigin)
 	}
 
 	return http.StatusOK, nil
@@ -549,379 +368,6 @@ func addChain(ctx context.Context, li *logInfo, w http.ResponseWriter, r *http.R
 
 func addPreChain(ctx context.Context, li *logInfo, w http.ResponseWriter, r *http.Request) (int, error) {
 	return addChainInternal(ctx, li, w, r, true)
-}
-
-func getSTH(ctx context.Context, li *logInfo, w http.ResponseWriter, r *http.Request) (int, error) {
-	qctx := ctx
-	if li.instanceOpts.RemoteQuotaUser != nil {
-		rqu := li.instanceOpts.RemoteQuotaUser(r)
-		qctx = context.WithValue(qctx, remoteQuotaCtxKey, rqu)
-	}
-	sth, err := li.getSTH(qctx)
-	if err != nil {
-		return li.toHTTPStatus(err), err
-	}
-	if err := writeSTH(sth, w); err != nil {
-		return http.StatusInternalServerError, err
-	}
-	return http.StatusOK, nil
-}
-
-// writeSTH marshals the STH to JSON and writes it to HTTP response.
-func writeSTH(sth *ct.SignedTreeHead, w http.ResponseWriter) error {
-	jsonRsp := ct.GetSTHResponse{
-		TreeSize:       sth.TreeSize,
-		SHA256RootHash: sth.SHA256RootHash[:],
-		Timestamp:      sth.Timestamp,
-	}
-	var err error
-	jsonRsp.TreeHeadSignature, err = tls.Marshal(sth.TreeHeadSignature)
-	if err != nil {
-		return fmt.Errorf("failed to tls.Marshal signature: %s", err)
-	}
-
-	w.Header().Set(contentTypeHeader, contentTypeJSON)
-	jsonData, err := json.Marshal(&jsonRsp)
-	if err != nil {
-		return fmt.Errorf("failed to marshal response: %s", err)
-	}
-
-	_, err = w.Write(jsonData)
-	if err != nil {
-		// Probably too late for this as headers might have been written but we
-		// don't know for sure.
-		return fmt.Errorf("failed to write response data: %s", err)
-	}
-
-	return nil
-}
-
-// nolint:staticcheck
-func getSTHConsistency(ctx context.Context, li *logInfo, w http.ResponseWriter, r *http.Request) (int, error) {
-	first, second, err := parseGetSTHConsistencyRange(r)
-	if err != nil {
-		return http.StatusBadRequest, fmt.Errorf("failed to parse consistency range: %s", err)
-	}
-	li.RequestLog.FirstAndSecond(ctx, first, second)
-	var jsonRsp ct.GetSTHConsistencyResponse
-	if first != 0 {
-		req := trillian.GetConsistencyProofRequest{
-			LogId:          li.logID,
-			FirstTreeSize:  first,
-			SecondTreeSize: second,
-			ChargeTo:       li.chargeUser(r),
-		}
-
-		klog.V(2).Infof("%s: GetSTHConsistency(%d, %d) => grpc.GetConsistencyProof %+v", li.LogPrefix, first, second, prototext.Format(&req))
-		rsp, err := li.rpcClient.GetConsistencyProof(ctx, &req)
-		klog.V(2).Infof("%s: GetSTHConsistency <= grpc.GetConsistencyProof err=%v", li.LogPrefix, err)
-		if err != nil {
-			return li.toHTTPStatus(err), fmt.Errorf("backend GetConsistencyProof request failed: %s", err)
-		}
-
-		var currentRoot types.LogRootV1
-		if err := currentRoot.UnmarshalBinary(rsp.GetSignedLogRoot().GetLogRoot()); err != nil {
-			return http.StatusInternalServerError, fmt.Errorf("failed to unmarshal root: %v", rsp.GetSignedLogRoot().GetLogRoot())
-		}
-		// We can get here with a tree size too small to satisfy the proof.
-		if currentRoot.TreeSize < uint64(second) {
-			return http.StatusBadRequest, fmt.Errorf("need tree size: %d for proof but only got: %d", second, currentRoot.TreeSize)
-		}
-
-		// Additional sanity checks, none of the hashes in the returned path should be empty
-		if !checkAuditPath(rsp.Proof.Hashes) {
-			return http.StatusInternalServerError, fmt.Errorf("backend returned invalid proof: %v", rsp.Proof)
-		}
-
-		// We got a valid response from the server. Marshal it as JSON and return it to the client
-		jsonRsp.Consistency = rsp.Proof.Hashes
-		if jsonRsp.Consistency == nil {
-			jsonRsp.Consistency = emptyProof
-		}
-	} else {
-		klog.V(2).Infof("%s: GetSTHConsistency(%d, %d) starts from 0 so return empty proof", li.LogPrefix, first, second)
-		jsonRsp.Consistency = emptyProof
-	}
-
-	w.Header().Set(cacheControlHeader, cacheControlImmutable)
-	w.Header().Set(contentTypeHeader, contentTypeJSON)
-	jsonData, err := json.Marshal(&jsonRsp)
-	if err != nil {
-		return http.StatusInternalServerError, fmt.Errorf("failed to marshal get-sth-consistency resp: %s", err)
-	}
-
-	_, err = w.Write(jsonData)
-	if err != nil {
-		// Probably too late for this as headers might have been written but we don't know for sure
-		return http.StatusInternalServerError, fmt.Errorf("failed to write get-sth-consistency resp: %s", err)
-	}
-
-	return http.StatusOK, nil
-}
-
-// nolint:staticcheck
-func getProofByHash(ctx context.Context, li *logInfo, w http.ResponseWriter, r *http.Request) (int, error) {
-	// Accept any non empty hash that decodes from base64 and let the backend validate it further
-	hash := r.FormValue(getProofParamHash)
-	if len(hash) == 0 {
-		return http.StatusBadRequest, errors.New("get-proof-by-hash: missing / empty hash param for get-proof-by-hash")
-	}
-	leafHash, err := base64.StdEncoding.DecodeString(hash)
-	if err != nil {
-		return http.StatusBadRequest, fmt.Errorf("get-proof-by-hash: invalid base64 hash: %s", err)
-	}
-
-	treeSize, err := strconv.ParseInt(r.FormValue(getProofParamTreeSize), 10, 64)
-	if err != nil || treeSize < 1 {
-		return http.StatusBadRequest, fmt.Errorf("get-proof-by-hash: missing or invalid tree_size: %v", r.FormValue(getProofParamTreeSize))
-	}
-	li.RequestLog.LeafHash(ctx, leafHash)
-	li.RequestLog.TreeSize(ctx, treeSize)
-
-	// Per RFC 6962 section 4.5 the API returns a single proof. This should be the lowest leaf index
-	// Because we request order by sequence and we only passed one hash then the first result is
-	// the correct proof to return
-	req := trillian.GetInclusionProofByHashRequest{
-		LogId:           li.logID,
-		LeafHash:        leafHash,
-		TreeSize:        treeSize,
-		OrderBySequence: true,
-		ChargeTo:        li.chargeUser(r),
-	}
-	rsp, err := li.rpcClient.GetInclusionProofByHash(ctx, &req)
-	if err != nil {
-		return li.toHTTPStatus(err), fmt.Errorf("backend GetInclusionProofByHash request failed: %s", err)
-	}
-
-	var currentRoot types.LogRootV1
-	if err := currentRoot.UnmarshalBinary(rsp.GetSignedLogRoot().GetLogRoot()); err != nil {
-		return http.StatusInternalServerError, fmt.Errorf("failed to unmarshal root: %v", rsp.GetSignedLogRoot().GetLogRoot())
-	}
-	// We could fail to get the proof because the tree size that the server has
-	// is not large enough.
-	if currentRoot.TreeSize < uint64(treeSize) {
-		return http.StatusNotFound, fmt.Errorf("log returned tree size: %d but we expected: %d", currentRoot.TreeSize, treeSize)
-	}
-
-	// Additional sanity checks on the response.
-	if len(rsp.Proof) == 0 {
-		// The backend returns the STH even when there is no proof, so explicitly
-		// map this to 4xx.
-		return http.StatusNotFound, errors.New("get-proof-by-hash: backend did not return a proof")
-	}
-	if !checkAuditPath(rsp.Proof[0].Hashes) {
-		return http.StatusInternalServerError, fmt.Errorf("get-proof-by-hash: backend returned invalid proof: %v", rsp.Proof[0])
-	}
-
-	// All checks complete, marshal and return the response
-	proofRsp := ct.GetProofByHashResponse{
-		LeafIndex: rsp.Proof[0].LeafIndex,
-		AuditPath: rsp.Proof[0].Hashes,
-	}
-	if proofRsp.AuditPath == nil {
-		proofRsp.AuditPath = emptyProof
-	}
-
-	w.Header().Set(cacheControlHeader, cacheControlImmutable)
-	w.Header().Set(contentTypeHeader, contentTypeJSON)
-	jsonData, err := json.Marshal(&proofRsp)
-	if err != nil {
-		klog.Warningf("%s: Failed to marshal get-proof-by-hash resp: %v", li.LogPrefix, proofRsp)
-		return http.StatusInternalServerError, fmt.Errorf("failed to marshal get-proof-by-hash resp: %s", err)
-	}
-
-	_, err = w.Write(jsonData)
-	if err != nil {
-		// Probably too late for this as headers might have been written but we don't know for sure
-		return http.StatusInternalServerError, fmt.Errorf("failed to write get-proof-by-hash resp: %s", err)
-	}
-
-	return http.StatusOK, nil
-}
-
-// nolint:staticcheck
-func getEntries(ctx context.Context, li *logInfo, w http.ResponseWriter, r *http.Request) (int, error) {
-	// The first job is to parse the params and make sure they're sensible. We just make
-	// sure the range is valid. We don't do an extra roundtrip to get the current tree
-	// size and prefer to let the backend handle this case
-	start, end, err := parseGetEntriesRange(r, MaxGetEntriesAllowed, li.logID)
-	if err != nil {
-		return http.StatusBadRequest, fmt.Errorf("bad range on get-entries request: %s", err)
-	}
-	li.RequestLog.StartAndEnd(ctx, start, end)
-
-	// Now make a request to the backend to get the relevant leaves
-	var leaves []*trillian.LogLeaf
-	count := end + 1 - start
-	req := trillian.GetLeavesByRangeRequest{
-		LogId:      li.logID,
-		StartIndex: start,
-		Count:      count,
-		ChargeTo:   li.chargeUser(r),
-	}
-	rsp, httpStatus, err := rpcGetLeavesByRange(ctx, li, &req)
-	if err != nil {
-		return httpStatus, err
-	}
-
-	var currentRoot types.LogRootV1
-	if err := currentRoot.UnmarshalBinary(rsp.GetSignedLogRoot().GetLogRoot()); err != nil {
-		return http.StatusInternalServerError, fmt.Errorf("failed to unmarshal root: %v", rsp.GetSignedLogRoot().GetLogRoot())
-	}
-	if currentRoot.TreeSize <= uint64(start) {
-		// If the returned tree is too small to contain any leaves return the 4xx
-		// explicitly here.
-		return http.StatusBadRequest, fmt.Errorf("need tree size: %d to get leaves but only got: %d", start+1, currentRoot.TreeSize)
-	}
-	if *getEntriesMetrics {
-		label := strconv.FormatInt(req.LogId, 10)
-		recordStartPercent(start, currentRoot.TreeSize, label)
-	}
-	// Do some sanity checks on the result.
-	if len(rsp.Leaves) > int(count) {
-		return http.StatusInternalServerError, fmt.Errorf("backend returned too many leaves: %d vs [%d,%d]", len(rsp.Leaves), start, end)
-	}
-	for i, leaf := range rsp.Leaves {
-		if leaf.LeafIndex != start+int64(i) {
-			return http.StatusInternalServerError, fmt.Errorf("backend returned unexpected leaf index: rsp.Leaves[%d].LeafIndex=%d for range [%d,%d]", i, leaf.LeafIndex, start, end)
-		}
-	}
-	leaves = rsp.Leaves
-
-	// Now we've checked the RPC response and it seems to be valid we need
-	// to serialize the leaves in JSON format for the HTTP response. Doing a
-	// round trip via the leaf deserializer gives us another chance to
-	// prevent bad / corrupt data from reaching the client.
-	jsonRsp, err := marshalGetEntriesResponse(li, leaves)
-	if err != nil {
-		return http.StatusInternalServerError, fmt.Errorf("failed to process leaves returned from backend: %s", err)
-	}
-
-	w.Header().Set(cacheControlHeader, cacheControlImmutable)
-	w.Header().Set(contentTypeHeader, contentTypeJSON)
-	jsonData, err := json.Marshal(&jsonRsp)
-	if err != nil {
-		return http.StatusInternalServerError, fmt.Errorf("failed to marshal get-entries resp: %s", err)
-	}
-
-	_, err = w.Write(jsonData)
-	if err != nil {
-		// Probably too late for this as headers might have been written but we don't know for sure
-		return http.StatusInternalServerError, fmt.Errorf("failed to write get-entries resp: %s", err)
-	}
-
-	return http.StatusOK, nil
-}
-
-// rpcGetLeavesByRange calls Trillian GetLeavesByRange RPC and fixes issuance chain in each log leaf if necessary.
-func rpcGetLeavesByRange(ctx context.Context, li *logInfo, req *trillian.GetLeavesByRangeRequest) (*trillian.GetLeavesByRangeResponse, int, error) {
-	rsp, err := li.rpcClient.GetLeavesByRange(ctx, req)
-	if err != nil {
-		return nil, li.toHTTPStatus(err), fmt.Errorf("backend GetLeavesByRange request failed: %s", err)
-	}
-	for _, leaf := range rsp.Leaves {
-		if err := li.issuanceChainService.FixLogLeaf(ctx, leaf); err != nil {
-			return nil, http.StatusInternalServerError, fmt.Errorf("failed to fix log leaf: %v", rsp)
-		}
-	}
-
-	return rsp, http.StatusOK, nil
-}
-
-func getRoots(_ context.Context, li *logInfo, w http.ResponseWriter, _ *http.Request) (int, error) {
-	// Pull out the raw certificates from the parsed versions
-	rawCerts := make([][]byte, 0, len(li.validationOpts.trustedRoots.RawCertificates()))
-	for _, cert := range li.validationOpts.trustedRoots.RawCertificates() {
-		rawCerts = append(rawCerts, cert.Raw)
-	}
-
-	jsonMap := make(map[string]interface{})
-	jsonMap[jsonMapKeyCertificates] = rawCerts
-	enc := json.NewEncoder(w)
-	err := enc.Encode(jsonMap)
-	if err != nil {
-		klog.Warningf("%s: get_roots failed: %v", li.LogPrefix, err)
-		return http.StatusInternalServerError, fmt.Errorf("get-roots failed with: %s", err)
-	}
-
-	return http.StatusOK, nil
-}
-
-// See RFC 6962 Section 4.8.
-// nolint:staticcheck
-func getEntryAndProof(ctx context.Context, li *logInfo, w http.ResponseWriter, r *http.Request) (int, error) {
-	// Ensure both numeric params are present and look reasonable.
-	leafIndex, treeSize, err := parseGetEntryAndProofParams(r)
-	if err != nil {
-		return http.StatusBadRequest, fmt.Errorf("failed to parse get-entry-and-proof params: %s", err)
-	}
-	li.RequestLog.LeafIndex(ctx, leafIndex)
-	li.RequestLog.TreeSize(ctx, treeSize)
-
-	req := trillian.GetEntryAndProofRequest{
-		LogId:     li.logID,
-		LeafIndex: leafIndex,
-		TreeSize:  treeSize,
-		ChargeTo:  li.chargeUser(r),
-	}
-	rsp, httpStatus, err := rpcGetEntryAndProof(ctx, li, &req)
-	if err != nil {
-		return httpStatus, err
-	}
-
-	var currentRoot types.LogRootV1
-	if err := currentRoot.UnmarshalBinary(rsp.GetSignedLogRoot().GetLogRoot()); err != nil {
-		return http.StatusInternalServerError, fmt.Errorf("failed to unmarshal root: %v", rsp.GetSignedLogRoot().GetLogRoot())
-	}
-	if currentRoot.TreeSize < uint64(treeSize) {
-		// If tree size is not large enough return the 4xx here, would previously
-		// have come from the error status mapping above.
-		return http.StatusBadRequest, fmt.Errorf("need tree size: %d for proof but only got: %d", req.TreeSize, currentRoot.TreeSize)
-	}
-
-	// Apply some checks that we got reasonable data from the backend
-	if rsp.Leaf == nil || len(rsp.Leaf.LeafValue) == 0 || rsp.Proof == nil {
-		return http.StatusInternalServerError, fmt.Errorf("got RPC bad response, possible extra info: %v", rsp)
-	}
-	if treeSize > 1 && len(rsp.Proof.Hashes) == 0 {
-		return http.StatusInternalServerError, fmt.Errorf("got RPC bad response (missing proof), possible extra info: %v", rsp)
-	}
-
-	// Build and marshal the response to the client
-	jsonRsp := ct.GetEntryAndProofResponse{
-		LeafInput: rsp.Leaf.LeafValue,
-		ExtraData: rsp.Leaf.ExtraData,
-		AuditPath: rsp.Proof.Hashes,
-	}
-
-	w.Header().Set(cacheControlHeader, cacheControlImmutable)
-	w.Header().Set(contentTypeHeader, contentTypeJSON)
-	jsonData, err := json.Marshal(&jsonRsp)
-	if err != nil {
-		return http.StatusInternalServerError, fmt.Errorf("failed to marshal get-entry-and-proof resp: %s", err)
-	}
-
-	_, err = w.Write(jsonData)
-	if err != nil {
-
-		// Probably too late for this as headers might have been written but we don't know for sure
-		return http.StatusInternalServerError, fmt.Errorf("failed to write get-entry-and-proof resp: %s", err)
-	}
-
-	return http.StatusOK, nil
-}
-
-// rpcGetEntryAndProof calls Trillian GetEntryAndProof RPC and fixes issuance chain in the log leaf if necessary.
-func rpcGetEntryAndProof(ctx context.Context, li *logInfo, req *trillian.GetEntryAndProofRequest) (*trillian.GetEntryAndProofResponse, int, error) {
-	rsp, err := li.rpcClient.GetEntryAndProof(ctx, req)
-	if err != nil {
-		return nil, li.toHTTPStatus(err), fmt.Errorf("backend GetEntryAndProof request failed: %s", err)
-	}
-	if err := li.issuanceChainService.FixLogLeaf(ctx, rsp.Leaf); err != nil {
-		return nil, http.StatusInternalServerError, fmt.Errorf("failed to fix log leaf: %v", rsp)
-	}
-
-	return rsp, http.StatusOK, nil
 }
 
 // getRPCDeadlineTime calculates the future time an RPC should expire based on our config
@@ -948,9 +394,9 @@ func verifyAddChain(li *logInfo, req ct.AddChainRequest, expectingPrecert bool) 
 	// The type of the leaf must match the one the handler expects
 	if isPrecert != expectingPrecert {
 		if expectingPrecert {
-			klog.Warningf("%s: Cert (or precert with invalid CT ext) submitted as precert chain: %q", li.LogPrefix, req.Chain)
+			klog.Warningf("%s: Cert (or precert with invalid CT ext) submitted as precert chain: %q", li.LogOrigin, req.Chain)
 		} else {
-			klog.Warningf("%s: Precert (or cert with invalid CT ext) submitted as cert chain: %q", li.LogPrefix, req.Chain)
+			klog.Warningf("%s: Precert (or cert with invalid CT ext) submitted as cert chain: %q", li.LogOrigin, req.Chain)
 		}
 		return nil, fmt.Errorf("cert / precert mismatch: %T", expectingPrecert)
 	}
@@ -992,182 +438,64 @@ func marshalAndWriteAddChainResponse(sct *ct.SignedCertificateTimestamp, signer 
 	return nil
 }
 
-func parseGetEntriesRange(r *http.Request, maxRange, logID int64) (int64, int64, error) {
-	start, err := strconv.ParseInt(r.FormValue(getEntriesParamStart), 10, 64)
-	if err != nil {
-		return 0, 0, err
+// entryFromChain generates an Entry from a chain and timestamp.
+// copied from certificate-transparency-go/serialization.go
+// TODO(phboneff): move in a different file maybe?
+func entryFromChain(chain []*x509.Certificate, isPrecert bool, timestamp uint64) (*ctonly.Entry, error) {
+	leaf := ctonly.Entry{
+		IsPrecert: isPrecert,
+		Timestamp: timestamp,
+	}
+	if !isPrecert {
+		leaf.Certificate = chain[0].Raw
+		return &leaf, nil
 	}
 
-	end, err := strconv.ParseInt(r.FormValue(getEntriesParamEnd), 10, 64)
-	if err != nil {
-		return 0, 0, err
+	// Pre-certs are more complicated. First, parse the leaf pre-cert and its
+	// putative issuer.
+	if len(chain) < 2 {
+		return nil, fmt.Errorf("no issuer cert available for precert leaf building")
 	}
+	issuer := chain[1]
+	cert := chain[0]
 
-	if start < 0 || end < 0 {
-		return 0, 0, fmt.Errorf("start (%d) and end (%d) parameters must be >= 0", start, end)
-	}
-	if start > end {
-		return 0, 0, fmt.Errorf("start (%d) and end (%d) is not a valid range", start, end)
-	}
+	var preIssuer *x509.Certificate
+	if IsPreIssuer(issuer) {
+		// Replace the cert's issuance information with details from the pre-issuer.
+		preIssuer = issuer
 
-	count := end - start + 1
-	if count > maxRange {
-		end = start + maxRange - 1
-	}
-	if *alignGetEntries && count >= maxRange {
-		// Truncate a "maximally sized" get-entries request at the next multiple
-		// of MaxGetEntriesAllowed.
-		// This is intended to coerce large runs of get-entries requests (e.g. by
-		// monitors/mirrors) into all requesting the same start/end ranges,
-		// thereby making the responses more readily cacheable.
-		d := (end + 1) % maxRange
-		end = end - d
-		alignedGetEntries.Inc(strconv.FormatInt(logID, 10), strconv.FormatBool(d == 0))
-	}
-
-	return start, end, nil
-}
-
-func parseGetEntryAndProofParams(r *http.Request) (int64, int64, error) {
-	leafIndex, err := strconv.ParseInt(r.FormValue(getEntryAndProofParamLeafIndex), 10, 64)
-	if err != nil {
-		return 0, 0, err
-	}
-
-	treeSize, err := strconv.ParseInt(r.FormValue(getEntryAndProofParamTreeSize), 10, 64)
-	if err != nil {
-		return 0, 0, err
-	}
-
-	if treeSize <= 0 {
-		return 0, 0, fmt.Errorf("tree_size must be > 0, got: %d", treeSize)
-	}
-	if leafIndex < 0 {
-		return 0, 0, fmt.Errorf("leaf_index must be >= 0, got: %d", treeSize)
-	}
-	if leafIndex >= treeSize {
-		return 0, 0, fmt.Errorf("leaf_index %d out of range for tree of size %d", leafIndex, treeSize)
-	}
-
-	return leafIndex, treeSize, nil
-}
-
-func parseGetSTHConsistencyRange(r *http.Request) (int64, int64, error) {
-	firstVal := r.FormValue(getSTHConsistencyParamFirst)
-	secondVal := r.FormValue(getSTHConsistencyParamSecond)
-	if firstVal == "" {
-		return 0, 0, errors.New("parameter 'first' is required")
-	}
-	if secondVal == "" {
-		return 0, 0, errors.New("parameter 'second' is required")
-	}
-
-	first, err := strconv.ParseInt(firstVal, 10, 64)
-	if err != nil {
-		return 0, 0, errors.New("parameter 'first' is malformed")
-	}
-
-	second, err := strconv.ParseInt(secondVal, 10, 64)
-	if err != nil {
-		return 0, 0, errors.New("parameter 'second' is malformed")
-	}
-
-	if first < 0 || second < 0 {
-		return 0, 0, fmt.Errorf("first and second params cannot be <0: %d %d", first, second)
-	}
-	if second < first {
-		return 0, 0, fmt.Errorf("invalid first, second params: %d %d", first, second)
-	}
-
-	return first, second, nil
-}
-
-// marshalGetEntriesResponse does the conversion from the backend response to the one we need for
-// an RFC compliant JSON response to the client.
-func marshalGetEntriesResponse(li *logInfo, leaves []*trillian.LogLeaf) (ct.GetEntriesResponse, error) {
-	jsonRsp := ct.GetEntriesResponse{}
-
-	for _, leaf := range leaves {
-		// We're only deserializing it to ensure it's valid, don't need the result. We still
-		// return the data if it fails to deserialize as otherwise the root hash could not
-		// be verified. However this indicates a potentially serious failure in log operation
-		// or data storage that should be investigated.
-		var treeLeaf ct.MerkleTreeLeaf
-		if rest, err := tls.Unmarshal(leaf.LeafValue, &treeLeaf); err != nil {
-			klog.Errorf("%s: Failed to deserialize Merkle leaf from backend: %d", li.LogPrefix, leaf.LeafIndex)
-		} else if len(rest) > 0 {
-			klog.Errorf("%s: Trailing data after Merkle leaf from backend: %d", li.LogPrefix, leaf.LeafIndex)
+		// The issuer of the pre-cert is not going to be the issuer of the final
+		// cert.  Change to use the final issuer's key hash.
+		if len(chain) < 3 {
+			return nil, fmt.Errorf("no issuer cert available for pre-issuer")
 		}
-
-		extraData := leaf.ExtraData
-		if len(extraData) == 0 {
-			klog.Errorf("%s: Missing ExtraData for leaf %d", li.LogPrefix, leaf.LeafIndex)
-		}
-		jsonRsp.Entries = append(jsonRsp.Entries, ct.LeafEntry{
-			LeafInput: leaf.LeafValue,
-			ExtraData: extraData,
-		})
+		issuer = chain[2]
 	}
 
-	return jsonRsp, nil
+	// Next, post-process the DER-encoded TBSCertificate, to remove the CT poison
+	// extension and possibly update the issuer field.
+	defangedTBS, err := x509.BuildPrecertTBS(cert.RawTBSCertificate, preIssuer)
+	if err != nil {
+		return nil, fmt.Errorf("failed to remove poison extension: %v", err)
+	}
+
+	leaf.Precertificate = cert.Raw
+	leaf.PrecertSigningCert = issuer.Raw
+	leaf.Certificate = defangedTBS
+
+	issuerKeyHash := sha256.Sum256(issuer.RawSubjectPublicKeyInfo)
+	leaf.IssuerKeyHash = issuerKeyHash[:]
+	return &leaf, nil
 }
 
-// checkAuditPath does a quick scan of the proof we got from the backend for consistency.
-// All the hashes should be non zero length.
-func checkAuditPath(path [][]byte) bool {
-	for _, node := range path {
-		if len(node) != sha256.Size {
-			return false
+// IsPreIssuer indicates whether a certificate is a pre-cert issuer with the specific
+// certificate transparency extended key usage.
+// copied form certificate-transparency-go/serialization.go
+func IsPreIssuer(issuer *x509.Certificate) bool {
+	for _, eku := range issuer.ExtKeyUsage {
+		if eku == x509.ExtKeyUsageCertificateTransparency {
+			return true
 		}
 	}
-	return true
-}
-
-func (li *logInfo) toHTTPStatus(err error) int {
-	if li.instanceOpts.ErrorMapper != nil {
-		if status, ok := li.instanceOpts.ErrorMapper(err); ok {
-			return status
-		}
-	}
-
-	rpcStatus, ok := status.FromError(err)
-	if !ok {
-		return http.StatusInternalServerError
-	}
-
-	switch rpcStatus.Code() {
-	case codes.OK:
-		return http.StatusOK
-	case codes.Canceled, codes.DeadlineExceeded:
-		return http.StatusGatewayTimeout
-	case codes.InvalidArgument, codes.OutOfRange, codes.AlreadyExists:
-		return http.StatusBadRequest
-	case codes.NotFound:
-		return http.StatusNotFound
-	case codes.PermissionDenied:
-		return http.StatusForbidden
-	case codes.ResourceExhausted:
-		return http.StatusTooManyRequests
-	case codes.Unauthenticated:
-		return http.StatusUnauthorized
-	case codes.FailedPrecondition:
-		return http.StatusPreconditionFailed
-	case codes.Aborted:
-		return http.StatusConflict
-	case codes.Unimplemented:
-		return http.StatusNotImplemented
-	case codes.Unavailable:
-		return http.StatusServiceUnavailable
-	default:
-		return http.StatusInternalServerError
-	}
-}
-
-// recordStartPercent works out what percentage of the current log size an index corresponds to,
-// and records this to the getEntriesStartPercentiles histogram.
-func recordStartPercent(leafIndex int64, treeSize uint64, labelVals ...string) {
-	if treeSize > 0 {
-		percent := float64(leafIndex) / float64(treeSize) * 100.0
-		getEntriesStartPercentiles.Observe(percent, labelVals...)
-	}
+	return false
 }

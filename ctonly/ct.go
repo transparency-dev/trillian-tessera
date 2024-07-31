@@ -84,6 +84,28 @@ func (c Entry) LeafData(idx uint64) []byte {
 	return b.BytesOrPanic()
 }
 
+// MerkleTreeLeaf returns a RFC 6962 MerkleTreeLeaf.
+func (e *Entry) MerkleTreeLeaf(idx uint64) []byte {
+	b := &cryptobyte.Builder{}
+	b.AddUint8(0 /* version = v1 */)
+	b.AddUint8(0 /* leaf_type = timestamped_entry */)
+	b.AddUint64(uint64(e.Timestamp))
+	if !e.IsPrecert {
+		b.AddUint16(0 /* entry_type = x509_entry */)
+		b.AddUint24LengthPrefixed(func(b *cryptobyte.Builder) {
+			b.AddBytes(e.Certificate)
+		})
+	} else {
+		b.AddUint16(1 /* entry_type = precert_entry */)
+		b.AddBytes(e.IssuerKeyHash[:])
+		b.AddUint24LengthPrefixed(func(b *cryptobyte.Builder) {
+			b.AddBytes(e.Certificate)
+		})
+	}
+	addExtensions(b, idx)
+	return b.BytesOrPanic()
+}
+
 // MerkleLeafHash returns the RFC6962 leaf hash for this entry.
 //
 // Note that we embed an SCT extension which captures the index of the entry in the log according to

@@ -25,11 +25,11 @@ import (
 
 	ct "github.com/google/certificate-transparency-go"
 	"github.com/google/certificate-transparency-go/trillian/ctfe/cache"
-	"github.com/google/certificate-transparency-go/trillian/ctfe/configpb"
 	"github.com/google/trillian/crypto/keys"
 	"github.com/google/trillian/crypto/keys/pem"
 	"github.com/google/trillian/crypto/keyspb"
 	"github.com/google/trillian/monitoring"
+	"github.com/transparency-dev/trillian-tessera/personalities/ct-static-api/configpb"
 	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -41,10 +41,9 @@ func init() {
 func TestSetUpInstance(t *testing.T) {
 	ctx := context.Background()
 
-	privKey := mustMarshalAny(&keyspb.PEMKeyFile{Path: "../testdata/ct-http-server.privkey.pem", Password: "dirk"})
-	missingPrivKey := mustMarshalAny(&keyspb.PEMKeyFile{Path: "../testdata/bogus.privkey.pem", Password: "dirk"})
-	wrongPassPrivKey := mustMarshalAny(&keyspb.PEMKeyFile{Path: "../testdata/ct-http-server.privkey.pem", Password: "dirkly"})
-	pubKey := mustReadPublicKey("../testdata/ct-http-server.pubkey.pem")
+	privKey := mustMarshalAny(&keyspb.PEMKeyFile{Path: "./testdata/ct-http-server.privkey.pem", Password: "dirk"})
+	missingPrivKey := mustMarshalAny(&keyspb.PEMKeyFile{Path: "./testdata/bogus.privkey.pem", Password: "dirk"})
+	wrongPassPrivKey := mustMarshalAny(&keyspb.PEMKeyFile{Path: "./testdata/ct-http-server.privkey.pem", Password: "dirkly"})
 
 	var tests = []struct {
 		desc    string
@@ -54,108 +53,89 @@ func TestSetUpInstance(t *testing.T) {
 		{
 			desc: "valid",
 			cfg: &configpb.LogConfig{
-				LogId:        1,
-				Prefix:       "log",
-				RootsPemFile: []string{"../testdata/fake-ca.cert"},
-				PrivateKey:   privKey,
-			},
-		},
-		{
-			desc: "valid-mirror",
-			cfg: &configpb.LogConfig{
-				LogId:        1,
-				Prefix:       "log",
-				RootsPemFile: []string{"../testdata/fake-ca.cert"},
-				PublicKey:    pubKey,
-				IsMirror:     true,
+				Origin:        "log",
+				RootsPemFile:  []string{"./testdata/fake-ca.cert"},
+				PrivateKey:    privKey,
+				StorageConfig: &configpb.LogConfig_Gcp{Gcp: &configpb.GCPConfig{Bucket: "bucket", SpannerDbPath: "spanner"}},
 			},
 		},
 		{
 			desc: "no-roots",
 			cfg: &configpb.LogConfig{
-				LogId:      1,
-				Prefix:     "log",
-				PrivateKey: privKey,
+				Origin:        "log",
+				PrivateKey:    privKey,
+				StorageConfig: &configpb.LogConfig_Gcp{Gcp: &configpb.GCPConfig{Bucket: "bucket", SpannerDbPath: "spanner"}},
 			},
 			wantErr: "specify RootsPemFile",
 		},
 		{
-			desc: "no-roots-mirror",
-			cfg: &configpb.LogConfig{
-				LogId:     1,
-				Prefix:    "log",
-				PublicKey: pubKey,
-				IsMirror:  true,
-			},
-		},
-		{
 			desc: "missing-root-cert",
 			cfg: &configpb.LogConfig{
-				LogId:        1,
-				Prefix:       "log",
-				RootsPemFile: []string{"../testdata/bogus.cert"},
-				PrivateKey:   privKey,
+				Origin:        "log",
+				RootsPemFile:  []string{"../testdata/bogus.cert"},
+				PrivateKey:    privKey,
+				StorageConfig: &configpb.LogConfig_Gcp{Gcp: &configpb.GCPConfig{Bucket: "bucket", SpannerDbPath: "spanner"}},
 			},
 			wantErr: "failed to read trusted roots",
 		},
 		{
 			desc: "missing-privkey",
 			cfg: &configpb.LogConfig{
-				LogId:        1,
-				Prefix:       "log",
-				RootsPemFile: []string{"../testdata/fake-ca.cert"},
-				PrivateKey:   missingPrivKey,
+				Origin:        "log",
+				RootsPemFile:  []string{"./testdata/fake-ca.cert"},
+				PrivateKey:    missingPrivKey,
+				StorageConfig: &configpb.LogConfig_Gcp{Gcp: &configpb.GCPConfig{Bucket: "bucket", SpannerDbPath: "spanner"}},
 			},
 			wantErr: "failed to load private key",
 		},
 		{
 			desc: "privkey-wrong-password",
 			cfg: &configpb.LogConfig{
-				LogId:        1,
-				Prefix:       "log",
-				RootsPemFile: []string{"../testdata/fake-ca.cert"},
-				PrivateKey:   wrongPassPrivKey,
+				Origin:        "log",
+				RootsPemFile:  []string{"./testdata/fake-ca.cert"},
+				PrivateKey:    wrongPassPrivKey,
+				StorageConfig: &configpb.LogConfig_Gcp{Gcp: &configpb.GCPConfig{Bucket: "bucket", SpannerDbPath: "spanner"}},
 			},
 			wantErr: "failed to load private key",
 		},
 		{
 			desc: "valid-ekus-1",
 			cfg: &configpb.LogConfig{
-				LogId:        1,
-				Prefix:       "log",
-				RootsPemFile: []string{"../testdata/fake-ca.cert"},
-				PrivateKey:   privKey,
-				ExtKeyUsages: []string{"Any"},
+				Origin:        "log",
+				RootsPemFile:  []string{"./testdata/fake-ca.cert"},
+				PrivateKey:    privKey,
+				ExtKeyUsages:  []string{"Any"},
+				StorageConfig: &configpb.LogConfig_Gcp{Gcp: &configpb.GCPConfig{Bucket: "bucket", SpannerDbPath: "spanner"}},
 			},
 		},
 		{
 			desc: "valid-ekus-2",
 			cfg: &configpb.LogConfig{
-				LogId:        1,
-				Prefix:       "log",
-				RootsPemFile: []string{"../testdata/fake-ca.cert"},
-				PrivateKey:   privKey,
-				ExtKeyUsages: []string{"Any", "ServerAuth", "TimeStamping"},
+				Origin:        "log",
+				RootsPemFile:  []string{"./testdata/fake-ca.cert"},
+				PrivateKey:    privKey,
+				ExtKeyUsages:  []string{"Any", "ServerAuth", "TimeStamping"},
+				StorageConfig: &configpb.LogConfig_Gcp{Gcp: &configpb.GCPConfig{Bucket: "bucket", SpannerDbPath: "spanner"}},
 			},
 		},
 		{
 			desc: "valid-reject-ext",
 			cfg: &configpb.LogConfig{
-				LogId:            1,
-				Prefix:           "log",
-				RootsPemFile:     []string{"../testdata/fake-ca.cert"},
+				Origin:           "log",
+				RootsPemFile:     []string{"./testdata/fake-ca.cert"},
 				PrivateKey:       privKey,
 				RejectExtensions: []string{"1.2.3.4", "5.6.7.8"},
+				StorageConfig:    &configpb.LogConfig_Gcp{Gcp: &configpb.GCPConfig{Bucket: "bucket", SpannerDbPath: "spanner"}},
 			},
 		},
 		{
 			desc: "invalid-reject-ext",
 			cfg: &configpb.LogConfig{
-				LogId:            1,
-				Prefix:           "log",
-				RootsPemFile:     []string{"../testdata/fake-ca.cert"},
+				Origin:           "log",
+				RootsPemFile:     []string{"./testdata/fake-ca.cert"},
 				PrivateKey:       privKey,
 				RejectExtensions: []string{"1.2.3.4", "one.banana.two.bananas"},
+				StorageConfig:    &configpb.LogConfig_Gcp{Gcp: &configpb.GCPConfig{Bucket: "bucket", SpannerDbPath: "spanner"}},
 			},
 			wantErr: "one",
 		},
@@ -202,7 +182,7 @@ func TestSetUpInstanceSetsValidationOpts(t *testing.T) {
 	start := timestamppb.New(time.Unix(10000, 0))
 	limit := timestamppb.New(time.Unix(12000, 0))
 
-	privKey, err := anypb.New(&keyspb.PEMKeyFile{Path: "../testdata/ct-http-server.privkey.pem", Password: "dirk"})
+	privKey, err := anypb.New(&keyspb.PEMKeyFile{Path: "./testdata/ct-http-server.privkey.pem", Password: "dirk"})
 	if err != nil {
 		t.Fatalf("Could not marshal private key proto: %v", err)
 	}
@@ -213,41 +193,41 @@ func TestSetUpInstanceSetsValidationOpts(t *testing.T) {
 		{
 			desc: "no validation opts",
 			cfg: &configpb.LogConfig{
-				LogId:        1,
-				Prefix:       "/log",
-				RootsPemFile: []string{"../testdata/fake-ca.cert"},
-				PrivateKey:   privKey,
+				Origin:        "/log",
+				RootsPemFile:  []string{"./testdata/fake-ca.cert"},
+				PrivateKey:    privKey,
+				StorageConfig: &configpb.LogConfig_Gcp{Gcp: &configpb.GCPConfig{Bucket: "bucket", SpannerDbPath: "spanner"}},
 			},
 		},
 		{
 			desc: "notAfterStart only",
 			cfg: &configpb.LogConfig{
-				LogId:         1,
-				Prefix:        "/log",
-				RootsPemFile:  []string{"../testdata/fake-ca.cert"},
+				Origin:        "/log",
+				RootsPemFile:  []string{"./testdata/fake-ca.cert"},
 				PrivateKey:    privKey,
 				NotAfterStart: start,
+				StorageConfig: &configpb.LogConfig_Gcp{Gcp: &configpb.GCPConfig{Bucket: "bucket", SpannerDbPath: "spanner"}},
 			},
 		},
 		{
 			desc: "notAfter range",
 			cfg: &configpb.LogConfig{
-				LogId:         1,
-				Prefix:        "/log",
-				RootsPemFile:  []string{"../testdata/fake-ca.cert"},
+				Origin:        "/log",
+				RootsPemFile:  []string{"./testdata/fake-ca.cert"},
 				PrivateKey:    privKey,
 				NotAfterStart: start,
 				NotAfterLimit: limit,
+				StorageConfig: &configpb.LogConfig_Gcp{Gcp: &configpb.GCPConfig{Bucket: "bucket", SpannerDbPath: "spanner"}},
 			},
 		},
 		{
 			desc: "caOnly",
 			cfg: &configpb.LogConfig{
-				LogId:        1,
-				Prefix:       "/log",
-				RootsPemFile: []string{"../testdata/fake-ca.cert"},
-				PrivateKey:   privKey,
-				AcceptOnlyCa: true,
+				Origin:        "/log",
+				RootsPemFile:  []string{"./testdata/fake-ca.cert"},
+				PrivateKey:    privKey,
+				AcceptOnlyCa:  true,
+				StorageConfig: &configpb.LogConfig_Gcp{Gcp: &configpb.GCPConfig{Bucket: "bucket", SpannerDbPath: "spanner"}},
 			},
 		},
 	}
@@ -264,7 +244,7 @@ func TestSetUpInstanceSetsValidationOpts(t *testing.T) {
 			if err != nil {
 				t.Fatalf("%v: SetUpInstance() = %v, want no error", test.desc, err)
 			}
-			addChainHandler, ok := inst.Handlers[test.cfg.Prefix+ct.AddChainPath]
+			addChainHandler, ok := inst.Handlers[test.cfg.Origin+ct.AddChainPath]
 			if !ok {
 				t.Fatal("Couldn't find AddChain handler")
 			}

@@ -38,8 +38,8 @@ type RequestLog interface {
 	// The returned context should be used in all the following calls to
 	// this API. This is normally arranged by the request handler code.
 	Start(context.Context) context.Context
-	// LogPrefix will be called once per request to set the log prefix.
-	LogPrefix(context.Context, string)
+	// LogOrigin will be called once per request to set the log prefix.
+	LogOrigin(context.Context, string)
 	// AddDERToChain will be called once for each certificate in a submitted
 	// chain. It's called early in request processing so the supplied bytes
 	// have not been checked for validity. Calls will be in order of the
@@ -49,21 +49,6 @@ type RequestLog interface {
 	// after it has been parsed and verified. Calls will be in order of the
 	// certificates as presented in the request with the root last.
 	AddCertToChain(context.Context, *x509.Certificate)
-	// FirstAndSecond will be called once for a consistency proof request with
-	// the first and second tree sizes involved (if they parse correctly).
-	FirstAndSecond(context.Context, int64, int64)
-	// StartAndEnd will be called once for a get entries request with the
-	// endpoints of the range requested (if they parse correctly).
-	StartAndEnd(context.Context, int64, int64)
-	// LeafIndex will be called once with the index of a leaf being requested
-	// by get entry and proof (if the request params parse correctly).
-	LeafIndex(context.Context, int64)
-	// TreeSize will be called once with the requested tree size for get entry
-	// and proof requests (if the request params parse correctly).
-	TreeSize(context.Context, int64)
-	// LeafHash will be called once for get proof by hash requests with the
-	// requested hash value (if the parameters parse correctly).
-	LeafHash(context.Context, []byte)
 	// IssueSCT will be called once when the server is about to issue an SCT to a
 	// client. This should not be called if the submission process fails before an
 	// SCT could be presented to a client, even if this is unrelated to
@@ -86,9 +71,9 @@ func (dlr *DefaultRequestLog) Start(ctx context.Context) context.Context {
 	return ctx
 }
 
-// LogPrefix logs the prefix of the CT log that this request is for.
-func (dlr *DefaultRequestLog) LogPrefix(_ context.Context, p string) {
-	klog.V(vLevel).Infof("RL: LogPrefix: %s", p)
+// LogOrigin logs the origin of the CT log that this request is for.
+func (dlr *DefaultRequestLog) LogOrigin(_ context.Context, p string) {
+	klog.V(vLevel).Infof("RL: LogOrigin: %s", p)
 }
 
 // AddDERToChain logs the raw bytes of a submitted certificate.
@@ -105,32 +90,6 @@ func (dlr *DefaultRequestLog) AddCertToChain(_ context.Context, cert *x509.Certi
 		x509util.NameToString(cert.Issuer),
 		cert.NotBefore.Format(time.RFC1123Z),
 		cert.NotAfter.Format(time.RFC1123Z))
-}
-
-// FirstAndSecond logs request parameters.
-func (dlr *DefaultRequestLog) FirstAndSecond(_ context.Context, f, s int64) {
-	klog.V(vLevel).Infof("RL: First: %d Second: %d", f, s)
-}
-
-// StartAndEnd logs request parameters.
-func (dlr *DefaultRequestLog) StartAndEnd(_ context.Context, s, e int64) {
-	klog.V(vLevel).Infof("RL: Start: %d End: %d", s, e)
-}
-
-// LeafIndex logs request parameters.
-func (dlr *DefaultRequestLog) LeafIndex(_ context.Context, li int64) {
-	klog.V(vLevel).Infof("RL: LeafIndex: %d", li)
-}
-
-// TreeSize logs request parameters.
-func (dlr *DefaultRequestLog) TreeSize(_ context.Context, ts int64) {
-	klog.V(vLevel).Infof("RL: TreeSize: %d", ts)
-}
-
-// LeafHash logs request parameters.
-func (dlr *DefaultRequestLog) LeafHash(_ context.Context, lh []byte) {
-	// Explicit hex encoding below to satisfy CodeQL:
-	klog.V(vLevel).Infof("RL: LeafHash: %s", hex.EncodeToString(lh))
 }
 
 // IssueSCT logs an SCT that will be issued to a client.

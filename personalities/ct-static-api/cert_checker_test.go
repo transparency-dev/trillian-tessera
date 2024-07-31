@@ -172,12 +172,12 @@ func TestValidateChain(t *testing.T) {
 		},
 		{
 			desc:        "chain-of-len-4",
-			chain:       pemFileToDERChain(t, "../testdata/subleaf.chain"),
+			chain:       pemFileToDERChain(t, "./testdata/subleaf.chain"),
 			wantPathLen: 4,
 		},
 		{
 			desc:    "misordered-chain-of-len-4",
-			chain:   pemFileToDERChain(t, "../testdata/subleaf.misordered.chain"),
+			chain:   pemFileToDERChain(t, "./testdata/subleaf.misordered.chain"),
 			wantErr: true,
 		},
 		{

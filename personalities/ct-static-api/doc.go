@@ -13,13 +13,10 @@
 // limitations under the License.
 
 /*
-Package ctfe contains a usage example by providing an implementation of an RFC6962 compatible CT
-log server using a Trillian log server as backend storage via its GRPC API.
+Package ctfe contains a usage example by providing an implementation of a ct-static-api
+personality using Trillian Tessera as a backend storage.
 
-IMPORTANT: Only code rooted within this part of the tree should refer to the CT
-GitHub repository. Other parts of the system must not assume that the data they're
-processing is X.509 or CT related.
-
-The CT repository can be found at: https://github.com/google/certificate-transparency
+It is a port of the ctfe package from
+https://github.com/google/certificate-transparency-go
 */
 package ctfe
