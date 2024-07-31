@@ -57,7 +57,7 @@ func main() {
 	db.SetMaxOpenConns(*dbMaxOpenConns)
 	db.SetMaxIdleConns(*dbMaxIdleConns)
 
-	initDatabaseSchema(ctx, db)
+	initDatabaseSchema(ctx)
 
 	rawPrivateKey, err := os.ReadFile(*privateKeyPath)
 	if err != nil {
@@ -246,21 +246,26 @@ func parseTileIndexWidth(index string) (uint64, uint64, error) {
 	return i, w, nil
 }
 
-func initDatabaseSchema(ctx context.Context, db *sql.DB) {
-	if db != nil && *initSchemaPath != "" {
+func initDatabaseSchema(ctx context.Context) {
+	if *initSchemaPath != "" {
+		db, err := sql.Open("mysql", *mysqlURI+"?multiStatements=true")
+		if err != nil {
+			klog.Exitf("Failed to connect to DB: %v", err)
+		}
+		defer db.Close()
+
 		rawSchema, err := os.ReadFile(*initSchemaPath)
 		if err != nil {
 			klog.Exitf("Failed to read init schema file %q: %v", *initSchemaPath, err)
 		}
-
-		queries := strings.SplitAfter(strings.TrimSpace(string(rawSchema)), ";")
-
-		for _, query := range queries {
-			if len(query) > 0 {
-				if _, err := db.ExecContext(ctx, query); err != nil {
-					klog.Exitf("Failed to execute init database schema: %v", err)
-				}
-			}
+		if _, err := db.ExecContext(ctx, string(rawSchema)); err != nil {
+			klog.Exitf("Failed to execute init database schema: %v", err)
 		}
+
+		defer func() {
+			if err := db.Close(); err != nil {
+				klog.Warningf("Failed to close db: %v", err)
+			}
+		}()
 	}
 }
