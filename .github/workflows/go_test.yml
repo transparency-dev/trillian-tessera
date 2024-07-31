@@ -24,8 +24,8 @@ jobs:
   test-mysql:
     env:
       DB_DATABASE: test_tessera
-      DB_USER: test_tessera
-      DB_PASSWORD: test_tessera
+      DB_USER: root
+      DB_PASSWORD: root
 
     runs-on: ubuntu-latest
     
