@@ -248,11 +248,17 @@ func parseTileIndexWidth(index string) (uint64, uint64, error) {
 
 func initDatabaseSchema(ctx context.Context) {
 	if *initSchemaPath != "" {
+		klog.Infof("Initializing database schema")
+
 		db, err := sql.Open("mysql", *mysqlURI+"?multiStatements=true")
 		if err != nil {
 			klog.Exitf("Failed to connect to DB: %v", err)
 		}
-		defer db.Close()
+		defer func() {
+			if err := db.Close(); err != nil {
+				klog.Warningf("Failed to close db: %v", err)
+			}
+		}()
 
 		rawSchema, err := os.ReadFile(*initSchemaPath)
 		if err != nil {
@@ -262,10 +268,6 @@ func initDatabaseSchema(ctx context.Context) {
 			klog.Exitf("Failed to execute init database schema: %v", err)
 		}
 
-		defer func() {
-			if err := db.Close(); err != nil {
-				klog.Warningf("Failed to close db: %v", err)
-			}
-		}()
+		klog.Infof("Database schema initialized")
 	}
 }
