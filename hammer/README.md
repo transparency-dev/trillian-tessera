@@ -4,6 +4,7 @@ This hammer sets up read and (optionally) write traffic to a log to test correct
 The read traffic is sent according to the [tlog-tiles](https://github.com/C2SP/C2SP/blob/main/tlog-tiles.md) spec, and thus could be used to load test any tiles-based log, not just Tessera logs.
 
 If write traffic is enabled, then the target log must support `POST` requests to a `/add` path.
+A successful request MUST return an ASCII decimal number representing the index that has been assigned to the new value.
 
 ## UI
 

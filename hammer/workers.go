@@ -33,13 +33,13 @@ type LeafWriter func(ctx context.Context, data []byte) (uint64, error)
 // NewLeafReader creates a LeafReader.
 // The next function provides a strategy for which leaves will be read.
 // Custom implementations can be passed, or use RandomNextLeaf or MonotonicallyIncreasingNextLeaf.
-func NewLeafReader(tracker *client.LogStateTracker, f client.Fetcher, next func(uint64) uint64, throttle <-chan bool, errchan chan<- error) *LeafReader {
+func NewLeafReader(tracker *client.LogStateTracker, f client.Fetcher, next func(uint64) uint64, throttle <-chan bool, errChan chan<- error) *LeafReader {
 	return &LeafReader{
 		tracker:  tracker,
 		f:        f,
 		next:     next,
 		throttle: throttle,
-		errchan:  errchan,
+		errChan:  errChan,
 	}
 }
 
@@ -50,7 +50,7 @@ type LeafReader struct {
 	f        client.Fetcher
 	next     func(uint64) uint64
 	throttle <-chan bool
-	errchan  chan<- error
+	errChan  chan<- error
 	cancel   func()
 	c        leafBundleCache
 }
@@ -78,7 +78,7 @@ func (r *LeafReader) Run(ctx context.Context) {
 		klog.V(2).Infof("LeafReader getting %d", i)
 		_, err := r.getLeaf(ctx, i, size)
 		if err != nil {
-			r.errchan <- fmt.Errorf("failed to get leaf %d: %v", i, err)
+			r.errChan <- fmt.Errorf("failed to get leaf %d: %v", i, err)
 		}
 	}
 }
@@ -154,12 +154,12 @@ func MonotonicallyIncreasingNextLeaf() func(uint64) uint64 {
 // NewLogWriter creates a LogWriter.
 // u is the URL of the write endpoint for the log.
 // gen is a function that generates new leaves to add.
-func NewLogWriter(writer LeafWriter, gen func() []byte, throttle <-chan bool, errchan chan<- error) *LogWriter {
+func NewLogWriter(writer LeafWriter, gen func() []byte, throttle <-chan bool, errChan chan<- error) *LogWriter {
 	return &LogWriter{
 		writer:   writer,
 		gen:      gen,
 		throttle: throttle,
-		errchan:  errchan,
+		errChan:  errChan,
 	}
 }
 
@@ -168,14 +168,14 @@ type LogWriter struct {
 	writer   LeafWriter
 	gen      func() []byte
 	throttle <-chan bool
-	errchan  chan<- error
+	errChan  chan<- error
 	cancel   func()
 }
 
 // Run runs the log writer. This should be called in a goroutine.
 func (w *LogWriter) Run(ctx context.Context) {
 	if w.cancel != nil {
-		panic("LogWriter was ran multiple times")
+		panic("LogWriter was run multiple times")
 	}
 	ctx, w.cancel = context.WithCancel(ctx)
 	for {
@@ -187,7 +187,7 @@ func (w *LogWriter) Run(ctx context.Context) {
 		newLeaf := w.gen()
 		index, err := w.writer(ctx, newLeaf)
 		if err != nil {
-			w.errchan <- fmt.Errorf("failed to create request: %v", err)
+			w.errChan <- fmt.Errorf("failed to create request: %v", err)
 			continue
 		}
 		klog.V(2).Infof("Wrote leaf at index %d", index)

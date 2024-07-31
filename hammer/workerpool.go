@@ -21,6 +21,9 @@ type worker interface {
 	Kill()
 }
 
+// This works well enough for the simple task we ask of it at the moment.
+// If we find ourselves adding more features to this, consider swapping it
+// for a library such as https://github.com/alitto/pond.
 func newWorkerPool(factory func() worker) workerPool {
 	workers := make([]worker, 0)
 	pool := workerPool{

@@ -293,16 +293,12 @@ func GetEntryBundle(ctx context.Context, f Fetcher, i, logSize uint64) (api.Entr
 	sRaw, err := f(ctx, p)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return bundle, fmt.Errorf("leaf index %d not found: %w", i, err)
+			return bundle, fmt.Errorf("leaf bundle at index %d not found: %v", i, err)
 		}
-		return bundle, fmt.Errorf("failed to fetch leaf index %d: %w", i, err)
+		return bundle, fmt.Errorf("failed to fetch leaf bundle at index %d: %v", i, err)
 	}
 	if err := bundle.UnmarshalText(sRaw); err != nil {
-		return bundle, fmt.Errorf("failed to parse EntryBundle for index %d: %v", i, err)
-	}
-	offset := int(i % 256)
-	if offset > len(bundle.Entries) {
-		return bundle, fmt.Errorf("wanted leaf at tile index %d but only got %d entries", offset, len(bundle.Entries))
+		return bundle, fmt.Errorf("failed to parse EntryBundle at index %d: %v", i, err)
 	}
 	return bundle, nil
 }
