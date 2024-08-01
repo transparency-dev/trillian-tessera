@@ -68,7 +68,7 @@ func LogConfigSetFromFile(filename string) (*configpb.LogConfigSet, error) {
 //   - Merge delays (if present) are correct.
 //
 // Returns the validated structures (useful to avoid double validation).
-func ValidateLogConfig(cfg *configpb.LogConfig) (*ValidatedLogConfig, error) {
+func validateLogConfig(cfg *configpb.LogConfig) (*ValidatedLogConfig, error) {
 	if len(cfg.Origin) == 0 {
 		return nil, errors.New("empty log origin")
 	}
@@ -152,24 +152,24 @@ func ValidateLogConfig(cfg *configpb.LogConfig) (*ValidatedLogConfig, error) {
 	return &vCfg, nil
 }
 
-func ValidateLogConfigSet(cfg *configpb.LogConfigSet) error {
-	// Check that logs have no duplicate or empty prefixes. Apply other LogConfig
-	// specific checks.
+// ValidateLogConfigSet validate each configs independently and makes sure
+// there aren't any duplicate entries.
+func ValidateLogConfigSet(cfg *configpb.LogConfigSet) ([]*ValidatedLogConfig, error) {
 	logNameMap := make(map[string]bool)
+	ret := []*ValidatedLogConfig{}
 	for _, logCfg := range cfg.Config {
-		if _, err := ValidateLogConfig(logCfg); err != nil {
-			return fmt.Errorf("log config: %v: %v", err, logCfg)
-		}
-		if len(logCfg.Origin) == 0 {
-			return fmt.Errorf("log config: empty origin: %v", logCfg)
+		vcfg, err := validateLogConfig(logCfg)
+		if err != nil {
+			return nil, fmt.Errorf("log config: %v: %v", err, logCfg)
 		}
 		if logNameMap[logCfg.Origin] {
-			return fmt.Errorf("log config: duplicate origin: %s: %v", logCfg.Origin, logCfg)
+			return nil, fmt.Errorf("log config: duplicate origin: %s: %v", logCfg.Origin, logCfg)
 		}
 		logNameMap[logCfg.Origin] = true
+		ret = append(ret, vcfg)
 	}
 
-	return nil
+	return ret, nil
 }
 
 var stringToKeyUsage = map[string]x509.ExtKeyUsage{

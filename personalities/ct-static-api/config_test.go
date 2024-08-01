@@ -244,7 +244,7 @@ func TestValidateLogConfig(t *testing.T) {
 		},
 	} {
 		t.Run(tc.desc, func(t *testing.T) {
-			vc, err := ValidateLogConfig(tc.cfg)
+			vc, err := validateLogConfig(tc.cfg)
 			if len(tc.wantErr) == 0 && err != nil {
 				t.Errorf("ValidateLogConfig()=%v, want nil", err)
 			}
@@ -309,7 +309,7 @@ func TestValidateLogConfigSet(t *testing.T) {
 		},
 	} {
 		t.Run(tc.desc, func(t *testing.T) {
-			err := ValidateLogConfigSet(tc.cfg)
+			_, err := ValidateLogConfigSet(tc.cfg)
 			if len(tc.wantErr) == 0 && err != nil {
 				t.Fatalf("ValidateLogConfigSet()=%v, want nil", err)
 			}

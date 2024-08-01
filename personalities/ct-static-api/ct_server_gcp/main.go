@@ -91,7 +91,8 @@ func main() {
 		klog.Exitf("Failed to read config: %v", err)
 	}
 
-	if err := ctfe.ValidateLogConfigSet(cfgs); err != nil {
+	vCfgs, err := ctfe.ValidateLogConfigSet(cfgs)
+	if err != nil {
 		klog.Exitf("Invalid config: %v", err)
 	}
 
@@ -113,10 +114,10 @@ func main() {
 	// Register handlers for all the configured logs using the correct RPC
 	// client.
 	var publicKeys []crypto.PublicKey
-	for _, c := range cfgs.Config {
+	for _, vc := range vCfgs {
 		inst, err := setupAndRegister(ctx,
 			*rpcDeadline,
-			c,
+			vc,
 			corsMux,
 			*maskInternalErrors,
 			cache.Type(*cacheType),
@@ -250,12 +251,7 @@ func awaitSignal(doneFn func()) {
 	doneFn()
 }
 
-func setupAndRegister(ctx context.Context, deadline time.Duration, cfg *configpb.LogConfig, mux *http.ServeMux, maskInternalErrors bool, cacheType cache.Type, cacheOption cache.Option) (*ctfe.Instance, error) {
-	vCfg, err := ctfe.ValidateLogConfig(cfg)
-	if err != nil {
-		return nil, err
-	}
-
+func setupAndRegister(ctx context.Context, deadline time.Duration, vCfg *ctfe.ValidatedLogConfig, mux *http.ServeMux, maskInternalErrors bool, cacheType cache.Type, cacheOption cache.Option) (*ctfe.Instance, error) {
 	opts := ctfe.InstanceOptions{
 		Validated:          vCfg,
 		Deadline:           deadline,
@@ -280,9 +276,9 @@ func setupAndRegister(ctx context.Context, deadline time.Duration, cfg *configpb
 		opts.CertificateQuotaUser = ctfe.QuotaUserForCert
 	}
 
-	switch cfg.StorageConfig.(type) {
+	switch vCfg.Config.StorageConfig.(type) {
 	case *configpb.LogConfig_Gcp:
-		storage, err := newGCPStorage(ctx, cfg.GetGcp())
+		storage, err := newGCPStorage(ctx, vCfg.Config.GetGcp())
 		if err != nil {
 			return nil, fmt.Errorf("failed to initialize GCP storage: %v", err)
 		}
