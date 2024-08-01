@@ -207,6 +207,7 @@ func (w *LogWriter) Run(ctx context.Context) {
 		lt.idx, lt.assignedAt = index, time.Now()
 		// See if we can send a leaf sample
 		select {
+		// TODO: we might want to count dropped samples, and/or make sampling a bit more statistical.
 		case w.leafChan <- lt:
 		default:
 		}

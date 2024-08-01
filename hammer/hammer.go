@@ -220,10 +220,19 @@ func (h *Hammer) Run(ctx context.Context) {
 					}
 					sample = &l
 				}
+				// Stop considering leaf times once we've caught up with that cross
+				// either the current checkpoint or "now":
+				// - leaves with indices beyond the tree size we're considering are not integrated yet, so we can't calculate their TTI
+				// - leaves which were queued before "now", but not assigned by "now" should also be ignored as they don't fall into this epoch (and would contribute a -ve latency if they were included).
 				if sample.idx >= newSize || sample.assignedAt.After(now) {
 					break
 				}
 				queueLatency += sample.assignedAt.Sub(sample.queuedAt)
+				// totalLatency is skewed towards being higher than perhaps it may technically be by:
+				// - the tick interval of this goroutine,
+				// - the tick interval of the goroutine which updates the LogStateTracker,
+				// - any latency in writes to the log becoming visible for reads.
+				// But it's probably good enough for now.
 				totalLatency += now.Sub(sample.queuedAt)
 
 				numLeaves++
@@ -373,7 +382,7 @@ func hostUI(ctx context.Context, hammer *Hammer) {
 				growth.Add(float64(s - lastSize))
 				lastSize = s
 				qps := growth.Avg() * float64(time.Second/interval)
-				text := fmt.Sprintf("Read: %s\nWrite: %s\nTreeSize: %d (Δ %.0fqps over %ds)\nTime-in-queue: %s\nTotal-time-to-integrate: %s",
+				text := fmt.Sprintf("Read: %s\nWrite: %s\nTreeSize: %d (Δ %.0fqps over %ds)\nTime-in-queue: %s\nObserved-time-to-integrate: %s",
 					hammer.readThrottle.String(),
 					hammer.writeThrottle.String(),
 					s,
