@@ -18,7 +18,7 @@ require (
 	k8s.io/klog/v2 v2.130.1
 )
 
-require github.com/RobinUS2/golang-moving-average v1.0.0 // indirect
+require github.com/RobinUS2/golang-moving-average v1.0.0
 
 require (
 	cel.dev/expr v0.15.0 // indirect
