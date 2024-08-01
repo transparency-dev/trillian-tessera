@@ -30,6 +30,7 @@ services:
       "--private_key_path=/key",
       "--public_key_path=/key.pub",
       "--alsologtostderr",
+      "--v=1",
     ]
     restart: always
     depends_on:
