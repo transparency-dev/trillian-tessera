@@ -167,7 +167,7 @@ func (w httpLeafWriter) Write(ctx context.Context, newLeaf []byte) (uint64, erro
 		// Continue below
 	case http.StatusServiceUnavailable, http.StatusBadGateway, http.StatusGatewayTimeout:
 		// These status codes may indicate a delay before retrying, so handle that here:
-		retryDelay(resp.Header.Get("RetryAfter"), time.Second)
+		time.Sleep(retryDelay(resp.Header.Get("RetryAfter"), time.Second))
 
 		return 0, fmt.Errorf("log not available. Status code: %d. Body: %q %w", resp.StatusCode, body, ErrRetry)
 	default:
