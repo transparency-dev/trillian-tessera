@@ -259,7 +259,7 @@ func (s *Storage) sequenceBatch(ctx context.Context, entries []*tessera.Entry) e
 // integrate incorporates the provided entries into the log starting at fromSeq.
 func (s *Storage) integrate(ctx context.Context, tx *sql.Tx, fromSeq uint64, entries []*tessera.Entry) error {
 	tb := storage.NewTreeBuilder(func(ctx context.Context, tileIDs []storage.TileID, treeSize uint64) ([]*api.HashTile, error) {
-		hashTiles := make([]*api.HashTile, 0, len(tileIDs))
+		hashTiles := make([]*api.HashTile, len(tileIDs))
 		if len(tileIDs) == 0 {
 			return hashTiles, nil
 		}
@@ -288,6 +288,7 @@ func (s *Storage) integrate(ctx context.Context, tx *sql.Tx, fromSeq uint64, ent
 			}
 		}()
 
+		i := 0
 		for rows.Next() {
 			var tile []byte
 			if err := rows.Scan(&tile); err != nil {
@@ -297,7 +298,8 @@ func (s *Storage) integrate(ctx context.Context, tx *sql.Tx, fromSeq uint64, ent
 			if err := t.UnmarshalText(tile); err != nil {
 				return nil, fmt.Errorf("api.HashTile.unmarshalText: %w", err)
 			}
-			hashTiles = append(hashTiles, t)
+			hashTiles[i] = t
+			i++
 		}
 		if err = rows.Err(); err != nil {
 			return nil, fmt.Errorf("rows.Err: %w", err)
