@@ -156,11 +156,22 @@ func (h *Hammer) Run(ctx context.Context) {
 
 	// Set up logging for any errors
 	go func() {
+		tick := time.NewTicker(time.Second)
+		pbCount := 0
 		for {
 			select {
 			case <-ctx.Done(): //context cancelled
 				return
+			case <-tick.C:
+				if pbCount > 0 {
+					klog.Warningf("%d requests received pushback from log", pbCount)
+					pbCount = 0
+				}
 			case err := <-h.errChan:
+				if errors.Is(err, ErrRetry) {
+					pbCount++
+					continue
+				}
 				klog.Warning(err)
 			}
 		}
