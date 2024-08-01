@@ -10,7 +10,7 @@ import (
 	"k8s.io/klog/v2"
 )
 
-var mysqlURI = flag.String("mysql_uri", "root:root@tcp(db:3306)/test_tessera", "Connection string for a MySQL database")
+var mysqlURI = flag.String("mysql_uri", "root:root@tcp(localhost:3306)/test_tessera", "Connection string for a MySQL database")
 
 func TestMain(m *testing.M) {
 	klog.InitFlags(nil)
