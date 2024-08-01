@@ -85,6 +85,9 @@ func (c Entry) LeafData(idx uint64) []byte {
 }
 
 // MerkleTreeLeaf returns a RFC 6962 MerkleTreeLeaf.
+//
+// Note that we embed an SCT extension which captures the index of the entry in the log according to
+// the mechanism specified in https://c2sp.org/ct-static-api.
 func (e *Entry) MerkleTreeLeaf(idx uint64) []byte {
 	b := &cryptobyte.Builder{}
 	b.AddUint8(0 /* version = v1 */)
@@ -111,24 +114,7 @@ func (e *Entry) MerkleTreeLeaf(idx uint64) []byte {
 // Note that we embed an SCT extension which captures the index of the entry in the log according to
 // the mechanism specified in https://c2sp.org/ct-static-api.
 func (c Entry) MerkleLeafHash(leafIndex uint64) []byte {
-	b := &cryptobyte.Builder{}
-	b.AddUint8(0 /* version = v1 */)
-	b.AddUint8(0 /* leaf_type = timestamped_entry */)
-	b.AddUint64(uint64(c.Timestamp))
-	if !c.IsPrecert {
-		b.AddUint16(0 /* entry_type = x509_entry */)
-		b.AddUint24LengthPrefixed(func(b *cryptobyte.Builder) {
-			b.AddBytes(c.Certificate)
-		})
-	} else {
-		b.AddUint16(1 /* entry_type = precert_entry */)
-		b.AddBytes(c.IssuerKeyHash[:])
-		b.AddUint24LengthPrefixed(func(b *cryptobyte.Builder) {
-			b.AddBytes(c.Certificate)
-		})
-	}
-	addExtensions(b, leafIndex)
-	return rfc6962.DefaultHasher.HashLeaf(b.BytesOrPanic())
+	return rfc6962.DefaultHasher.HashLeaf(c.MerkleTreeLeaf(leafIndex))
 }
 
 func (c Entry) Identity() []byte {
