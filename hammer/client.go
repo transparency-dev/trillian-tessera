@@ -78,6 +78,9 @@ func newFetcher(root *url.URL) client.Fetcher {
 var getByScheme = map[string]func(context.Context, *url.URL) ([]byte, error){
 	"http":  readHTTP,
 	"https": readHTTP,
+	"file": func(_ context.Context, u *url.URL) ([]byte, error) {
+		return os.ReadFile(u.Path)
+	},
 }
 
 func readHTTP(ctx context.Context, u *url.URL) ([]byte, error) {
