@@ -194,7 +194,7 @@ func NewCertValidationOpts(trustedRoots *x509util.PEMCertPool, currentTime time.
 
 // logInfo holds information for a specific log instance.
 type logInfo struct {
-	// LogOrigin is a pre-formatted string identifying the log for diagnostics
+	// LogOrigin identifies the log, as per https://c2sp.org/static-ct-api
 	LogOrigin string
 	// TimeSource is a util.TimeSource that can be injected for testing
 	TimeSource util.TimeSource
