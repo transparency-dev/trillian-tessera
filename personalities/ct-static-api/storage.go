@@ -21,26 +21,28 @@ import (
 	"github.com/transparency-dev/trillian-tessera/ctonly"
 )
 
+// Storage provides all the storage primitives necessary to write to a ct-static-api log.
 type Storage interface {
 	// 	Add assign an index to the provided Entry, stages the entry for integration, and return it the assigned index.
 	Add(context.Context, *ctonly.Entry) (uint64, error)
 }
 
-// CTStorage implements Storage
+// CTStorage implements Storage.
 type CTStorage struct {
-	StoreData func(context.Context, *ctonly.Entry) (uint64, error)
+	storeData func(context.Context, *ctonly.Entry) (uint64, error)
 	// TODO(phboneff): add storeExtraData
 	// TODO(phboneff): add dedupe
 }
 
-// NewStorage
+// NewCTStorage instantiates a CTStorage object.
 func NewCTSTorage(logStorage tessera.Storage) (*CTStorage, error) {
 	ctStorage := new(CTStorage)
-	ctStorage.StoreData = tessera.NewCertificateTransparencySequencedWriter(logStorage)
+	ctStorage.storeData = tessera.NewCertificateTransparencySequencedWriter(logStorage)
 	return ctStorage, nil
 }
 
+// Add stores CT entries.
 func (cts CTStorage) Add(ctx context.Context, entry *ctonly.Entry) (uint64, error) {
 	// TODO(phboneff): add deduplication and chain storage
-	return cts.StoreData(ctx, entry)
+	return cts.storeData(ctx, entry)
 }
