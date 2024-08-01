@@ -39,7 +39,6 @@ func mustMarshalAny(pb proto.Message) *anypb.Any {
 }
 
 func TestValidateLogConfig(t *testing.T) {
-	//pubKey := mustReadPublicKey("../testdata/ct-http-server.pubkey.pem")
 	privKey := mustMarshalAny(&keyspb.PEMKeyFile{Path: "../testdata/ct-http-server.privkey.pem", Password: "dirk"})
 
 	for _, tc := range []struct {

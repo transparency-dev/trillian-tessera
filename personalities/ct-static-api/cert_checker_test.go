@@ -82,7 +82,7 @@ func TestIsPrecertificate(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		gotPrecert, err := IsPrecertificate(test.cert)
+		gotPrecert, err := isPrecertificate(test.cert)
 		t.Run(test.desc, func(t *testing.T) {
 			if err != nil {
 				if !test.wantErr {
@@ -257,7 +257,7 @@ func TestValidateChain(t *testing.T) {
 			if test.modifyOpts != nil {
 				test.modifyOpts(&validateOpts)
 			}
-			gotPath, err := ValidateChain(test.chain, validateOpts)
+			gotPath, err := validateChain(test.chain, validateOpts)
 			if err != nil {
 				if !test.wantErr {
 					t.Errorf("ValidateChain()=%v,%v; want _,nil", gotPath, err)
@@ -322,7 +322,7 @@ func TestCA(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.desc, func(t *testing.T) {
 			validateOpts.acceptOnlyCA = test.caOnly
-			gotPath, err := ValidateChain(test.chain, validateOpts)
+			gotPath, err := validateChain(test.chain, validateOpts)
 			if err != nil {
 				if !test.wantErr {
 					t.Errorf("ValidateChain()=%v,%v; want _,nil", gotPath, err)
@@ -386,7 +386,7 @@ func TestNotAfterRange(t *testing.T) {
 			if !test.notAfterLimit.IsZero() {
 				validateOpts.notAfterLimit = &test.notAfterLimit
 			}
-			gotPath, err := ValidateChain(test.chain, validateOpts)
+			gotPath, err := validateChain(test.chain, validateOpts)
 			if err != nil {
 				if !test.wantErr {
 					t.Errorf("ValidateChain()=%v,%v; want _,nil", gotPath, err)
@@ -498,7 +498,7 @@ func TestRejectExpiredUnexpired(t *testing.T) {
 			validateOpts.currentTime = tc.now
 			validateOpts.rejectExpired = tc.rejectExpired
 			validateOpts.rejectUnexpired = tc.rejectUnexpired
-			_, err := ValidateChain(chain, validateOpts)
+			_, err := validateChain(chain, validateOpts)
 			if err != nil {
 				if len(tc.wantErr) == 0 {
 					t.Errorf("ValidateChain()=_,%v; want _,nil", err)
@@ -589,7 +589,7 @@ func TestCMPreIssuedCert(t *testing.T) {
 				trustedRoots: cmRoot,
 				extKeyUsages: tc.eku,
 			}
-			chain, err := ValidateChain(rawChain, opts)
+			chain, err := validateChain(rawChain, opts)
 			if err != nil {
 				t.Fatalf("failed to ValidateChain: %v", err)
 			}

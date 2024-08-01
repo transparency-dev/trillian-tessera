@@ -1,4 +1,4 @@
-// Copyright 2016 Google LLC. All Rights Reserved.
+// Copllianyright 2016 Google LLC. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -379,14 +379,14 @@ func getRPCDeadlineTime(li *logInfo) time.Time {
 // cert is of the correct type and chains to a trusted root.
 func verifyAddChain(li *logInfo, req ct.AddChainRequest, expectingPrecert bool) ([]*x509.Certificate, error) {
 	// We already checked that the chain is not empty so can move on to verification
-	validPath, err := ValidateChain(req.Chain, li.validationOpts)
+	validPath, err := validateChain(req.Chain, li.validationOpts)
 	if err != nil {
 		// We rejected it because the cert failed checks or we could not find a path to a root etc.
 		// Lots of possible causes for errors
 		return nil, fmt.Errorf("chain failed to verify: %s", err)
 	}
 
-	isPrecert, err := IsPrecertificate(validPath[0])
+	isPrecert, err := isPrecertificate(validPath[0])
 	if err != nil {
 		return nil, fmt.Errorf("precert test failed: %s", err)
 	}

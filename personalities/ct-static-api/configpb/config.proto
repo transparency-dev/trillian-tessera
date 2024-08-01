@@ -37,7 +37,7 @@ message LogConfig {
   // Paths to the files containing root certificates that are acceptable to the
   // log. The certs are served through get-roots endpoint.
   repeated string roots_pem_file = 2;
-  // The private key used for signing STHs etc.
+  // The private key used for signing Checkpoints or SCTs.
   google.protobuf.Any private_key = 3;
   // The public key matching the above private key (if both are present). 
   // It can be specified for the convenience of test tools, but it not used

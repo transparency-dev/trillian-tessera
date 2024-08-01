@@ -86,8 +86,6 @@ func main() {
 		return nil, fmt.Errorf("pkcs11: got %T, want *keyspb.PKCS11Config", pb)
 	})
 
-	//var cfg *configpb.LogConfigSet
-	//var err error
 	cfgs, err := ctfe.LogConfigSetFromFile(*logConfig)
 	if err != nil {
 		klog.Exitf("Failed to read config: %v", err)

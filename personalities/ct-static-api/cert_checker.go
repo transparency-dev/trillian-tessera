@@ -29,10 +29,10 @@ var (
 	ErrNoRFCCompliantPathFound = errors.New("no RFC compliant path to root found when trying to validate chain")
 )
 
-// IsPrecertificate tests if a certificate is a pre-certificate as defined in CT.
+// isPrecertificate tests if a certificate is a pre-certificate as defined in CT.
 // An error is returned if the CT extension is present but is not ASN.1 NULL as defined
 // by the spec.
-func IsPrecertificate(cert *x509.Certificate) (bool, error) {
+func isPrecertificate(cert *x509.Certificate) (bool, error) {
 	for _, ext := range cert.Extensions {
 		if x509.OIDExtensionCTPoison.Equal(ext.Id) {
 			if !ext.Critical || !bytes.Equal(asn1.NullBytes, ext.Value) {
@@ -46,12 +46,12 @@ func IsPrecertificate(cert *x509.Certificate) (bool, error) {
 	return false, nil
 }
 
-// ValidateChain takes the certificate chain as it was parsed from a JSON request. Ensures all
+// validateChain takes the certificate chain as it was parsed from a JSON request. Ensures all
 // elements in the chain decode as X.509 certificates. Ensures that there is a valid path from the
 // end entity certificate in the chain to a trusted root cert, possibly using the intermediates
 // supplied in the chain. Then applies the RFC requirement that the path must involve all
 // the submitted chain in the order of submission.
-func ValidateChain(rawChain [][]byte, validationOpts CertValidationOpts) ([]*x509.Certificate, error) {
+func validateChain(rawChain [][]byte, validationOpts CertValidationOpts) ([]*x509.Certificate, error) {
 	// First make sure the certs parse as X.509
 	chain := make([]*x509.Certificate, 0, len(rawChain))
 	intermediatePool := x509util.NewPEMCertPool()
