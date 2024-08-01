@@ -157,8 +157,9 @@ func MonotonicallyIncreasingNextLeaf() func(uint64) uint64 {
 // This is used when sampling leaves which are added in order to later calculate
 // how long it took to for them to become integrated.
 type leafTime struct {
-	idx uint64
-	at  time.Time
+	idx        uint64
+	queuedAt   time.Time
+	assignedAt time.Time
 }
 
 // NewLogWriter creates a LogWriter.
@@ -197,14 +198,16 @@ func (w *LogWriter) Run(ctx context.Context) {
 		case <-w.throttle:
 		}
 		newLeaf := w.gen()
+		lt := leafTime{queuedAt: time.Now()}
 		index, err := w.writer(ctx, newLeaf)
 		if err != nil {
 			w.errChan <- fmt.Errorf("failed to create request: %v", err)
 			continue
 		}
+		lt.idx, lt.assignedAt = index, time.Now()
 		// See if we can send a leaf sample
 		select {
-		case w.leafChan <- leafTime{idx: index, at: time.Now()}:
+		case w.leafChan <- lt:
 		default:
 		}
 		klog.V(2).Infof("Wrote leaf at index %d", index)
