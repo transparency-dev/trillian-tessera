@@ -27,6 +27,7 @@ import (
 	"strings"
 	"time"
 
+	movingaverage "github.com/RobinUS2/golang-moving-average"
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 	"github.com/transparency-dev/trillian-tessera/client"
@@ -103,6 +104,7 @@ func NewHammer(tracker *client.LogStateTracker, f client.Fetcher, w LeafWriter) 
 	readThrottle := NewThrottle(*maxReadOpsPerSecond)
 	writeThrottle := NewThrottle(*maxWriteOpsPerSecond)
 	errChan := make(chan error, 20)
+	leafSampleChan := make(chan leafTime, 100)
 
 	gen := newLeafGenerator(tracker.LatestConsistent.Size, *leafMinSize)
 	randomReaders := newWorkerPool(func() worker {
@@ -111,27 +113,33 @@ func NewHammer(tracker *client.LogStateTracker, f client.Fetcher, w LeafWriter) 
 	fullReaders := newWorkerPool(func() worker {
 		return NewLeafReader(tracker, f, MonotonicallyIncreasingNextLeaf(), readThrottle.tokenChan, errChan)
 	})
-	writers := newWorkerPool(func() worker { return NewLogWriter(w, gen, writeThrottle.tokenChan, errChan) })
+	writers := newWorkerPool(func() worker { return NewLogWriter(w, gen, writeThrottle.tokenChan, errChan, leafSampleChan) })
 
 	return &Hammer{
-		randomReaders: randomReaders,
-		fullReaders:   fullReaders,
-		writers:       writers,
-		readThrottle:  readThrottle,
-		writeThrottle: writeThrottle,
-		tracker:       tracker,
-		errChan:       errChan,
+		randomReaders:   randomReaders,
+		fullReaders:     fullReaders,
+		writers:         writers,
+		readThrottle:    readThrottle,
+		writeThrottle:   writeThrottle,
+		tracker:         tracker,
+		errChan:         errChan,
+		leafSampleChan:  leafSampleChan,
+		integrationTime: movingaverage.New(30),
+		queueTime:       movingaverage.New(30),
 	}
 }
 
 type Hammer struct {
-	randomReaders workerPool
-	fullReaders   workerPool
-	writers       workerPool
-	readThrottle  *Throttle
-	writeThrottle *Throttle
-	tracker       *client.LogStateTracker
-	errChan       chan error
+	randomReaders   workerPool
+	fullReaders     workerPool
+	writers         workerPool
+	readThrottle    *Throttle
+	writeThrottle   *Throttle
+	tracker         *client.LogStateTracker
+	errChan         chan error
+	leafSampleChan  chan leafTime
+	queueTime       *movingaverage.MovingAverage
+	integrationTime *movingaverage.MovingAverage
 }
 
 func (h *Hammer) Run(ctx context.Context) {
@@ -163,7 +171,7 @@ func (h *Hammer) Run(ctx context.Context) {
 	go h.writeThrottle.Run(ctx)
 
 	go func() {
-		tick := time.NewTicker(1 * time.Second)
+		tick := time.NewTicker(500 * time.Millisecond)
 		for {
 			select {
 			case <-ctx.Done():
@@ -182,6 +190,57 @@ func (h *Hammer) Run(ctx context.Context) {
 				if newSize > size {
 					klog.V(1).Infof("Updated checkpoint from %d to %d", size, newSize)
 				}
+			}
+		}
+	}()
+
+	go func() {
+		tick := time.NewTicker(100 * time.Millisecond)
+		size := h.tracker.LatestConsistent.Size
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-tick.C:
+			}
+			newSize := h.tracker.LatestConsistent.Size
+			if newSize <= size {
+				continue
+			}
+			now := time.Now()
+			totalLatency := time.Duration(0)
+			queueLatency := time.Duration(0)
+			numLeaves := 0
+			var sample *leafTime
+			for {
+				if sample == nil {
+					l, ok := <-h.leafSampleChan
+					if !ok {
+						break
+					}
+					sample = &l
+				}
+				// Stop considering leaf times once we've caught up with that cross
+				// either the current checkpoint or "now":
+				// - leaves with indices beyond the tree size we're considering are not integrated yet, so we can't calculate their TTI
+				// - leaves which were queued before "now", but not assigned by "now" should also be ignored as they don't fall into this epoch (and would contribute a -ve latency if they were included).
+				if sample.idx >= newSize || sample.assignedAt.After(now) {
+					break
+				}
+				queueLatency += sample.assignedAt.Sub(sample.queuedAt)
+				// totalLatency is skewed towards being higher than perhaps it may technically be by:
+				// - the tick interval of this goroutine,
+				// - the tick interval of the goroutine which updates the LogStateTracker,
+				// - any latency in writes to the log becoming visible for reads.
+				// But it's probably good enough for now.
+				totalLatency += now.Sub(sample.queuedAt)
+
+				numLeaves++
+				sample = nil
+			}
+			if numLeaves > 0 {
+				h.integrationTime.Add(float64(totalLatency/time.Millisecond) / float64(numLeaves))
+				h.queueTime.Add(float64(queueLatency/time.Millisecond) / float64(numLeaves))
 			}
 		}
 	}()
@@ -277,9 +336,16 @@ func (t *Throttle) String() string {
 	return fmt.Sprintf("Current max: %d/s. Oversupply in last second: %d", t.opsPerSecond, t.oversupply)
 }
 
+func formatMovingAverage(ma *movingaverage.MovingAverage) string {
+	aMin, _ := ma.Min()
+	aMax, _ := ma.Max()
+	aAvg := ma.Avg()
+	return fmt.Sprintf("%.0fms/%.0fms/%.0fms (min/avg/max)", aMin, aAvg, aMax)
+}
+
 func hostUI(ctx context.Context, hammer *Hammer) {
 	grid := tview.NewGrid()
-	grid.SetRows(3, 0, 10).SetColumns(0).SetBorders(true)
+	grid.SetRows(5, 0, 10).SetColumns(0).SetBorders(true)
 	// Status box
 	statusView := tview.NewTextView()
 	grid.AddItem(statusView, 0, 0, 1, 1, 0, 0, false)
@@ -301,14 +367,30 @@ func hostUI(ctx context.Context, hammer *Hammer) {
 	grid.AddItem(helpView, 2, 0, 1, 1, 0, 0, false)
 
 	app := tview.NewApplication()
-	ticker := time.NewTicker(1 * time.Second)
+	interval := 500 * time.Millisecond
+	ticker := time.NewTicker(interval)
 	go func() {
+		lastSize := hammer.tracker.LatestConsistent.Size
+		maSlots := int((30 * time.Second) / interval)
+		growth := movingaverage.New(maSlots)
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				text := fmt.Sprintf("Read: %s\nWrite: %s", hammer.readThrottle.String(), hammer.writeThrottle.String())
+				s := hammer.tracker.LatestConsistent.Size
+				growth.Add(float64(s - lastSize))
+				lastSize = s
+				qps := growth.Avg() * float64(time.Second/interval)
+				text := fmt.Sprintf("Read: %s\nWrite: %s\nTreeSize: %d (Δ %.0fqps over %ds)\nTime-in-queue: %s\nObserved-time-to-integrate: %s",
+					hammer.readThrottle.String(),
+					hammer.writeThrottle.String(),
+					s,
+					qps,
+					time.Duration(maSlots*int(interval))/time.Second,
+					formatMovingAverage(hammer.queueTime),
+					formatMovingAverage(hammer.integrationTime),
+				)
 				statusView.SetText(text)
 				app.Draw()
 			}

@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"time"
 
 	"github.com/transparency-dev/trillian-tessera/client"
 	"k8s.io/klog/v2"
@@ -151,15 +152,26 @@ func MonotonicallyIncreasingNextLeaf() func(uint64) uint64 {
 	}
 }
 
+// leafTime records the time at which a leaf was assigned the given index.
+//
+// This is used when sampling leaves which are added in order to later calculate
+// how long it took to for them to become integrated.
+type leafTime struct {
+	idx        uint64
+	queuedAt   time.Time
+	assignedAt time.Time
+}
+
 // NewLogWriter creates a LogWriter.
 // u is the URL of the write endpoint for the log.
 // gen is a function that generates new leaves to add.
-func NewLogWriter(writer LeafWriter, gen func() []byte, throttle <-chan bool, errChan chan<- error) *LogWriter {
+func NewLogWriter(writer LeafWriter, gen func() []byte, throttle <-chan bool, errChan chan<- error, leafSampleChan chan<- leafTime) *LogWriter {
 	return &LogWriter{
 		writer:   writer,
 		gen:      gen,
 		throttle: throttle,
 		errChan:  errChan,
+		leafChan: leafSampleChan,
 	}
 }
 
@@ -169,6 +181,7 @@ type LogWriter struct {
 	gen      func() []byte
 	throttle <-chan bool
 	errChan  chan<- error
+	leafChan chan<- leafTime
 	cancel   func()
 }
 
@@ -185,10 +198,18 @@ func (w *LogWriter) Run(ctx context.Context) {
 		case <-w.throttle:
 		}
 		newLeaf := w.gen()
+		lt := leafTime{queuedAt: time.Now()}
 		index, err := w.writer(ctx, newLeaf)
 		if err != nil {
 			w.errChan <- fmt.Errorf("failed to create request: %v", err)
 			continue
+		}
+		lt.idx, lt.assignedAt = index, time.Now()
+		// See if we can send a leaf sample
+		select {
+		// TODO: we might want to count dropped samples, and/or make sampling a bit more statistical.
+		case w.leafChan <- lt:
+		default:
 		}
 		klog.V(2).Infof("Wrote leaf at index %d", index)
 	}

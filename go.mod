@@ -5,6 +5,7 @@ go 1.22.5
 require (
 	cloud.google.com/go/spanner v1.65.0
 	cloud.google.com/go/storage v1.43.0
+	github.com/RobinUS2/golang-moving-average v1.0.0
 	github.com/gdamore/tcell/v2 v2.7.4
 	github.com/globocom/go-buffer v1.2.2
 	github.com/google/go-cmp v0.6.0
