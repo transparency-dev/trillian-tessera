@@ -20,6 +20,7 @@
 package mysql_test
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"flag"
@@ -28,6 +29,7 @@ import (
 	"time"
 
 	tessera "github.com/transparency-dev/trillian-tessera"
+	"github.com/transparency-dev/trillian-tessera/api"
 	"github.com/transparency-dev/trillian-tessera/storage/mysql"
 	"golang.org/x/mod/sumdb/note"
 	"k8s.io/klog/v2"
@@ -279,6 +281,53 @@ func TestParallelAdd(t *testing.T) {
 						t.Errorf("got err: %v", err)
 					}
 				}()
+			}
+		})
+	}
+}
+
+func TestEntryBundleRoundTrip(t *testing.T) {
+	ctx := context.Background()
+	s := newTestMySQLStorage(t, ctx)
+
+	for _, test := range []struct {
+		name  string
+		entry []byte
+	}{
+		{
+			name:  "empty string entry",
+			entry: []byte(""),
+		},
+		{
+			name:  "string entry",
+			entry: []byte("I love Trillian Tessera"),
+		},
+		{
+			name:  "empty byte",
+			entry: []byte{},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			entryIndex, err := s.Add(ctx, tessera.NewEntry(test.entry))
+			if err != nil {
+				t.Errorf("Add got err: %v", err)
+			}
+			entryBundleRaw, err := s.ReadEntryBundle(ctx, entryIndex/256)
+			if err != nil {
+				t.Errorf("ReadEntryBundle got err: %v", err)
+			}
+
+			bundle := api.EntryBundle{}
+			if err := bundle.UnmarshalText(entryBundleRaw); err != nil {
+				t.Errorf("failed to parse EntryBundle at index %d: %v", entryIndex, err)
+			}
+			gotEntries := bundle.Entries
+			if len(gotEntries) == 0 {
+				t.Error("no entry found")
+			} else {
+				if !bytes.Equal(bundle.Entries[entryIndex%256], test.entry) {
+					t.Errorf("got entry %v want %v", bundle.Entries[0], test.entry)
+				}
 			}
 		})
 	}
