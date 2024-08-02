@@ -57,6 +57,7 @@ type Storage struct {
 }
 
 // New creates a new instance of the MySQL-based Storage.
+// Note that `tessera.WithCheckpointSignerVerifier()` is mandatory in the `opts` argument.
 func New(ctx context.Context, db *sql.DB, opts ...func(*tessera.StorageOptions)) (*Storage, error) {
 	opt := tessera.ResolveStorageOptions(&tessera.StorageOptions{
 		BatchMaxAge:  defaultQueueMaxAge,
