@@ -145,12 +145,16 @@ func New(ctx context.Context, cfg Config, opts ...func(*tessera.StorageOptions))
 				return
 			case <-t.C:
 			}
-			// Don't quicklook for now, it causes issues updating checkpoint too frequently.
-			cctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-			defer cancel()
-			if _, err := r.sequencer.consumeEntries(cctx, DefaultIntegrationSizeLimit, r.integrate); err != nil {
-				klog.Errorf("integrate: %v", err)
-			}
+
+			func() {
+				// Don't quicklook for now, it causes issues updating checkpoint too frequently.
+				cctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+				defer cancel()
+
+				if _, err := r.sequencer.consumeEntries(cctx, DefaultIntegrationSizeLimit, r.integrate); err != nil {
+					klog.Errorf("integrate: %v", err)
+				}
+			}()
 		}
 	}()
 
