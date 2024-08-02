@@ -58,7 +58,7 @@ const (
 	entryBundleSize = 256
 
 	DefaultPushbackMaxOutstanding = 4096
-	DefaultIntegrationSizeLimit   = 2048
+	DefaultIntegrationSizeLimit   = 5 * 4096
 )
 
 // Storage is a GCP based storage implementation for Tessera.
@@ -145,16 +145,12 @@ func New(ctx context.Context, cfg Config, opts ...func(*tessera.StorageOptions))
 				return
 			case <-t.C:
 			}
-			for {
-				cctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-				defer cancel()
-				if more, err := r.sequencer.consumeEntries(cctx, DefaultIntegrationSizeLimit, r.integrate); err != nil {
-					klog.Errorf("integrate: %v", err)
-					break
-				} else if !more {
-					break
-				}
-				klog.V(1).Info("Quickloop")
+			// Don't quicklook for now, it causes issues updating checkpoint too frequently.
+			cctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+			defer cancel()
+			if _, err := r.sequencer.consumeEntries(cctx, DefaultIntegrationSizeLimit, r.integrate); err != nil {
+				klog.Errorf("integrate: %v", err)
+				break
 			}
 		}
 	}()
