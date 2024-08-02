@@ -307,7 +307,7 @@ func TestParallelAdd(t *testing.T) {
 func newTestMySQLStorage(t *testing.T, ctx context.Context) *mysql.Storage {
 	t.Helper()
 
-	s, err := mysql.New(ctx, testDB, tessera.WithCheckpointSignerVerifier(noteSigner, noteVerifier), tessera.WithBatching(256, time.Microsecond))
+	s, err := mysql.New(ctx, testDB, tessera.WithCheckpointSignerVerifier(noteSigner, noteVerifier))
 	if err != nil {
 		t.Errorf("Failed to create mysql.Storage: %v", err)
 	}
