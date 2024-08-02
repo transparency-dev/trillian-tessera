@@ -28,8 +28,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/transparency-dev/merkle/rfc6962"
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/api"
+	"github.com/transparency-dev/trillian-tessera/api/layout"
 	"github.com/transparency-dev/trillian-tessera/storage/mysql"
 	"golang.org/x/mod/sumdb/note"
 	"k8s.io/klog/v2"
@@ -284,6 +286,57 @@ func TestParallelAdd(t *testing.T) {
 						t.Errorf("got err: %v", err)
 					}
 				}()
+			}
+		})
+	}
+}
+
+func TestTileRoundTrip(t *testing.T) {
+	ctx := context.Background()
+	s := newTestMySQLStorage(t, ctx)
+
+	for _, test := range []struct {
+		name  string
+		entry []byte
+	}{
+		{
+			name:  "empty string entry",
+			entry: []byte(""),
+		},
+		{
+			name:  "string entry",
+			entry: []byte("I love Trillian Tessera"),
+		},
+		{
+			name:  "empty byte",
+			entry: []byte{},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			entryIndex, err := s.Add(ctx, tessera.NewEntry(test.entry))
+			if err != nil {
+				t.Errorf("Add got err: %v", err)
+			}
+
+			tileLevel, tileIndex, _, nodeIndex := layout.NodeCoordsToTileAddress(0, entryIndex)
+			tileRaw, err := s.ReadTile(ctx, tileLevel, tileIndex, nodeIndex)
+			if err != nil {
+				t.Errorf("ReadTile got err: %v", err)
+			}
+
+			tile := api.HashTile{}
+			if err := tile.UnmarshalText(tileRaw); err != nil {
+				t.Errorf("failed to parse tile at index %d: %v", entryIndex, err)
+			}
+			nodes := tile.Nodes
+			if len(nodes) == 0 {
+				t.Error("no node found")
+			} else {
+				gotHash := nodes[nodeIndex]
+				wantHash := rfc6962.DefaultHasher.HashLeaf(test.entry)
+				if !bytes.Equal(gotHash, wantHash[:]) {
+					t.Errorf("got hash %v want %v", gotHash, wantHash)
+				}
 			}
 		})
 	}
