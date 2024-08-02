@@ -178,8 +178,12 @@ func TestReadMissingTile(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			if _, err := s.ReadTile(ctx, test.level, test.index, test.width); err != nil {
+			tile, err := s.ReadTile(ctx, test.level, test.index, test.width)
+			if err != nil {
 				t.Errorf("got err: %v", err)
+			}
+			if tile != nil {
+				t.Error("tile is not nil")
 			}
 		})
 	}
@@ -190,26 +194,25 @@ func TestReadMissingEntryBundle(t *testing.T) {
 	s := newTestMySQLStorage(t, ctx)
 
 	for _, test := range []struct {
-		name    string
-		index   uint64
-		wantErr bool
+		name  string
+		index uint64
 	}{
 		{
-			name:    "0",
-			index:   0,
-			wantErr: false,
+			name:  "0",
+			index: 0,
 		},
 		{
-			name:    "123456789",
-			index:   123456789,
-			wantErr: false,
+			name:  "123456789",
+			index: 123456789,
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			_, err := s.ReadEntryBundle(ctx, test.index)
-			gotErr := err != nil
-			if gotErr != test.wantErr {
-				t.Errorf("got err %v want %v", gotErr, test.wantErr)
+			entryBundle, err := s.ReadEntryBundle(ctx, test.index)
+			if err != nil {
+				t.Errorf("got err: %v", err)
+			}
+			if entryBundle != nil {
+				t.Error("entryBundle is not nil")
 			}
 		})
 	}
