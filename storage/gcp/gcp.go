@@ -147,7 +147,7 @@ func New(ctx context.Context, cfg Config, opts ...func(*tessera.StorageOptions))
 			}
 
 			func() {
-				// Don't quicklook for now, it causes issues updating checkpoint too frequently.
+				// Don't quickloop for now, it causes issues updating checkpoint too frequently.
 				cctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 				defer cancel()
 
