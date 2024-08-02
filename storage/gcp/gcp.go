@@ -150,7 +150,6 @@ func New(ctx context.Context, cfg Config, opts ...func(*tessera.StorageOptions))
 			defer cancel()
 			if _, err := r.sequencer.consumeEntries(cctx, DefaultIntegrationSizeLimit, r.integrate); err != nil {
 				klog.Errorf("integrate: %v", err)
-				break
 			}
 		}
 	}()
