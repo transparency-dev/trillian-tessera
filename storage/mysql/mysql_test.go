@@ -94,6 +94,9 @@ func TestMain(m *testing.M) {
 }
 
 // initDatabaseSchema drops the tables and then imports the schema.
+// A separate database connection is required since the schema file contains multiple statements.
+// `multiStatements=true` in the data source name allows multiple statements in one query.
+// This is not being used in the actual MySQL storage implementation.
 func initDatabaseSchema(ctx context.Context) {
 	dropTablesSQL := "DROP TABLE IF EXISTS `Checkpoint`, `Subtree`, `TiledLeaves`"
 
