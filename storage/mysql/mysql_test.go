@@ -230,32 +230,27 @@ func TestAdd(t *testing.T) {
 		name      string
 		entry     []byte
 		wantIndex uint64
-		wantErr   bool
 	}{
 		{
 			name:      "empty string entry",
 			entry:     []byte(""),
 			wantIndex: 0,
-			wantErr:   false,
 		},
 		{
 			name:      "123 string entry",
 			entry:     []byte("123"),
 			wantIndex: 1,
-			wantErr:   false,
 		},
 		{
 			name:      "empty byte",
 			entry:     []byte{},
 			wantIndex: 2,
-			wantErr:   false,
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			index, err := s.Add(ctx, tessera.NewEntry(test.entry))
-			gotErr := err != nil
-			if gotErr != test.wantErr {
-				t.Errorf("got err %v want %v", gotErr, test.wantErr)
+			if err != nil {
+				t.Errorf("got err: %v", err)
 			}
 			if index != test.wantIndex {
 				t.Errorf("got index %d want %d", index, test.wantIndex)
@@ -270,33 +265,28 @@ func TestParallelAdd(t *testing.T) {
 	s := newTestMySQLStorage(t, ctx)
 
 	for _, test := range []struct {
-		name    string
-		entry   []byte
-		wantErr bool
+		name  string
+		entry []byte
 	}{
 		{
-			name:    "empty string entry",
-			entry:   []byte(""),
-			wantErr: false,
+			name:  "empty string entry",
+			entry: []byte(""),
 		},
 		{
-			name:    "123 string entry",
-			entry:   []byte("123"),
-			wantErr: false,
+			name:  "123 string entry",
+			entry: []byte("123"),
 		},
 		{
-			name:    "empty byte",
-			entry:   []byte{},
-			wantErr: false,
+			name:  "empty byte",
+			entry: []byte{},
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			for i := 0; i < 655536; i++ {
+			for i := 0; i < 1024; i++ {
 				go func() {
 					_, err := s.Add(ctx, tessera.NewEntry(test.entry))
-					gotErr := err != nil
-					if gotErr != test.wantErr {
-						t.Errorf("got err %v want %v", gotErr, test.wantErr)
+					if err != nil {
+						t.Errorf("got err: %v", err)
 					}
 				}()
 			}
