@@ -1,0 +1,98 @@
+// Copyright 2017 Google LLC. All Rights Reserved.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+option go_package = "github.com/google/certificate-transparency-go/trillian/ctfe/configpb";
+
+package configpb;
+
+import "crypto/keyspb/keyspb.proto";
+import "google/protobuf/any.proto";
+import "google/protobuf/timestamp.proto";
+
+// LogConfigSet is a set of LogConfig messages.
+message LogConfigSet {
+  repeated LogConfig config = 1;
+}
+
+// LogConfig describes the configuration options for a log instance.
+//
+// NEXT_ID: 15
+message LogConfig {
+  // origin identifies the log. It will be used in its checkpoint, and
+  // is also its submission prefix, as per https://c2sp.org/static-ct-api
+  string origin = 1;
+  // Paths to the files containing root certificates that are acceptable to the
+  // log. The certs are served through get-roots endpoint.
+  repeated string roots_pem_file = 2;
+  // The private key used for signing Checkpoints or SCTs.
+  google.protobuf.Any private_key = 3;
+  // The public key matching the above private key (if both are present). 
+  // It can be specified for the convenience of test tools, but it not used
+  // by the server.
+  keyspb.PublicKey public_key = 4;
+  // If reject_expired is true then the certificate validity period will be
+  // checked against the current time during the validation of submissions.
+  // This will cause expired certificates to be rejected.
+  bool reject_expired = 5;
+  // If reject_unexpired is true then CTFE rejects certificates that are either
+  // currently valid or not yet valid.
+  bool reject_unexpired = 6;
+  // If set, ext_key_usages will restrict the set of such usages that the
+  // server will accept. By default all are accepted. The values specified
+  // must be ones known to the x509 package.
+  repeated string ext_key_usages = 7;
+  // not_after_start defines the start of the range of acceptable NotAfter
+  // values, inclusive.
+  // Leaving this unset implies no lower bound to the range.
+  google.protobuf.Timestamp not_after_start = 8;
+  // not_after_limit defines the end of the range of acceptable NotAfter values,
+  // exclusive.
+  // Leaving this unset implies no upper bound to the range.
+  google.protobuf.Timestamp not_after_limit = 9;
+  // accept_only_ca controls whether or not *only* certificates with the CA bit
+  // set will be accepted.
+  bool accept_only_ca = 10;
+
+  // The Maximum Merge Delay (MMD) of this log in seconds. See RFC6962 section 3
+  // for definition of MMD. If zero, the log does not provide an MMD guarantee
+  // (for example, it is a frozen log).
+  int32 max_merge_delay_sec = 11;
+  // The merge delay that the underlying log implementation is able/targeting to
+  // provide. This option is exposed in CTFE metrics, and can be particularly
+  // useful to catch when the log is behind but has not yet violated the strict
+  // MMD limit.
+  // Log operator should decide what exactly EMD means for them. For example, it
+  // can be a 99-th percentile of merge delays that they observe, and they can
+  // alert on the actual merge delay going above a certain multiple of this EMD.
+  int32 expected_merge_delay_sec = 12;
+
+  // A list of X.509 extension OIDs, in dotted string form (e.g. "2.3.4.5")
+  // which should cause submissions to be rejected.
+  repeated string reject_extensions = 13;
+
+  // TODO(phboneff): re-think how this could work with other storage systems
+  // storage_config describes Trillian Tessera storage config
+  oneof storage_config {
+    GCPConfig gcp = 14;
+  }
+}
+
+// GCPConfig describes Trillian Tessera GCP config
+message GCPConfig {
+  string project_id = 1;
+  string bucket = 2;
+  string spanner_db_path = 3;
+}
