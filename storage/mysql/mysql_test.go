@@ -139,7 +139,6 @@ func TestNew(t *testing.T) {
 			opts: []func(*tessera.StorageOptions){
 				tessera.WithCheckpointSignerVerifier(noteSigner, noteVerifier),
 			},
-			wantErr: false,
 		},
 		{
 			name: "all tessera.StorageOption",
@@ -148,7 +147,6 @@ func TestNew(t *testing.T) {
 				tessera.WithBatching(1, 1*time.Second),
 				tessera.WithPushback(10),
 			},
-			wantErr: false,
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -161,7 +159,7 @@ func TestNew(t *testing.T) {
 	}
 }
 
-func TestReadTile(t *testing.T) {
+func TestReadMissingTile(t *testing.T) {
 	ctx := context.Background()
 	s := newTestMySQLStorage(t, ctx)
 
@@ -191,7 +189,7 @@ func TestReadTile(t *testing.T) {
 	}
 }
 
-func TestReadEntryBundle(t *testing.T) {
+func TestReadMissingEntryBundle(t *testing.T) {
 	ctx := context.Background()
 	s := newTestMySQLStorage(t, ctx)
 
