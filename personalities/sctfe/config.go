@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ctfe
+package sctfe
 
 import (
 	"crypto"
@@ -22,7 +22,7 @@ import (
 	"time"
 
 	"github.com/google/certificate-transparency-go/x509"
-	"github.com/transparency-dev/trillian-tessera/personalities/ct-static-api/configpb"
+	"github.com/transparency-dev/trillian-tessera/personalities/sctfe/configpb"
 	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/proto"
 	"k8s.io/klog/v2"

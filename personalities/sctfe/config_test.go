@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ctfe
+package sctfe
 
 import (
 	"fmt"
@@ -20,7 +20,7 @@ import (
 	"testing"
 
 	"github.com/google/trillian/crypto/keyspb"
-	"github.com/transparency-dev/trillian-tessera/personalities/ct-static-api/configpb"
+	"github.com/transparency-dev/trillian-tessera/personalities/sctfe/configpb"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/timestamppb"

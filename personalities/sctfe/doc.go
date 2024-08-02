@@ -13,10 +13,10 @@
 // limitations under the License.
 
 /*
-Package ctfe contains a usage example by providing an implementation of a ct-static-api
+Package sctfe contains a usage example by providing an implementation of a ct-static-api
 personality using Trillian Tessera as a backend storage.
 
 It is a port of the ctfe package from
 https://github.com/google/certificate-transparency-go
 */
-package ctfe
+package sctfe

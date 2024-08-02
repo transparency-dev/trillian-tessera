@@ -42,8 +42,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/cors"
 	"github.com/tomasen/realip"
-	ctfe "github.com/transparency-dev/trillian-tessera/personalities/ct-static-api"
-	"github.com/transparency-dev/trillian-tessera/personalities/ct-static-api/configpb"
+	"github.com/transparency-dev/trillian-tessera/personalities/sctfe"
+	"github.com/transparency-dev/trillian-tessera/personalities/sctfe/configpb"
 	"github.com/transparency-dev/trillian-tessera/storage/gcp"
 	"google.golang.org/protobuf/proto"
 	"k8s.io/klog/v2"
@@ -86,12 +86,12 @@ func main() {
 		return nil, fmt.Errorf("pkcs11: got %T, want *keyspb.PKCS11Config", pb)
 	})
 
-	cfgs, err := ctfe.LogConfigSetFromFile(*logConfig)
+	cfgs, err := sctfe.LogConfigSetFromFile(*logConfig)
 	if err != nil {
 		klog.Exitf("Failed to read config: %v", err)
 	}
 
-	vCfgs, err := ctfe.ValidateLogConfigSet(cfgs)
+	vCfgs, err := sctfe.ValidateLogConfigSet(cfgs)
 	if err != nil {
 		klog.Exitf("Invalid config: %v", err)
 	}
@@ -251,12 +251,12 @@ func awaitSignal(doneFn func()) {
 	doneFn()
 }
 
-func setupAndRegister(ctx context.Context, deadline time.Duration, vCfg *ctfe.ValidatedLogConfig, mux *http.ServeMux, maskInternalErrors bool, cacheType cache.Type, cacheOption cache.Option) (*ctfe.Instance, error) {
-	opts := ctfe.InstanceOptions{
+func setupAndRegister(ctx context.Context, deadline time.Duration, vCfg *sctfe.ValidatedLogConfig, mux *http.ServeMux, maskInternalErrors bool, cacheType cache.Type, cacheOption cache.Option) (*sctfe.Instance, error) {
+	opts := sctfe.InstanceOptions{
 		Validated:          vCfg,
 		Deadline:           deadline,
 		MetricFactory:      prometheus.MetricFactory{},
-		RequestLog:         new(ctfe.DefaultRequestLog),
+		RequestLog:         new(sctfe.DefaultRequestLog),
 		MaskInternalErrors: maskInternalErrors,
 		CacheType:          cacheType,
 		CacheOption:        cacheOption,
@@ -273,7 +273,7 @@ func setupAndRegister(ctx context.Context, deadline time.Duration, vCfg *ctfe.Va
 	}
 	if *quotaIntermediate {
 		klog.Info("Enabling quota for intermediate certificates")
-		opts.CertificateQuotaUser = ctfe.QuotaUserForCert
+		opts.CertificateQuotaUser = sctfe.QuotaUserForCert
 	}
 
 	switch vCfg.Config.StorageConfig.(type) {
@@ -287,7 +287,7 @@ func setupAndRegister(ctx context.Context, deadline time.Duration, vCfg *ctfe.Va
 		return nil, fmt.Errorf("unrecognized storage config")
 	}
 
-	inst, err := ctfe.SetUpInstance(ctx, opts)
+	inst, err := sctfe.SetUpInstance(ctx, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -297,7 +297,7 @@ func setupAndRegister(ctx context.Context, deadline time.Duration, vCfg *ctfe.Va
 	return inst, nil
 }
 
-func newGCPStorage(ctx context.Context, cfg *configpb.GCPConfig) (*ctfe.CTStorage, error) {
+func newGCPStorage(ctx context.Context, cfg *configpb.GCPConfig) (*sctfe.CTStorage, error) {
 	gcpCfg := gcp.Config{
 		ProjectID: cfg.ProjectId,
 		Bucket:    cfg.Bucket,
@@ -307,5 +307,5 @@ func newGCPStorage(ctx context.Context, cfg *configpb.GCPConfig) (*ctfe.CTStorag
 	if err != nil {
 		return nil, fmt.Errorf("Failed to initialize GCP storage: %v", err)
 	}
-	return ctfe.NewCTSTorage(storage)
+	return sctfe.NewCTSTorage(storage)
 }
