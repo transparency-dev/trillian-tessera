@@ -128,14 +128,12 @@ func TestNew(t *testing.T) {
 	ctx := context.Background()
 
 	for _, test := range []struct {
-		name    string
-		opts    []func(*tessera.StorageOptions)
-		wantErr bool
+		name string
+		opts []func(*tessera.StorageOptions)
 	}{
 		{
-			name:    "no tessera.StorageOption",
-			opts:    nil,
-			wantErr: true,
+			name: "no tessera.StorageOption",
+			opts: nil,
 		},
 		{
 			name: "standard tessera.WithCheckpointSignerVerifier",
@@ -153,10 +151,8 @@ func TestNew(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			_, err := mysql.New(ctx, testDB, test.opts...)
-			gotErr := err != nil
-			if gotErr != test.wantErr {
-				t.Errorf("got err %v want %v", gotErr, test.wantErr)
+			if _, err := mysql.New(ctx, testDB, test.opts...); err != nil {
+				t.Errorf("got err: %v", err)
 			}
 		})
 	}
@@ -169,24 +165,19 @@ func TestReadMissingTile(t *testing.T) {
 	for _, test := range []struct {
 		name                string
 		level, index, width uint64
-		wantErr             bool
 	}{
 		{
 			name:  "0/0/0",
 			level: 0, index: 0, width: 0,
-			wantErr: false,
 		},
 		{
 			name:  "123/456/789",
 			level: 123, index: 456, width: 789,
-			wantErr: false,
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			_, err := s.ReadTile(ctx, test.level, test.index, test.width)
-			gotErr := err != nil
-			if gotErr != test.wantErr {
-				t.Errorf("got err %v want %v", gotErr, test.wantErr)
+			if _, err := s.ReadTile(ctx, test.level, test.index, test.width); err != nil {
+				t.Errorf("got err: %v", err)
 			}
 		})
 	}
@@ -284,8 +275,7 @@ func TestParallelAdd(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			for i := 0; i < 1024; i++ {
 				go func() {
-					_, err := s.Add(ctx, tessera.NewEntry(test.entry))
-					if err != nil {
+					if _, err := s.Add(ctx, tessera.NewEntry(test.entry)); err != nil {
 						t.Errorf("got err: %v", err)
 					}
 				}()
