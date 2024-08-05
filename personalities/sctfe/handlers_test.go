@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ctfe
+package sctfe
 
 import (
 	"bufio"
@@ -35,7 +35,6 @@ import (
 	"github.com/golang/mock/gomock"
 	"github.com/google/certificate-transparency-go/tls"
 	"github.com/google/certificate-transparency-go/trillian/mockclient"
-	"github.com/google/certificate-transparency-go/trillian/testdata"
 	"github.com/google/certificate-transparency-go/trillian/util"
 	"github.com/google/certificate-transparency-go/x509"
 	"github.com/google/certificate-transparency-go/x509util"
@@ -45,14 +44,15 @@ import (
 	"github.com/google/trillian/monitoring"
 	"github.com/google/trillian/types"
 	"github.com/kylelemons/godebug/pretty"
+	"github.com/transparency-dev/trillian-tessera/personalities/sctfe/testdata"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"k8s.io/klog/v2"
 
 	ct "github.com/google/certificate-transparency-go"
-	"github.com/google/certificate-transparency-go/trillian/ctfe/configpb"
 	cttestonly "github.com/google/certificate-transparency-go/trillian/ctfe/testonly"
+	"github.com/transparency-dev/trillian-tessera/personalities/sctfe/configpb"
 )
 
 // Arbitrary time for use in tests
