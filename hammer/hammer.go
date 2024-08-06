@@ -50,6 +50,7 @@ var (
 	numWriters           = flag.Int("num_writers", 0, "The number of independent write tasks to run")
 
 	leafMinSize = flag.Int("leaf_min_size", 0, "Minimum size in bytes of individual leaves")
+	dupChance   = flag.Float64("dup_chance", 0.1, "The probability of a generated leaf being a duplicate of a previous value")
 
 	showUI = flag.Bool("show_ui", true, "Set to false to disable the text-based UI")
 
@@ -88,7 +89,8 @@ func main() {
 		klog.Exitf("Failed to get initial state of the log: %v", err)
 	}
 
-	hammer := NewHammer(&tracker, f.Fetch, w.Write)
+	gen := newLeafGenerator(tracker.LatestConsistent.Size, *leafMinSize, *dupChance)
+	hammer := NewHammer(&tracker, f.Fetch, w.Write, gen)
 	hammer.Run(ctx)
 
 	if *showUI {
@@ -98,13 +100,12 @@ func main() {
 	}
 }
 
-func NewHammer(tracker *client.LogStateTracker, f client.Fetcher, w LeafWriter) *Hammer {
+func NewHammer(tracker *client.LogStateTracker, f client.Fetcher, w LeafWriter, gen func() []byte) *Hammer {
 	readThrottle := NewThrottle(*maxReadOpsPerSecond)
 	writeThrottle := NewThrottle(*maxWriteOpsPerSecond)
 	errChan := make(chan error, 20)
 	leafSampleChan := make(chan leafTime, 100)
 
-	gen := newLeafGenerator(tracker.LatestConsistent.Size, *leafMinSize)
 	randomReaders := newWorkerPool(func() worker {
 		return NewLeafReader(tracker, f, RandomNextLeaf(), readThrottle.tokenChan, errChan)
 	})
@@ -258,17 +259,22 @@ func (h *Hammer) updateStatsLoop(ctx context.Context) {
 	}
 }
 
-func genLeaf(n uint64, minLeafSize int) []byte {
-	// Make a slice with half the number of requested bytes since we'll
-	// hex-encode them below which gets us back up to the full amount.
-	filler := make([]byte, minLeafSize/2)
-	_, _ = crand.Read(filler)
-	return []byte(fmt.Sprintf("%x %d", filler, n))
-}
+// newLeafGenerator returns a function that generates values to append to a log.
+// The leaves are constructed to be at least minLeafSize bytes long.
+// dupChance provides the probability that a new leaf will be a duplicate of a previous entry.
+// Leaves will be unique if dupChance is 0, and if set to 1 then all values will be duplicates.
+// startSize should be set to the initial size of the log so that repeated runs of the
+// hammer can start seeding leaves to avoid duplicates with previous runs.
+func newLeafGenerator(startSize uint64, minLeafSize int, dupChance float64) func() []byte {
+	genLeaf := func(n uint64) []byte {
+		// Make a slice with half the number of requested bytes since we'll
+		// hex-encode them below which gets us back up to the full amount.
+		filler := make([]byte, minLeafSize/2)
+		_, _ = crand.Read(filler)
+		return []byte(fmt.Sprintf("%x %d", filler, n))
+	}
 
-func newLeafGenerator(n uint64, minLeafSize int) func() []byte {
-	const dupChance = 0.1
-	nextLeaf := genLeaf(n, minLeafSize)
+	nextLeaf := genLeaf(startSize)
 	return func() []byte {
 		if rand.Float64() <= dupChance {
 			// This one will actually be unique, but the next iteration will
@@ -278,9 +284,9 @@ func newLeafGenerator(n uint64, minLeafSize int) func() []byte {
 			return nextLeaf
 		}
 
-		n++
+		startSize++
 		r := nextLeaf
-		nextLeaf = genLeaf(n, minLeafSize)
+		nextLeaf = genLeaf(startSize)
 		return r
 	}
 }
