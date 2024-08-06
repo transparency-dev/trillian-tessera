@@ -19,6 +19,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -56,6 +57,7 @@ type Storage struct {
 }
 
 // New creates a new instance of the MySQL-based Storage.
+// Note that `tessera.WithCheckpointSignerVerifier()` is mandatory in the `opts` argument.
 func New(ctx context.Context, db *sql.DB, opts ...func(*tessera.StorageOptions)) (*Storage, error) {
 	opt := tessera.ResolveStorageOptions(&tessera.StorageOptions{
 		BatchMaxAge:  defaultQueueMaxAge,
@@ -70,37 +72,38 @@ func New(ctx context.Context, db *sql.DB, opts ...func(*tessera.StorageOptions))
 		klog.Errorf("Failed to ping database: %v", err)
 		return nil, err
 	}
+	if s.newCheckpoint == nil || s.parseCheckpoint == nil {
+		return nil, errors.New("tessera.WithCheckpointSignerVerifier must be provided in New()")
+	}
 
 	s.queue = storage.NewQueue(ctx, opt.BatchMaxAge, opt.BatchMaxSize, s.sequenceBatch)
 
 	// Initialize checkpoint if there is no row in the Checkpoint table.
-	if s.newCheckpoint != nil && s.parseCheckpoint != nil {
-		if _, err := s.ReadCheckpoint(ctx); err != nil {
-			if err != sql.ErrNoRows {
-				klog.Errorf("Failed to read checkpoint: %v", err)
-				return nil, err
-			}
+	if _, err := s.ReadCheckpoint(ctx); err != nil {
+		if err != sql.ErrNoRows {
+			klog.Errorf("Failed to read checkpoint: %v", err)
+			return nil, err
+		}
 
-			klog.Infof("Initializing checkpoint")
-			// Get a Tx for making transaction requests.
-			tx, err := s.db.BeginTx(ctx, nil)
-			if err != nil {
-				return nil, err
+		klog.Infof("Initializing checkpoint")
+		// Get a Tx for making transaction requests.
+		tx, err := s.db.BeginTx(ctx, nil)
+		if err != nil {
+			return nil, err
+		}
+		// Defer a rollback in case anything fails.
+		defer func() {
+			if err := tx.Rollback(); err != nil && err != sql.ErrTxDone {
+				klog.Errorf("Failed to rollback in write initial checkpoint: %v", err)
 			}
-			// Defer a rollback in case anything fails.
-			defer func() {
-				if err := tx.Rollback(); err != nil && err != sql.ErrTxDone {
-					klog.Errorf("Failed to rollback in write initial checkpoint: %v", err)
-				}
-			}()
-			if err := s.writeCheckpoint(ctx, tx, 0, rfc6962.DefaultHasher.EmptyRoot()); err != nil {
-				klog.Errorf("Failed to write initial checkpoint: %v", err)
-				return nil, err
-			}
-			// Commit the transaction.
-			if err := tx.Commit(); err != nil {
-				return nil, err
-			}
+		}()
+		if err := s.writeCheckpoint(ctx, tx, 0, rfc6962.DefaultHasher.EmptyRoot()); err != nil {
+			klog.Errorf("Failed to write initial checkpoint: %v", err)
+			return nil, err
+		}
+		// Commit the transaction.
+		if err := tx.Commit(); err != nil {
+			return nil, err
 		}
 	}
 

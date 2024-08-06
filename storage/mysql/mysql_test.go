@@ -132,12 +132,14 @@ func TestNew(t *testing.T) {
 	ctx := context.Background()
 
 	for _, test := range []struct {
-		name string
-		opts []func(*tessera.StorageOptions)
+		name    string
+		opts    []func(*tessera.StorageOptions)
+		wantErr bool
 	}{
 		{
-			name: "no tessera.StorageOption",
-			opts: nil,
+			name:    "no tessera.StorageOption",
+			opts:    nil,
+			wantErr: true,
 		},
 		{
 			name: "standard tessera.WithCheckpointSignerVerifier",
@@ -155,7 +157,9 @@ func TestNew(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			if _, err := mysql.New(ctx, testDB, test.opts...); err != nil {
+			_, err := mysql.New(ctx, testDB, test.opts...)
+			gotErr := err != nil
+			if gotErr != test.wantErr {
 				t.Errorf("got err: %v", err)
 			}
 		})
