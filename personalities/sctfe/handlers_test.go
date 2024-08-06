@@ -411,128 +411,106 @@ func TestAddChain(t *testing.T) {
 	}
 }
 
-//
-//func TestAddPrechain(t *testing.T) {
-//	var tests = []struct {
-//		descr         string
-//		chain         []string
-//		root          string
-//		toSign        string // hex-encoded
-//		err           error
-//		want          int
-//		wantQuotaUser string
-//	}{
-//		{
-//			descr: "leaf-signed-by-different",
-//			chain: []string{cttestonly.PrecertPEMValid, cttestonly.FakeIntermediateCertPEM},
-//			want:  http.StatusBadRequest,
-//		},
-//		{
-//			descr: "wrong-entry-type",
-//			chain: []string{cttestonly.TestCertPEM},
-//			want:  http.StatusBadRequest,
-//		},
-//		{
-//			descr:  "backend-rpc-fail",
-//			chain:  []string{cttestonly.PrecertPEMValid, cttestonly.CACertPEM},
-//			toSign: "92ecae1a2dc67a6c5f9c96fa5cab4c2faf27c48505b696dad926f161b0ca675a",
-//			err:    status.Errorf(codes.Internal, "error"),
-//			want:   http.StatusInternalServerError,
-//		},
-//		{
-//			descr:  "success",
-//			chain:  []string{cttestonly.PrecertPEMValid, cttestonly.CACertPEM},
-//			toSign: "92ecae1a2dc67a6c5f9c96fa5cab4c2faf27c48505b696dad926f161b0ca675a",
-//			want:   http.StatusOK,
-//		},
-//		{
-//			descr:         "success with quota",
-//			chain:         []string{cttestonly.PrecertPEMValid, cttestonly.CACertPEM},
-//			toSign:        "92ecae1a2dc67a6c5f9c96fa5cab4c2faf27c48505b696dad926f161b0ca675a",
-//			want:          http.StatusOK,
-//			wantQuotaUser: remoteQuotaUser,
-//		},
-//		{
-//			descr:  "success-without-root",
-//			chain:  []string{cttestonly.PrecertPEMValid},
-//			toSign: "92ecae1a2dc67a6c5f9c96fa5cab4c2faf27c48505b696dad926f161b0ca675a",
-//			want:   http.StatusOK,
-//		},
-//		{
-//			descr:         "success-without-root with quota",
-//			chain:         []string{cttestonly.PrecertPEMValid},
-//			toSign:        "92ecae1a2dc67a6c5f9c96fa5cab4c2faf27c48505b696dad926f161b0ca675a",
-//			want:          http.StatusOK,
-//			wantQuotaUser: remoteQuotaUser,
-//		},
-//	}
-//
-//	signer, err := setupSigner(fakeSignature)
-//	if err != nil {
-//		t.Fatalf("Failed to create test signer: %v", err)
-//	}
-//
-//	info := setupTest(t, []string{cttestonly.CACertPEM}, signer)
-//	defer info.mockCtrl.Finish()
-//
-//	for _, test := range tests {
-//		t.Run(test.descr, func(t *testing.T) {
-//			info.setRemoteQuotaUser(test.wantQuotaUser)
-//			pool := loadCertsIntoPoolOrDie(t, test.chain)
-//			chain := createJSONChain(t, *pool)
-//			if len(test.toSign) > 0 {
-//				root := info.roots.RawCertificates()[0]
-//				merkleLeaf, err := ct.MerkleTreeLeafFromChain([]*x509.Certificate{pool.RawCertificates()[0], root}, ct.PrecertLogEntryType, fakeTimeMillis)
-//				if err != nil {
-//					t.Fatalf("Unexpected error signing SCT: %v", err)
-//				}
-//				leafChain := pool.RawCertificates()
-//				if !leafChain[len(leafChain)-1].Equal(root) {
-//					// The submitted chain may not include a root, but the generated LogLeaf will
-//					fullChain := make([]*x509.Certificate, len(leafChain)+1)
-//					copy(fullChain, leafChain)
-//					fullChain[len(leafChain)] = root
-//					leafChain = fullChain
-//				}
-//				leaf := logLeafForCert(t, leafChain, merkleLeaf, true)
-//				queuedLeaf := &trillian.QueuedLogLeaf{
-//					Leaf:   leaf,
-//					Status: status.New(codes.OK, "ok").Proto(),
-//				}
-//				rsp := trillian.QueueLeafResponse{QueuedLeaf: queuedLeaf}
-//				req := &trillian.QueueLeafRequest{LogId: 0x42, Leaf: leaf}
-//				if len(test.wantQuotaUser) != 0 {
-//					req.ChargeTo = &trillian.ChargeTo{User: []string{test.wantQuotaUser}}
-//				}
-//				info.client.EXPECT().QueueLeaf(deadlineMatcher(), cmpMatcher{req}).Return(&rsp, test.err)
-//			}
-//
-//			recorder := makeAddPrechainRequest(t, info.li, chain)
-//			if recorder.Code != test.want {
-//				t.Fatalf("addPrechain()=%d (body:%v); want %d", recorder.Code, recorder.Body, test.want)
-//			}
-//			if test.want == http.StatusOK {
-//				var resp ct.AddChainResponse
-//				if err := json.NewDecoder(recorder.Body).Decode(&resp); err != nil {
-//					t.Fatalf("json.Decode(%s)=%v; want nil", recorder.Body.Bytes(), err)
-//				}
-//
-//				if got, want := ct.Version(resp.SCTVersion), ct.V1; got != want {
-//					t.Errorf("resp.SCTVersion=%v; want %v", got, want)
-//				}
-//				if got, want := resp.ID, demoLogID[:]; !bytes.Equal(got, want) {
-//					t.Errorf("resp.ID=%x; want %x", got, want)
-//				}
-//				if got, want := resp.Timestamp, uint64(1469185273000); got != want {
-//					t.Errorf("resp.Timestamp=%d; want %d", got, want)
-//				}
-//				if got, want := hex.EncodeToString(resp.Signature), "040300067369676e6564"; got != want {
-//					t.Errorf("resp.Signature=%s; want %s", got, want)
-//				}
-//			}
-//		})
-//	}
-//}
+func TestAddPrechain(t *testing.T) {
+	var tests = []struct {
+		descr  string
+		chain  []string
+		root   string
+		toSign string // hex-encoded
+		err    error
+		want   int
+	}{
+		{
+			descr: "leaf-signed-by-different",
+			chain: []string{cttestonly.PrecertPEMValid, cttestonly.FakeIntermediateCertPEM},
+			want:  http.StatusBadRequest,
+		},
+		{
+			descr: "wrong-entry-type",
+			chain: []string{cttestonly.TestCertPEM},
+			want:  http.StatusBadRequest,
+		},
+		{
+			descr:  "backend-storage-fail",
+			chain:  []string{cttestonly.PrecertPEMValid, cttestonly.CACertPEM},
+			toSign: "92ecae1a2dc67a6c5f9c96fa5cab4c2faf27c48505b696dad926f161b0ca675a",
+			err:    status.Errorf(codes.Internal, "error"),
+			want:   http.StatusInternalServerError,
+		},
+		{
+			descr:  "success",
+			chain:  []string{cttestonly.PrecertPEMValid, cttestonly.CACertPEM},
+			toSign: "92ecae1a2dc67a6c5f9c96fa5cab4c2faf27c48505b696dad926f161b0ca675a",
+			want:   http.StatusOK,
+		},
+		{
+			descr:  "success-without-root",
+			chain:  []string{cttestonly.PrecertPEMValid},
+			toSign: "92ecae1a2dc67a6c5f9c96fa5cab4c2faf27c48505b696dad926f161b0ca675a",
+			want:   http.StatusOK,
+		},
+		// TODO(phboneff): add a test with an intermediate
+		// TODO(phboneff): add a test with a pre-issuer intermediate cert
+	}
+
+	signer, err := setupSigner(fakeSignature)
+	if err != nil {
+		t.Fatalf("Failed to create test signer: %v", err)
+	}
+
+	info := setupTest(t, []string{cttestonly.CACertPEM}, signer)
+	defer info.mockCtrl.Finish()
+
+	for _, test := range tests {
+		t.Run(test.descr, func(t *testing.T) {
+			pool := loadCertsIntoPoolOrDie(t, test.chain)
+			chain := createJSONChain(t, *pool)
+			if len(test.toSign) > 0 {
+				root := info.roots.RawCertificates()[0]
+				leafChain := pool.RawCertificates()
+				if !leafChain[len(leafChain)-1].Equal(root) {
+					// The submitted chain may not include a root, but the generated LogLeaf will
+					fullChain := make([]*x509.Certificate, len(leafChain)+1)
+					copy(fullChain, leafChain)
+					fullChain[len(leafChain)] = root
+					leafChain = fullChain
+				}
+
+				rsp := uint64(0)
+				req, err := entryFromChain(leafChain, true, 1469185273000)
+				if err != nil {
+					t.Fatalf("failed to create test entry")
+				}
+
+				info.storage.EXPECT().Add(deadlineMatcher(), cmpMatcher{req}).Return(rsp, test.err)
+			}
+
+			recorder := makeAddPrechainRequest(t, info.li, chain)
+			if recorder.Code != test.want {
+				t.Fatalf("addPrechain()=%d (body:%v); want %d", recorder.Code, recorder.Body, test.want)
+			}
+			if test.want == http.StatusOK {
+				var resp ct.AddChainResponse
+				if err := json.NewDecoder(recorder.Body).Decode(&resp); err != nil {
+					t.Fatalf("json.Decode(%s)=%v; want nil", recorder.Body.Bytes(), err)
+				}
+
+				if got, want := ct.Version(resp.SCTVersion), ct.V1; got != want {
+					t.Errorf("resp.SCTVersion=%v; want %v", got, want)
+				}
+				if got, want := resp.ID, demoLogID[:]; !bytes.Equal(got, want) {
+					t.Errorf("resp.ID=%x; want %x", got, want)
+				}
+				if got, want := resp.Timestamp, uint64(1469185273000); got != want {
+					t.Errorf("resp.Timestamp=%d; want %d", got, want)
+				}
+				if got, want := hex.EncodeToString(resp.Signature), "040300067369676e6564"; got != want {
+					t.Errorf("resp.Signature=%s; want %s", got, want)
+				}
+			}
+		})
+	}
+}
 
 func createJSONChain(t *testing.T, p x509util.PEMCertPool) io.Reader {
 	t.Helper()
@@ -555,24 +533,6 @@ func createJSONChain(t *testing.T, p x509util.PEMCertPool) io.Reader {
 
 	return bufio.NewReader(&buffer)
 }
-
-//func logLeafForCert(t *testing.T, certs []*x509.Certificate, merkleLeaf *ct.MerkleTreeLeaf, isPrecert bool) *trillian.LogLeaf {
-//	t.Helper()
-//	leafData, err := tls.Marshal(*merkleLeaf)
-//	if err != nil {
-//		t.Fatalf("failed to serialize leaf: %v", err)
-//	}
-//
-//	raw := extractRawCerts(certs)
-//	leafIDHash := sha256.Sum256(raw[0].Data)
-//
-//	extraData, err := util.ExtraDataForChain(raw[0], raw[1:], isPrecert)
-//	if err != nil {
-//		t.Fatalf("failed to serialize extra data: %v", err)
-//	}
-//
-//	return &trillian.LogLeaf{LeafIdentityHash: leafIDHash[:], LeafValue: leafData, ExtraData: extraData}
-//}
 
 type dlMatcher struct {
 }
