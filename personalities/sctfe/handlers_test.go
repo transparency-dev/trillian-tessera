@@ -19,6 +19,7 @@ import (
 	"bytes"
 	"context"
 	"crypto"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -35,6 +36,8 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/google/trillian/monitoring"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"k8s.io/klog/v2"
 
@@ -101,41 +104,6 @@ type handlerTestInfo struct {
 	roots    *x509util.PEMCertPool
 	storage  *mockstorage.MockStorage
 	li       *logInfo
-}
-
-const certQuotaPrefix = "CERT:"
-
-func quotaUserForCert(c *x509.Certificate) string {
-	return fmt.Sprintf("%s %s", certQuotaPrefix, c.Subject.String())
-}
-
-func quotaUsersForIssuers(t *testing.T, pem ...string) []string {
-	t.Helper()
-	r := make([]string, 0)
-	for _, p := range pem {
-		c, err := x509util.CertificateFromPEM([]byte(p))
-		if x509.IsFatal(err) {
-			t.Fatalf("Failed to parse pem: %v", err)
-		}
-		r = append(r, quotaUserForCert(c))
-	}
-	return r
-}
-
-func (info *handlerTestInfo) setRemoteQuotaUser(u string) {
-	if len(u) > 0 {
-		info.li.instanceOpts.RemoteQuotaUser = func(_ *http.Request) string { return u }
-	} else {
-		info.li.instanceOpts.RemoteQuotaUser = nil
-	}
-}
-
-func (info *handlerTestInfo) enableCertQuota(e bool) {
-	if e {
-		info.li.instanceOpts.CertificateQuotaUser = quotaUserForCert
-	} else {
-		info.li.instanceOpts.CertificateQuotaUser = nil
-	}
 }
 
 // setupTest creates mock objects and contexts.  Caller should invoke info.mockCtrl.Finish().
@@ -344,149 +312,105 @@ func TestAddChainWhitespace(t *testing.T) {
 	}
 }
 
-//func TestAddChain(t *testing.T) {
-//	var tests = []struct {
-//		descr           string
-//		chain           []string
-//		toSign          string // hex-encoded
-//		want            int
-//		err             error
-//		remoteQuotaUser string
-//		enableCertQuota bool
-//		// if remote quota enabled, it must be the first entry here
-//		wantQuotaUsers []string
-//	}{
-//		{
-//			descr: "leaf-only",
-//			chain: []string{cttestonly.LeafSignedByFakeIntermediateCertPEM},
-//			want:  http.StatusBadRequest,
-//		},
-//		{
-//			descr: "wrong-entry-type",
-//			chain: []string{cttestonly.PrecertPEMValid},
-//			want:  http.StatusBadRequest,
-//		},
-//		{
-//			descr:  "backend-rpc-fail",
-//			chain:  []string{cttestonly.LeafSignedByFakeIntermediateCertPEM, cttestonly.FakeIntermediateCertPEM},
-//			toSign: "1337d72a403b6539f58896decba416d5d4b3603bfa03e1f94bb9b4e898af897d",
-//			want:   http.StatusInternalServerError,
-//			err:    status.Errorf(codes.Internal, "error"),
-//		},
-//		{
-//			descr:  "success-without-root",
-//			chain:  []string{cttestonly.LeafSignedByFakeIntermediateCertPEM, cttestonly.FakeIntermediateCertPEM},
-//			toSign: "1337d72a403b6539f58896decba416d5d4b3603bfa03e1f94bb9b4e898af897d",
-//			want:   http.StatusOK,
-//		},
-//		{
-//			descr:  "success",
-//			chain:  []string{cttestonly.LeafSignedByFakeIntermediateCertPEM, cttestonly.FakeIntermediateCertPEM, cttestonly.FakeCACertPEM},
-//			toSign: "1337d72a403b6539f58896decba416d5d4b3603bfa03e1f94bb9b4e898af897d",
-//			want:   http.StatusOK,
-//		},
-//		{
-//			descr:           "success-without-root with remote quota",
-//			chain:           []string{cttestonly.LeafSignedByFakeIntermediateCertPEM, cttestonly.FakeIntermediateCertPEM},
-//			toSign:          "1337d72a403b6539f58896decba416d5d4b3603bfa03e1f94bb9b4e898af897d",
-//			remoteQuotaUser: remoteQuotaUser,
-//			want:            http.StatusOK,
-//			wantQuotaUsers:  []string{remoteQuotaUser},
-//		},
-//		{
-//			descr:           "success with remote quota",
-//			chain:           []string{cttestonly.LeafSignedByFakeIntermediateCertPEM, cttestonly.FakeIntermediateCertPEM, cttestonly.FakeCACertPEM},
-//			toSign:          "1337d72a403b6539f58896decba416d5d4b3603bfa03e1f94bb9b4e898af897d",
-//			remoteQuotaUser: remoteQuotaUser,
-//			want:            http.StatusOK,
-//			wantQuotaUsers:  []string{remoteQuotaUser},
-//		},
-//		{
-//			descr:           "success with chain quota",
-//			chain:           []string{cttestonly.LeafSignedByFakeIntermediateCertPEM, cttestonly.FakeIntermediateCertPEM, cttestonly.FakeCACertPEM},
-//			toSign:          "1337d72a403b6539f58896decba416d5d4b3603bfa03e1f94bb9b4e898af897d",
-//			enableCertQuota: true,
-//			want:            http.StatusOK,
-//			wantQuotaUsers:  quotaUsersForIssuers(t, cttestonly.FakeIntermediateCertPEM, cttestonly.FakeCACertPEM),
-//		},
-//		{
-//			descr:           "success with remote and chain quota",
-//			chain:           []string{cttestonly.LeafSignedByFakeIntermediateCertPEM, cttestonly.FakeIntermediateCertPEM, cttestonly.FakeCACertPEM},
-//			toSign:          "1337d72a403b6539f58896decba416d5d4b3603bfa03e1f94bb9b4e898af897d",
-//			remoteQuotaUser: remoteQuotaUser,
-//			enableCertQuota: true,
-//			want:            http.StatusOK,
-//			wantQuotaUsers:  append([]string{remoteQuotaUser}, quotaUsersForIssuers(t, cttestonly.FakeIntermediateCertPEM, cttestonly.FakeCACertPEM)...),
-//		},
-//	}
-//
-//	signer, err := setupSigner(fakeSignature)
-//	if err != nil {
-//		t.Fatalf("Failed to create test signer: %v", err)
-//	}
-//
-//	info := setupTest(t, []string{cttestonly.FakeCACertPEM}, signer)
-//	defer info.mockCtrl.Finish()
-//
-//	for _, test := range tests {
-//		t.Run(test.descr, func(t *testing.T) {
-//			info.setRemoteQuotaUser(test.remoteQuotaUser)
-//			info.enableCertQuota(test.enableCertQuota)
-//			pool := loadCertsIntoPoolOrDie(t, test.chain)
-//			chain := createJSONChain(t, *pool)
-//			if len(test.toSign) > 0 {
-//				root := info.roots.RawCertificates()[0]
-//				merkleLeaf, err := ct.MerkleTreeLeafFromChain(pool.RawCertificates(), ct.X509LogEntryType, fakeTimeMillis)
-//				if err != nil {
-//					t.Fatalf("Unexpected error signing SCT: %v", err)
-//				}
-//				leafChain := pool.RawCertificates()
-//				if !leafChain[len(leafChain)-1].Equal(root) {
-//					// The submitted chain may not include a root, but the generated LogLeaf will
-//					fullChain := make([]*x509.Certificate, len(leafChain)+1)
-//					copy(fullChain, leafChain)
-//					fullChain[len(leafChain)] = root
-//					leafChain = fullChain
-//				}
-//				leaf := logLeafForCert(t, leafChain, merkleLeaf, false)
-//				queuedLeaf := &trillian.QueuedLogLeaf{
-//					Leaf:   leaf,
-//					Status: status.New(codes.OK, "ok").Proto(),
-//				}
-//				rsp := trillian.QueueLeafResponse{QueuedLeaf: queuedLeaf}
-//				req := &trillian.QueueLeafRequest{LogId: 0x42, Leaf: leaf}
-//				if len(test.wantQuotaUsers) > 0 {
-//					req.ChargeTo = &trillian.ChargeTo{User: test.wantQuotaUsers}
-//				}
-//				info.client.EXPECT().QueueLeaf(deadlineMatcher(), cmpMatcher{req}).Return(&rsp, test.err)
-//			}
-//
-//			recorder := makeAddChainRequest(t, info.li, chain)
-//			if recorder.Code != test.want {
-//				t.Fatalf("addChain()=%d (body:%v); want %dv", recorder.Code, recorder.Body, test.want)
-//			}
-//			if test.want == http.StatusOK {
-//				var resp ct.AddChainResponse
-//				if err := json.NewDecoder(recorder.Body).Decode(&resp); err != nil {
-//					t.Fatalf("json.Decode(%s)=%v; want nil", recorder.Body.Bytes(), err)
-//				}
-//
-//				if got, want := ct.Version(resp.SCTVersion), ct.V1; got != want {
-//					t.Errorf("resp.SCTVersion=%v; want %v", got, want)
-//				}
-//				if got, want := resp.ID, demoLogID[:]; !bytes.Equal(got, want) {
-//					t.Errorf("resp.ID=%v; want %v", got, want)
-//				}
-//				if got, want := resp.Timestamp, uint64(1469185273000); got != want {
-//					t.Errorf("resp.Timestamp=%d; want %d", got, want)
-//				}
-//				if got, want := hex.EncodeToString(resp.Signature), "040300067369676e6564"; got != want {
-//					t.Errorf("resp.Signature=%s; want %s", got, want)
-//				}
-//			}
-//		})
-//	}
-//}
+func TestAddChain(t *testing.T) {
+	var tests = []struct {
+		descr string
+		chain []string
+		// TODO(phboneff): can this be removed?
+		toSign string // hex-encoded
+		want   int
+		err    error
+	}{
+		{
+			descr: "leaf-only",
+			chain: []string{cttestonly.LeafSignedByFakeIntermediateCertPEM},
+			want:  http.StatusBadRequest,
+		},
+		{
+			descr: "wrong-entry-type",
+			chain: []string{cttestonly.PrecertPEMValid},
+			want:  http.StatusBadRequest,
+		},
+		{
+			descr:  "backend-storage-fail",
+			chain:  []string{cttestonly.LeafSignedByFakeIntermediateCertPEM, cttestonly.FakeIntermediateCertPEM},
+			toSign: "1337d72a403b6539f58896decba416d5d4b3603bfa03e1f94bb9b4e898af897d",
+			want:   http.StatusInternalServerError,
+			err:    status.Errorf(codes.Internal, "error"),
+		},
+		{
+			descr:  "success-without-root",
+			chain:  []string{cttestonly.LeafSignedByFakeIntermediateCertPEM, cttestonly.FakeIntermediateCertPEM},
+			toSign: "1337d72a403b6539f58896decba416d5d4b3603bfa03e1f94bb9b4e898af897d",
+			want:   http.StatusOK,
+		},
+		{
+			descr:  "success",
+			chain:  []string{cttestonly.LeafSignedByFakeIntermediateCertPEM, cttestonly.FakeIntermediateCertPEM, cttestonly.FakeCACertPEM},
+			toSign: "1337d72a403b6539f58896decba416d5d4b3603bfa03e1f94bb9b4e898af897d",
+			want:   http.StatusOK,
+		},
+	}
+
+	signer, err := setupSigner(fakeSignature)
+	if err != nil {
+		t.Fatalf("Failed to create test signer: %v", err)
+	}
+
+	info := setupTest(t, []string{cttestonly.FakeCACertPEM}, signer)
+	defer info.mockCtrl.Finish()
+
+	for _, test := range tests {
+		t.Run(test.descr, func(t *testing.T) {
+			pool := loadCertsIntoPoolOrDie(t, test.chain)
+			chain := createJSONChain(t, *pool)
+			if len(test.toSign) > 0 {
+				root := info.roots.RawCertificates()[0]
+
+				leafChain := pool.RawCertificates()
+				if !leafChain[len(leafChain)-1].Equal(root) {
+					// The submitted chain may not include a root, but the generated LogLeaf will
+					fullChain := make([]*x509.Certificate, len(leafChain)+1)
+					copy(fullChain, leafChain)
+					fullChain[len(leafChain)] = root
+					leafChain = fullChain
+				}
+				rsp := uint64(0)
+				req, err := entryFromChain(leafChain, false, 1469185273000)
+				if err != nil {
+					t.Fatalf("failed to create entry")
+				}
+				info.storage.EXPECT().Add(deadlineMatcher(), cmpMatcher{req}).Return(rsp, test.err)
+			}
+
+			recorder := makeAddChainRequest(t, info.li, chain)
+			if recorder.Code != test.want {
+				t.Fatalf("addChain()=%d (body:%v); want %dv", recorder.Code, recorder.Body, test.want)
+			}
+			if test.want == http.StatusOK {
+				var resp ct.AddChainResponse
+				if err := json.NewDecoder(recorder.Body).Decode(&resp); err != nil {
+					t.Fatalf("json.Decode(%s)=%v; want nil", recorder.Body.Bytes(), err)
+				}
+
+				if got, want := ct.Version(resp.SCTVersion), ct.V1; got != want {
+					t.Errorf("resp.SCTVersion=%v; want %v", got, want)
+				}
+				if got, want := resp.ID, demoLogID[:]; !bytes.Equal(got, want) {
+					t.Errorf("resp.ID=%v; want %v", got, want)
+				}
+				if got, want := resp.Timestamp, uint64(1469185273000); got != want {
+					t.Errorf("resp.Timestamp=%d; want %d", got, want)
+				}
+				if got, want := hex.EncodeToString(resp.Signature), "040300067369676e6564"; got != want {
+					t.Errorf("resp.Signature=%s; want %s", got, want)
+				}
+				// TODO(phboneff): check that the index is in the SCT
+			}
+		})
+	}
+}
+
 //
 //func TestAddPrechain(t *testing.T) {
 //	var tests = []struct {
