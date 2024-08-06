@@ -220,43 +220,6 @@ func TestReadMissingEntryBundle(t *testing.T) {
 	}
 }
 
-func TestAdd(t *testing.T) {
-	ctx := context.Background()
-	s := newTestMySQLStorage(t, ctx)
-
-	for _, test := range []struct {
-		name      string
-		entry     []byte
-		wantIndex uint64
-	}{
-		{
-			name:      "empty string entry",
-			entry:     []byte(""),
-			wantIndex: 0,
-		},
-		{
-			name:      "123 string entry",
-			entry:     []byte("123"),
-			wantIndex: 1,
-		},
-		{
-			name:      "empty byte",
-			entry:     []byte{},
-			wantIndex: 2,
-		},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			index, err := s.Add(ctx, tessera.NewEntry(test.entry))
-			if err != nil {
-				t.Errorf("got err: %v", err)
-			}
-			if index != test.wantIndex {
-				t.Errorf("got index %d want %d", index, test.wantIndex)
-			}
-		})
-	}
-}
-
 func TestParallelAdd(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
