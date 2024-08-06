@@ -32,7 +32,6 @@ import (
 
 	"github.com/golang/mock/gomock"
 	"github.com/google/certificate-transparency-go/tls"
-	"github.com/google/certificate-transparency-go/trillian/mockclient"
 	"github.com/google/certificate-transparency-go/trillian/util"
 	"github.com/google/certificate-transparency-go/x509"
 	"github.com/google/certificate-transparency-go/x509util"
@@ -48,6 +47,7 @@ import (
 	ct "github.com/google/certificate-transparency-go"
 	cttestonly "github.com/google/certificate-transparency-go/trillian/ctfe/testonly"
 	"github.com/transparency-dev/trillian-tessera/personalities/sctfe/configpb"
+	"github.com/transparency-dev/trillian-tessera/personalities/sctfe/mockstorage"
 )
 
 // Arbitrary time for use in tests
@@ -104,7 +104,7 @@ const remoteQuotaUser = "Moneybags"
 type handlerTestInfo struct {
 	mockCtrl *gomock.Controller
 	roots    *x509util.PEMCertPool
-	client   *mockclient.MockTrillianLogClient
+	storage  *mockstorage.MockStorage
 	li       *logInfo
 }
 
@@ -151,7 +151,7 @@ func setupTest(t *testing.T, pemRoots []string, signer crypto.Signer) handlerTes
 		roots:    x509util.NewPEMCertPool(),
 	}
 
-	info.client = mockclient.NewMockTrillianLogClient(info.mockCtrl)
+	info.storage = mockstorage.NewMockStorage(info.mockCtrl)
 	vOpts := CertValidationOpts{
 		trustedRoots:  info.roots,
 		rejectExpired: false,
@@ -159,7 +159,7 @@ func setupTest(t *testing.T, pemRoots []string, signer crypto.Signer) handlerTes
 
 	cfg := &configpb.LogConfig{Origin: "test"}
 	vCfg := &ValidatedLogConfig{Config: cfg}
-	iOpts := InstanceOptions{Validated: vCfg, Client: info.client, Deadline: time.Millisecond * 500, MetricFactory: monitoring.InertMetricFactory{}, RequestLog: new(DefaultRequestLog)}
+	iOpts := InstanceOptions{Validated: vCfg, Storage: info.storage, Deadline: time.Millisecond * 500, MetricFactory: monitoring.InertMetricFactory{}, RequestLog: new(DefaultRequestLog)}
 	info.li = newLogInfo(iOpts, vOpts, signer, fakeTimeSource)
 
 	for _, pemRoot := range pemRoots {
