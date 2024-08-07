@@ -35,16 +35,16 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/google/trillian/monitoring"
+	"github.com/transparency-dev/trillian-tessera/ctonly"
+	"github.com/transparency-dev/trillian-tessera/personalities/sctfe/configpb"
+	"github.com/transparency-dev/trillian-tessera/personalities/sctfe/mockstorage"
+	"github.com/transparency-dev/trillian-tessera/personalities/sctfe/testdata"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"k8s.io/klog/v2"
 
 	ct "github.com/google/certificate-transparency-go"
-	"github.com/transparency-dev/trillian-tessera/ctonly"
-	"github.com/transparency-dev/trillian-tessera/personalities/sctfe/configpb"
-	"github.com/transparency-dev/trillian-tessera/personalities/sctfe/mockstorage"
-	"github.com/transparency-dev/trillian-tessera/personalities/sctfe/testdata"
 )
 
 // Arbitrary time for use in tests
