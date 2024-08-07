@@ -41,10 +41,10 @@ import (
 	"k8s.io/klog/v2"
 
 	ct "github.com/google/certificate-transparency-go"
-	cttestonly "github.com/google/certificate-transparency-go/trillian/ctfe/testonly"
 	"github.com/transparency-dev/trillian-tessera/ctonly"
 	"github.com/transparency-dev/trillian-tessera/personalities/sctfe/configpb"
 	"github.com/transparency-dev/trillian-tessera/personalities/sctfe/mockstorage"
+	cttestonly "github.com/transparency-dev/trillian-tessera/personalities/sctfe/testdata"
 )
 
 // Arbitrary time for use in tests

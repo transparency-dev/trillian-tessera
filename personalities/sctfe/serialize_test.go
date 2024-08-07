@@ -20,12 +20,12 @@ import (
 	"testing"
 
 	"github.com/google/certificate-transparency-go/tls"
-	"github.com/google/certificate-transparency-go/trillian/ctfe/testonly"
 	"github.com/google/certificate-transparency-go/x509"
 	"github.com/google/certificate-transparency-go/x509util"
 	"github.com/kylelemons/godebug/pretty"
 
 	ct "github.com/google/certificate-transparency-go"
+	testonly "github.com/transparency-dev/trillian-tessera/personalities/sctfe/testdata"
 )
 
 func TestBuildV1MerkleTreeLeafForCert(t *testing.T) {
