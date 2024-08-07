@@ -19,7 +19,7 @@ import (
 
 	"github.com/google/certificate-transparency-go/x509"
 	"github.com/google/certificate-transparency-go/x509util"
-	testonly "github.com/transparency-dev/trillian-tessera/personalities/sctfe/testdata"
+	"github.com/transparency-dev/trillian-tessera/personalities/sctfe/testdata"
 )
 
 func mustDePEM(t *testing.T, pem string) *x509.Certificate {
@@ -39,12 +39,12 @@ func TestQuotaUserForCert(t *testing.T) {
 	}{
 		{
 			desc: "cacert",
-			cert: mustDePEM(t, testonly.CACertPEM),
+			cert: mustDePEM(t, testdata.CACertPEM),
 			want: "@intermediate O=Certificate Transparency CA,L=Erw Wen,ST=Wales,C=GB 02adddca08",
 		},
 		{
 			desc: "intermediate",
-			cert: mustDePEM(t, testonly.FakeIntermediateCertPEM),
+			cert: mustDePEM(t, testdata.FakeIntermediateCertPEM),
 			want: "@intermediate CN=FakeIntermediateAuthority,OU=Eng,O=Google,L=London,ST=London,C=GB 6e62e56f67",
 		},
 	} {

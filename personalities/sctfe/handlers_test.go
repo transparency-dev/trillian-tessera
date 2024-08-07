@@ -44,7 +44,7 @@ import (
 	"github.com/transparency-dev/trillian-tessera/ctonly"
 	"github.com/transparency-dev/trillian-tessera/personalities/sctfe/configpb"
 	"github.com/transparency-dev/trillian-tessera/personalities/sctfe/mockstorage"
-	cttestonly "github.com/transparency-dev/trillian-tessera/personalities/sctfe/testdata"
+	"github.com/transparency-dev/trillian-tessera/personalities/sctfe/testdata"
 )
 
 // Arbitrary time for use in tests
@@ -98,7 +98,7 @@ func (info handlerTestInfo) postHandlers() map[string]AppHandler {
 }
 
 func TestPostHandlersRejectGet(t *testing.T) {
-	info := setupTest(t, []string{cttestonly.FakeCACertPEM}, nil)
+	info := setupTest(t, []string{testdata.FakeCACertPEM}, nil)
 	defer info.mockCtrl.Finish()
 
 	// Anything in the post handler list should reject GET
@@ -131,7 +131,7 @@ func TestPostHandlersFailure(t *testing.T) {
 		{"wrong-chain", strings.NewReader(`{ "chain": [ "test" ] }`), http.StatusBadRequest},
 	}
 
-	info := setupTest(t, []string{cttestonly.FakeCACertPEM}, nil)
+	info := setupTest(t, []string{testdata.FakeCACertPEM}, nil)
 	defer info.mockCtrl.Finish()
 	for path, handler := range info.postHandlers() {
 		t.Run(path, func(t *testing.T) {
@@ -194,11 +194,11 @@ func TestAddChainWhitespace(t *testing.T) {
 		t.Fatalf("Failed to create test signer: %v", err)
 	}
 
-	info := setupTest(t, []string{cttestonly.FakeCACertPEM}, signer)
+	info := setupTest(t, []string{testdata.FakeCACertPEM}, signer)
 	defer info.mockCtrl.Finish()
 
 	// Throughout we use variants of a hard-coded POST body derived from a chain of:
-	pemChain := []string{cttestonly.LeafSignedByFakeIntermediateCertPEM, cttestonly.FakeIntermediateCertPEM}
+	pemChain := []string{testdata.LeafSignedByFakeIntermediateCertPEM, testdata.FakeIntermediateCertPEM}
 
 	// Break the JSON into chunks:
 	intro := "{\"chain\""
@@ -279,30 +279,30 @@ func TestAddChain(t *testing.T) {
 	}{
 		{
 			descr: "leaf-only",
-			chain: []string{cttestonly.LeafSignedByFakeIntermediateCertPEM},
+			chain: []string{testdata.LeafSignedByFakeIntermediateCertPEM},
 			want:  http.StatusBadRequest,
 		},
 		{
 			descr: "wrong-entry-type",
-			chain: []string{cttestonly.PrecertPEMValid},
+			chain: []string{testdata.PrecertPEMValid},
 			want:  http.StatusBadRequest,
 		},
 		{
 			descr:  "backend-storage-fail",
-			chain:  []string{cttestonly.LeafSignedByFakeIntermediateCertPEM, cttestonly.FakeIntermediateCertPEM},
+			chain:  []string{testdata.LeafSignedByFakeIntermediateCertPEM, testdata.FakeIntermediateCertPEM},
 			toSign: "1337d72a403b6539f58896decba416d5d4b3603bfa03e1f94bb9b4e898af897d",
 			want:   http.StatusInternalServerError,
 			err:    status.Errorf(codes.Internal, "error"),
 		},
 		{
 			descr:  "success-without-root",
-			chain:  []string{cttestonly.LeafSignedByFakeIntermediateCertPEM, cttestonly.FakeIntermediateCertPEM},
+			chain:  []string{testdata.LeafSignedByFakeIntermediateCertPEM, testdata.FakeIntermediateCertPEM},
 			toSign: "1337d72a403b6539f58896decba416d5d4b3603bfa03e1f94bb9b4e898af897d",
 			want:   http.StatusOK,
 		},
 		{
 			descr:  "success",
-			chain:  []string{cttestonly.LeafSignedByFakeIntermediateCertPEM, cttestonly.FakeIntermediateCertPEM, cttestonly.FakeCACertPEM},
+			chain:  []string{testdata.LeafSignedByFakeIntermediateCertPEM, testdata.FakeIntermediateCertPEM, testdata.FakeCACertPEM},
 			toSign: "1337d72a403b6539f58896decba416d5d4b3603bfa03e1f94bb9b4e898af897d",
 			want:   http.StatusOK,
 		},
@@ -313,7 +313,7 @@ func TestAddChain(t *testing.T) {
 		t.Fatalf("Failed to create test signer: %v", err)
 	}
 
-	info := setupTest(t, []string{cttestonly.FakeCACertPEM}, signer)
+	info := setupTest(t, []string{testdata.FakeCACertPEM}, signer)
 	defer info.mockCtrl.Finish()
 
 	for _, test := range tests {
@@ -378,30 +378,30 @@ func TestAddPrechain(t *testing.T) {
 	}{
 		{
 			descr: "leaf-signed-by-different",
-			chain: []string{cttestonly.PrecertPEMValid, cttestonly.FakeIntermediateCertPEM},
+			chain: []string{testdata.PrecertPEMValid, testdata.FakeIntermediateCertPEM},
 			want:  http.StatusBadRequest,
 		},
 		{
 			descr: "wrong-entry-type",
-			chain: []string{cttestonly.TestCertPEM},
+			chain: []string{testdata.TestCertPEM},
 			want:  http.StatusBadRequest,
 		},
 		{
 			descr:  "backend-storage-fail",
-			chain:  []string{cttestonly.PrecertPEMValid, cttestonly.CACertPEM},
+			chain:  []string{testdata.PrecertPEMValid, testdata.CACertPEM},
 			toSign: "92ecae1a2dc67a6c5f9c96fa5cab4c2faf27c48505b696dad926f161b0ca675a",
 			err:    status.Errorf(codes.Internal, "error"),
 			want:   http.StatusInternalServerError,
 		},
 		{
 			descr:  "success",
-			chain:  []string{cttestonly.PrecertPEMValid, cttestonly.CACertPEM},
+			chain:  []string{testdata.PrecertPEMValid, testdata.CACertPEM},
 			toSign: "92ecae1a2dc67a6c5f9c96fa5cab4c2faf27c48505b696dad926f161b0ca675a",
 			want:   http.StatusOK,
 		},
 		{
 			descr:  "success-without-root",
-			chain:  []string{cttestonly.PrecertPEMValid},
+			chain:  []string{testdata.PrecertPEMValid},
 			toSign: "92ecae1a2dc67a6c5f9c96fa5cab4c2faf27c48505b696dad926f161b0ca675a",
 			want:   http.StatusOK,
 		},
@@ -414,7 +414,7 @@ func TestAddPrechain(t *testing.T) {
 		t.Fatalf("Failed to create test signer: %v", err)
 	}
 
-	info := setupTest(t, []string{cttestonly.CACertPEM}, signer)
+	info := setupTest(t, []string{testdata.CACertPEM}, signer)
 	defer info.mockCtrl.Finish()
 
 	for _, test := range tests {
