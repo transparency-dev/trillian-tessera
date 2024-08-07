@@ -26,97 +26,120 @@ import (
 	"k8s.io/klog/v2"
 )
 
-func hostUI(ctx context.Context, hammer *Hammer) {
+type tuiController struct {
+	hammer     *Hammer
+	app        *tview.Application
+	statusView *tview.TextView
+	logView    *tview.TextView
+	helpView   *tview.TextView
+}
+
+func newController(h *Hammer) *tuiController {
+	c := tuiController{
+		hammer: h,
+		app:    tview.NewApplication(),
+	}
 	grid := tview.NewGrid()
 	grid.SetRows(5, 0, 10).SetColumns(0).SetBorders(true)
-	// Status box
+
+	// Top: status box
 	statusView := tview.NewTextView()
 	grid.AddItem(statusView, 0, 0, 1, 1, 0, 0, false)
-	// Log view box
+	c.statusView = statusView
+
+	// Middle: log view box
 	logView := tview.NewTextView()
 	logView.ScrollToEnd()
 	logView.SetMaxLines(10000)
 	grid.AddItem(logView, 1, 0, 1, 1, 0, 0, false)
+	c.logView = logView
+
+	// Bottom: help text
+	helpView := tview.NewTextView()
+	helpView.SetText("+/- to increase/decrease read load\n>/< to increase/decrease write load\nw/W to increase/decrease workers")
+	grid.AddItem(helpView, 2, 0, 1, 1, 0, 0, false)
+	c.helpView = helpView
+
+	c.app.SetRoot(grid, true)
+	return &c
+}
+
+func (c *tuiController) Run(ctx context.Context) {
+	// Redirect logs to the view
 	if err := flag.Set("logtostderr", "false"); err != nil {
 		klog.Exitf("Failed to set flag: %v", err)
 	}
 	if err := flag.Set("alsologtostderr", "false"); err != nil {
 		klog.Exitf("Failed to set flag: %v", err)
 	}
-	klog.SetOutput(logView)
+	klog.SetOutput(c.logView)
 
-	helpView := tview.NewTextView()
-	helpView.SetText("+/- to increase/decrease read load\n>/< to increase/decrease write load\nw/W to increase/decrease workers")
-	grid.AddItem(helpView, 2, 0, 1, 1, 0, 0, false)
+	go c.updateStatsLoop(ctx, 500*time.Millisecond)
 
-	app := tview.NewApplication()
-	interval := 500 * time.Millisecond
-	ticker := time.NewTicker(interval)
-	go func() {
-		lastSize := hammer.tracker.LatestConsistent.Size
-		maSlots := int((30 * time.Second) / interval)
-		growth := movingaverage.New(maSlots)
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				s := hammer.tracker.LatestConsistent.Size
-				growth.Add(float64(s - lastSize))
-				lastSize = s
-				qps := growth.Avg() * float64(time.Second/interval)
-				text := fmt.Sprintf("Read: %s\nWrite: %s\nTreeSize: %d (Δ %.0fqps over %ds)\nTime-in-queue: %s\nObserved-time-to-integrate: %s",
-					hammer.readThrottle.String(),
-					hammer.writeThrottle.String(),
-					s,
-					qps,
-					time.Duration(maSlots*int(interval))/time.Second,
-					formatMovingAverage(hammer.queueTime),
-					formatMovingAverage(hammer.integrationTime),
-				)
-				statusView.SetText(text)
-				app.Draw()
-			}
-		}
-	}()
-	app.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+	c.app.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 		switch event.Rune() {
 		case '+':
 			klog.Info("Increasing the read operations per second")
-			hammer.readThrottle.Increase()
+			c.hammer.readThrottle.Increase()
 		case '-':
 			klog.Info("Decreasing the read operations per second")
-			hammer.readThrottle.Decrease()
+			c.hammer.readThrottle.Decrease()
 		case '>':
 			klog.Info("Increasing the write operations per second")
-			hammer.writeThrottle.Increase()
+			c.hammer.writeThrottle.Increase()
 		case '<':
 			klog.Info("Decreasing the write operations per second")
-			hammer.writeThrottle.Decrease()
+			c.hammer.writeThrottle.Decrease()
 		case 'w':
 			klog.Info("Increasing the number of workers")
-			hammer.randomReaders.Grow(ctx)
-			hammer.fullReaders.Grow(ctx)
-			hammer.writers.Grow(ctx)
+			c.hammer.randomReaders.Grow(ctx)
+			c.hammer.fullReaders.Grow(ctx)
+			c.hammer.writers.Grow(ctx)
 		case 'W':
 			klog.Info("Decreasing the number of workers")
-			hammer.randomReaders.Shrink(ctx)
-			hammer.fullReaders.Shrink(ctx)
-			hammer.writers.Shrink(ctx)
+			c.hammer.randomReaders.Shrink(ctx)
+			c.hammer.fullReaders.Shrink(ctx)
+			c.hammer.writers.Shrink(ctx)
 		}
 		return event
 	})
-	// logView.SetChangedFunc(func() {
-	// 	app.Draw()
-	// })
-	if err := app.SetRoot(grid, true).Run(); err != nil {
+	if err := c.app.Run(); err != nil {
 		panic(err)
 	}
 }
 
-func formatMovingAverage(ma *movingaverage.MovingAverage) string {
-	aMin, _ := ma.Min()
-	aMax, _ := ma.Max()
-	aAvg := ma.Avg()
-	return fmt.Sprintf("%.0fms/%.0fms/%.0fms (min/avg/max)", aMin, aAvg, aMax)
+func (c *tuiController) updateStatsLoop(ctx context.Context, interval time.Duration) {
+	formatMovingAverage := func(ma *movingaverage.MovingAverage) string {
+		aMin, _ := ma.Min()
+		aMax, _ := ma.Max()
+		aAvg := ma.Avg()
+		return fmt.Sprintf("%.0fms/%.0fms/%.0fms (min/avg/max)", aMin, aAvg, aMax)
+	}
+
+	ticker := time.NewTicker(interval)
+	lastSize := c.hammer.tracker.LatestConsistent.Size
+	maSlots := int((30 * time.Second) / interval)
+	growth := movingaverage.New(maSlots)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			s := c.hammer.tracker.LatestConsistent.Size
+			growth.Add(float64(s - lastSize))
+			lastSize = s
+			qps := growth.Avg() * float64(time.Second/interval)
+			text := fmt.Sprintf("Read: %s\nWrite: %s\nTreeSize: %d (Δ %.0fqps over %ds)\nTime-in-queue: %s\nObserved-time-to-integrate: %s",
+				c.hammer.readThrottle.String(),
+				c.hammer.writeThrottle.String(),
+				s,
+				qps,
+				time.Duration(maSlots*int(interval))/time.Second,
+				formatMovingAverage(c.hammer.queueTime),
+				formatMovingAverage(c.hammer.integrationTime),
+			)
+			c.statusView.SetText(text)
+			c.app.Draw()
+		}
+	}
 }

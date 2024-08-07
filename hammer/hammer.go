@@ -94,7 +94,8 @@ func main() {
 	hammer.Run(ctx)
 
 	if *showUI {
-		hostUI(ctx, hammer)
+		c := newController(hammer)
+		c.Run(ctx)
 	} else {
 		<-ctx.Done()
 	}
