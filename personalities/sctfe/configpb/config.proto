@@ -14,7 +14,7 @@
 
 syntax = "proto3";
 
-option go_package = "github.com/google/certificate-transparency-go/trillian/ctfe/configpb";
+option go_package = "github.com/transparency-dev/trillian-tessera/personalities/sctfe/configpb";
 
 package configpb;
 
