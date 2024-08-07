@@ -20,16 +20,16 @@ import (
 	"testing"
 
 	"github.com/google/certificate-transparency-go/tls"
-	"github.com/google/certificate-transparency-go/trillian/ctfe/testonly"
 	"github.com/google/certificate-transparency-go/x509"
 	"github.com/google/certificate-transparency-go/x509util"
 	"github.com/kylelemons/godebug/pretty"
+	"github.com/transparency-dev/trillian-tessera/personalities/sctfe/testdata"
 
 	ct "github.com/google/certificate-transparency-go"
 )
 
 func TestBuildV1MerkleTreeLeafForCert(t *testing.T) {
-	cert, err := x509util.CertificateFromPEM([]byte(testonly.LeafSignedByFakeIntermediateCertPEM))
+	cert, err := x509util.CertificateFromPEM([]byte(testdata.LeafSignedByFakeIntermediateCertPEM))
 	if x509.IsFatal(err) {
 		t.Fatalf("failed to set up test cert: %v", err)
 	}
@@ -84,7 +84,7 @@ func TestBuildV1MerkleTreeLeafForCert(t *testing.T) {
 }
 
 func TestSignV1SCTForPrecertificate(t *testing.T) {
-	cert, err := x509util.CertificateFromPEM([]byte(testonly.PrecertPEMValid))
+	cert, err := x509util.CertificateFromPEM([]byte(testdata.PrecertPEMValid))
 	if x509.IsFatal(err) {
 		t.Fatalf("failed to set up test precert: %v", err)
 	}
