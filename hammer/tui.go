@@ -129,8 +129,10 @@ func (c *tuiController) updateStatsLoop(ctx context.Context, interval time.Durat
 			growth.Add(float64(s - lastSize))
 			lastSize = s
 			qps := growth.Avg() * float64(time.Second/interval)
-			text := fmt.Sprintf("Read: %s\nWrite: %s\nTreeSize: %d (Δ %.0fqps over %ds)\nTime-in-queue: %s\nObserved-time-to-integrate: %s",
+			text := fmt.Sprintf("Read (%d workers): %s\nWrite (%d workers): %s\nTreeSize: %d (Δ %.0fqps over %ds)\nTime-in-queue: %s\nObserved-time-to-integrate: %s",
+				c.hammer.fullReaders.Size()+c.hammer.randomReaders.Size(),
 				c.hammer.readThrottle.String(),
+				c.hammer.writers.Size(),
 				c.hammer.writeThrottle.String(),
 				s,
 				qps,

@@ -53,3 +53,7 @@ func (p *workerPool) Shrink(ctx context.Context) {
 	p.workers = p.workers[:len(p.workers)-1]
 	w.Kill()
 }
+
+func (p *workerPool) Size() int {
+	return len(p.workers)
+}
