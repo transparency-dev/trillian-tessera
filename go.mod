@@ -8,6 +8,7 @@ require (
 	github.com/RobinUS2/golang-moving-average v1.0.0
 	github.com/gdamore/tcell/v2 v2.7.4
 	github.com/globocom/go-buffer v1.2.2
+	github.com/golang/mock v1.6.0
 	github.com/google/certificate-transparency-go v1.2.1
 	github.com/google/go-cmp v0.6.0
 	github.com/google/trillian v1.6.0
