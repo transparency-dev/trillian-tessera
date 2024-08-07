@@ -22,7 +22,7 @@ The following files are auto-generated:
  - [`mock_ct_storage.go`](./mockstorage/mock_ct_storage.go): a mock CT storage implementation for tests
 
 To re-generate these files, first install the right tools:
- - [protobuf compiler and go gen](https://protobuf.dev/getting-started/gotutorial/#compiling-protocol-buffers). The protos in this repo have been built with protoc v21.12.
+ - [protobuf compiler and go gen](https://protobuf.dev/getting-started/gotutorial/#compiling-protocol-buffers). The protos in this repo have been built with protoc v27.3.
  - [mockgen](https://github.com/golang/mock?tab=readme-ov-file#installation)
 
 Then, generate the files:
