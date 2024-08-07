@@ -19,6 +19,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -56,6 +57,7 @@ type Storage struct {
 }
 
 // New creates a new instance of the MySQL-based Storage.
+// Note that `tessera.WithCheckpointSignerVerifier()` is mandatory in the `opts` argument.
 func New(ctx context.Context, db *sql.DB, opts ...func(*tessera.StorageOptions)) (*Storage, error) {
 	opt := tessera.ResolveStorageOptions(&tessera.StorageOptions{
 		BatchMaxAge:  defaultQueueMaxAge,
@@ -69,6 +71,9 @@ func New(ctx context.Context, db *sql.DB, opts ...func(*tessera.StorageOptions))
 	if err := s.db.Ping(); err != nil {
 		klog.Errorf("Failed to ping database: %v", err)
 		return nil, err
+	}
+	if s.newCheckpoint == nil || s.parseCheckpoint == nil {
+		return nil, errors.New("tessera.WithCheckpointSignerVerifier must be provided in New()")
 	}
 
 	s.queue = storage.NewQueue(ctx, opt.BatchMaxAge, opt.BatchMaxSize, s.sequenceBatch)
@@ -187,7 +192,15 @@ func (s *Storage) ReadEntryBundle(ctx context.Context, index uint64) ([]byte, er
 	}
 
 	var entryBundle []byte
-	return entryBundle, row.Scan(&entryBundle)
+	if err := row.Scan(&entryBundle); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+
+		return nil, err
+	}
+
+	return entryBundle, nil
 }
 
 func (s *Storage) writeEntryBundle(ctx context.Context, tx *sql.Tx, index uint64, entryBundle []byte) error {
