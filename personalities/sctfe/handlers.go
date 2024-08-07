@@ -31,7 +31,6 @@ import (
 
 	"github.com/google/certificate-transparency-go/asn1"
 	"github.com/google/certificate-transparency-go/tls"
-	"github.com/google/certificate-transparency-go/trillian/util"
 	"github.com/google/certificate-transparency-go/x509"
 	"github.com/google/certificate-transparency-go/x509util"
 	"github.com/google/trillian/monitoring"
@@ -196,8 +195,8 @@ func NewCertValidationOpts(trustedRoots *x509util.PEMCertPool, currentTime time.
 type logInfo struct {
 	// LogOrigin identifies the log, as per https://c2sp.org/static-ct-api
 	LogOrigin string
-	// TimeSource is a util.TimeSource that can be injected for testing
-	TimeSource util.TimeSource
+	// TimeSource is a TimeSource that can be injected for testing
+	TimeSource TimeSource
 	// RequestLog is a logger for various request / processing / response debug
 	// information.
 	RequestLog RequestLog
@@ -217,7 +216,7 @@ func newLogInfo(
 	instanceOpts InstanceOptions,
 	validationOpts CertValidationOpts,
 	signer crypto.Signer,
-	timeSource util.TimeSource,
+	timeSource TimeSource,
 ) *logInfo {
 	vCfg := instanceOpts.Validated
 	cfg := vCfg.Config

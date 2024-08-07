@@ -30,7 +30,6 @@ import (
 	"time"
 
 	"github.com/golang/mock/gomock"
-	"github.com/google/certificate-transparency-go/trillian/util"
 	"github.com/google/certificate-transparency-go/x509"
 	"github.com/google/certificate-transparency-go/x509util"
 	"github.com/google/go-cmp/cmp"
@@ -54,7 +53,7 @@ var fakeTimeMillis = uint64(fakeTime.UnixNano() / millisPerNano)
 
 // The deadline should be the above bumped by 500ms
 var fakeDeadlineTime = time.Date(2016, 7, 22, 11, 01, 13, 500*1000*1000, time.UTC)
-var fakeTimeSource = util.NewFixedTimeSource(fakeTime)
+var fakeTimeSource = NewFixedTimeSource(fakeTime)
 
 type handlerTestInfo struct {
 	mockCtrl *gomock.Controller
