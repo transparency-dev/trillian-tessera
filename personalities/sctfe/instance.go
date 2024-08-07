@@ -27,7 +27,6 @@ import (
 
 	"github.com/google/certificate-transparency-go/asn1"
 	"github.com/google/certificate-transparency-go/trillian/ctfe/cache"
-	"github.com/google/certificate-transparency-go/trillian/util"
 	"github.com/google/certificate-transparency-go/x509"
 	"github.com/google/certificate-transparency-go/x509util"
 	"github.com/google/trillian/crypto/keys"
@@ -147,7 +146,7 @@ func setUpLogInfo(ctx context.Context, opts InstanceOptions) (*logInfo, error) {
 		return nil, fmt.Errorf("failed to parse RejectExtensions: %v", err)
 	}
 
-	logInfo := newLogInfo(opts, validationOpts, signer, new(util.SystemTimeSource))
+	logInfo := newLogInfo(opts, validationOpts, signer, new(SystemTimeSource))
 	return logInfo, nil
 }
 
