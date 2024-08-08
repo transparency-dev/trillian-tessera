@@ -41,9 +41,11 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/cors"
 	"github.com/tomasen/realip"
+	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/personalities/sctfe"
 	"github.com/transparency-dev/trillian-tessera/personalities/sctfe/configpb"
 	"github.com/transparency-dev/trillian-tessera/storage/gcp"
+	"golang.org/x/mod/sumdb/note"
 	"google.golang.org/protobuf/proto"
 	"k8s.io/klog/v2"
 )
@@ -283,14 +285,14 @@ func setupAndRegister(ctx context.Context, deadline time.Duration, vCfg *sctfe.V
 	return inst, nil
 }
 
-func newGCPStorage(ctx context.Context, vCfg *sctfe.ValidatedLogConfig) (*sctfe.CTStorage, error) {
+func newGCPStorage(ctx context.Context, vCfg *sctfe.ValidatedLogConfig, signer note.Signer) (*sctfe.CTStorage, error) {
 	cfg := vCfg.Config.GetGcp()
 	gcpCfg := gcp.Config{
 		ProjectID: cfg.ProjectId,
 		Bucket:    cfg.Bucket,
 		Spanner:   cfg.SpannerDbPath,
 	}
-	storage, err := gcp.New(ctx, gcpCfg)
+	storage, err := gcp.New(ctx, gcpCfg, tessera.WithCheckpointSignerVerifier(signer, nil))
 	if err != nil {
 		return nil, fmt.Errorf("Failed to initialize GCP storage: %v", err)
 	}

@@ -29,6 +29,7 @@ import (
 	"github.com/google/trillian/crypto/keyspb"
 	"github.com/google/trillian/monitoring"
 	"github.com/transparency-dev/trillian-tessera/personalities/sctfe/configpb"
+	"golang.org/x/mod/sumdb/note"
 	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -37,7 +38,7 @@ func init() {
 	keys.RegisterHandler(&keyspb.PEMKeyFile{}, pem.FromProto)
 }
 
-func fakeCTStorage(_ context.Context, _ *ValidatedLogConfig) (*CTStorage, error) {
+func fakeCTStorage(_ context.Context, _ *ValidatedLogConfig, _ note.Signer) (*CTStorage, error) {
 	return &CTStorage{}, nil
 }
 

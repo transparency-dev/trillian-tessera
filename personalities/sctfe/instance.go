@@ -30,6 +30,7 @@ import (
 	"github.com/google/certificate-transparency-go/x509util"
 	"github.com/google/trillian/crypto/keys"
 	"github.com/google/trillian/monitoring"
+	"golang.org/x/mod/sumdb/note"
 )
 
 // InstanceOptions describes the options for a log instance.
@@ -37,8 +38,8 @@ type InstanceOptions struct {
 	// Validated holds the original configuration options for the log, and some
 	// of its fields parsed as a result of validating it.
 	Validated *ValidatedLogConfig
-	// CreateStorage instantiates a Tessera storage implementation.
-	CreateStorage func(context.Context, *ValidatedLogConfig) (*CTStorage, error)
+	// CreateStorage instantiates a Tessera storage implementation with a signer option.
+	CreateStorage func(context.Context, *ValidatedLogConfig, note.Signer) (*CTStorage, error)
 	// Deadline is a timeout for Tessera requests.
 	Deadline time.Duration
 	// MetricFactory allows creating metrics.
@@ -141,12 +142,19 @@ func setUpLogInfo(ctx context.Context, opts InstanceOptions) (*logInfo, error) {
 		return nil, fmt.Errorf("failed to parse RejectExtensions: %v", err)
 	}
 
-	storage, err := opts.CreateStorage(ctx, opts.Validated)
+	logID, err := GetCTLogID(signer.Public())
+	if err != nil {
+		return nil, fmt.Errorf("failed to get logID for signing: %v", err)
+	}
+	timeSource := new(SystemTimeSource)
+	ctSigner := NewCTSigner(signer, vCfg.Config.Origin, logID, timeSource)
+
+	storage, err := opts.CreateStorage(ctx, opts.Validated, ctSigner)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create storage backend: %v", err)
 	}
 
-	logInfo := newLogInfo(opts, validationOpts, signer, new(SystemTimeSource), storage)
+	logInfo := newLogInfo(opts, validationOpts, signer, timeSource, storage)
 	return logInfo, nil
 }
 
