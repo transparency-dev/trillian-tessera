@@ -51,6 +51,7 @@ type Entry struct {
 	Precertificate     []byte
 	PrecertSigningCert []byte
 	IssuerKeyHash      []byte
+	FingerprintsChain  [][32]byte
 }
 
 // LeafData returns the data which should be added to an entry bundle for this entry.
@@ -77,10 +78,12 @@ func (c Entry) LeafData(idx uint64) []byte {
 		b.AddUint24LengthPrefixed(func(b *cryptobyte.Builder) {
 			b.AddBytes(c.Precertificate)
 		})
-		b.AddUint24LengthPrefixed(func(b *cryptobyte.Builder) {
-			b.AddBytes(c.PrecertSigningCert)
-		})
 	}
+	b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
+		for _, f := range c.FingerprintsChain {
+			b.AddBytes(f[:])
+		}
+	})
 	return b.BytesOrPanic()
 }
 

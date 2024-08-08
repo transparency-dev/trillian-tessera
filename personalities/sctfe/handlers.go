@@ -445,6 +445,15 @@ func entryFromChain(chain []*x509.Certificate, isPrecert bool, timestamp uint64)
 		IsPrecert: isPrecert,
 		Timestamp: timestamp,
 	}
+
+	if len(chain) > 1 {
+		issuersChain := make([][32]byte, len(chain)-1)
+		for i, c := range chain[1:] {
+			issuersChain[i] = sha256.Sum256(c.Raw)
+		}
+		leaf.FingerprintsChain = issuersChain
+	}
+
 	if !isPrecert {
 		leaf.Certificate = chain[0].Raw
 		return &leaf, nil
