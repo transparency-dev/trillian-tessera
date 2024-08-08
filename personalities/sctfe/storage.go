@@ -23,6 +23,7 @@ import (
 	"github.com/google/certificate-transparency-go/x509"
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/ctonly"
+	"golang.org/x/sync/errgroup"
 )
 
 // Storage provides all the storage primitives necessary to write to a ct-static-api log.
