@@ -267,7 +267,7 @@ func setupAndRegister(ctx context.Context, deadline time.Duration, vCfg *sctfe.V
 
 	switch vCfg.Config.StorageConfig.(type) {
 	case *configpb.LogConfig_Gcp:
-		storage, err := newGCPStorage(ctx, vCfg.Config.GetGcp())
+		storage, err := newGCPStorage(ctx, vCfg)
 		if err != nil {
 			return nil, fmt.Errorf("failed to initialize GCP storage: %v", err)
 		}
@@ -286,7 +286,8 @@ func setupAndRegister(ctx context.Context, deadline time.Duration, vCfg *sctfe.V
 	return inst, nil
 }
 
-func newGCPStorage(ctx context.Context, cfg *configpb.GCPConfig) (*sctfe.CTStorage, error) {
+func newGCPStorage(ctx context.Context, vCfg *sctfe.ValidatedLogConfig) (*sctfe.CTStorage, error) {
+	cfg := vCfg.Config.GetGcp()
 	gcpCfg := gcp.Config{
 		ProjectID: cfg.ProjectId,
 		Bucket:    cfg.Bucket,
