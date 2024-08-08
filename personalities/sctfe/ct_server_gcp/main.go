@@ -279,7 +279,7 @@ func newGCPStorage(ctx context.Context, vCfg *sctfe.ValidatedLogConfig, signer n
 		return nil, fmt.Errorf("Failed to initialize GCP Tesserea storage: %v", err)
 	}
 
-	issuerStorage, err := gcpMap.NewGCSStorage(ctx, cfg.ProjectId, cfg.Bucket, "fingerprints/")
+	issuerStorage, err := gcpMap.NewGCSStorage(ctx, cfg.ProjectId, cfg.Bucket, "fingerprints/", "application/pkix-cert")
 	if err != nil {
 		return nil, fmt.Errorf("Failed to initialize GCP issuer storage: %v", err)
 	}
