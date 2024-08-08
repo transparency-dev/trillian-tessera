@@ -32,14 +32,15 @@ import (
 
 // GCSStorage is a map backed by GCS on GCP.
 type GCSStorage struct {
-	bucket *gcs.BucketHandle
-	prefix string
+	bucket      *gcs.BucketHandle
+	prefix      string
+	contentType string
 }
 
 // NewGCSStorage creates a new GCSStorage.
 //
 // The specified bucket must exist or an error will be returned.
-func NewGCSStorage(ctx context.Context, projectID string, bucket string, prefix string) (*GCSStorage, error) {
+func NewGCSStorage(ctx context.Context, projectID string, bucket string, prefix string, contentType string) (*GCSStorage, error) {
 	c, err := gcs.NewClient(ctx, gcs.WithJSONReads())
 	if err != nil {
 		return nil, fmt.Errorf("failed to create GCS client: %v", err)
@@ -59,8 +60,9 @@ func NewGCSStorage(ctx context.Context, projectID string, bucket string, prefix 
 		}
 	}
 	r := &GCSStorage{
-		bucket: c.Bucket(bucket),
-		prefix: prefix,
+		bucket:      c.Bucket(bucket),
+		prefix:      prefix,
+		contentType: contentType,
 	}
 
 	return r, nil
@@ -96,6 +98,7 @@ func (s *GCSStorage) Add(ctx context.Context, key [32]byte, data []byte) error {
 
 	// Don't overwrite if it already exists
 	w := obj.If(gcs.Conditions{DoesNotExist: true}).NewWriter(ctx)
+	w.ObjectAttrs.ContentType = s.contentType
 
 	if _, err := w.Write(data); err != nil {
 		return fmt.Errorf("failed to write object %q to bucket %q: %w", objName, s.bucket.BucketName(), err)
