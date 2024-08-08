@@ -26,7 +26,6 @@ import (
 	"time"
 
 	"github.com/google/certificate-transparency-go/asn1"
-	"github.com/google/certificate-transparency-go/trillian/ctfe/cache"
 	"github.com/google/certificate-transparency-go/x509"
 	"github.com/google/certificate-transparency-go/x509util"
 	"github.com/google/trillian/crypto/keys"
@@ -63,10 +62,6 @@ type InstanceOptions struct {
 	// MaskInternalErrors indicates if internal server errors should be masked
 	// or returned to the user containing the full error message.
 	MaskInternalErrors bool
-	// CacheType is the CTFE cache type.
-	CacheType cache.Type
-	// CacheOption includes the cache size and time-to-live (TTL).
-	CacheOption cache.Option
 }
 
 // Instance is a set up log/mirror instance. It must be created with the

@@ -31,7 +31,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/google/certificate-transparency-go/trillian/ctfe/cache"
 	"github.com/google/trillian/crypto/keys"
 	"github.com/google/trillian/crypto/keys/der"
 	"github.com/google/trillian/crypto/keys/pem"
@@ -64,9 +63,6 @@ var (
 	quotaRemote        = flag.Bool("quota_remote", true, "Enable requesting of quota for IP address sending incoming requests")
 	quotaIntermediate  = flag.Bool("quota_intermediate", true, "Enable requesting of quota for intermediate certificates in submitted chains")
 	pkcs11ModulePath   = flag.String("pkcs11_module_path", "", "Path to the PKCS#11 module to use for keys that use the PKCS#11 interface")
-	cacheType          = flag.String("cache_type", "noop", "Supported cache type: noop, lru (Default: noop)")
-	cacheSize          = flag.Int("cache_size", -1, "Size parameter set to 0 makes cache of unlimited size")
-	cacheTTL           = flag.Duration("cache_ttl", -1*time.Second, "Providing 0 TTL turns expiring off")
 )
 
 const unknownRemoteUser = "UNKNOWN_REMOTE"
@@ -120,11 +116,6 @@ func main() {
 			vc,
 			corsMux,
 			*maskInternalErrors,
-			cache.Type(*cacheType),
-			cache.Option{
-				Size: *cacheSize,
-				TTL:  *cacheTTL,
-			},
 		)
 		if err != nil {
 			klog.Exitf("Failed to set up log instance for %+v: %v", cfgs, err)
@@ -251,15 +242,13 @@ func awaitSignal(doneFn func()) {
 	doneFn()
 }
 
-func setupAndRegister(ctx context.Context, deadline time.Duration, vCfg *sctfe.ValidatedLogConfig, mux *http.ServeMux, maskInternalErrors bool, cacheType cache.Type, cacheOption cache.Option) (*sctfe.Instance, error) {
+func setupAndRegister(ctx context.Context, deadline time.Duration, vCfg *sctfe.ValidatedLogConfig, mux *http.ServeMux, maskInternalErrors bool) (*sctfe.Instance, error) {
 	opts := sctfe.InstanceOptions{
 		Validated:          vCfg,
 		Deadline:           deadline,
 		MetricFactory:      prometheus.MetricFactory{},
 		RequestLog:         new(sctfe.DefaultRequestLog),
 		MaskInternalErrors: maskInternalErrors,
-		CacheType:          cacheType,
-		CacheOption:        cacheOption,
 	}
 	if *quotaRemote {
 		klog.Info("Enabling quota for requesting IP")
