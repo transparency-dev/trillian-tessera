@@ -9,6 +9,7 @@ import (
 	reflect "reflect"
 
 	gomock "github.com/golang/mock/gomock"
+	x509 "github.com/google/certificate-transparency-go/x509"
 	ctonly "github.com/transparency-dev/trillian-tessera/ctonly"
 )
 
@@ -48,4 +49,18 @@ func (m *MockStorage) Add(arg0 context.Context, arg1 *ctonly.Entry) (uint64, err
 func (mr *MockStorageMockRecorder) Add(arg0, arg1 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Add", reflect.TypeOf((*MockStorage)(nil).Add), arg0, arg1)
+}
+
+// AddIssuerChain mocks base method.
+func (m *MockStorage) AddIssuerChain(arg0 context.Context, arg1 []*x509.Certificate) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "AddIssuerChain", arg0, arg1)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// AddIssuerChain indicates an expected call of AddIssuerChain.
+func (mr *MockStorageMockRecorder) AddIssuerChain(arg0, arg1 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddIssuerChain", reflect.TypeOf((*MockStorage)(nil).AddIssuerChain), arg0, arg1)
 }
