@@ -50,9 +50,10 @@ func TestSetUpInstance(t *testing.T) {
 	wrongPassPrivKey := mustMarshalAny(&keyspb.PEMKeyFile{Path: "./testdata/ct-http-server.privkey.pem", Password: "dirkly"})
 
 	var tests = []struct {
-		desc    string
-		cfg     *configpb.LogConfig
-		wantErr string
+		desc      string
+		cfg       *configpb.LogConfig
+		ctStorage func(context.Context, *ValidatedLogConfig, note.Signer) (*CTStorage, error)
+		wantErr   string
 	}{
 		{
 			desc: "valid",
@@ -62,6 +63,7 @@ func TestSetUpInstance(t *testing.T) {
 				PrivateKey:    privKey,
 				StorageConfig: &configpb.LogConfig_Gcp{Gcp: &configpb.GCPConfig{Bucket: "bucket", SpannerDbPath: "spanner"}},
 			},
+			ctStorage: fakeCTStorage,
 		},
 		{
 			desc: "no-roots",
@@ -70,7 +72,8 @@ func TestSetUpInstance(t *testing.T) {
 				PrivateKey:    privKey,
 				StorageConfig: &configpb.LogConfig_Gcp{Gcp: &configpb.GCPConfig{Bucket: "bucket", SpannerDbPath: "spanner"}},
 			},
-			wantErr: "specify RootsPemFile",
+			ctStorage: fakeCTStorage,
+			wantErr:   "specify RootsPemFile",
 		},
 		{
 			desc: "missing-root-cert",
@@ -80,7 +83,8 @@ func TestSetUpInstance(t *testing.T) {
 				PrivateKey:    privKey,
 				StorageConfig: &configpb.LogConfig_Gcp{Gcp: &configpb.GCPConfig{Bucket: "bucket", SpannerDbPath: "spanner"}},
 			},
-			wantErr: "failed to read trusted roots",
+			ctStorage: fakeCTStorage,
+			wantErr:   "failed to read trusted roots",
 		},
 		{
 			desc: "missing-privkey",
@@ -90,7 +94,8 @@ func TestSetUpInstance(t *testing.T) {
 				PrivateKey:    missingPrivKey,
 				StorageConfig: &configpb.LogConfig_Gcp{Gcp: &configpb.GCPConfig{Bucket: "bucket", SpannerDbPath: "spanner"}},
 			},
-			wantErr: "failed to load private key",
+			ctStorage: fakeCTStorage,
+			wantErr:   "failed to load private key",
 		},
 		{
 			desc: "privkey-wrong-password",
@@ -100,7 +105,8 @@ func TestSetUpInstance(t *testing.T) {
 				PrivateKey:    wrongPassPrivKey,
 				StorageConfig: &configpb.LogConfig_Gcp{Gcp: &configpb.GCPConfig{Bucket: "bucket", SpannerDbPath: "spanner"}},
 			},
-			wantErr: "failed to load private key",
+			ctStorage: fakeCTStorage,
+			wantErr:   "failed to load private key",
 		},
 		{
 			desc: "valid-ekus-1",
@@ -111,6 +117,7 @@ func TestSetUpInstance(t *testing.T) {
 				ExtKeyUsages:  []string{"Any"},
 				StorageConfig: &configpb.LogConfig_Gcp{Gcp: &configpb.GCPConfig{Bucket: "bucket", SpannerDbPath: "spanner"}},
 			},
+			ctStorage: fakeCTStorage,
 		},
 		{
 			desc: "valid-ekus-2",
@@ -121,6 +128,7 @@ func TestSetUpInstance(t *testing.T) {
 				ExtKeyUsages:  []string{"Any", "ServerAuth", "TimeStamping"},
 				StorageConfig: &configpb.LogConfig_Gcp{Gcp: &configpb.GCPConfig{Bucket: "bucket", SpannerDbPath: "spanner"}},
 			},
+			ctStorage: fakeCTStorage,
 		},
 		{
 			desc: "valid-reject-ext",
@@ -131,6 +139,7 @@ func TestSetUpInstance(t *testing.T) {
 				RejectExtensions: []string{"1.2.3.4", "5.6.7.8"},
 				StorageConfig:    &configpb.LogConfig_Gcp{Gcp: &configpb.GCPConfig{Bucket: "bucket", SpannerDbPath: "spanner"}},
 			},
+			ctStorage: fakeCTStorage,
 		},
 		{
 			desc: "invalid-reject-ext",
@@ -141,7 +150,31 @@ func TestSetUpInstance(t *testing.T) {
 				RejectExtensions: []string{"1.2.3.4", "one.banana.two.bananas"},
 				StorageConfig:    &configpb.LogConfig_Gcp{Gcp: &configpb.GCPConfig{Bucket: "bucket", SpannerDbPath: "spanner"}},
 			},
-			wantErr: "one",
+			ctStorage: fakeCTStorage,
+			wantErr:   "one",
+		},
+		{
+			desc: "missing-create-storage",
+			cfg: &configpb.LogConfig{
+				Origin:        "log",
+				RootsPemFile:  []string{"./testdata/fake-ca.cert"},
+				PrivateKey:    privKey,
+				StorageConfig: &configpb.LogConfig_Gcp{Gcp: &configpb.GCPConfig{Bucket: "bucket", SpannerDbPath: "spanner"}},
+			},
+			wantErr: "failed to initiate storage backend",
+		},
+		{
+			desc: "failing-create-storage",
+			cfg: &configpb.LogConfig{
+				Origin:        "log",
+				RootsPemFile:  []string{"./testdata/fake-ca.cert"},
+				PrivateKey:    privKey,
+				StorageConfig: &configpb.LogConfig_Gcp{Gcp: &configpb.GCPConfig{Bucket: "bucket", SpannerDbPath: "spanner"}},
+			},
+			ctStorage: func(_ context.Context, _ *ValidatedLogConfig, _ note.Signer) (*CTStorage, error) {
+				return nil, fmt.Errorf("I failed")
+			},
+			wantErr: "failed to initiate storage backend",
 		},
 	}
 
@@ -151,7 +184,7 @@ func TestSetUpInstance(t *testing.T) {
 			if err != nil {
 				t.Fatalf("ValidateLogConfig(): %v", err)
 			}
-			opts := InstanceOptions{Validated: vCfg, Deadline: time.Second, MetricFactory: monitoring.InertMetricFactory{}, CreateStorage: fakeCTStorage}
+			opts := InstanceOptions{Validated: vCfg, Deadline: time.Second, MetricFactory: monitoring.InertMetricFactory{}, CreateStorage: test.ctStorage}
 
 			if _, err := SetUpInstance(ctx, opts); err != nil {
 				if test.wantErr == "" {

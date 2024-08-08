@@ -149,9 +149,12 @@ func setUpLogInfo(ctx context.Context, opts InstanceOptions) (*logInfo, error) {
 	timeSource := new(SystemTimeSource)
 	ctSigner := NewCTSigner(signer, vCfg.Config.Origin, logID, timeSource)
 
+	if opts.CreateStorage == nil {
+		return nil, fmt.Errorf("failed to initiate storage backend: nil createStorage")
+	}
 	storage, err := opts.CreateStorage(ctx, opts.Validated, ctSigner)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create storage backend: %v", err)
+		return nil, fmt.Errorf("failed to initiate storage backend: %v", err)
 	}
 
 	logInfo := newLogInfo(opts, validationOpts, signer, timeSource, storage)
