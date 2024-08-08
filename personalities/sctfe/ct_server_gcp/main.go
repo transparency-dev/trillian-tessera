@@ -267,11 +267,8 @@ func setupAndRegister(ctx context.Context, deadline time.Duration, vCfg *sctfe.V
 
 	switch vCfg.Config.StorageConfig.(type) {
 	case *configpb.LogConfig_Gcp:
-		storage, err := newGCPStorage(ctx, vCfg)
-		if err != nil {
-			return nil, fmt.Errorf("failed to initialize GCP storage: %v", err)
-		}
-		opts.Storage = storage
+		klog.Info("Found GCP storage config, will set up GCP tessera storage")
+		opts.CreateStorage = newGCPStorage
 	default:
 		return nil, fmt.Errorf("unrecognized storage config")
 	}

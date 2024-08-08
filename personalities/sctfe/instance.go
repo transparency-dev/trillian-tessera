@@ -37,8 +37,8 @@ type InstanceOptions struct {
 	// Validated holds the original configuration options for the log, and some
 	// of its fields parsed as a result of validating it.
 	Validated *ValidatedLogConfig
-	// Storage is a corresponding Tessera storage implementation.
-	Storage Storage
+	// CreateStorage instantiates a Tessera storage implementation.
+	CreateStorage func(context.Context, *ValidatedLogConfig) (*CTStorage, error)
 	// Deadline is a timeout for Tessera requests.
 	Deadline time.Duration
 	// MetricFactory allows creating metrics.
@@ -141,7 +141,12 @@ func setUpLogInfo(ctx context.Context, opts InstanceOptions) (*logInfo, error) {
 		return nil, fmt.Errorf("failed to parse RejectExtensions: %v", err)
 	}
 
-	logInfo := newLogInfo(opts, validationOpts, signer, new(SystemTimeSource))
+	storage, err := opts.CreateStorage(ctx, opts.Validated)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create storage backend: %v", err)
+	}
+
+	logInfo := newLogInfo(opts, validationOpts, signer, new(SystemTimeSource), storage)
 	return logInfo, nil
 }
 

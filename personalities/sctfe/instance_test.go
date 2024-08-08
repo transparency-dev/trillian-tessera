@@ -37,6 +37,10 @@ func init() {
 	keys.RegisterHandler(&keyspb.PEMKeyFile{}, pem.FromProto)
 }
 
+func fakeCTStorage(_ context.Context, _ *ValidatedLogConfig) (*CTStorage, error) {
+	return &CTStorage{}, nil
+}
+
 func TestSetUpInstance(t *testing.T) {
 	ctx := context.Background()
 
@@ -146,7 +150,7 @@ func TestSetUpInstance(t *testing.T) {
 			if err != nil {
 				t.Fatalf("ValidateLogConfig(): %v", err)
 			}
-			opts := InstanceOptions{Validated: vCfg, Deadline: time.Second, MetricFactory: monitoring.InertMetricFactory{}}
+			opts := InstanceOptions{Validated: vCfg, Deadline: time.Second, MetricFactory: monitoring.InertMetricFactory{}, CreateStorage: fakeCTStorage}
 
 			if _, err := SetUpInstance(ctx, opts); err != nil {
 				if test.wantErr == "" {
