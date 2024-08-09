@@ -113,6 +113,7 @@ func buildCp(signer crypto.Signer, size uint64, timeMilli uint64, hash []byte) (
 	return sig, nil
 }
 
+// CpSigner implements note.Signer. It can generate https://c2sp.org/static-ct-api checkpoints.
 type CpSigner struct {
 	sthSigner  crypto.Signer
 	origin     string
@@ -153,8 +154,7 @@ func (cts *CpSigner) KeyHash() uint32 {
 	return cts.keyHash
 }
 
-// NewCpSigner returns a new note signer that can sign static-ct-api checkpoints
-// according to https://c2sp.org/static-ct-api.
+// NewCpSigner returns a new note signer that can sign https://c2sp.org/static-ct-api checkpoints.
 // TODO(phboneff): add tests
 func NewCpSigner(signer crypto.Signer, origin string, logID [32]byte, timeSource TimeSource) note.Signer {
 	h := sha256.New()
