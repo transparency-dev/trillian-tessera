@@ -88,9 +88,8 @@ func buildCp(signer crypto.Signer, size uint64, timeMilli uint64, hash []byte) (
 		return nil, fmt.Errorf("ct.SerializeSTHSignatureInput(): %v", err)
 	}
 
-	h := sha256.New()
-	h.Write(sthBytes)
-	signature, err := signer.Sign(rand.Reader, h.Sum(nil), crypto.SHA256)
+	h := sha256.Sum256(sthBytes)
+	signature, err := signer.Sign(rand.Reader, h[:], crypto.SHA256)
 	if err != nil {
 		return nil, err
 	}
