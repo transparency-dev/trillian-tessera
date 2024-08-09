@@ -188,6 +188,24 @@ func TestHandlers(t *testing.T) {
 	}
 }
 
+func parseChain(t *testing.T, isPrecert bool, pemChain []string, root *x509.Certificate) (*ctonly.Entry, []*x509.Certificate) {
+	t.Helper()
+	pool := loadCertsIntoPoolOrDie(t, pemChain)
+	leafChain := pool.RawCertificates()
+	if !leafChain[len(leafChain)-1].Equal(root) {
+		// The submitted chain may not include a root, but the generated LogLeaf will
+		fullChain := make([]*x509.Certificate, len(leafChain)+1)
+		copy(fullChain, leafChain)
+		fullChain[len(leafChain)] = root
+		leafChain = fullChain
+	}
+	entry, err := entryFromChain(leafChain, isPrecert, fakeTimeMillis)
+	if err != nil {
+		t.Fatalf("failed to create entry")
+	}
+	return entry, leafChain
+}
+
 func TestAddChainWhitespace(t *testing.T) {
 	signer, err := setupSigner(fakeSignature)
 	if err != nil {
@@ -210,10 +228,8 @@ func TestAddChainWhitespace(t *testing.T) {
 	chunk2 := "\"MIIDnTCCAoWgAwIBAgIIQoIqW4Zvv+swDQYJKoZIhvcNAQELBQAwcTELMAkGA1UEBhMCR0IxDzANBgNVBAgMBkxvbmRvbjEPMA0GA1UEBwwGTG9uZG9uMQ8wDQYDVQQKDAZHb29nbGUxDDAKBgNVBAsMA0VuZzEhMB8GA1UEAwwYRmFrZUNlcnRpZmljYXRlQXV0aG9yaXR5MB4XDTE2MDUxMzE0MjY0NFoXDTE5MDcxMjE0MjY0NFowcjELMAkGA1UEBhMCR0IxDzANBgNVBAgMBkxvbmRvbjEPMA0GA1UEBwwGTG9uZG9uMQ8wDQYDVQQKDAZHb29nbGUxDDAKBgNVBAsMA0VuZzEiMCAGA1UEAwwZRmFrZUludGVybWVkaWF0ZUF1dGhvcml0eTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAMqkDHpt6SYi1GcZyClAxr3LRDnn+oQBHbMEFUg3+lXVmEsq/xQO1s4naynV6I05676XvlMh0qPyJ+9GaBxvhHeFtGh4etQ9UEmJj55rSs50wA/IaDh+roKukQxthyTESPPgjqg+DPjh6H+h3Sn00Os6sjh3DxpOphTEsdtb7fmk8J0e2KjQQCjW/GlECzc359b9KbBwNkcAiYFayVHPLaCAdvzYVyiHgXHkEEs5FlHyhe2gNEG/81Io8c3E3DH5JhT9tmVRL3bpgpT8Kr4aoFhU2LXe45YIB1A9DjUm5TrHZ+iNtvE0YfYMR9L9C1HPppmX1CahEhTdog7laE1198UCAwEAAaM4MDYwDwYDVR0jBAgwBoAEAQIDBDASBgNVHRMBAf8ECDAGAQH/AgEAMA8GA1UdDwEB/wQFAwMH/4AwDQYJKoZIhvcNAQELBQADggEBAAHiOgwAvEzhrNMQVAz8a+SsyMIABXQ5P8WbJeHjkIipE4+5ZpkrZVXq9p8wOdkYnOHx4WNi9PVGQbLG9Iufh9fpk8cyyRWDi+V20/CNNtawMq3ClV3dWC98Tj4WX/BXDCeY2jK4jYGV+ds43HYV0ToBmvvrccq/U7zYMGFcQiKBClz5bTE+GMvrZWcO5A/Lh38i2YSF1i8SfDVnAOBlAgZmllcheHpGsWfSnduIllUvTsRvEIsaaqfVLl5QpRXBOq8tbjK85/2g6ear1oxPhJ1w9hds+WTFXkmHkWvKJebY13t3OfSjAyhaRSt8hdzDzHTFwjPjHT8h6dU7/hMdkUg=\""
 	epilog := "]}\n"
 
-	certs := loadCertsIntoPoolOrDie(t, pemChain).RawCertificates()
-
+	req, _ := parseChain(t, false, pemChain, info.roots.RawCertificates()[0])
 	rsp := uint64(0)
-	req := &ctonly.Entry{Certificate: certs[0].Raw, Timestamp: fakeTimeMillis}
 
 	var tests = []struct {
 		descr string
@@ -321,21 +337,8 @@ func TestAddChain(t *testing.T) {
 			pool := loadCertsIntoPoolOrDie(t, test.chain)
 			chain := createJSONChain(t, *pool)
 			if len(test.toSign) > 0 {
-				root := info.roots.RawCertificates()[0]
-
-				leafChain := pool.RawCertificates()
-				if !leafChain[len(leafChain)-1].Equal(root) {
-					// The submitted chain may not include a root, but the generated LogLeaf will
-					fullChain := make([]*x509.Certificate, len(leafChain)+1)
-					copy(fullChain, leafChain)
-					fullChain[len(leafChain)] = root
-					leafChain = fullChain
-				}
+				req, _ := parseChain(t, false, test.chain, info.roots.RawCertificates()[0])
 				rsp := uint64(0)
-				req, err := entryFromChain(leafChain, false, fakeTimeMillis)
-				if err != nil {
-					t.Fatalf("failed to create entry")
-				}
 				info.storage.EXPECT().Add(deadlineMatcher(), cmpMatcher{req}).Return(rsp, test.err)
 			}
 
@@ -422,21 +425,8 @@ func TestAddPrechain(t *testing.T) {
 			pool := loadCertsIntoPoolOrDie(t, test.chain)
 			chain := createJSONChain(t, *pool)
 			if len(test.toSign) > 0 {
-				root := info.roots.RawCertificates()[0]
-				leafChain := pool.RawCertificates()
-				if !leafChain[len(leafChain)-1].Equal(root) {
-					// The submitted chain may not include a root, but the generated LogLeaf will
-					fullChain := make([]*x509.Certificate, len(leafChain)+1)
-					copy(fullChain, leafChain)
-					fullChain[len(leafChain)] = root
-					leafChain = fullChain
-				}
-
+				req, _ := parseChain(t, true, test.chain, info.roots.RawCertificates()[0])
 				rsp := uint64(0)
-				req, err := entryFromChain(leafChain, true, 1469185273000)
-				if err != nil {
-					t.Fatalf("failed to create test entry")
-				}
 
 				info.storage.EXPECT().Add(deadlineMatcher(), cmpMatcher{req}).Return(rsp, test.err)
 			}
