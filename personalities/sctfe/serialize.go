@@ -73,9 +73,9 @@ type RFC6962NoteSignature struct {
 	signature ct.DigitallySigned
 }
 
-// buildCTCheckpoints builds a https://c2sp.org/static-ct-api checkpoint.
+// buildCp builds a https://c2sp.org/static-ct-api checkpoint.
 // TODO(phboneff): add tests
-func buildCTCheckpoint(signer crypto.Signer, size uint64, timeMilli uint64, hash []byte) ([]byte, error) {
+func buildCp(signer crypto.Signer, size uint64, timeMilli uint64, hash []byte) ([]byte, error) {
 	sth := ct.SignedTreeHead{
 		Version:   ct.V1,
 		TreeSize:  size,
@@ -114,7 +114,7 @@ func buildCTCheckpoint(signer crypto.Signer, size uint64, timeMilli uint64, hash
 	return sig, nil
 }
 
-type CTSigner struct {
+type CpSigner struct {
 	sthSigner  crypto.Signer
 	origin     string
 	keyHash    uint32
@@ -125,7 +125,7 @@ type CTSigner struct {
 // Returns an error if the message doesn't parse as a checkpoint, or if the
 // checkpoint origin doesn't match with the Signer's origin.
 // TODO(phboneff): add tests
-func (cts *CTSigner) Sign(msg []byte) ([]byte, error) {
+func (cts *CpSigner) Sign(msg []byte) ([]byte, error) {
 	ckpt := &log.Checkpoint{}
 	rest, err := ckpt.Unmarshal(msg)
 
@@ -140,25 +140,25 @@ func (cts *CTSigner) Sign(msg []byte) ([]byte, error) {
 
 	// TODO(phboneff): make sure that it's ok to generate the timestamp here
 	t := uint64(cts.timeSource.Now().UnixMilli())
-	sig, err := buildCTCheckpoint(cts.sthSigner, ckpt.Size, t, ckpt.Hash[:])
+	sig, err := buildCp(cts.sthSigner, ckpt.Size, t, ckpt.Hash[:])
 	if err != nil {
 		return nil, fmt.Errorf("coudn't sign CT checkpoint: %v", err)
 	}
 	return sig, nil
 }
 
-func (cts *CTSigner) Name() string {
+func (cts *CpSigner) Name() string {
 	return cts.origin
 }
 
-func (cts *CTSigner) KeyHash() uint32 {
+func (cts *CpSigner) KeyHash() uint32 {
 	return cts.keyHash
 }
 
-// NewCTSigner returns a new note signer that can sign static-ct-api checkpoints
+// NewCpSigner returns a new note signer that can sign static-ct-api checkpoints
 // according to https://c2sp.org/static-ct-api.
 // TODO(phboneff): add tests
-func NewCTSigner(signer crypto.Signer, origin string, logID [32]byte, timeSource TimeSource) note.Signer {
+func NewCpSigner(signer crypto.Signer, origin string, logID [32]byte, timeSource TimeSource) note.Signer {
 	h := sha256.New()
 	h.Write([]byte(origin))
 	h.Write([]byte{0x0A}) // newline
@@ -166,7 +166,7 @@ func NewCTSigner(signer crypto.Signer, origin string, logID [32]byte, timeSource
 	h.Write(logID[:])
 	sum := h.Sum(nil)
 
-	ctSigner := &CTSigner{
+	ctSigner := &CpSigner{
 		sthSigner:  signer,
 		origin:     origin,
 		keyHash:    binary.BigEndian.Uint32(sum),
