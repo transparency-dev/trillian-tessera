@@ -275,7 +275,7 @@ func TestSetUpInstanceSetsValidationOpts(t *testing.T) {
 			if err != nil {
 				t.Fatalf("ValidateLogConfig(): %v", err)
 			}
-			opts := InstanceOptions{Validated: vCfg, Deadline: time.Second, MetricFactory: monitoring.InertMetricFactory{}}
+			opts := InstanceOptions{Validated: vCfg, Deadline: time.Second, MetricFactory: monitoring.InertMetricFactory{}, CreateStorage: fakeCTStorage}
 
 			inst, err := SetUpInstance(ctx, opts)
 			if err != nil {
