@@ -217,13 +217,14 @@ func newLogInfo(
 	validationOpts CertValidationOpts,
 	signer crypto.Signer,
 	timeSource TimeSource,
+	storage Storage,
 ) *logInfo {
 	vCfg := instanceOpts.Validated
 	cfg := vCfg.Config
 
 	li := &logInfo{
 		LogOrigin:      cfg.Origin,
-		storage:        instanceOpts.Storage,
+		storage:        storage,
 		signer:         signer,
 		TimeSource:     timeSource,
 		instanceOpts:   instanceOpts,

@@ -78,8 +78,8 @@ func setupTest(t *testing.T, pemRoots []string, signer crypto.Signer) handlerTes
 
 	cfg := &configpb.LogConfig{Origin: "example.com"}
 	vCfg := &ValidatedLogConfig{Config: cfg}
-	iOpts := InstanceOptions{Validated: vCfg, Storage: info.storage, Deadline: time.Millisecond * 500, MetricFactory: monitoring.InertMetricFactory{}, RequestLog: new(DefaultRequestLog)}
-	info.li = newLogInfo(iOpts, vOpts, signer, fakeTimeSource)
+	iOpts := InstanceOptions{Validated: vCfg, Deadline: time.Millisecond * 500, MetricFactory: monitoring.InertMetricFactory{}, RequestLog: new(DefaultRequestLog)}
+	info.li = newLogInfo(iOpts, vOpts, signer, fakeTimeSource, info.storage)
 
 	for _, pemRoot := range pemRoots {
 		if !info.roots.AppendCertsFromPEM([]byte(pemRoot)) {
