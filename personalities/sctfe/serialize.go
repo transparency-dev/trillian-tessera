@@ -133,8 +133,7 @@ func (cts *CpSigner) Sign(msg []byte) ([]byte, error) {
 		return nil, fmt.Errorf("checkpoint contains trailing data: %s", string(rest))
 	} else if err != nil {
 		return nil, fmt.Errorf("ckpt.Unmarshal: %v", err)
-	}
-	if ckpt.Origin != cts.origin {
+	} else if ckpt.Origin != cts.origin {
 		return nil, fmt.Errorf("checkpoint's origin %s doesn't match signer's origin %s", ckpt.Origin, cts.origin)
 	}
 
