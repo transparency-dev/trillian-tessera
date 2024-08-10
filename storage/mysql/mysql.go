@@ -79,12 +79,12 @@ func New(ctx context.Context, db *sql.DB, opts ...func(*tessera.StorageOptions))
 	s.queue = storage.NewQueue(ctx, opt.BatchMaxAge, opt.BatchMaxSize, s.sequenceBatch)
 
 	// Initialize checkpoint if there is no row in the Checkpoint table.
-	if _, err := s.ReadCheckpoint(ctx); err != nil {
-		if err != sql.ErrNoRows {
-			klog.Errorf("Failed to read checkpoint: %v", err)
-			return nil, err
-		}
-
+	checkpoint, err := s.ReadCheckpoint(ctx)
+	if err != nil {
+		klog.Errorf("Failed to read checkpoint: %v", err)
+		return nil, err
+	}
+	if checkpoint == nil {
 		klog.Infof("Initializing checkpoint")
 		// Get a Tx for making transaction requests.
 		tx, err := s.db.BeginTx(ctx, nil)
@@ -118,7 +118,13 @@ func (s *Storage) ReadCheckpoint(ctx context.Context) ([]byte, error) {
 	}
 
 	var checkpoint []byte
-	return checkpoint, row.Scan(&checkpoint)
+	if err := row.Scan(&checkpoint); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return checkpoint, nil
 }
 
 // writeCheckpoint stores the log signed checkpoint.
