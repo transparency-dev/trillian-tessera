@@ -28,9 +28,9 @@ import (
 
 // Storage provides all the storage primitives necessary to write to a ct-static-api log.
 type Storage interface {
-	// Add assign an index to the provided Entry, stages the entry for integration, and return it the assigned index.
+	// Add assigns an index to the provided Entry, stages the entry for integration, and return it the assigned index.
 	Add(context.Context, *ctonly.Entry) (uint64, error)
-	// AddIssuerChain stores all certificates in the chain in a content-addressable store under their sha256 hash.
+	// AddIssuerChain stores every the chain certificate in a content-addressable store under their sha256 hash.
 	AddIssuerChain(context.Context, []*x509.Certificate) error
 }
 
@@ -60,7 +60,7 @@ func (cts *CTStorage) Add(ctx context.Context, entry *ctonly.Entry) (uint64, err
 	return cts.storeData(ctx, entry)
 }
 
-// AddIssuerChain stores every certificate in the chain under its sha256.
+// AddIssuerChain stores every chain certificate under its sha256.
 // If an object is already stored under this hash, continues.
 func (cts *CTStorage) AddIssuerChain(ctx context.Context, chain []*x509.Certificate) error {
 	errG := errgroup.Group{}
