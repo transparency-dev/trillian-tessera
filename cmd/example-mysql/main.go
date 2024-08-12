@@ -23,11 +23,10 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"strconv"
-	"strings"
 	"time"
 
 	tessera "github.com/transparency-dev/trillian-tessera"
+	"github.com/transparency-dev/trillian-tessera/api/layout"
 	"github.com/transparency-dev/trillian-tessera/storage/mysql"
 	"golang.org/x/mod/sumdb/note"
 	"k8s.io/klog/v2"
@@ -96,7 +95,7 @@ func main() {
 	})
 
 	http.HandleFunc("GET /tile/{level}/{index...}", func(w http.ResponseWriter, r *http.Request) {
-		level, index, width, err := parseTileLevelIndexWidth(r.PathValue("level"), r.PathValue("index"))
+		level, index, width, err := layout.ParseTileLevelIndexWidth(r.PathValue("level"), r.PathValue("index"))
 		if err != nil {
 			w.WriteHeader(http.StatusBadRequest)
 			if _, werr := w.Write([]byte(fmt.Sprintf("Malformed URL: %s", err.Error()))); werr != nil {
@@ -126,7 +125,7 @@ func main() {
 	})
 
 	http.HandleFunc("GET /tile/entries/{index...}", func(w http.ResponseWriter, r *http.Request) {
-		index, _, err := parseTileIndexWidth(r.PathValue("index"))
+		index, _, err := layout.ParseTileIndexWidth(r.PathValue("index"))
 		if err != nil {
 			w.WriteHeader(http.StatusBadRequest)
 			if _, werr := w.Write([]byte(fmt.Sprintf("Malformed URL: %s", err.Error()))); werr != nil {
@@ -183,67 +182,6 @@ func main() {
 	if err := http.ListenAndServe(*listen, http.DefaultServeMux); err != nil {
 		klog.Exitf("ListenAndServe: %v", err)
 	}
-}
-
-// parseTileLevelWidthIndex takes level and index in string, validates and returns the level, index and width in uint64.
-//
-// Examples:
-// "/tile/0/x001/x234/067" means level 0 and index 1234067 of a full tile.
-// "/tile/0/x001/x234/067.p/8" means level 0, index 1234067 and width 8 of a partial tile.
-func parseTileLevelIndexWidth(level, index string) (uint64, uint64, uint64, error) {
-	l, err := parseTileLevel(level)
-	if err != nil {
-		return 0, 0, 0, err
-	}
-
-	i, w, err := parseTileIndexWidth(index)
-	if err != nil {
-		return 0, 0, 0, err
-	}
-
-	return l, i, w, err
-}
-
-// parseTileLevel takes level in string, validates and returns the level in uint64.
-func parseTileLevel(level string) (uint64, error) {
-	l, err := strconv.ParseUint(level, 10, 64)
-	// Verify that level is an integer between 0 and 63 as specified in the tlog-tiles specification.
-	if l > 63 || err != nil {
-		return 0, fmt.Errorf("failed to parse tile level")
-	}
-	return l, err
-}
-
-// parseTileIndexWidth takes index in string, validates and returns the index and width in uint64.
-func parseTileIndexWidth(index string) (uint64, uint64, error) {
-	w := uint64(256)
-	indexPaths := strings.Split(index, "/")
-
-	if strings.Contains(index, ".p") {
-		var err error
-		w, err = strconv.ParseUint(indexPaths[len(indexPaths)-1], 10, 64)
-		if err != nil || w < 1 || w > 255 {
-			return 0, 0, fmt.Errorf("failed to parse tile index")
-		}
-		indexPaths[len(indexPaths)-2] = strings.TrimSuffix(indexPaths[len(indexPaths)-2], ".p")
-		indexPaths = indexPaths[:len(indexPaths)-1]
-	}
-
-	if strings.Count(index, "x") != len(indexPaths)-1 || strings.HasPrefix(indexPaths[len(indexPaths)-1], "x") {
-		return 0, 0, fmt.Errorf("failed to parse tile index")
-	}
-
-	i := uint64(0)
-	for _, indexPath := range indexPaths {
-		indexPath = strings.TrimPrefix(indexPath, "x")
-		n, err := strconv.ParseUint(indexPath, 10, 64)
-		if err != nil || n >= 1000 || len(indexPath) != 3 {
-			return 0, 0, fmt.Errorf("failed to parse tile index")
-		}
-		i = i*1000 + n
-	}
-
-	return i, w, nil
 }
 
 func initDatabaseSchema(ctx context.Context) {
