@@ -87,6 +87,10 @@ func main() {
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
+		if checkpoint == nil {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
 
 		if _, err := w.Write(checkpoint); err != nil {
 			klog.Errorf("/checkpoint: %v", err)
@@ -106,13 +110,12 @@ func main() {
 
 		tile, err := storage.ReadTile(r.Context(), level, index, width)
 		if err != nil {
-			if err == sql.ErrNoRows {
-				w.WriteHeader(http.StatusNotFound)
-				return
-			}
-
 			klog.Errorf("/tile/{level}/{index...}: %v", err)
 			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		if tile == nil {
+			w.WriteHeader(http.StatusNotFound)
 			return
 		}
 
@@ -136,14 +139,12 @@ func main() {
 
 		entryBundle, err := storage.ReadEntryBundle(r.Context(), index/256)
 		if err != nil {
-			// TODO: Move this error back into storage implementation.
-			if err == sql.ErrNoRows {
-				w.WriteHeader(http.StatusNotFound)
-				return
-			}
-
 			klog.Errorf("/tile/entries/{index...}: %v", err)
 			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		if entryBundle == nil {
+			w.WriteHeader(http.StatusNotFound)
 			return
 		}
 
