@@ -134,7 +134,7 @@ func main() {
 			return
 		}
 
-		entryBundle, err := storage.ReadEntryBundle(r.Context(), index)
+		entryBundle, err := storage.ReadEntryBundle(r.Context(), index/256)
 		if err != nil {
 			// TODO: Move this error back into storage implementation.
 			if err == sql.ErrNoRows {
@@ -166,7 +166,6 @@ func main() {
 				klog.Warningf("/add: %v", err)
 			}
 		}()
-
 		idx, err := storage.Add(r.Context(), tessera.NewEntry(b))
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)

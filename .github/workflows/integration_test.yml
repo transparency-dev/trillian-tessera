@@ -1,0 +1,21 @@
+name: Integration Test
+
+on: [push, pull_request]
+
+permissions:
+  contents: read
+
+jobs:
+  mysql-tlog-tiles-api:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+      - name: Start Docker services (tessera-example-mysql-db and tessera-example-mysql)
+        run: docker compose -f ./cmd/example-mysql/docker/compose.yaml up --build --detach
+      - name: Run integration test 
+        run: go test -v -race ./integration/example-mysql/... --run_mysql_integration_test=true
+      - name: Stop Docker services (tessera-example-mysql-db and tessera-example-mysql)
+        if: ${{ always() }}
+        run: docker compose -f ./cmd/example-mysql/docker/compose.yaml down
