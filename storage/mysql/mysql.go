@@ -111,6 +111,7 @@ func New(ctx context.Context, db *sql.DB, opts ...func(*tessera.StorageOptions))
 }
 
 // ReadCheckpoint returns the latest stored checkpoint.
+// If the checkpoint is not found, nil is returned with no error.
 func (s *Storage) ReadCheckpoint(ctx context.Context) ([]byte, error) {
 	row := s.db.QueryRowContext(ctx, selectCheckpointByIDSQL, checkpointID)
 	if err := row.Err(); err != nil {
@@ -143,6 +144,7 @@ func (s *Storage) writeCheckpoint(ctx context.Context, tx *sql.Tx, size uint64, 
 }
 
 // ReadTile returns a full tile or a partial tile at the given level, index and width.
+// If the tile is not found, nil is returned with no error.
 //
 // TODO: Handle the following scenarios:
 // 1. Full tile request with full tile output: Return full tile.
@@ -184,6 +186,7 @@ func (s *Storage) writeTile(ctx context.Context, tx *sql.Tx, level, index uint64
 }
 
 // ReadEntryBundle returns the log entries at the given index.
+// If the entry bundle is not found, nil is returned with no error.
 //
 // TODO: Handle the following scenarios:
 // 1. Full tile request with full tile output: Return full tile.
