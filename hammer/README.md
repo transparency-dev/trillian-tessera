@@ -22,7 +22,10 @@ Example usage to test a deployment of `example-mysql`:
 go run ./hammer \
   --log_public_key=Test-Betty+df84580a+AQQASqPUZoIHcJAF5mBOryctwFdTV1E0GRY4kEAtTzwB \
   --log_url=http://localhost:2024 \
-  --num_writers=22 \
+  --max_read_ops=1024 \
+  --num_readers_random=128 \
+  --num_readers_full=128 \
+  --num_writers=256 \
   --max_write_ops=42
 ```
 
