@@ -89,7 +89,7 @@ func main() {
 		klog.Exitf("Failed to get initial state of the log: %v", err)
 	}
 
-	ha := newHammerAnalyser(&tracker, 100)
+	ha := newHammerAnalyser(func() uint64 { return tracker.LatestConsistent.Size })
 	go ha.updateStatsLoop(ctx)
 	go ha.errorLoop(ctx)
 
@@ -181,38 +181,38 @@ func (h *Hammer) updateCheckpointLoop(ctx context.Context) {
 	}
 }
 
-func newHammerAnalyser(tracker *client.LogStateTracker, chanSize int) *HammerAnalyser {
-	leafSampleChan := make(chan leafTime, chanSize)
+func newHammerAnalyser(treeSizeFn func() uint64) *HammerAnalyser {
+	leafSampleChan := make(chan leafTime, 100)
 	errChan := make(chan error, 20)
 	return &HammerAnalyser{
-		tracker:         tracker,
+		treeSizeFn:      treeSizeFn,
 		seqLeafChan:     leafSampleChan,
 		errChan:         errChan,
-		integrationTime: movingaverage.New(30),
-		queueTime:       movingaverage.New(30),
+		integrationTime: movingaverage.Concurrent(movingaverage.New(30)),
+		queueTime:       movingaverage.Concurrent(movingaverage.New(30)),
 	}
 }
 
 // HammerAnalyser is responsible for measuring and interpreting the result of hammering.
 type HammerAnalyser struct {
-	tracker     *client.LogStateTracker
+	treeSizeFn  func() uint64
 	seqLeafChan chan leafTime
 	errChan     chan error
 
-	queueTime       *movingaverage.MovingAverage
-	integrationTime *movingaverage.MovingAverage
+	queueTime       *movingaverage.ConcurrentMovingAverage
+	integrationTime *movingaverage.ConcurrentMovingAverage
 }
 
 func (a *HammerAnalyser) updateStatsLoop(ctx context.Context) {
 	tick := time.NewTicker(100 * time.Millisecond)
-	size := a.tracker.LatestConsistent.Size
+	size := a.treeSizeFn()
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-tick.C:
 		}
-		newSize := a.tracker.LatestConsistent.Size
+		newSize := a.treeSizeFn()
 		if newSize <= size {
 			continue
 		}
@@ -221,13 +221,18 @@ func (a *HammerAnalyser) updateStatsLoop(ctx context.Context) {
 		queueLatency := time.Duration(0)
 		numLeaves := 0
 		var sample *leafTime
+	ReadLoop:
 		for {
 			if sample == nil {
-				l, ok := <-a.seqLeafChan
-				if !ok {
-					break
+				select {
+				case l, ok := <-a.seqLeafChan:
+					if !ok {
+						break ReadLoop
+					}
+					sample = &l
+				default:
+					break ReadLoop
 				}
-				sample = &l
 			}
 			// Stop considering leaf times once we've caught up with that cross
 			// either the current checkpoint or "now":
