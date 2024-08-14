@@ -16,6 +16,7 @@ package main
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 )
@@ -24,9 +25,8 @@ func TestHammerAnalyser_Stats(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	var treeSize uint64
-	treeSizeFn := func() uint64 { return treeSize }
-	ha := newHammerAnalyser(treeSizeFn)
+	var treeSize treeSizeState
+	ha := newHammerAnalyser(treeSize.getSize)
 
 	go ha.updateStatsLoop(ctx)
 
@@ -40,12 +40,28 @@ func TestHammerAnalyser_Stats(t *testing.T) {
 			assignedAt: baseTime.Add(time.Duration(i) * time.Second),
 		}
 	}
-	// Update treeSize so that treeSizeFn returns the new tree size when requested async
-	treeSize = 10
+	treeSize.setSize(10)
 	time.Sleep(500 * time.Millisecond)
 
 	avg := ha.queueTime.Avg()
 	if want := float64(4500); avg != want {
 		t.Errorf("integration time avg: got != want (%f != %f)", avg, want)
 	}
+}
+
+type treeSizeState struct {
+	size uint64
+	mux  sync.RWMutex
+}
+
+func (s *treeSizeState) getSize() uint64 {
+	s.mux.RLock()
+	defer s.mux.RUnlock()
+	return s.size
+}
+
+func (s *treeSizeState) setSize(size uint64) {
+	s.mux.Lock()
+	defer s.mux.Unlock()
+	s.size = size
 }

@@ -112,7 +112,7 @@ func (c *tuiController) Run(ctx context.Context) {
 }
 
 func (c *tuiController) updateStatsLoop(ctx context.Context, interval time.Duration) {
-	formatMovingAverage := func(ma *movingaverage.MovingAverage) string {
+	formatMovingAverage := func(ma *movingaverage.ConcurrentMovingAverage) string {
 		aMin, _ := ma.Min()
 		aMax, _ := ma.Max()
 		aAvg := ma.Avg()

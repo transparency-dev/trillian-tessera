@@ -188,8 +188,8 @@ func newHammerAnalyser(treeSizeFn func() uint64) *HammerAnalyser {
 		treeSizeFn:      treeSizeFn,
 		seqLeafChan:     leafSampleChan,
 		errChan:         errChan,
-		integrationTime: movingaverage.New(30),
-		queueTime:       movingaverage.New(30),
+		integrationTime: movingaverage.Concurrent(movingaverage.New(30)),
+		queueTime:       movingaverage.Concurrent(movingaverage.New(30)),
 	}
 }
 
@@ -199,8 +199,8 @@ type HammerAnalyser struct {
 	seqLeafChan chan leafTime
 	errChan     chan error
 
-	queueTime       *movingaverage.MovingAverage
-	integrationTime *movingaverage.MovingAverage
+	queueTime       *movingaverage.ConcurrentMovingAverage
+	integrationTime *movingaverage.ConcurrentMovingAverage
 }
 
 func (a *HammerAnalyser) updateStatsLoop(ctx context.Context) {
