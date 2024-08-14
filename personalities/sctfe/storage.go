@@ -24,6 +24,14 @@ import (
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/ctonly"
 	"golang.org/x/sync/errgroup"
+	"k8s.io/klog/v2"
+)
+
+const (
+	// Each key is 32 bytes long, so this will take up to 32MB.
+	// A CT log references ~15k unique issuer certifiates in 2024, so this gives plenty of space
+	// if we ever run into this limit, we should re-think how it works.
+	maxCachedIssuerKeys = 1 << 20
 )
 
 // Storage provides all the storage primitives necessary to write to a ct-static-api log.
@@ -54,7 +62,7 @@ type CTStorage struct {
 func NewCTSTorage(logStorage tessera.Storage, issuerStorage IssuerStorage) (*CTStorage, error) {
 	ctStorage := &CTStorage{
 		storeData: tessera.NewCertificateTransparencySequencedWriter(logStorage),
-		issuers:   issuerStorage,
+		issuers:   NewCachedIssuerStorage(issuerStorage),
 	}
 	return ctStorage, nil
 }
@@ -78,4 +86,54 @@ func (cts *CTStorage) AddIssuerChain(ctx context.Context, chain []*x509.Certific
 		return fmt.Errorf("error storing intermediates: %v", err)
 	}
 	return nil
+}
+
+// cachedIssuerStorage wraps an IssuerStorage, and keeps a local copy the keys it contains.
+// This is intended to make querying faster. It does not keep a copy of the data, only keys.
+// Only up to N keys will be stored locally.
+// TODO(phboneff): add monitoring for the number of keys
+type cachedIssuerStorage struct {
+	m map[string]bool
+	N int // maximum number of entries allowed in m
+	s IssuerStorage
+}
+
+// Exists checks whether the key is stored locally, it not checks in the underlying storage.
+// If it finds it there, caches the key locally.
+func (c cachedIssuerStorage) Exists(ctx context.Context, key [32]byte) (bool, error) {
+	_, ok := c.m[string(key[:])]
+	if ok {
+		klog.V(2).Infof("Exists: found %q in local key cache", hex.EncodeToString(key[:]))
+		return true, nil
+	}
+	ok, err := c.s.Exists(ctx, key)
+	if err != nil {
+		return false, fmt.Errorf("error checking if issuer %q exists in the underlying IssuerStorage: %s", hex.EncodeToString(key[:]), err)
+	}
+	if ok {
+		c.m[string(key[:])] = true
+	}
+	return ok, nil
+}
+
+// Add first adds the data under key to the underlying storage, then caches the key locally.
+//
+// Add will only store up to c.N keys.
+func (c cachedIssuerStorage) Add(ctx context.Context, key [32]byte, data []byte) error {
+	err := c.s.Add(ctx, key, data)
+	if err != nil {
+		return fmt.Errorf("Add: error storing issuer data for %q in the underlying IssuerStorage", hex.EncodeToString(key[:]))
+	}
+	if len(c.m) >= c.N {
+		klog.V(2).Infof("Add: local key cache full, won't cache %q", hex.EncodeToString(key[:]))
+		return nil
+	}
+	c.m[string(key[:])] = true
+	return nil
+}
+
+func NewCachedIssuerStorage(s IssuerStorage) cachedIssuerStorage {
+	c := cachedIssuerStorage{s: s, N: maxCachedIssuerKeys}
+	c.m = make(map[string]bool)
+	return c
 }
