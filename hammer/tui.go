@@ -18,6 +18,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"strings"
 	"time"
 
 	movingaverage "github.com/RobinUS2/golang-moving-average"
@@ -28,16 +29,18 @@ import (
 
 type tuiController struct {
 	hammer     *Hammer
+	analyser   *HammerAnalyser
 	app        *tview.Application
 	statusView *tview.TextView
 	logView    *tview.TextView
 	helpView   *tview.TextView
 }
 
-func newController(h *Hammer) *tuiController {
+func newController(h *Hammer, a *HammerAnalyser) *tuiController {
 	c := tuiController{
-		hammer: h,
-		app:    tview.NewApplication(),
+		hammer:   h,
+		analyser: a,
+		app:      tview.NewApplication(),
 	}
 	grid := tview.NewGrid()
 	grid.SetRows(5, 0, 10).SetColumns(0).SetBorders(true)
@@ -129,17 +132,21 @@ func (c *tuiController) updateStatsLoop(ctx context.Context, interval time.Durat
 			growth.Add(float64(s - lastSize))
 			lastSize = s
 			qps := growth.Avg() * float64(time.Second/interval)
-			text := fmt.Sprintf("Read (%d workers): %s\nWrite (%d workers): %s\nTreeSize: %d (Δ %.0fqps over %ds)\nTime-in-queue: %s\nObserved-time-to-integrate: %s",
+			readWorkersLine := fmt.Sprintf("Read (%d workers): %s",
 				c.hammer.fullReaders.Size()+c.hammer.randomReaders.Size(),
-				c.hammer.readThrottle.String(),
+				c.hammer.readThrottle.String())
+			writeWorkersLine := fmt.Sprintf("Write (%d workers): %s",
 				c.hammer.writers.Size(),
-				c.hammer.writeThrottle.String(),
+				c.hammer.writeThrottle.String())
+			treeSizeLine := fmt.Sprintf("TreeSize: %d (Δ %.0fqps over %ds)",
 				s,
 				qps,
-				time.Duration(maSlots*int(interval))/time.Second,
-				formatMovingAverage(c.hammer.queueTime),
-				formatMovingAverage(c.hammer.integrationTime),
-			)
+				time.Duration(maSlots*int(interval))/time.Second)
+			queueLine := fmt.Sprintf("Time-in-queue: %s",
+				formatMovingAverage(c.analyser.queueTime))
+			integrateLine := fmt.Sprintf("Observed-time-to-integrate: %s",
+				formatMovingAverage(c.analyser.integrationTime))
+			text := strings.Join([]string{readWorkersLine, writeWorkersLine, treeSizeLine, queueLine, integrateLine}, "\n")
 			c.statusView.SetText(text)
 			c.app.Draw()
 		}

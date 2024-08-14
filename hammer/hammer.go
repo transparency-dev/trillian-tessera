@@ -89,23 +89,25 @@ func main() {
 		klog.Exitf("Failed to get initial state of the log: %v", err)
 	}
 
+	ha := newHammerAnalyser(&tracker, 100)
+	go ha.updateStatsLoop(ctx)
+	go ha.errorLoop(ctx)
+
 	gen := newLeafGenerator(tracker.LatestConsistent.Size, *leafMinSize, *dupChance)
-	hammer := NewHammer(&tracker, f.Fetch, w.Write, gen)
+	hammer := NewHammer(&tracker, f.Fetch, w.Write, gen, ha.seqLeafChan, ha.errChan)
 	hammer.Run(ctx)
 
 	if *showUI {
-		c := newController(hammer)
+		c := newController(hammer, ha)
 		c.Run(ctx)
 	} else {
 		<-ctx.Done()
 	}
 }
 
-func NewHammer(tracker *client.LogStateTracker, f client.Fetcher, w LeafWriter, gen func() []byte) *Hammer {
+func NewHammer(tracker *client.LogStateTracker, f client.Fetcher, w LeafWriter, gen func() []byte, seqLeafChan chan<- leafTime, errChan chan<- error) *Hammer {
 	readThrottle := NewThrottle(*maxReadOpsPerSecond)
 	writeThrottle := NewThrottle(*maxWriteOpsPerSecond)
-	errChan := make(chan error, 20)
-	leafSampleChan := make(chan leafTime, 100)
 
 	randomReaders := newWorkerPool(func() worker {
 		return NewLeafReader(tracker, f, RandomNextLeaf(), readThrottle.tokenChan, errChan)
@@ -113,33 +115,28 @@ func NewHammer(tracker *client.LogStateTracker, f client.Fetcher, w LeafWriter, 
 	fullReaders := newWorkerPool(func() worker {
 		return NewLeafReader(tracker, f, MonotonicallyIncreasingNextLeaf(), readThrottle.tokenChan, errChan)
 	})
-	writers := newWorkerPool(func() worker { return NewLogWriter(w, gen, writeThrottle.tokenChan, errChan, leafSampleChan) })
+	writers := newWorkerPool(func() worker { return NewLogWriter(w, gen, writeThrottle.tokenChan, errChan, seqLeafChan) })
 
 	return &Hammer{
-		randomReaders:   randomReaders,
-		fullReaders:     fullReaders,
-		writers:         writers,
-		readThrottle:    readThrottle,
-		writeThrottle:   writeThrottle,
-		tracker:         tracker,
-		errChan:         errChan,
-		leafSampleChan:  leafSampleChan,
-		integrationTime: movingaverage.New(30),
-		queueTime:       movingaverage.New(30),
+		randomReaders: randomReaders,
+		fullReaders:   fullReaders,
+		writers:       writers,
+		readThrottle:  readThrottle,
+		writeThrottle: writeThrottle,
+		tracker:       tracker,
 	}
 }
 
+// Hammer is responsible for coordinating the operations against the log in the form
+// of write and read operations. The work of analysing the results of hammering should
+// live outside of this class.
 type Hammer struct {
-	randomReaders   workerPool
-	fullReaders     workerPool
-	writers         workerPool
-	readThrottle    *Throttle
-	writeThrottle   *Throttle
-	tracker         *client.LogStateTracker
-	errChan         chan error
-	leafSampleChan  chan leafTime
-	queueTime       *movingaverage.MovingAverage
-	integrationTime *movingaverage.MovingAverage
+	randomReaders workerPool
+	fullReaders   workerPool
+	writers       workerPool
+	readThrottle  *Throttle
+	writeThrottle *Throttle
+	tracker       *client.LogStateTracker
 }
 
 func (h *Hammer) Run(ctx context.Context) {
@@ -154,35 +151,10 @@ func (h *Hammer) Run(ctx context.Context) {
 		h.writers.Grow(ctx)
 	}
 
-	go h.errorLoop(ctx)
-
 	go h.readThrottle.Run(ctx)
 	go h.writeThrottle.Run(ctx)
 
 	go h.updateCheckpointLoop(ctx)
-	go h.updateStatsLoop(ctx)
-}
-
-func (h *Hammer) errorLoop(ctx context.Context) {
-	tick := time.NewTicker(time.Second)
-	pbCount := 0
-	for {
-		select {
-		case <-ctx.Done(): //context cancelled
-			return
-		case <-tick.C:
-			if pbCount > 0 {
-				klog.Warningf("%d requests received pushback from log", pbCount)
-				pbCount = 0
-			}
-		case err := <-h.errChan:
-			if errors.Is(err, ErrRetry) {
-				pbCount++
-				continue
-			}
-			klog.Warning(err)
-		}
-	}
 }
 
 func (h *Hammer) updateCheckpointLoop(ctx context.Context) {
@@ -209,16 +181,38 @@ func (h *Hammer) updateCheckpointLoop(ctx context.Context) {
 	}
 }
 
-func (h *Hammer) updateStatsLoop(ctx context.Context) {
+func newHammerAnalyser(tracker *client.LogStateTracker, chanSize int) *HammerAnalyser {
+	leafSampleChan := make(chan leafTime, chanSize)
+	errChan := make(chan error, 20)
+	return &HammerAnalyser{
+		tracker:         tracker,
+		seqLeafChan:     leafSampleChan,
+		errChan:         errChan,
+		integrationTime: movingaverage.New(30),
+		queueTime:       movingaverage.New(30),
+	}
+}
+
+// HammerAnalyser is responsible for measuring and interpreting the result of hammering.
+type HammerAnalyser struct {
+	tracker     *client.LogStateTracker
+	seqLeafChan chan leafTime
+	errChan     chan error
+
+	queueTime       *movingaverage.MovingAverage
+	integrationTime *movingaverage.MovingAverage
+}
+
+func (a *HammerAnalyser) updateStatsLoop(ctx context.Context) {
 	tick := time.NewTicker(100 * time.Millisecond)
-	size := h.tracker.LatestConsistent.Size
+	size := a.tracker.LatestConsistent.Size
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-tick.C:
 		}
-		newSize := h.tracker.LatestConsistent.Size
+		newSize := a.tracker.LatestConsistent.Size
 		if newSize <= size {
 			continue
 		}
@@ -229,7 +223,7 @@ func (h *Hammer) updateStatsLoop(ctx context.Context) {
 		var sample *leafTime
 		for {
 			if sample == nil {
-				l, ok := <-h.leafSampleChan
+				l, ok := <-a.seqLeafChan
 				if !ok {
 					break
 				}
@@ -254,8 +248,30 @@ func (h *Hammer) updateStatsLoop(ctx context.Context) {
 			sample = nil
 		}
 		if numLeaves > 0 {
-			h.integrationTime.Add(float64(totalLatency/time.Millisecond) / float64(numLeaves))
-			h.queueTime.Add(float64(queueLatency/time.Millisecond) / float64(numLeaves))
+			a.integrationTime.Add(float64(totalLatency/time.Millisecond) / float64(numLeaves))
+			a.queueTime.Add(float64(queueLatency/time.Millisecond) / float64(numLeaves))
+		}
+	}
+}
+
+func (a *HammerAnalyser) errorLoop(ctx context.Context) {
+	tick := time.NewTicker(time.Second)
+	pbCount := 0
+	for {
+		select {
+		case <-ctx.Done(): //context cancelled
+			return
+		case <-tick.C:
+			if pbCount > 0 {
+				klog.Warningf("%d requests received pushback from log", pbCount)
+				pbCount = 0
+			}
+		case err := <-a.errChan:
+			if errors.Is(err, ErrRetry) {
+				pbCount++
+				continue
+			}
+			klog.Warning(err)
 		}
 	}
 }
