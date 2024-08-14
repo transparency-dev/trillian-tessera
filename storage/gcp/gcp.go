@@ -56,6 +56,8 @@ import (
 
 const (
 	entryBundleSize = 256
+	appDataContType = "application/data"
+	txtContType     = "text/plain; charset=utf-8"
 
 	DefaultPushbackMaxOutstanding = 4096
 	DefaultIntegrationSizeLimit   = 5 * 4096
@@ -79,7 +81,7 @@ type Storage struct {
 // objStore describes a type which can store and retrieve objects.
 type objStore interface {
 	getObject(ctx context.Context, obj string) ([]byte, int64, error)
-	setObject(ctx context.Context, obj string, data []byte, cond *gcs.Conditions) error
+	setObject(ctx context.Context, obj string, data []byte, cond *gcs.Conditions, contType string) error
 }
 
 // sequencer describes a type which knows how to sequence entries.
@@ -185,7 +187,7 @@ func (s *Storage) setTile(ctx context.Context, level, index, logSize uint64, til
 	tPath := layout.TilePath(level, index, logSize)
 	klog.V(2).Infof("StoreTile: %s (%d entries)", tPath, len(tile.Nodes))
 
-	return s.objStore.setObject(ctx, tPath, data, &gcs.Conditions{DoesNotExist: true})
+	return s.objStore.setObject(ctx, tPath, data, &gcs.Conditions{DoesNotExist: true}, appDataContType)
 }
 
 // getTiles returns the tiles with the given tile-coords for the specified log size.
@@ -247,7 +249,7 @@ func (s *Storage) setEntryBundle(ctx context.Context, bundleIndex uint64, logSiz
 	// Note that setObject does an idempotent interpretation of DoesNotExist - it only
 	// returns an error if the named object exists _and_ contains different data to what's
 	// passed in here.
-	if err := s.objStore.setObject(ctx, objName, bundleRaw, &gcs.Conditions{DoesNotExist: true}); err != nil {
+	if err := s.objStore.setObject(ctx, objName, bundleRaw, &gcs.Conditions{DoesNotExist: true}, appDataContType); err != nil {
 		return fmt.Errorf("setObject(%q): %v", objName, err)
 
 	}
@@ -292,7 +294,7 @@ func (s *Storage) integrate(ctx context.Context, fromSeq uint64, entries []stora
 				if err != nil {
 					return fmt.Errorf("newCP: %v", err)
 				}
-				if err := s.objStore.setObject(ctx, layout.CheckpointPath, cpRaw, nil); err != nil {
+				if err := s.objStore.setObject(ctx, layout.CheckpointPath, cpRaw, nil, txtContType); err != nil {
 					switch ee := err.(type) {
 					case *googleapi.Error:
 						if ee.Code == http.StatusTooManyRequests {
@@ -662,11 +664,12 @@ func (s *gcsStorage) getObject(ctx context.Context, obj string) ([]byte, int64, 
 // Note that when preconditions are specified and are not met, an error will be returned *unless*
 // the currently stored data is bit-for-bit identical to the data to-be-written.
 // This is intended to provide idempotentency for writes.
-func (s *gcsStorage) setObject(ctx context.Context, objName string, data []byte, cond *gcs.Conditions) error {
+func (s *gcsStorage) setObject(ctx context.Context, objName string, data []byte, cond *gcs.Conditions, contType string) error {
 	bkt := s.gcsClient.Bucket(s.bucket)
 	obj := bkt.Object(objName)
 
 	var w *gcs.Writer
+	w.ObjectAttrs.ContentType = contType
 	if cond == nil {
 		w = obj.NewWriter(ctx)
 
