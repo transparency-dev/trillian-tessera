@@ -98,7 +98,6 @@ func main() {
 
 	gen := newLeafGenerator(tracker.LatestConsistent.Size, *leafMinSize, *dupChance)
 	hammer := NewHammer(&tracker, f.Fetch, w.Write, gen, ha.seqLeafChan, ha.errChan)
-	hammer.Run(ctx)
 
 	exitCode := 0
 	if *leafWriteGoal > 0 {
@@ -138,6 +137,7 @@ func main() {
 			}
 		}()
 	}
+	hammer.Run(ctx)
 
 	if *showUI {
 		c := newController(hammer, ha)
