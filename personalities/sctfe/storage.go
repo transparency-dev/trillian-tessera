@@ -100,18 +100,18 @@ type cachedIssuerStorage struct {
 
 // Exists checks whether the key is stored locally, it not checks in the underlying storage.
 // If it finds it there, caches the key locally.
-func (c cachedIssuerStorage) Exists(ctx context.Context, key [32]byte) (bool, error) {
-	_, ok := c.m[string(key[:])]
+func (c cachedIssuerStorage) Exists(ctx context.Context, key []byte) (bool, error) {
+	_, ok := c.m[string(key)]
 	if ok {
-		klog.V(2).Infof("Exists: found %q in local key cache", hex.EncodeToString(key[:]))
+		klog.V(2).Infof("Exists: found %q in local key cache", hex.EncodeToString(key))
 		return true, nil
 	}
 	ok, err := c.s.Exists(ctx, key)
 	if err != nil {
-		return false, fmt.Errorf("error checking if issuer %q exists in the underlying IssuerStorage: %s", hex.EncodeToString(key[:]), err)
+		return false, fmt.Errorf("error checking if issuer %q exists in the underlying IssuerStorage: %s", string(key), err)
 	}
 	if ok {
-		c.m[string(key[:])] = true
+		c.m[string(key)] = true
 	}
 	return ok, nil
 }
@@ -119,16 +119,16 @@ func (c cachedIssuerStorage) Exists(ctx context.Context, key [32]byte) (bool, er
 // Add first adds the data under key to the underlying storage, then caches the key locally.
 //
 // Add will only store up to c.N keys.
-func (c cachedIssuerStorage) Add(ctx context.Context, key [32]byte, data []byte) error {
+func (c cachedIssuerStorage) Add(ctx context.Context, key []byte, data []byte) error {
 	err := c.s.Add(ctx, key, data)
 	if err != nil {
-		return fmt.Errorf("Add: error storing issuer data for %q in the underlying IssuerStorage", hex.EncodeToString(key[:]))
+		return fmt.Errorf("Add: error storing issuer data for %q in the underlying IssuerStorage", string(key))
 	}
 	if len(c.m) >= c.N {
-		klog.V(2).Infof("Add: local key cache full, won't cache %q", hex.EncodeToString(key[:]))
+		klog.V(2).Infof("Add: local key cache full, won't cache %q", string(key))
 		return nil
 	}
-	c.m[string(key[:])] = true
+	c.m[string(key)] = true
 	return nil
 }
 
