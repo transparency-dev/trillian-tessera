@@ -325,6 +325,7 @@ func (m *memObjStore) getObject(_ context.Context, obj string) ([]byte, int64, e
 	return d, 1, nil
 }
 
+// TODO(phboneff): add content type tests
 func (m *memObjStore) setObject(_ context.Context, obj string, data []byte, cond *gcs.Conditions, _ string) error {
 	m.Lock()
 	defer m.Unlock()
