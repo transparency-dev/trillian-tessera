@@ -29,3 +29,18 @@ go run ./hammer \
   --max_write_ops=42
 ```
 
+For a headless write-only example that could be used for integration tests, this command attempts to write 2500 leaves within 1 minute.
+If the target number of leaves is reached then it exits successfully.
+If the timeout of 1 minute is reached first, then it exits with an exit code of 1.
+
+```shell
+go run ./hammer \
+  --log_public_key=Test-Betty+df84580a+AQQASqPUZoIHcJAF5mBOryctwFdTV1E0GRY4kEAtTzwB \
+  --log_url=http://localhost:2024 \
+  --max_read_ops=0 \
+  --num_writers=512 \
+  --max_write_ops=512 \
+  --max_runtime=1m \
+  --leaf_write_goal=2500 \
+  --show_ui=false
+```

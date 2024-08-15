@@ -52,6 +52,9 @@ var (
 	leafMinSize = flag.Int("leaf_min_size", 0, "Minimum size in bytes of individual leaves")
 	dupChance   = flag.Float64("dup_chance", 0.1, "The probability of a generated leaf being a duplicate of a previous value")
 
+	leafWriteGoal = flag.Int64("leaf_write_goal", 0, "Exit after writing this number of leaves, or 0 to keep going indefinitely")
+	maxRunTime    = flag.Duration("max_runtime", 0, "Fail after this amount of time has passed, or 0 to keep going indefinitely")
+
 	showUI = flag.Bool("show_ui", true, "Set to false to disable the text-based UI")
 
 	hc = &http.Client{
@@ -68,7 +71,7 @@ func main() {
 	klog.InitFlags(nil)
 	flag.Parse()
 
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
 
 	logSigV, err := note.NewVerifier(*logPubKey)
 	if err != nil {
@@ -97,12 +100,52 @@ func main() {
 	hammer := NewHammer(&tracker, f.Fetch, w.Write, gen, ha.seqLeafChan, ha.errChan)
 	hammer.Run(ctx)
 
+	exitCode := 0
+	if *leafWriteGoal > 0 {
+		go func() {
+			startTime := time.Now()
+			goal := tracker.LatestConsistent.Size + uint64(*leafWriteGoal)
+			klog.Infof("Will exit once tree size is at least %d", goal)
+			tick := time.NewTicker(1 * time.Second)
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-tick.C:
+					if tracker.LatestConsistent.Size >= goal {
+						elapsed := time.Now().Sub(startTime)
+						klog.Infof("Reached tree size goal of %d after %s; exiting", goal, elapsed)
+						cancel()
+						return
+					}
+				}
+			}
+		}()
+	}
+	if *maxRunTime > 0 {
+		go func() {
+			klog.Infof("Will fail after %s", *maxRunTime)
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(*maxRunTime):
+					klog.Infof("Max runtime reached; exiting")
+					exitCode = 1
+					cancel()
+					return
+				}
+			}
+		}()
+	}
+
 	if *showUI {
 		c := newController(hammer, ha)
 		c.Run(ctx)
 	} else {
 		<-ctx.Done()
 	}
+	os.Exit(exitCode)
 }
 
 func NewHammer(tracker *client.LogStateTracker, f client.Fetcher, w LeafWriter, gen func() []byte, seqLeafChan chan<- leafTime, errChan chan<- error) *Hammer {
