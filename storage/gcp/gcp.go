@@ -56,8 +56,8 @@ import (
 
 const (
 	entryBundleSize = 256
-	appDataContType = "application/data"
-	txtContType     = "text/plain; charset=utf-8"
+	logContType     = "application/octet-stream"
+	ckptContType    = "text/plain; charset=utf-8"
 
 	DefaultPushbackMaxOutstanding = 4096
 	DefaultIntegrationSizeLimit   = 5 * 4096
@@ -187,7 +187,7 @@ func (s *Storage) setTile(ctx context.Context, level, index, logSize uint64, til
 	tPath := layout.TilePath(level, index, logSize)
 	klog.V(2).Infof("StoreTile: %s (%d entries)", tPath, len(tile.Nodes))
 
-	return s.objStore.setObject(ctx, tPath, data, &gcs.Conditions{DoesNotExist: true}, appDataContType)
+	return s.objStore.setObject(ctx, tPath, data, &gcs.Conditions{DoesNotExist: true}, logContType)
 }
 
 // getTiles returns the tiles with the given tile-coords for the specified log size.
@@ -249,7 +249,7 @@ func (s *Storage) setEntryBundle(ctx context.Context, bundleIndex uint64, logSiz
 	// Note that setObject does an idempotent interpretation of DoesNotExist - it only
 	// returns an error if the named object exists _and_ contains different data to what's
 	// passed in here.
-	if err := s.objStore.setObject(ctx, objName, bundleRaw, &gcs.Conditions{DoesNotExist: true}, appDataContType); err != nil {
+	if err := s.objStore.setObject(ctx, objName, bundleRaw, &gcs.Conditions{DoesNotExist: true}, logContType); err != nil {
 		return fmt.Errorf("setObject(%q): %v", objName, err)
 
 	}
@@ -294,7 +294,7 @@ func (s *Storage) integrate(ctx context.Context, fromSeq uint64, entries []stora
 				if err != nil {
 					return fmt.Errorf("newCP: %v", err)
 				}
-				if err := s.objStore.setObject(ctx, layout.CheckpointPath, cpRaw, nil, txtContType); err != nil {
+				if err := s.objStore.setObject(ctx, layout.CheckpointPath, cpRaw, nil, ckptContType); err != nil {
 					switch ee := err.(type) {
 					case *googleapi.Error:
 						if ee.Code == http.StatusTooManyRequests {
