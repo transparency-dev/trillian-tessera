@@ -35,8 +35,8 @@ type Storage interface {
 }
 
 type IssuerStorage interface {
-	Exists(ctx context.Context, key [32]byte) (bool, error)
-	Add(ctx context.Context, key [32]byte, data []byte) error
+	Exists(ctx context.Context, key []byte) (bool, error)
+	Add(ctx context.Context, key []byte, data []byte) error
 }
 
 // CTStorage implements Storage.
@@ -66,17 +66,19 @@ func (cts *CTStorage) AddIssuerChain(ctx context.Context, chain []*x509.Certific
 	errG := errgroup.Group{}
 	for _, c := range chain {
 		errG.Go(func() error {
-			key := sha256.Sum256(c.Raw)
+			id := sha256.Sum256(c.Raw)
+			key := make([]byte, 32)
+			_ = hex.Encode(key, id[:])
 			// We first try and see if this issuer cert has already been stored since reads
 			// are cheaper than writes.
 			// TODO(phboneff): monitor usage, eventually write directly depending on usage patterns
 			ok, err := cts.issuers.Exists(ctx, key)
 			if err != nil {
-				return fmt.Errorf("error checking if issuer %q exists: %s", hex.EncodeToString(key[:]), err)
+				return fmt.Errorf("error checking if issuer %q exists: %s", string(key), err)
 			}
 			if !ok {
 				if err = cts.issuers.Add(ctx, key, c.Raw); err != nil {
-					return fmt.Errorf("error adding certificate for issuer %q: %v", hex.EncodeToString(key[:]), err)
+					return fmt.Errorf("error adding certificate for issuer %q: %v", string(key), err)
 
 				}
 			}

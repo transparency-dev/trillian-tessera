@@ -19,7 +19,6 @@ package gcp
 
 import (
 	"context"
-	"encoding/hex"
 	"fmt"
 	"net/http"
 	"path"
@@ -69,12 +68,12 @@ func NewGCSStorage(ctx context.Context, projectID string, bucket string, prefix 
 }
 
 // keyToObjName converts bytes to a GCS object name.
-func (s *GCSStorage) keyToObjName(key [32]byte) string {
-	return path.Join(s.prefix, hex.EncodeToString(key[:]))
+func (s *GCSStorage) keyToObjName(key []byte) string {
+	return path.Join(s.prefix, string(key))
 }
 
 // Exists checks whether an object is stored under key.
-func (s *GCSStorage) Exists(ctx context.Context, key [32]byte) (bool, error) {
+func (s *GCSStorage) Exists(ctx context.Context, key []byte) (bool, error) {
 	objName := s.keyToObjName(key)
 	obj := s.bucket.Object(objName)
 	_, err := obj.Attrs(ctx)
@@ -92,7 +91,7 @@ func (s *GCSStorage) Exists(ctx context.Context, key [32]byte) (bool, error) {
 //
 // If there is already an object under that key, it does not override it, and returns.
 // TODO(phboneff): consider reading the object to make sure it's identical
-func (s *GCSStorage) Add(ctx context.Context, key [32]byte, data []byte) error {
+func (s *GCSStorage) Add(ctx context.Context, key []byte, data []byte) error {
 	objName := s.keyToObjName(key)
 	obj := s.bucket.Object(objName)
 
