@@ -178,7 +178,7 @@ func (s *Storage) sequenceBatch(ctx context.Context, entries []*tessera.Entry) e
 			return fmt.Errorf("failed to make entries directory structure: %w", err)
 		}
 		if err := createExclusive(bf, currTile.Bytes()); err != nil {
-			if !errors.Is(os.ErrExist, err) {
+			if !errors.Is(err, os.ErrExist) {
 				return err
 			}
 		}
@@ -321,7 +321,7 @@ func (s *Storage) StoreTile(_ context.Context, level, index, logSize uint64, til
 		return fmt.Errorf("failed to write temporary tile file: %w", err)
 	}
 	if err := os.Rename(temp, tPath); err != nil {
-		if !errors.Is(os.ErrExist, err) {
+		if !errors.Is(err, os.ErrExist) {
 			return fmt.Errorf("failed to rename temporary tile file: %w", err)
 		}
 		os.Remove(temp)
