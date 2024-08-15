@@ -98,7 +98,7 @@ type cachedIssuerStorage struct {
 	s IssuerStorage
 }
 
-// Exists checks whether the key is stored locally, it not checks in the underlying storage.
+// Exists checks whether the key is stored locally, if not checks in the underlying storage.
 // If it finds it there, caches the key locally.
 func (c cachedIssuerStorage) Exists(ctx context.Context, key []byte) (bool, error) {
 	_, ok := c.m[string(key)]
