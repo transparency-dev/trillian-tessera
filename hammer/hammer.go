@@ -113,7 +113,7 @@ func main() {
 					return
 				case <-tick.C:
 					if tracker.LatestConsistent.Size >= goal {
-						elapsed := time.Now().Sub(startTime)
+						elapsed := time.Since(startTime)
 						klog.Infof("Reached tree size goal of %d after %s; exiting", goal, elapsed)
 						cancel()
 						return
