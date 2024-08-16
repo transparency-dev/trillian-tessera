@@ -27,7 +27,7 @@ Tessera goals:
 *   Broadly similar write-throughput and write-availability, and potentially _far_ higher read-throughput
     and read-availability compared to Trillian v1 (dependent on underlying infrastructure)
 *   Enable building of arbitrary log personalities, including support for the peculiarities of a
-    [CT Tiles](https://github.com/C2SP/C2SP/blob/main/static-ct-api.md) compliant log.
+    [Static CT API](https://c2sp.org/static-ct-api) compliant log.
 
 ### Status
 
