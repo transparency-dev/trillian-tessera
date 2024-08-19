@@ -67,8 +67,7 @@ func (cts *CTStorage) AddIssuerChain(ctx context.Context, chain []*x509.Certific
 	for _, c := range chain {
 		errG.Go(func() error {
 			id := sha256.Sum256(c.Raw)
-			key := make([]byte, 32)
-			_ = hex.Encode(key, id[:])
+			key := []byte(hex.EncodeToString(id[:]))
 			// We first try and see if this issuer cert has already been stored since reads
 			// are cheaper than writes.
 			// TODO(phboneff): monitor usage, eventually write directly depending on usage patterns
