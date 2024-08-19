@@ -20,13 +20,11 @@ import (
 	"crypto/ecdsa"
 	"errors"
 	"fmt"
-	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/google/certificate-transparency-go/asn1"
-	"github.com/google/certificate-transparency-go/x509"
 	"github.com/google/certificate-transparency-go/x509util"
 	"github.com/google/trillian/crypto/keys"
 	"github.com/google/trillian/monitoring"
@@ -48,20 +46,7 @@ type InstanceOptions struct {
 	// a boolean to indicate whether the conversion succeeded.
 	ErrorMapper func(error) (int, bool)
 	// RequestLog provides structured logging of CTFE requests.
-	RequestLog RequestLog
-	// RemoteUser returns a string representing the originating host for the
-	// given request. This string will be used as a User quota key.
-	// If unset, no quota will be requested for remote users.
-	RemoteQuotaUser func(*http.Request) string
-	// CertificateQuotaUser returns a string representing the passed in
-	// intermediate certificate. This string will be user as a User quota key for
-	// the cert. Quota will be requested for each intermediate in an
-	// add-[pre]-chain request so as to allow individual issuers to be rate
-	// limited. If unset, no quota will be requested for intermediate
-	// certificates.
-	CertificateQuotaUser func(*x509.Certificate) string
-	// MaskInternalErrors indicates if internal server errors should be masked
-	// or returned to the user containing the full error message.
+	RequestLog         RequestLog
 	MaskInternalErrors bool
 }
 

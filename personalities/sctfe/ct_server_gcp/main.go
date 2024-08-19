@@ -40,7 +40,6 @@ import (
 	"github.com/google/trillian/monitoring/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/cors"
-	"github.com/tomasen/realip"
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/personalities/sctfe"
 	"github.com/transparency-dev/trillian-tessera/personalities/sctfe/configpb"
@@ -62,12 +61,8 @@ var (
 	tracing            = flag.Bool("tracing", false, "If true opencensus Stackdriver tracing will be enabled. See https://opencensus.io/.")
 	tracingProjectID   = flag.String("tracing_project_id", "", "project ID to pass to stackdriver. Can be empty for GCP, consult docs for other platforms.")
 	tracingPercent     = flag.Int("tracing_percent", 0, "Percent of requests to be traced. Zero is a special case to use the DefaultSampler")
-	quotaRemote        = flag.Bool("quota_remote", true, "Enable requesting of quota for IP address sending incoming requests")
-	quotaIntermediate  = flag.Bool("quota_intermediate", true, "Enable requesting of quota for intermediate certificates in submitted chains")
 	pkcs11ModulePath   = flag.String("pkcs11_module_path", "", "Path to the PKCS#11 module to use for keys that use the PKCS#11 interface")
 )
-
-const unknownRemoteUser = "UNKNOWN_REMOTE"
 
 // nolint:staticcheck
 func main() {
@@ -251,20 +246,6 @@ func setupAndRegister(ctx context.Context, deadline time.Duration, vCfg *sctfe.V
 		MetricFactory:      prometheus.MetricFactory{},
 		RequestLog:         new(sctfe.DefaultRequestLog),
 		MaskInternalErrors: maskInternalErrors,
-	}
-	if *quotaRemote {
-		klog.Info("Enabling quota for requesting IP")
-		opts.RemoteQuotaUser = func(r *http.Request) string {
-			var remoteUser = realip.FromRequest(r)
-			if len(remoteUser) == 0 {
-				return unknownRemoteUser
-			}
-			return remoteUser
-		}
-	}
-	if *quotaIntermediate {
-		klog.Info("Enabling quota for intermediate certificates")
-		opts.CertificateQuotaUser = sctfe.QuotaUserForCert
 	}
 
 	switch vCfg.Config.StorageConfig.(type) {

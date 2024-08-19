@@ -16,7 +16,6 @@ require (
 	github.com/prometheus/client_golang v1.19.1
 	github.com/rivo/tview v0.0.0-20240625185742-b0a7293b8130
 	github.com/rs/cors v1.11.0
-	github.com/tomasen/realip v0.0.0-20180522021738-f0c99a92ddce
 	github.com/transparency-dev/formats v0.0.0-20240715203801-9ff9b9e3905f
 	github.com/transparency-dev/merkle v0.0.2
 	golang.org/x/exp v0.0.0-20231006140011-7918f672742d
