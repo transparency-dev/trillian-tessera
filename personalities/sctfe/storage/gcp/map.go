@@ -1,4 +1,4 @@
-// Copyright 2016 Google LLC. All Rights Reserved.
+// Copyright 2024 The Tessera authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -29,7 +29,7 @@ import (
 	"k8s.io/klog/v2"
 )
 
-// GCSStorage is a map backed by GCS on GCP.
+// GCSStorage is a key value store backed by GCS on GCP.
 type GCSStorage struct {
 	bucket      *gcs.BucketHandle
 	prefix      string
