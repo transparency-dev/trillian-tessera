@@ -669,13 +669,13 @@ func (s *gcsStorage) setObject(ctx context.Context, objName string, data []byte,
 	obj := bkt.Object(objName)
 
 	var w *gcs.Writer
-	w.ObjectAttrs.ContentType = contType
 	if cond == nil {
 		w = obj.NewWriter(ctx)
 
 	} else {
 		w = obj.If(*cond).NewWriter(ctx)
 	}
+	w.ObjectAttrs.ContentType = contType
 	if _, err := w.Write(data); err != nil {
 		return fmt.Errorf("failed to write object %q to bucket %q: %w", objName, s.bucket, err)
 	}
