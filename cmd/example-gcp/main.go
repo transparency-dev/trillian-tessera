@@ -30,6 +30,7 @@ import (
 
 	kms "cloud.google.com/go/kms/apiv1"
 	tessera "github.com/transparency-dev/trillian-tessera"
+	samplepersonality "github.com/transparency-dev/trillian-tessera/personalities/sample"
 	"github.com/transparency-dev/trillian-tessera/storage/gcp"
 	"golang.org/x/mod/sumdb/note"
 	"k8s.io/klog/v2"
@@ -74,29 +75,6 @@ func main() {
 		klog.Exitf("Failed to create new GCP storage: %v", err)
 	}
 
-	http.HandleFunc("POST /add", func(w http.ResponseWriter, r *http.Request) {
-		b, err := io.ReadAll(r.Body)
-		if err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
-			return
-		}
-		defer r.Body.Close()
-
-		id := sha256.Sum256(b)
-		idx, err := storage.Add(r.Context(), tessera.NewEntry(b, tessera.WithIdentity(id[:])))
-		if err != nil {
-			if errors.Is(err, tessera.ErrPushback) {
-				w.Header().Add("Retry-After", "1")
-				w.WriteHeader(http.StatusServiceUnavailable)
-				return
-			}
-			w.WriteHeader(http.StatusInternalServerError)
-			_, _ = w.Write([]byte(err.Error()))
-			return
-		}
-		_, _ = w.Write([]byte(fmt.Sprintf("%d", idx)))
-	})
-
 	// TODO: remove this proxy
 	serveGCS := func(w http.ResponseWriter, r *http.Request) {
 		resource := strings.TrimLeft(r.URL.Path, "/")
@@ -109,12 +87,14 @@ func main() {
 		}
 		_, _ = w.Write(b)
 	}
-	http.HandleFunc("GET /checkpoint", serveGCS)
-	http.HandleFunc("GET /tile/", serveGCS)
 
-	if err := http.ListenAndServe(*listen, http.DefaultServeMux); err != nil {
-		klog.Exitf("ListenAndServe: %v", err)
-	}
+	personality := samplepersonality.New(ctx, samplepersonality.Handlers{
+		Checkpoint:  serveGCS,
+		Tile:        serveGCS,
+		EntryBundle: serveGCS,
+		Add:         addHandler(storage),
+	})
+	personality.Run(*listen)
 }
 
 // signerFromFlags creates and returns a new KMSSigner from the flags, along with a close func.
@@ -137,4 +117,29 @@ func signerFromFlags(ctx context.Context) (note.Signer, note.Verifier, func() er
 	}
 
 	return signer, verifier, kmClient.Close
+}
+
+func addHandler(storage *gcp.Storage) func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		b, err := io.ReadAll(r.Body)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		defer r.Body.Close()
+
+		id := sha256.Sum256(b)
+		idx, err := storage.Add(r.Context(), tessera.NewEntry(b, tessera.WithIdentity(id[:])))
+		if err != nil {
+			if errors.Is(err, tessera.ErrPushback) {
+				w.Header().Add("Retry-After", "1")
+				w.WriteHeader(http.StatusServiceUnavailable)
+				return
+			}
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte(err.Error()))
+			return
+		}
+		_, _ = w.Write([]byte(fmt.Sprintf("%d", idx)))
+	}
 }

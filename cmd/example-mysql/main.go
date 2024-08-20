@@ -27,6 +27,7 @@ import (
 
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
+	samplepersonality "github.com/transparency-dev/trillian-tessera/personalities/sample"
 	"github.com/transparency-dev/trillian-tessera/storage/mysql"
 	"golang.org/x/mod/sumdb/note"
 	"k8s.io/klog/v2"
@@ -80,7 +81,43 @@ func main() {
 		klog.Exitf("Failed to create new MySQL storage: %v", err)
 	}
 
-	http.HandleFunc("GET /checkpoint", func(w http.ResponseWriter, r *http.Request) {
+	personality := samplepersonality.New(ctx, samplepersonality.Handlers{
+		Checkpoint:  checkpointHandler(storage),
+		Tile:        tileHandler(storage),
+		EntryBundle: entryBundleHandler(storage),
+		Add:         addHandler(storage),
+	})
+	personality.Run(*listen)
+}
+
+func initDatabaseSchema(ctx context.Context) {
+	if *initSchemaPath != "" {
+		klog.Infof("Initializing database schema")
+
+		db, err := sql.Open("mysql", *mysqlURI+"?multiStatements=true")
+		if err != nil {
+			klog.Exitf("Failed to connect to DB: %v", err)
+		}
+		defer func() {
+			if err := db.Close(); err != nil {
+				klog.Warningf("Failed to close db: %v", err)
+			}
+		}()
+
+		rawSchema, err := os.ReadFile(*initSchemaPath)
+		if err != nil {
+			klog.Exitf("Failed to read init schema file %q: %v", *initSchemaPath, err)
+		}
+		if _, err := db.ExecContext(ctx, string(rawSchema)); err != nil {
+			klog.Exitf("Failed to execute init database schema: %v", err)
+		}
+
+		klog.Infof("Database schema initialized")
+	}
+}
+
+func checkpointHandler(storage *mysql.Storage) func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
 		checkpoint, err := storage.ReadCheckpoint(r.Context())
 		if err != nil {
 			klog.Errorf("/checkpoint: %v", err)
@@ -96,9 +133,11 @@ func main() {
 			klog.Errorf("/checkpoint: %v", err)
 			return
 		}
-	})
+	}
+}
 
-	http.HandleFunc("GET /tile/{level}/{index...}", func(w http.ResponseWriter, r *http.Request) {
+func tileHandler(storage *mysql.Storage) func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
 		level, index, width, err := layout.ParseTileLevelIndexWidth(r.PathValue("level"), r.PathValue("index"))
 		if err != nil {
 			w.WriteHeader(http.StatusBadRequest)
@@ -125,9 +164,11 @@ func main() {
 			klog.Errorf("/tile/{level}/{index...}: %v", err)
 			return
 		}
-	})
+	}
+}
 
-	http.HandleFunc("GET /tile/entries/{index...}", func(w http.ResponseWriter, r *http.Request) {
+func entryBundleHandler(storage *mysql.Storage) func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
 		index, _, err := layout.ParseTileIndexWidth(r.PathValue("index"))
 		if err != nil {
 			w.WriteHeader(http.StatusBadRequest)
@@ -154,9 +195,11 @@ func main() {
 			klog.Errorf("/tile/entries/{index...}: %v", err)
 			return
 		}
-	})
+	}
+}
 
-	http.HandleFunc("POST /add", func(w http.ResponseWriter, r *http.Request) {
+func addHandler(storage *mysql.Storage) func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
 		b, err := io.ReadAll(r.Body)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
@@ -177,35 +220,5 @@ func main() {
 			klog.Errorf("/add: %v", err)
 			return
 		}
-	})
-
-	if err := http.ListenAndServe(*listen, http.DefaultServeMux); err != nil {
-		klog.Exitf("ListenAndServe: %v", err)
-	}
-}
-
-func initDatabaseSchema(ctx context.Context) {
-	if *initSchemaPath != "" {
-		klog.Infof("Initializing database schema")
-
-		db, err := sql.Open("mysql", *mysqlURI+"?multiStatements=true")
-		if err != nil {
-			klog.Exitf("Failed to connect to DB: %v", err)
-		}
-		defer func() {
-			if err := db.Close(); err != nil {
-				klog.Warningf("Failed to close db: %v", err)
-			}
-		}()
-
-		rawSchema, err := os.ReadFile(*initSchemaPath)
-		if err != nil {
-			klog.Exitf("Failed to read init schema file %q: %v", *initSchemaPath, err)
-		}
-		if _, err := db.ExecContext(ctx, string(rawSchema)); err != nil {
-			klog.Exitf("Failed to execute init database schema: %v", err)
-		}
-
-		klog.Infof("Database schema initialized")
 	}
 }
