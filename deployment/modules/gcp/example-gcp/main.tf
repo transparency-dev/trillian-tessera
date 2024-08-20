@@ -81,6 +81,10 @@ resource "google_project_iam_member" "iam_service_agent" {
   member  = "serviceAccount:${google_service_account.cloudrun_service_account.email}"
 }
 
+locals {
+  spanner_db_full = "projects/${var.project_id}/instances/${module.gcs.log_spanner_instance.name}/databases/${module.gcs.log_spanner_db.name}"
+}
+
 resource "google_cloud_run_v2_service" "default" {
   name         = "example-service-${var.env}"
   location     = var.location
@@ -95,7 +99,7 @@ resource "google_cloud_run_v2_service" "default" {
         "--logtostderr",
         "--v=1",
         "--bucket=${module.gcs.log_bucket.id}",
-        "--spanner=projects/${var.project_id}/instances/${module.gcs.log_spanner_instance.name}/databases/${module.gcs.log_spanner_db.name}",
+        "--spanner=${local.spanner_db_full}",
         "--project=${var.project_id}",
         "--listen=:8080",
         "--kms_key=${google_kms_crypto_key_version.log_signer.id}",
@@ -114,11 +118,6 @@ resource "google_cloud_run_v2_service" "default" {
           port = 8080
         }
       }
-    }
-    containers {
-      image      = "us-docker.pkg.dev/cloud-ops-agents-artifacts/cloud-run-gmp-sidecar/cloud-run-gmp-sidecar:1.0.0"
-      name       = "collector"
-      depends_on = ["example-gcp"]
     }
   }
   client = "terraform"

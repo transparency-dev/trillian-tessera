@@ -4,8 +4,8 @@ terraform {
 
 locals {
   env         = path_relative_to_include()
-  project_id = get_env("GOOGLE_PROJECT", "trillian-tessera")
-  location   = get_env("GOOGLE_REGION", "us-central1")
+  project_id  = get_env("GOOGLE_PROJECT", "trillian-tessera")
+  location    = get_env("GOOGLE_REGION", "us-central1")
   base_name   = get_env("TESSERA_BASE_NAME", "${local.env}-example-gcp")
 }
 
