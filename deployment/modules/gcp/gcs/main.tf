@@ -1,7 +1,3 @@
-terraform {
-  backend "gcs" {}
-}
-
 # Services
 resource "google_project_service" "serviceusage_googleapis_com" {
   service            = "serviceusage.googleapis.com"
@@ -52,7 +48,7 @@ resource "google_storage_bucket_iam_binding" "log_bucket_writer" {
 resource "google_spanner_instance" "log_spanner" {
   name             = var.base_name
   config           = "regional-${var.location}"
-  display_name     = "${var.base_name} Spanner Instance"
+  display_name     = var.base_name
   processing_units = 100
 }
 
