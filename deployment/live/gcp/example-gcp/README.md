@@ -19,6 +19,6 @@ export TESSERA_BASE_NAME={VALUE}
 ```
 
 Terraforming the project can be done by:
- 1. `cd` to the relevant `live` directory for the environment to deploy/change
+ 1. `cd` to the relevant directory for the environment to deploy/change (e.g. `ci`)
  2. Run `terragrunt apply`
 
