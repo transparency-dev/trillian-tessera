@@ -34,7 +34,7 @@ This table is used to coordinate integration of sequenced batches in the `Seq` t
 ## Life of a leaf
 
 1. Leaves are submitted by the binary built using Tessera via a call the storage's `Add` func.
-1. Dupe squashing (TODO): look for existing `internal/seqByHash/<leafhash>` object, read assigned sequence number if present and return.
+1. Dupe squashing (TODO): look for existing `<identity_hash>` object, read assigned sequence number if present and return.
 1. The storage library batches these entries up, and, after a configurable period of time has elapsed
    or the batch reaches a configurable size threshold, the batch is written to the `Seq` table which effectively
    assigns a sequence numbers to the entries using the following algorithm:
@@ -52,12 +52,13 @@ This table is used to coordinate integration of sequenced batches in the `Seq` t
    1. Delete consumed batches from `Seq`
    1. Update `IntCoord` with `seq+=num_entries_integrated`
    1. Dupe detection (TODO):
-      1. Writes out internal/seqByHash/<leafhash> containing the leaf's sequence number
+      1. Writes out `<identity_hash>` containing the leaf's sequence number
 
 ## Dedup
 
-This currently uses GCS to store the hash -> index mapping in individual files, but it may make sense to explore a
-paging scheme to reduce the number of objects, or store the index mapping elsewhere.
+An experimental implementation has been tested which uses Spanner to store the `<identity_hash>` --> `sequence`
+mapping. This works well using "slack" Spanner CPU available in the smallest possible footprint, and consequently
+is comparably cheap requiring only extra Spanner storage costs.
 
 ### Alternatives considered
 
