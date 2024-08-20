@@ -84,12 +84,12 @@ type Signer struct {
 	kmsKeyName string
 }
 
-// New creates a signer which uses an Ed25519 key in GCP KMS.
+// NewKMSSigner creates a signer which uses an Ed25519 key in GCP KMS.
 // See https://cloud.google.com/kms/docs/algorithms#elliptic_curve_signing_algorithms
 //
 // kmsKeyName is the GCP KMS name of the key to be used.
 // noteKeyName is the value used as the signer name in the note signature.
-func New(ctx context.Context, c *kms.KeyManagementClient, kmsKeyName, noteKeyName string) (*Signer, error) {
+func NewKMSSigner(ctx context.Context, c *kms.KeyManagementClient, kmsKeyName, noteKeyName string) (*Signer, error) {
 	s := &Signer{}
 
 	s.client = c

@@ -28,6 +28,7 @@ import (
 	"strings"
 	"time"
 
+	kms "cloud.google.com/go/kms/apiv1"
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/storage/gcp"
 	"golang.org/x/mod/sumdb/note"
@@ -35,11 +36,12 @@ import (
 )
 
 var (
-	bucket  = flag.String("bucket", "", "Bucket to use for storing log")
-	listen  = flag.String("listen", ":2024", "Address:port to listen on")
-	project = flag.String("project", os.Getenv("GOOGLE_CLOUD_PROJECT"), "GCP Project, take from env if unset")
-	spanner = flag.String("spanner", "", "Spanner resource URI ('projects/.../...')")
-	signer  = flag.String("signer", "", "Path to file containing log private key")
+	bucket     = flag.String("bucket", "", "Bucket to use for storing log")
+	listen     = flag.String("listen", ":2024", "Address:port to listen on")
+	project    = flag.String("project", os.Getenv("GOOGLE_CLOUD_PROJECT"), "GCP Project, take from env if unset")
+	spanner    = flag.String("spanner", "", "Spanner resource URI ('projects/.../...')")
+	kmsKeyName = flag.String("kms_key", "", "GCP KMS key name for signing checkpoints")
+	origin     = flag.String("origin", "", "Log origin string")
 )
 
 func main() {
@@ -47,13 +49,19 @@ func main() {
 	flag.Parse()
 	ctx := context.Background()
 
+	if *origin == "" {
+		klog.Exit("Must supply --origin")
+	}
+
 	gcpCfg := gcp.Config{
 		ProjectID: *project,
 		Bucket:    *bucket,
 		Spanner:   *spanner,
 	}
+	signer, verifier, kmsClose := signerFromFlags(ctx)
+	defer kmsClose()
 	storage, err := gcp.New(ctx, gcpCfg,
-		tessera.WithCheckpointSignerVerifier(signerFromFlags(), nil),
+		tessera.WithCheckpointSignerVerifier(signer, verifier),
 		tessera.WithBatching(1024, time.Second),
 		tessera.WithPushback(10*4096),
 	)
@@ -104,14 +112,24 @@ func main() {
 	}
 }
 
-func signerFromFlags() note.Signer {
-	raw, err := os.ReadFile(*signer)
+// signerFromFlags creates and returns a new KMSSigner from the flags, along with a close func.
+func signerFromFlags(ctx context.Context) (note.Signer, note.Verifier, func() error) {
+	kmClient, err := kms.NewKeyManagementClient(ctx)
 	if err != nil {
-		klog.Exitf("Failed to read secret key file %q: %v", *signer, err)
+		klog.Fatalf("Failed to create KeyManagementClient: %v", err)
 	}
-	signer, err := note.NewSigner(string(raw))
+	signer, err := NewKMSSigner(ctx, kmClient, *kmsKeyName, *origin)
 	if err != nil {
 		klog.Exitf("Failed to create new signer: %v", err)
 	}
-	return signer
+	vRaw, err := VerifierKeyString(ctx, kmClient, *kmsKeyName, *origin)
+	if err != nil {
+		klog.Exitf("Failed to create verifier string: %v", err)
+	}
+	verifier, err := note.NewVerifier(vRaw)
+	if err != nil {
+		klog.Exitf("Failed to create verifier from %q: %v", vRaw, err)
+	}
+
+	return signer, verifier, kmClient.Close
 }
