@@ -59,7 +59,12 @@ func main() {
 		Spanner:   *spanner,
 	}
 	signer, verifier, kmsClose := signerFromFlags(ctx)
-	defer kmsClose()
+	defer func() {
+		if err := kmsClose(); err != nil {
+			klog.Errorf("kmsClose(): %v", err)
+		}
+	}()
+
 	storage, err := gcp.New(ctx, gcpCfg,
 		tessera.WithCheckpointSignerVerifier(signer, verifier),
 		tessera.WithBatching(1024, time.Second),
