@@ -621,19 +621,6 @@ type gcsStorage struct {
 //
 // The specified bucket must exist or an error will be returned.
 func newGCSStorage(ctx context.Context, c *gcs.Client, projectID string, bucket string) (*gcsStorage, error) {
-	it := c.Buckets(ctx, projectID)
-	for {
-		bAttrs, err := it.Next()
-		if err == iterator.Done {
-			return nil, fmt.Errorf("bucket %q does not exist, please create it", bucket)
-		}
-		if err != nil {
-			return nil, fmt.Errorf("error scanning buckets: %v", err)
-		}
-		if bAttrs.Name == bucket {
-			break
-		}
-	}
 	r := &gcsStorage{
 		gcsClient: c,
 		bucket:    bucket,
