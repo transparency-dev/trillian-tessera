@@ -22,3 +22,8 @@ variable "example_gcp_docker_image" {
   description = "The full image URL (path & tag) for the example-gcp Docker image to deploy"
   type        = string
 }
+
+variable "log_origin" {
+  description = "The origin string for the example log"
+  type        = string
+}

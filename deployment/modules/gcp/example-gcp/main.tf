@@ -14,10 +14,37 @@ module "gcs" {
   project_id = var.project_id
 }
 
+##
+## Resources
+##
+
 # Enable Cloud Run API
 resource "google_project_service" "cloudrun_api" {
   service            = "run.googleapis.com"
   disable_on_destroy = false
+}
+resource "google_project_service" "cloudkms_googleapis_com" {
+  service = "cloudkms.googleapis.com"
+}
+
+##
+## KMS for log signing
+##
+resource "google_kms_key_ring" "log_signer" {
+  location = var.location
+  name     = var.base_name
+}
+
+resource "google_kms_crypto_key" "log_signer" {
+  key_ring = google_kms_key_ring.log_signer.id
+  name     = "log_signer"
+  purpose  = "ASYMMETRIC_SIGN"
+  version_template {
+    algorithm = "EC_SIGN_ED25519"
+  }
+}
+resource "google_kms_crypto_key_version" "log_signer" {
+  crypto_key = google_kms_crypto_key.log_signer.id
 }
 
 ###
@@ -71,7 +98,8 @@ resource "google_cloud_run_v2_service" "default" {
         "--spanner=projects/${var.project_id}/instances/${module.gcs.log_spanner_instance.name}/databases/${module.gcs.log_spanner_db.name}",
         "--project=${var.project_id}",
         "--listen=:8080",
-        "--signer=./testgcp.sec",
+        "--kms_key=${google_kms_crypto_key_version.log_signer.id}",
+        "--origin=${var.log_origin}",
       ]
       ports {
         container_port = 8080
