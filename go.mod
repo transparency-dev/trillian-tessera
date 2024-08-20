@@ -3,6 +3,7 @@ module github.com/transparency-dev/trillian-tessera
 go 1.22.5
 
 require (
+	cloud.google.com/go/kms v1.18.4
 	cloud.google.com/go/spanner v1.67.0
 	cloud.google.com/go/storage v1.43.0
 	github.com/RobinUS2/golang-moving-average v1.0.0
