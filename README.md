@@ -12,7 +12,7 @@ over the past decade of building and operating transparency logs in production e
 
 Tessera goals:
 
-*   [Tiles-native API](https://github.com/C2SP/C2SP/blob/main/tlog-tiles.md) and storage
+*   [tlog-tiles API][] and storage
 *   Support for both cloud and on-premises infrastructure
     *   GCP and AWS support will be provided initially
     *   Cloud agnostic MySQL and POSIX filesystem support
@@ -27,7 +27,7 @@ Tessera goals:
 *   Broadly similar write-throughput and write-availability, and potentially _far_ higher read-throughput
     and read-availability compared to Trillian v1 (dependent on underlying infrastructure)
 *   Enable building of arbitrary log personalities, including support for the peculiarities of a
-    [Static CT API](https://c2sp.org/static-ct-api) compliant log.
+    [Static CT API][] compliant log.
 
 ### Status
 
@@ -48,17 +48,16 @@ migration to Tessera and adopting the patterns it encourages.
 
 ### Getting started
 
-#### Usage
+Take a look at the example personalities in the `/cmd/` directory:
+  - [example-posix](./cmd/example-posix/): example of operating a log backed by a local filesystem
+    - This example is not a long-lived process; running the command integrates entries into the log which lives only as files
+  - [example-mysql](./cmd/example-mysql/): example of operating a log that uses MySQL
+    - This example is easiest deployed via `docker compose`, which allows for easy setup and teardown
+  - [example-gcp](./cmd/example-gcp/): example of operating a log running in GCP
+    - This example can be deployed via terraform (see the [deployment](./deployment/) directory)
 
-```go
-
-import (
-    tessera "github.com/transparency-dev/trillian-tessera"
-)
-
-// TODO...
-
-```
+The `main.go` files for each of these example personalities try to strike a balance when demonstrating features of Tessera between simplicity, and demonstrating best practices.
+Please raise issues against the repo, or chat to us in [Slack](#contact) if you have ideas for making the examples more accessible!
 
 ### Contributing
 
@@ -77,3 +76,6 @@ This repo is licensed under the Apache 2.0 license, see [LICENSE](/LICENSE) for 
 
 Tessera builds upon the hard work, experience, and lessons from many _many_ folks involved in
 transparency ecosystems over the years.
+
+[tlog-tiles API]: https://c2sp.org/tlog-tiles
+[Static CT API]: https://c2sp.org/static-ct-api
