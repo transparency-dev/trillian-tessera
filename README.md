@@ -56,7 +56,7 @@ Take a look at the example personalities in the `/cmd/` directory:
   - [example-gcp](./cmd/example-gcp/): example of operating a log running in GCP
     - This example can be deployed via terraform (see the [deployment](./deployment/) directory)
 
-The `main.go` files for each of these example personalities tries to strike a balance when demonstrating features of Tessera between simplicity, and demonstrating best practices.
+The `main.go` files for each of these example personalities try to strike a balance when demonstrating features of Tessera between simplicity, and demonstrating best practices.
 Please raise issues against the repo, or chat to us in [Slack](#contact) if you have ideas for making the examples more accessible!
 
 ### Contributing
