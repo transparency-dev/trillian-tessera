@@ -40,7 +40,7 @@ type KV struct {
 
 type IssuerStorage interface {
 	Exists(ctx context.Context, key []byte) (bool, error)
-	AddMultiple(ctx context.Context, kv []KV) error
+	AddIssuers(ctx context.Context, kv []KV) error
 }
 
 // CTStorage implements Storage.
@@ -71,20 +71,10 @@ func (cts *CTStorage) AddIssuerChain(ctx context.Context, chain []*x509.Certific
 	for _, c := range chain {
 		id := sha256.Sum256(c.Raw)
 		key := []byte(hex.EncodeToString(id[:]))
-		// We first try and see if this issuer cert has already been stored since reads
-		// are cheaper than writes.
-		// TODO(phboneff): monitor usage, eventually write directly depending on usage patterns
-		ok, err := cts.issuers.Exists(ctx, key)
-		if err != nil {
-			return fmt.Errorf("error checking if issuer %q exists: %s", string(key), err)
-		}
-		if !ok {
-			kvs = append(kvs, KV{K: key, V: c.Raw})
-		}
+		kvs = append(kvs, KV{K: key, V: c.Raw})
 	}
-	if err := cts.issuers.AddMultiple(ctx, kvs); err != nil {
+	if err := cts.issuers.AddIssuers(ctx, kvs); err != nil {
 		return fmt.Errorf("error storing intermediates: %v", err)
-
 	}
 	return nil
 }
