@@ -56,11 +56,15 @@ Write a tool that can send write and read requests to a Tessera log in order to 
 ### Components
 
 Interactions with the log are performed by different implementations of worker, that are managed by separate pools:
- - writer: adds new leaves to the tree
+ - writer: adds new leaves to the tree using a `POST` request to an `/add` endpoint
  - full reader: reads all leaves from the tree, starting at 0 and fetching them all
  - random reader: reads leaves randomly within the size of the tree
 
 All readers verify inclusion proofs against a common checkpoint, so it is cryptographically assured that they all see consistent views of the data.
+
+An important point here is that readers exercise the Tessera log via standard tlog-tiles endpoints so will work for any deployment of that spec.
+However, the writers exercise a `/add` endpoint that is not defined in any spec, and is simply a convenient endpoint added to the example applications to allow for this kind of testing.
+A production log would be very unlikely to have such an endpoint.
 
 The number of each of these workers, and the rate at which they work is configurable (both via flags and through the UI).
 The number of workers is configured by increasing the size of the pool, which increases concurrency.
