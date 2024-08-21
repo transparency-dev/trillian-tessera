@@ -77,7 +77,7 @@ The TUI is only intended to be used to interactively explore the capabilities of
 
 There are 2 main modes that the hammer has been designed to run in:
   1. Headless, which has 2 main sub-modes:
-    1. Goal-oriented: given both a timeout and a target number of entries to write, process exits successfully if enough entries can be _written_ to the log before the time expires, or otherwise an error code is returned
-    1. Infinite: keeps running until killed in order to perform long-lived performance tests
+     1. Goal-oriented: given both a timeout and a target number of entries to write, process exits successfully if enough entries can be _written_ to the log before the time expires, or otherwise an error code is returned
+     1. Infinite: keeps running until killed in order to perform long-lived performance tests
   1. TUI: runs in the console with a Text UI that allows some interactivity to tune the load characteristics and see the results
 
