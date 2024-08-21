@@ -23,7 +23,6 @@ import (
 	"github.com/google/certificate-transparency-go/x509"
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/ctonly"
-	"golang.org/x/sync/errgroup"
 )
 
 // Storage provides all the storage primitives necessary to write to a ct-static-api log.
@@ -34,9 +33,14 @@ type Storage interface {
 	AddIssuerChain(context.Context, []*x509.Certificate) error
 }
 
+type KV struct {
+	K []byte
+	V []byte
+}
+
 type IssuerStorage interface {
 	Exists(ctx context.Context, key []byte) (bool, error)
-	Add(ctx context.Context, key []byte, data []byte) error
+	AddMultiple(ctx context.Context, kv []KV) error
 }
 
 // CTStorage implements Storage.
@@ -63,29 +67,24 @@ func (cts *CTStorage) Add(ctx context.Context, entry *ctonly.Entry) (uint64, err
 // AddIssuerChain stores every chain certificate under its sha256.
 // If an object is already stored under this hash, continues.
 func (cts *CTStorage) AddIssuerChain(ctx context.Context, chain []*x509.Certificate) error {
-	errG := errgroup.Group{}
+	kvs := []KV{}
 	for _, c := range chain {
-		errG.Go(func() error {
-			id := sha256.Sum256(c.Raw)
-			key := []byte(hex.EncodeToString(id[:]))
-			// We first try and see if this issuer cert has already been stored since reads
-			// are cheaper than writes.
-			// TODO(phboneff): monitor usage, eventually write directly depending on usage patterns
-			ok, err := cts.issuers.Exists(ctx, key)
-			if err != nil {
-				return fmt.Errorf("error checking if issuer %q exists: %s", string(key), err)
-			}
-			if !ok {
-				if err = cts.issuers.Add(ctx, key, c.Raw); err != nil {
-					return fmt.Errorf("error adding certificate for issuer %q: %v", string(key), err)
-
-				}
-			}
-			return nil
-		})
+		id := sha256.Sum256(c.Raw)
+		key := []byte(hex.EncodeToString(id[:]))
+		// We first try and see if this issuer cert has already been stored since reads
+		// are cheaper than writes.
+		// TODO(phboneff): monitor usage, eventually write directly depending on usage patterns
+		ok, err := cts.issuers.Exists(ctx, key)
+		if err != nil {
+			return fmt.Errorf("error checking if issuer %q exists: %s", string(key), err)
+		}
+		if !ok {
+			kvs = append(kvs, KV{K: key, V: c.Raw})
+		}
 	}
-	if err := errG.Wait(); err != nil {
-		return err
+	if err := cts.issuers.AddMultiple(ctx, kvs); err != nil {
+		return fmt.Errorf("error storing intermediates: %v", err)
+
 	}
 	return nil
 }

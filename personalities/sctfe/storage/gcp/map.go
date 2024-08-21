@@ -24,6 +24,7 @@ import (
 	"path"
 
 	gcs "cloud.google.com/go/storage"
+	"github.com/transparency-dev/trillian-tessera/personalities/sctfe"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/iterator"
 	"k8s.io/klog/v2"
@@ -111,6 +112,17 @@ func (s *GCSStorage) Add(ctx context.Context, key []byte, data []byte) error {
 		}
 
 		return fmt.Errorf("failed to close write on %q: %v", objName, err)
+	}
+	return nil
+}
+
+func (s *GCSStorage) AddMultiple(ctx context.Context, kv []sctfe.KV) error {
+	// TODO(phboneff): add parallel writes
+	for _, kv := range kv {
+		err := s.Add(ctx, kv.K, kv.V)
+		if err != nil {
+			return fmt.Errorf("error storing value under key %q: %v", string(kv.K), err)
+		}
 	}
 	return nil
 }
