@@ -1,5 +1,9 @@
 # How to Run a Tessera Log (MySQL)
 
+> [!WARNING]
+> - This is an example and is not fit for production use, but demonstrates a way of using the Tessera Log with MySQL storage backend.
+> - This example is built on the [tlog tiles API](https://c2sp.org/tlog-tiles) for read endpoints and exposes a /add endpoint that allows any POSTed data to be added to the log.
+
 The tessera log with the MySQL storage implementation can be started with either Docker Compose or manual `go run`.
 
 Note that all the commands are executed at the root directory of this repository.
