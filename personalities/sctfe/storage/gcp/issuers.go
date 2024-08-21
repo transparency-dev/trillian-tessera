@@ -73,7 +73,7 @@ func (s *IssuersStorage) keyToObjName(key []byte) string {
 	return path.Join(s.prefix, string(key))
 }
 
-// Exists checks whether an object is stored under key.
+// Exists checks whether a value is stored under key.
 func (s *IssuersStorage) Exists(ctx context.Context, key []byte) (bool, error) {
 	objName := s.keyToObjName(key)
 	obj := s.bucket.Object(objName)
@@ -88,10 +88,9 @@ func (s *IssuersStorage) Exists(ctx context.Context, key []byte) (bool, error) {
 	return true, nil
 }
 
-// AddIssuers stores all Issuers values under Key
+// AddIssuers stores all Issuers values under their Key.
 //
-// If there is already an object under that key, it does not override it, and returns.
-// TODO(phboneff): consider reading the object to make sure it's identical
+// If there is already an object under a given key, it does not override it.
 func (s *IssuersStorage) AddIssuers(ctx context.Context, kv []sctfe.KV) error {
 	// We first try and see if this issuer cert has already been stored since reads
 	// are cheaper than writes.
@@ -112,6 +111,7 @@ func (s *IssuersStorage) AddIssuers(ctx context.Context, kv []sctfe.KV) error {
 		obj := s.bucket.Object(objName)
 
 		// Don't overwrite if it already exists
+		// TODO(phboneff): consider reading the object to make sure it's identical
 		w := obj.If(gcs.Conditions{DoesNotExist: true}).NewWriter(ctx)
 		w.ObjectAttrs.ContentType = s.contentType
 
