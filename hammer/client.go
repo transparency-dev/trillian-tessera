@@ -41,20 +41,30 @@ func newLogClientsFromFlags() (*roundRobinFetcher, *roundRobinLeafWriter) {
 		klog.Exitf("--log_url must be provided")
 	}
 
-	fetchers := []client.Fetcher{}
-	writers := []httpLeafWriter{}
-	for _, s := range logURL {
+	if len(writeLogURL) == 0 {
+		// If no write_log_url is provided, then default it to log_url
+		writeLogURL = logURL
+	}
+
+	rootUrlOrDie := func(s string) *url.URL {
 		// url must reference a directory, by definition
 		if !strings.HasSuffix(s, "/") {
 			s += "/"
 		}
-
 		rootURL, err := url.Parse(s)
 		if err != nil {
 			klog.Exitf("Invalid log URL: %v", err)
 		}
-		fetchers = append(fetchers, newFetcher(rootURL))
-		addURL, err := rootURL.Parse("add")
+		return rootURL
+	}
+
+	fetchers := []client.Fetcher{}
+	for _, s := range logURL {
+		fetchers = append(fetchers, newFetcher(rootUrlOrDie(s)))
+	}
+	writers := []httpLeafWriter{}
+	for _, s := range writeLogURL {
+		addURL, err := rootUrlOrDie(s).Parse("add")
 		if err != nil {
 			klog.Exitf("Failed to create add URL: %v", err)
 		}
