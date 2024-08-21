@@ -1,6 +1,6 @@
 module github.com/transparency-dev/trillian-tessera
 
-go 1.22.5
+go 1.22.6
 
 require (
 	cloud.google.com/go/kms v1.18.4
