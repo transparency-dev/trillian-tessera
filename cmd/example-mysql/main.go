@@ -80,7 +80,7 @@ func main() {
 		klog.Exitf("Failed to create new MySQL storage: %v", err)
 	}
 
-	configureTilesReadApi(http.DefaultServeMux, storage)
+	configureTilesReadAPI(http.DefaultServeMux, storage)
 	http.HandleFunc("POST /add", func(w http.ResponseWriter, r *http.Request) {
 		b, err := io.ReadAll(r.Body)
 		if err != nil {
@@ -109,11 +109,11 @@ func main() {
 	}
 }
 
-// configureTilesReadApi adds the API methods from https://c2sp.org/tlog-tiles to the mux,
+// configureTilesReadAPI adds the API methods from https://c2sp.org/tlog-tiles to the mux,
 // routing the requests to the mysql storage.
 // This method could be moved into the storage API as it's likely this will be
 // the same for any implementation of a personality based on MySQL.
-func configureTilesReadApi(mux *http.ServeMux, storage *mysql.Storage) {
+func configureTilesReadAPI(mux *http.ServeMux, storage *mysql.Storage) {
 	mux.HandleFunc("GET /checkpoint", func(w http.ResponseWriter, r *http.Request) {
 		checkpoint, err := storage.ReadCheckpoint(r.Context())
 		if err != nil {
