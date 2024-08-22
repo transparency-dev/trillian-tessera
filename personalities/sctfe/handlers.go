@@ -321,6 +321,13 @@ func addChainInternal(ctx context.Context, li *logInfo, w http.ResponseWriter, r
 		return http.StatusBadRequest, fmt.Errorf("failed to build MerkleTreeLeaf: %s", err)
 	}
 
+	// TODO(phboneff): refactor entryFromChain to avoid recomputing hashes in AddIssuerChain
+	if len(chain) > 1 {
+		if err := li.storage.AddIssuerChain(ctx, chain[1:]); err != nil {
+			return http.StatusInternalServerError, fmt.Errorf("failed to store issuer chain: %s", err)
+		}
+	}
+
 	klog.V(2).Infof("%s: %s => storage.Add", li.LogOrigin, method)
 	idx, err := li.storage.Add(ctx, entry)
 	if err != nil {

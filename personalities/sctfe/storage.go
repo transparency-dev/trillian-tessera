@@ -16,34 +16,65 @@ package sctfe
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
 
+	"github.com/google/certificate-transparency-go/x509"
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/ctonly"
 )
 
 // Storage provides all the storage primitives necessary to write to a ct-static-api log.
 type Storage interface {
-	// 	Add assign an index to the provided Entry, stages the entry for integration, and return it the assigned index.
+	// Add assigns an index to the provided Entry, stages the entry for integration, and return it the assigned index.
 	Add(context.Context, *ctonly.Entry) (uint64, error)
+	// AddIssuerChain stores every the chain certificate in a content-addressable store under their sha256 hash.
+	AddIssuerChain(context.Context, []*x509.Certificate) error
+}
+
+type KV struct {
+	K []byte
+	V []byte
+}
+
+type IssuerStorage interface {
+	Exists(ctx context.Context, key []byte) (bool, error)
+	AddIssuers(ctx context.Context, kv []KV) error
 }
 
 // CTStorage implements Storage.
 type CTStorage struct {
 	storeData func(context.Context, *ctonly.Entry) (uint64, error)
-	// TODO(phboneff): add storeExtraData
-	// TODO(phboneff): add dedupe
+	issuers   IssuerStorage
 }
 
 // NewCTStorage instantiates a CTStorage object.
-func NewCTSTorage(logStorage tessera.Storage) (*CTStorage, error) {
+func NewCTSTorage(logStorage tessera.Storage, issuerStorage IssuerStorage) (*CTStorage, error) {
 	ctStorage := &CTStorage{
 		storeData: tessera.NewCertificateTransparencySequencedWriter(logStorage),
+		issuers:   issuerStorage,
 	}
 	return ctStorage, nil
 }
 
 // Add stores CT entries.
-func (cts CTStorage) Add(ctx context.Context, entry *ctonly.Entry) (uint64, error) {
+func (cts *CTStorage) Add(ctx context.Context, entry *ctonly.Entry) (uint64, error) {
 	// TODO(phboneff): add deduplication and chain storage
 	return cts.storeData(ctx, entry)
+}
+
+// AddIssuerChain stores every chain certificate under its sha256.
+// If an object is already stored under this hash, continues.
+func (cts *CTStorage) AddIssuerChain(ctx context.Context, chain []*x509.Certificate) error {
+	kvs := []KV{}
+	for _, c := range chain {
+		id := sha256.Sum256(c.Raw)
+		key := []byte(hex.EncodeToString(id[:]))
+		kvs = append(kvs, KV{K: key, V: c.Raw})
+	}
+	if err := cts.issuers.AddIssuers(ctx, kvs); err != nil {
+		return fmt.Errorf("error storing intermediates: %v", err)
+	}
+	return nil
 }
