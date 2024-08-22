@@ -80,7 +80,41 @@ func main() {
 		klog.Exitf("Failed to create new MySQL storage: %v", err)
 	}
 
-	http.HandleFunc("GET /checkpoint", func(w http.ResponseWriter, r *http.Request) {
+	configureTilesReadAPI(http.DefaultServeMux, storage)
+	http.HandleFunc("POST /add", func(w http.ResponseWriter, r *http.Request) {
+		b, err := io.ReadAll(r.Body)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		defer func() {
+			if err := r.Body.Close(); err != nil {
+				klog.Warningf("/add: %v", err)
+			}
+		}()
+		idx, err := storage.Add(r.Context(), tessera.NewEntry(b))
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte(err.Error()))
+			return
+		}
+		if _, err = w.Write([]byte(fmt.Sprintf("%d", idx))); err != nil {
+			klog.Errorf("/add: %v", err)
+			return
+		}
+	})
+
+	if err := http.ListenAndServe(*listen, http.DefaultServeMux); err != nil {
+		klog.Exitf("ListenAndServe: %v", err)
+	}
+}
+
+// configureTilesReadAPI adds the API methods from https://c2sp.org/tlog-tiles to the mux,
+// routing the requests to the mysql storage.
+// This method could be moved into the storage API as it's likely this will be
+// the same for any implementation of a personality based on MySQL.
+func configureTilesReadAPI(mux *http.ServeMux, storage *mysql.Storage) {
+	mux.HandleFunc("GET /checkpoint", func(w http.ResponseWriter, r *http.Request) {
 		checkpoint, err := storage.ReadCheckpoint(r.Context())
 		if err != nil {
 			klog.Errorf("/checkpoint: %v", err)
@@ -98,7 +132,7 @@ func main() {
 		}
 	})
 
-	http.HandleFunc("GET /tile/{level}/{index...}", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("GET /tile/{level}/{index...}", func(w http.ResponseWriter, r *http.Request) {
 		level, index, width, err := layout.ParseTileLevelIndexWidth(r.PathValue("level"), r.PathValue("index"))
 		if err != nil {
 			w.WriteHeader(http.StatusBadRequest)
@@ -127,7 +161,7 @@ func main() {
 		}
 	})
 
-	http.HandleFunc("GET /tile/entries/{index...}", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("GET /tile/entries/{index...}", func(w http.ResponseWriter, r *http.Request) {
 		index, _, err := layout.ParseTileIndexWidth(r.PathValue("index"))
 		if err != nil {
 			w.WriteHeader(http.StatusBadRequest)
@@ -155,33 +189,6 @@ func main() {
 			return
 		}
 	})
-
-	http.HandleFunc("POST /add", func(w http.ResponseWriter, r *http.Request) {
-		b, err := io.ReadAll(r.Body)
-		if err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
-			return
-		}
-		defer func() {
-			if err := r.Body.Close(); err != nil {
-				klog.Warningf("/add: %v", err)
-			}
-		}()
-		idx, err := storage.Add(r.Context(), tessera.NewEntry(b))
-		if err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
-			_, _ = w.Write([]byte(err.Error()))
-			return
-		}
-		if _, err = w.Write([]byte(fmt.Sprintf("%d", idx))); err != nil {
-			klog.Errorf("/add: %v", err)
-			return
-		}
-	})
-
-	if err := http.ListenAndServe(*listen, http.DefaultServeMux); err != nil {
-		klog.Exitf("ListenAndServe: %v", err)
-	}
 }
 
 func initDatabaseSchema(ctx context.Context) {
