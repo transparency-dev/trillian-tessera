@@ -27,6 +27,7 @@ resource "google_artifact_registry_repository" "docker" {
 locals {
   artifact_repo            = "${var.region}-docker.pkg.dev/${var.project_id}/${google_artifact_registry_repository.docker.name}"
   example_gcp_docker_image = "${local.artifact_repo}/example-gcp"
+  hammer_docker_image      = "${local.artifact_repo}/hammer"
 }
 
 resource "google_cloudbuild_trigger" "docker" {
@@ -44,6 +45,19 @@ resource "google_cloudbuild_trigger" "docker" {
 
   build {
     step {
+      id   = "docker_build_hammer"
+      name = "gcr.io/cloud-builders/docker"
+      args = [
+        "build",
+        "-t", "${local.hammer_docker_image}:$SHORT_SHA",
+        "-t", "${local.hammer_docker_image}:latest",
+        "-f", "./hammer/Dockerfile",
+        "."
+      ]
+      wait_for = ["-"]
+    }
+    step {
+      id   = "docker_build_example"
       name = "gcr.io/cloud-builders/docker"
       args = [
         "build",
@@ -52,6 +66,7 @@ resource "google_cloudbuild_trigger" "docker" {
         "-f", "./cmd/example-gcp/Dockerfile",
         "."
       ]
+      wait_for = ["-"]
     }
     step {
       name = "gcr.io/cloud-builders/docker"
@@ -60,6 +75,7 @@ resource "google_cloudbuild_trigger" "docker" {
         "--all-tags",
         local.example_gcp_docker_image
       ]
+      wait_for = ["docker_build_example"]
     }
     options {
       logging = "CLOUD_LOGGING_ONLY"
