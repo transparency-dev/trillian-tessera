@@ -23,7 +23,6 @@ import (
 	"github.com/google/certificate-transparency-go/x509"
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/ctonly"
-	"golang.org/x/sync/errgroup"
 	"k8s.io/klog/v2"
 )
 
@@ -116,19 +115,30 @@ func (c cachedIssuerStorage) Exists(ctx context.Context, key []byte) (bool, erro
 	return ok, nil
 }
 
-// Add first adds the data under key to the underlying storage, then caches the key locally.
+// AddIssuers first adds the issuers to the underlying storage, then caches their sha256 locally.
 //
-// Add will only store up to c.N keys.
-func (c cachedIssuerStorage) Add(ctx context.Context, key []byte, data []byte) error {
-	err := c.s.Add(ctx, key, data)
-	if err != nil {
-		return fmt.Errorf("Add: error storing issuer data for %q in the underlying IssuerStorage", string(key))
+//	Only up to c.N issuer sha256 will be cached.
+func (c cachedIssuerStorage) AddIssuers(ctx context.Context, kv []KV) error {
+	req := []KV{}
+	for _, kv := range kv {
+		b, err := c.Exists(ctx, kv.K)
+		if err != nil {
+			return fmt.Errorf("error checking if issuer %q has been sotred previously: %v", string(kv.K), err)
+		}
+		if !b {
+			req = append(req, kv)
+		}
 	}
-	if len(c.m) >= c.N {
-		klog.V(2).Infof("Add: local key cache full, won't cache %q", string(key))
-		return nil
+	if err := c.s.AddIssuers(ctx, req); err != nil {
+		return fmt.Errorf("AddIssuers: error storing issuer data for in the underlying IssuerStorage: %v", err)
 	}
-	c.m[string(key)] = true
+	for _, kv := range req {
+		if len(c.m) >= c.N {
+			klog.V(2).Infof("Add: local issuer cache full, will stop caching issuers.")
+			return nil
+		}
+		c.m[string(kv.K)] = true
+	}
 	return nil
 }
 
