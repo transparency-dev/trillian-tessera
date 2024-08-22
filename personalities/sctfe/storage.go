@@ -27,7 +27,7 @@ import (
 )
 
 const (
-	// Each key is 32 bytes long, so this will take up to 32MB.
+	// Each key is 64 bytes long, so this will take up to 64MB.
 	// A CT log references ~15k unique issuer certifiates in 2024, so this gives plenty of space
 	// if we ever run into this limit, we should re-think how it works.
 	maxCachedIssuerKeys = 1 << 20
@@ -73,6 +73,7 @@ func (cts *CTStorage) Add(ctx context.Context, entry *ctonly.Entry) (uint64, err
 }
 
 // AddIssuerChain stores every chain certificate under its sha256.
+//
 // If an object is already stored under this hash, continues.
 func (cts *CTStorage) AddIssuerChain(ctx context.Context, chain []*x509.Certificate) error {
 	kvs := []KV{}
@@ -87,8 +88,9 @@ func (cts *CTStorage) AddIssuerChain(ctx context.Context, chain []*x509.Certific
 	return nil
 }
 
-// cachedIssuerStorage wraps an IssuerStorage, and keeps a local copy the keys it contains.
-// This is intended to make querying faster. It does not keep a copy of the data, only keys.
+// cachedIssuerStorage wraps an IssuerStorage, and keeps a copy the sha256 of certs it contains.
+//
+// This is intended to make querying faster. It does not keep a copy of the certs, only sha256.
 // Only up to N keys will be stored locally.
 // TODO(phboneff): add monitoring for the number of keys
 type cachedIssuerStorage struct {
@@ -97,7 +99,7 @@ type cachedIssuerStorage struct {
 	s IssuerStorage
 }
 
-// Exists checks whether the key is stored locally, if not checks in the underlying storage.
+// Exists checks if the key exists in the local cache, if not checks in the underlying storage.
 // If it finds it there, caches the key locally.
 func (c cachedIssuerStorage) Exists(ctx context.Context, key []byte) (bool, error) {
 	_, ok := c.m[string(key)]
@@ -117,7 +119,7 @@ func (c cachedIssuerStorage) Exists(ctx context.Context, key []byte) (bool, erro
 
 // AddIssuers first adds the issuers to the underlying storage, then caches their sha256 locally.
 //
-//	Only up to c.N issuer sha256 will be cached.
+// Only up to c.N issuer sha256 will be cached.
 func (c cachedIssuerStorage) AddIssuers(ctx context.Context, kv []KV) error {
 	req := []KV{}
 	for _, kv := range kv {
