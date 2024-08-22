@@ -77,6 +77,23 @@ resource "google_cloudbuild_trigger" "docker" {
       ]
       wait_for = ["docker_build_example"]
     }
+    step {
+      id   = "terraform_plan_all"
+      name = "alpine/terragrunt"
+      entrypoint = "terragrunt"
+      args = [
+        "run-all",
+        "plan",
+        "--terragrunt-include-dir", "./deployment/live/gcp/*/*/",
+        "--terragrunt-disable-bucket-update",
+      ]
+      env = [
+        "TF_IN_AUTOMATION=1",
+        "TF_INPUT=false",
+        "TF_VAR_project_id=${var.project_id}"
+      ]
+      wait_for = ["-"]
+    }
     options {
       logging = "CLOUD_LOGGING_ONLY"
     }
