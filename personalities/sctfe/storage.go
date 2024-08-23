@@ -19,6 +19,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"sync"
 
 	"github.com/google/certificate-transparency-go/x509"
 	tessera "github.com/transparency-dev/trillian-tessera"
@@ -94,25 +95,30 @@ func (cts *CTStorage) AddIssuerChain(ctx context.Context, chain []*x509.Certific
 // Only up to N keys will be stored locally.
 // TODO(phboneff): add monitoring for the number of keys
 type cachedIssuerStorage struct {
-	m map[string]bool
+	sync.RWMutex
+	m map[string]struct{}
 	N int // maximum number of entries allowed in m
 	s IssuerStorage
 }
 
 // Exists checks if the key exists in the local cache, if not checks in the underlying storage.
 // If it finds it there, caches the key locally.
-func (c cachedIssuerStorage) Exists(ctx context.Context, key []byte) (bool, error) {
+func (c *cachedIssuerStorage) Exists(ctx context.Context, key []byte) (bool, error) {
+	c.RLock()
 	_, ok := c.m[string(key)]
+	c.RUnlock()
 	if ok {
-		klog.V(2).Infof("Exists: found %q in local key cache", hex.EncodeToString(key))
+		klog.V(2).Infof("Exists: found %q in local key cache", key)
 		return true, nil
 	}
 	ok, err := c.s.Exists(ctx, key)
 	if err != nil {
-		return false, fmt.Errorf("error checking if issuer %q exists in the underlying IssuerStorage: %s", string(key), err)
+		return false, fmt.Errorf("error checking if issuer %q exists in the underlying IssuerStorage: %s", key, err)
 	}
 	if ok {
-		c.m[string(key)] = true
+		c.Lock()
+		c.m[string(key)] = struct{}{}
+		c.Unlock()
 	}
 	return ok, nil
 }
@@ -120,7 +126,7 @@ func (c cachedIssuerStorage) Exists(ctx context.Context, key []byte) (bool, erro
 // AddIssuers first adds the issuers to the underlying storage, then caches their sha256 locally.
 //
 // Only up to c.N issuer sha256 will be cached.
-func (c cachedIssuerStorage) AddIssuers(ctx context.Context, kv []KV) error {
+func (c *cachedIssuerStorage) AddIssuers(ctx context.Context, kv []KV) error {
 	req := []KV{}
 	for _, kv := range kv {
 		b, err := c.Exists(ctx, kv.K)
@@ -139,13 +145,13 @@ func (c cachedIssuerStorage) AddIssuers(ctx context.Context, kv []KV) error {
 			klog.V(2).Infof("Add: local issuer cache full, will stop caching issuers.")
 			return nil
 		}
-		c.m[string(kv.K)] = true
+		c.Lock()
+		c.m[string(kv.K)] = struct{}{}
+		c.Unlock()
 	}
 	return nil
 }
 
-func NewCachedIssuerStorage(s IssuerStorage) cachedIssuerStorage {
-	c := cachedIssuerStorage{s: s, N: maxCachedIssuerKeys}
-	c.m = make(map[string]bool)
-	return c
+func NewCachedIssuerStorage(s IssuerStorage) *cachedIssuerStorage {
+	return &cachedIssuerStorage{s: s, N: maxCachedIssuerKeys, m: make(map[string]struct{})}
 }
