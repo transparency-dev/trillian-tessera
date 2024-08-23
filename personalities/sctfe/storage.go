@@ -47,6 +47,7 @@ type KV struct {
 	V []byte
 }
 
+// TODO(phboneff): replace with AddIssuersIfNotExist
 type IssuerStorage interface {
 	Exists(ctx context.Context, key []byte) (bool, error)
 	AddIssuers(ctx context.Context, kv []KV) error
@@ -95,7 +96,7 @@ func (cts *CTStorage) AddIssuerChain(ctx context.Context, chain []*x509.Certific
 // Only up to N keys will be stored locally.
 // TODO(phboneff): add monitoring for the number of keys
 type cachedIssuerStorage struct {
-	sync.Mutex
+	sync.RWMutex
 	m map[string]struct{}
 	N int // maximum number of entries allowed in m
 	s IssuerStorage
@@ -104,7 +105,9 @@ type cachedIssuerStorage struct {
 // Exists checks if the key exists in the local cache, if not checks in the underlying storage.
 // If it finds it there, caches the key locally.
 func (c *cachedIssuerStorage) Exists(ctx context.Context, key []byte) (bool, error) {
+	c.RLock()
 	_, ok := c.m[string(key)]
+	c.RLock()
 	if ok {
 		klog.V(2).Infof("Exists: found %q in local key cache", key)
 		return true, nil
