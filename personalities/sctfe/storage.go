@@ -89,7 +89,7 @@ func (cts *CTStorage) AddIssuerChain(ctx context.Context, chain []*x509.Certific
 	return nil
 }
 
-// cachedStoreIssuers returns a caching wrapper for and IssuerStorage
+// cachedStoreIssuers returns a caching wrapper for an IssuerStorage
 //
 // This is intended to make querying faster. It does not keep a copy of the certs, only sha256.
 // Only up to maxCachedIssuerKeys keys will be stored locally.
