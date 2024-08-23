@@ -73,45 +73,15 @@ func (s *IssuersStorage) keyToObjName(key []byte) string {
 	return path.Join(s.prefix, string(key))
 }
 
-// Exists checks whether a value is stored under key.
-func (s *IssuersStorage) Exists(ctx context.Context, key []byte) (bool, error) {
-	objName := s.keyToObjName(key)
-	obj := s.bucket.Object(objName)
-	_, err := obj.Attrs(ctx)
-	if err == gcs.ErrObjectNotExist {
-		return false, nil
-	}
-	if err != nil {
-		return false, fmt.Errorf("error fetching attributes for %q :%v", objName, err)
-	}
-	klog.V(2).Infof("Exists: object %q already exists in bucket %q", objName, s.bucket.BucketName())
-	return true, nil
-}
-
-// AddIssuers stores all Issuers values under their Key.
-//
-// If there is already an object under a given key, it does not override it.
-func (s *IssuersStorage) AddIssuers(ctx context.Context, kv []sctfe.KV) error {
+// AddIssuers stores Issuers values under their Key if there isn't an object under Key already.
+func (s *IssuersStorage) AddIssuersIfNotExist(ctx context.Context, kv []sctfe.KV) error {
 	// We first try and see if this issuer cert has already been stored since reads
 	// are cheaper than writes.
-	// TODO(phboneff): monitor usage, eventually write directly depending on usage patterns
-	toStore := []sctfe.KV{}
+	// TODO(phboneff): add parallel operations
 	for _, kv := range kv {
-		ok, err := s.Exists(ctx, kv.K)
-		if err != nil {
-			return fmt.Errorf("error checking if issuer %q exists: %s", string(kv.K), err)
-		}
-		if !ok {
-			toStore = append(toStore, kv)
-		}
-	}
-	// TODO(phboneff): add parallel writes
-	for _, kv := range toStore {
 		objName := s.keyToObjName(kv.K)
 		obj := s.bucket.Object(objName)
 
-		// Don't overwrite if it already exists
-		// TODO(phboneff): consider reading the object to make sure it's identical
 		w := obj.If(gcs.Conditions{DoesNotExist: true}).NewWriter(ctx)
 		w.ObjectAttrs.ContentType = s.contentType
 
@@ -120,14 +90,18 @@ func (s *IssuersStorage) AddIssuers(ctx context.Context, kv []sctfe.KV) error {
 		}
 
 		if err := w.Close(); err != nil {
-			// If we run into a precondition failure error, it means that the object already exists.
 			if ee, ok := err.(*googleapi.Error); ok && ee.Code == http.StatusPreconditionFailed {
-				klog.V(2).Infof("Add: object %q already exists in bucket %q, continuing", objName, s.bucket.BucketName())
-				return nil
+				for _, e := range ee.Errors {
+					if e.Reason == "conditionNotMet" {
+						klog.V(2).Infof("AddIssuersIfNotExist: object %q already exists in bucket %q, continuing", objName, s.bucket.BucketName())
+						return nil
+					}
+				}
 			}
 
 			return fmt.Errorf("failed to close write on %q: %v", objName, err)
 		}
+		klog.V(2).Infof("AddIssuersIfNotExist: added %q in bucket %q", objName, s.bucket.BucketName())
 	}
 	return nil
 }

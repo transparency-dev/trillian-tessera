@@ -49,8 +49,7 @@ type KV struct {
 
 // TODO(phboneff): replace with AddIssuersIfNotExist
 type IssuerStorage interface {
-	Exists(ctx context.Context, key []byte) (bool, error)
-	AddIssuers(ctx context.Context, kv []KV) error
+	AddIssuersIfNotExist(ctx context.Context, kv []KV) error
 }
 
 // CTStorage implements Storage.
@@ -84,7 +83,7 @@ func (cts *CTStorage) AddIssuerChain(ctx context.Context, chain []*x509.Certific
 		key := []byte(hex.EncodeToString(id[:]))
 		kvs = append(kvs, KV{K: key, V: c.Raw})
 	}
-	if err := cts.issuers.AddIssuers(ctx, kvs); err != nil {
+	if err := cts.issuers.AddIssuersIfNotExist(ctx, kvs); err != nil {
 		return fmt.Errorf("error storing intermediates: %v", err)
 	}
 	return nil
@@ -102,43 +101,21 @@ type cachedIssuerStorage struct {
 	s IssuerStorage
 }
 
-// Exists checks if the key exists in the local cache, if not checks in the underlying storage.
-// If it finds it there, caches the key locally.
-func (c *cachedIssuerStorage) Exists(ctx context.Context, key []byte) (bool, error) {
-	c.RLock()
-	_, ok := c.m[string(key)]
-	c.RUnlock()
-	if ok {
-		klog.V(2).Infof("Exists: found %q in local key cache", key)
-		return true, nil
-	}
-	ok, err := c.s.Exists(ctx, key)
-	if err != nil {
-		return false, fmt.Errorf("error checking if issuer %q exists in the underlying IssuerStorage: %s", key, err)
-	}
-	if ok {
-		c.Lock()
-		c.m[string(key)] = struct{}{}
-		c.Unlock()
-	}
-	return ok, nil
-}
-
-// AddIssuers first adds the issuers to the underlying storage, then caches their sha256 locally.
+// AddIssuersIfNotExist adds the issuers to the underlying storage if they're not already cached.
 //
+// Caches the 256 of issuer it successfuly wrote to the underlying sotrage.
 // Only up to c.N issuer sha256 will be cached.
-func (c *cachedIssuerStorage) AddIssuers(ctx context.Context, kv []KV) error {
+func (c *cachedIssuerStorage) AddIssuersIfNotExist(ctx context.Context, kv []KV) error {
 	req := []KV{}
 	for _, kv := range kv {
-		b, err := c.Exists(ctx, kv.K)
-		if err != nil {
-			return fmt.Errorf("error checking if issuer %q has been sotred previously: %v", string(kv.K), err)
+		_, ok := c.m[string(kv.K)]
+		if ok {
+			klog.V(2).Infof("Exists: found %q in local key cache", kv.K)
+			continue
 		}
-		if !b {
-			req = append(req, kv)
-		}
+		req = append(req, kv)
 	}
-	if err := c.s.AddIssuers(ctx, req); err != nil {
+	if err := c.s.AddIssuersIfNotExist(ctx, req); err != nil {
 		return fmt.Errorf("AddIssuers: error storing issuer data for in the underlying IssuerStorage: %v", err)
 	}
 	for _, kv := range req {
