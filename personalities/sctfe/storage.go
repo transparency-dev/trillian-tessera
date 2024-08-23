@@ -47,22 +47,22 @@ type KV struct {
 	V []byte
 }
 
-// TODO(phboneff): replace with AddIssuersIfNotExist
+// IsuerStorage issuer certificates under their hex encoded sha256.
 type IssuerStorage interface {
 	AddIssuersIfNotExist(ctx context.Context, kv []KV) error
 }
 
 // CTStorage implements Storage.
 type CTStorage struct {
-	storeData func(context.Context, *ctonly.Entry) (uint64, error)
-	issuers   IssuerStorage
+	storeData    func(context.Context, *ctonly.Entry) (uint64, error)
+	storeIssuers func(context.Context, []KV) error
 }
 
 // NewCTStorage instantiates a CTStorage object.
 func NewCTSTorage(logStorage tessera.Storage, issuerStorage IssuerStorage) (*CTStorage, error) {
 	ctStorage := &CTStorage{
-		storeData: tessera.NewCertificateTransparencySequencedWriter(logStorage),
-		issuers:   NewCachedIssuerStorage(issuerStorage),
+		storeData:    tessera.NewCertificateTransparencySequencedWriter(logStorage),
+		storeIssuers: NewCachedIssuerStorage(issuerStorage).AddIssuersIfNotExist,
 	}
 	return ctStorage, nil
 }
@@ -83,7 +83,7 @@ func (cts *CTStorage) AddIssuerChain(ctx context.Context, chain []*x509.Certific
 		key := []byte(hex.EncodeToString(id[:]))
 		kvs = append(kvs, KV{K: key, V: c.Raw})
 	}
-	if err := cts.issuers.AddIssuersIfNotExist(ctx, kvs); err != nil {
+	if err := cts.storeIssuers(ctx, kvs); err != nil {
 		return fmt.Errorf("error storing intermediates: %v", err)
 	}
 	return nil
@@ -99,6 +99,11 @@ type cachedIssuerStorage struct {
 	m map[string]struct{}
 	N int // maximum number of entries allowed in m
 	s IssuerStorage
+}
+
+// NewCachedIssuerStorage returns a new local cache to wrapping an IssuerStorage
+func NewCachedIssuerStorage(s IssuerStorage) *cachedIssuerStorage {
+	return &cachedIssuerStorage{s: s, N: maxCachedIssuerKeys, m: make(map[string]struct{})}
 }
 
 // AddIssuersIfNotExist adds the issuers to the underlying storage if they're not already cached.
@@ -128,8 +133,4 @@ func (c *cachedIssuerStorage) AddIssuersIfNotExist(ctx context.Context, kv []KV)
 		c.Unlock()
 	}
 	return nil
-}
-
-func NewCachedIssuerStorage(s IssuerStorage) *cachedIssuerStorage {
-	return &cachedIssuerStorage{s: s, N: maxCachedIssuerKeys, m: make(map[string]struct{})}
 }
