@@ -103,17 +103,17 @@ func cachedStoreIssuers(s IssuerStorage) func(context.Context, []KV) error {
 			_, ok := m[string(kv.K)]
 			mu.RUnlock()
 			if ok {
-				klog.V(2).Infof("Exists: found %q in local key cache", kv.K)
+				klog.V(2).Infof("cachedStoreIssuers wrapper: found %q in local key cache", kv.K)
 				continue
 			}
 			req = append(req, kv)
 		}
 		if err := s.AddIssuersIfNotExist(ctx, req); err != nil {
-			return fmt.Errorf("AddIssuers: error storing issuer data in the underlying IssuerStorage: %v", err)
+			return fmt.Errorf("AddIssuersIfNotExist()s: error storing issuer data in the underlying IssuerStorage: %v", err)
 		}
 		for _, kv := range req {
 			if len(m) >= maxCachedIssuerKeys {
-				klog.V(2).Infof("Add: local issuer cache full, will stop caching issuers.")
+				klog.V(2).Infof("cachedStoreIssuers wrapper: local issuer cache full, will stop caching issuers.")
 				return nil
 			}
 			mu.Lock()
