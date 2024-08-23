@@ -101,6 +101,7 @@ func (s *IssuersStorage) AddIssuersIfNotExist(ctx context.Context, kv []sctfe.KV
 
 			return fmt.Errorf("failed to close write on %q: %v", objName, err)
 		}
+
 		klog.V(2).Infof("AddIssuersIfNotExist: added %q in bucket %q", objName, s.bucket.BucketName())
 	}
 	return nil

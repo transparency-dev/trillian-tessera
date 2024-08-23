@@ -47,7 +47,7 @@ type KV struct {
 	V []byte
 }
 
-// IsuerStorage issuer certificates under their hex encoded sha256.
+// IssuerStorage issuer certificates under their hex encoded sha256.
 type IssuerStorage interface {
 	AddIssuersIfNotExist(ctx context.Context, kv []KV) error
 }
@@ -62,7 +62,7 @@ type CTStorage struct {
 func NewCTSTorage(logStorage tessera.Storage, issuerStorage IssuerStorage) (*CTStorage, error) {
 	ctStorage := &CTStorage{
 		storeData:    tessera.NewCertificateTransparencySequencedWriter(logStorage),
-		storeIssuers: NewCachedIssuerStorage(issuerStorage).AddIssuersIfNotExist,
+		storeIssuers: cachedStoreIssuers(issuerStorage),
 	}
 	return ctStorage, nil
 }
@@ -89,48 +89,37 @@ func (cts *CTStorage) AddIssuerChain(ctx context.Context, chain []*x509.Certific
 	return nil
 }
 
-// cachedIssuerStorage wraps an IssuerStorage, and keeps a copy the sha256 of certs it contains.
+// cachedStoreIssuers returns a caching wrapper for and IssuerStorage
 //
 // This is intended to make querying faster. It does not keep a copy of the certs, only sha256.
-// Only up to N keys will be stored locally.
-// TODO(phboneff): add monitoring for the number of keys
-type cachedIssuerStorage struct {
-	sync.RWMutex
-	m map[string]struct{}
-	N int // maximum number of entries allowed in m
-	s IssuerStorage
-}
-
-// NewCachedIssuerStorage returns a new local cache to wrapping an IssuerStorage
-func NewCachedIssuerStorage(s IssuerStorage) *cachedIssuerStorage {
-	return &cachedIssuerStorage{s: s, N: maxCachedIssuerKeys, m: make(map[string]struct{})}
-}
-
-// AddIssuersIfNotExist adds the issuers to the underlying storage if they're not already cached.
-//
-// Caches the 256 of issuer it successfuly wrote to the underlying sotrage.
-// Only up to c.N issuer sha256 will be cached.
-func (c *cachedIssuerStorage) AddIssuersIfNotExist(ctx context.Context, kv []KV) error {
-	req := []KV{}
-	for _, kv := range kv {
-		_, ok := c.m[string(kv.K)]
-		if ok {
-			klog.V(2).Infof("Exists: found %q in local key cache", kv.K)
-			continue
+// Only up to maxCachedIssuerKeys keys will be stored locally.
+func cachedStoreIssuers(s IssuerStorage) func(context.Context, []KV) error {
+	var mu sync.RWMutex
+	m := make(map[string]struct{})
+	return func(ctx context.Context, kv []KV) error {
+		req := []KV{}
+		for _, kv := range kv {
+			mu.RLock()
+			_, ok := m[string(kv.K)]
+			mu.RUnlock()
+			if ok {
+				klog.V(2).Infof("Exists: found %q in local key cache", kv.K)
+				continue
+			}
+			req = append(req, kv)
 		}
-		req = append(req, kv)
-	}
-	if err := c.s.AddIssuersIfNotExist(ctx, req); err != nil {
-		return fmt.Errorf("AddIssuers: error storing issuer data for in the underlying IssuerStorage: %v", err)
-	}
-	for _, kv := range req {
-		if len(c.m) >= c.N {
-			klog.V(2).Infof("Add: local issuer cache full, will stop caching issuers.")
-			return nil
+		if err := s.AddIssuersIfNotExist(ctx, req); err != nil {
+			return fmt.Errorf("AddIssuers: error storing issuer data in the underlying IssuerStorage: %v", err)
 		}
-		c.Lock()
-		c.m[string(kv.K)] = struct{}{}
-		c.Unlock()
+		for _, kv := range req {
+			if len(m) >= maxCachedIssuerKeys {
+				klog.V(2).Infof("Add: local issuer cache full, will stop caching issuers.")
+				return nil
+			}
+			mu.Lock()
+			m[string(kv.K)] = struct{}{}
+			mu.Unlock()
+		}
+		return nil
 	}
-	return nil
 }
