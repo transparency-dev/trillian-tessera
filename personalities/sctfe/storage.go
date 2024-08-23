@@ -107,7 +107,7 @@ type cachedIssuerStorage struct {
 func (c *cachedIssuerStorage) Exists(ctx context.Context, key []byte) (bool, error) {
 	c.RLock()
 	_, ok := c.m[string(key)]
-	c.RLock()
+	c.RUnlock()
 	if ok {
 		klog.V(2).Infof("Exists: found %q in local key cache", key)
 		return true, nil
