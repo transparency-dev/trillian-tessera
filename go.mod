@@ -3,7 +3,7 @@ module github.com/transparency-dev/trillian-tessera
 go 1.22.6
 
 require (
-	cloud.google.com/go/kms v1.18.4
+	cloud.google.com/go/kms v1.19.0
 	cloud.google.com/go/spanner v1.67.0
 	cloud.google.com/go/storage v1.43.0
 	github.com/RobinUS2/golang-moving-average v1.0.0
@@ -14,26 +14,26 @@ require (
 	github.com/google/go-cmp v0.6.0
 	github.com/google/trillian v1.6.0
 	github.com/kylelemons/godebug v1.1.0
-	github.com/prometheus/client_golang v1.20.0
+	github.com/prometheus/client_golang v1.20.2
 	github.com/rivo/tview v0.0.0-20240625185742-b0a7293b8130
 	github.com/rs/cors v1.11.0
 	github.com/transparency-dev/formats v0.0.0-20240715203801-9ff9b9e3905f
 	github.com/transparency-dev/merkle v0.0.2
 	golang.org/x/exp v0.0.0-20231006140011-7918f672742d
 	golang.org/x/mod v0.20.0
-	google.golang.org/api v0.192.0
+	google.golang.org/api v0.193.0
 	google.golang.org/grpc v1.65.0
 	k8s.io/klog/v2 v2.130.1
 )
 
 require (
 	cel.dev/expr v0.15.0 // indirect
-	cloud.google.com/go v0.115.0 // indirect
-	cloud.google.com/go/auth v0.8.1 // indirect
-	cloud.google.com/go/auth/oauth2adapt v0.2.3 // indirect
+	cloud.google.com/go v0.115.1 // indirect
+	cloud.google.com/go/auth v0.9.0 // indirect
+	cloud.google.com/go/auth/oauth2adapt v0.2.4 // indirect
 	cloud.google.com/go/compute/metadata v0.5.0 // indirect
-	cloud.google.com/go/iam v1.1.12 // indirect
-	cloud.google.com/go/longrunning v0.5.11 // indirect
+	cloud.google.com/go/iam v1.1.13 // indirect
+	cloud.google.com/go/longrunning v0.5.12 // indirect
 	cloud.google.com/go/monitoring v1.20.3 // indirect
 	cloud.google.com/go/trace v1.10.11 // indirect
 	contrib.go.opencensus.io/exporter/stackdriver v0.13.14 // indirect
@@ -70,22 +70,22 @@ require (
 	github.com/prometheus/prometheus v0.47.2 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	go.opencensus.io v0.24.0 // indirect
-	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.49.0 // indirect
-	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.49.0 // indirect
-	go.opentelemetry.io/otel v1.24.0 // indirect
-	go.opentelemetry.io/otel/metric v1.24.0 // indirect
-	go.opentelemetry.io/otel/trace v1.24.0 // indirect
+	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.52.0 // indirect
+	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.53.0 // indirect
+	go.opentelemetry.io/otel v1.28.0 // indirect
+	go.opentelemetry.io/otel/metric v1.28.0 // indirect
+	go.opentelemetry.io/otel/trace v1.28.0 // indirect
 	golang.org/x/crypto v0.26.0
-	golang.org/x/net v0.27.0 // indirect
+	golang.org/x/net v0.28.0 // indirect
 	golang.org/x/oauth2 v0.22.0 // indirect
 	golang.org/x/sync v0.8.0
-	golang.org/x/sys v0.23.0 // indirect
+	golang.org/x/sys v0.24.0 // indirect
 	golang.org/x/term v0.23.0 // indirect
 	golang.org/x/text v0.17.0 // indirect
 	golang.org/x/time v0.6.0 // indirect
 	golang.org/x/xerrors v0.0.0-20240716161551-93cc26a95ae9 // indirect
-	google.golang.org/genproto v0.0.0-20240730163845-b1a4ccb954bf // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20240725223205-93522f1f2a9f // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20240730163845-b1a4ccb954bf // indirect
+	google.golang.org/genproto v0.0.0-20240814211410-ddb44dafa142 // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20240814211410-ddb44dafa142 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20240814211410-ddb44dafa142 // indirect
 	google.golang.org/protobuf v1.34.2
 )
