@@ -1,0 +1,21 @@
+name: 'Terragrunt format check'
+on:
+  - pull_request
+
+env:
+  tf_version: '1.5.7'
+  tg_version: '0.55.1'
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 'Checkout'
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+
+      - name: Check terragrunt HCL
+        uses: gruntwork-io/terragrunt-action@cf355638dbd066b6a70eb01f31ad9293870a0e34 # v2
+        with:
+          tf_version: ${{ env.tf_version }}
+          tg_version: ${{ env.tg_version }}
+          tg_command: 'hclfmt --terragrunt-check --terragrunt-diff'
