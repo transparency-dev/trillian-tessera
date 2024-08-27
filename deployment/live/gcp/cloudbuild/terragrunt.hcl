@@ -3,9 +3,9 @@ terraform {
 }
 
 locals {
-  project_id  = "trillian-tessera"
-  region      = "us-central1"
-  env         = path_relative_to_include()
+  project_id = "trillian-tessera"
+  region     = "us-central1"
+  env        = path_relative_to_include()
 }
 
 remote_state {
@@ -18,7 +18,7 @@ remote_state {
     prefix   = "${path_relative_to_include()}-terraform.tfstate"
 
     gcs_bucket_labels = {
-      name  = "terraform_state_storage"
+      name = "terraform_state_storage"
     }
   }
 }
