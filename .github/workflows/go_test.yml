@@ -18,8 +18,7 @@ jobs:
         with:
           go-version: ${{ matrix.go-version }}
       - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
-      - run: go test -v -race -covermode=atomic -coverprofile=coverage.out ./...
-      - uses: codecov/codecov-action@e28ff129e5465c2c0dcc6f003fc735cb6ae0c673 # v4.5.0
+      - run: go test -v -race ./...
 
   test-mysql:
     env:
