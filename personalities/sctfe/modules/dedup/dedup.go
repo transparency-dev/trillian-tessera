@@ -56,7 +56,7 @@ type LocalBEDedup struct {
 	fetcher client.Fetcher
 }
 
-func NewLocalBestEffortDedup(ctx context.Context, lds LocalDedupStorage, t time.Duration, f client.Fetcher, v note.Verifier, origin string) *LocalBEDedup {
+func NewLocalBestEffortDedup(ctx context.Context, lds LocalDedupStorage, t time.Duration, f client.Fetcher, v note.Verifier, origin string, parseBundle func([]byte) []KV) *LocalBEDedup {
 	ret := &LocalBEDedup{DedupStorage: lds, LogSize: lds.LogSize, fetcher: f}
 	go func() {
 		tck := time.NewTicker(t)
@@ -66,7 +66,7 @@ func NewLocalBestEffortDedup(ctx context.Context, lds LocalDedupStorage, t time.
 			case <-ctx.Done():
 				return
 			case <-tck.C:
-				if err := ret.sync(ctx, origin, v); err != nil {
+				if err := ret.sync(ctx, origin, v, parseBundle); err != nil {
 					klog.Warningf("error updating deduplication data: %v", err)
 				}
 			}
@@ -75,7 +75,7 @@ func NewLocalBestEffortDedup(ctx context.Context, lds LocalDedupStorage, t time.
 	return ret
 }
 
-func (d *LocalBEDedup) sync(ctx context.Context, origin string, v note.Verifier) error {
+func (d *LocalBEDedup) sync(ctx context.Context, origin string, v note.Verifier, parseBundle func([]byte) []KV) error {
 	ckpt, _, _, err := client.FetchCheckpoint(ctx, d.fetcher, v, origin)
 	if err != nil {
 		return fmt.Errorf("FetchCheckpoint: %v", err)
