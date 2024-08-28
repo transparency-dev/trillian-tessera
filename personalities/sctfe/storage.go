@@ -52,6 +52,12 @@ type IssuerStorage interface {
 	AddIssuersIfNotExist(ctx context.Context, kv []KV) error
 }
 
+// LI holds a LeafID and an Idx for deduplication
+type LI struct {
+	L []byte
+	I uint64
+}
+
 // CTStorage implements Storage.
 type CTStorage struct {
 	storeData    func(context.Context, *ctonly.Entry) tessera.IndexFuture
