@@ -25,7 +25,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sync"
 	"time"
 
 	"golang.org/x/mod/sumdb/note"
@@ -139,7 +138,7 @@ func main() {
 		}
 		return cp.Size, cp.Hash, nil
 	}
-	st := posix.New(ctx, *storageDir, readCP, tessera.WithCheckpointSignerVerifier(s, v), tessera.WithBatching(256, time.Second))
+	st := posix.New(ctx, *storageDir, readCP, tessera.WithCheckpointSignerVerifier(s, v), tessera.WithBatching(uint(len(toAdd)), time.Second))
 
 	// sequence entries
 
@@ -149,41 +148,28 @@ func main() {
 	// sequence numbers assigned to the data from the provided input files.
 	type entryInfo struct {
 		name string
-		e    *tessera.Entry
+		f    tessera.IndexFuture
 	}
 	entryChan := make(chan entryInfo, 100)
-	go func() {
-		for _, fp := range toAdd {
-			b, err := os.ReadFile(fp)
-			if err != nil {
-				klog.Exitf("Failed to read entry file %q: %q", fp, err)
-			}
-			entryChan <- entryInfo{name: fp, e: tessera.NewEntry(b)}
+	for _, fp := range toAdd {
+		b, err := os.ReadFile(fp)
+		if err != nil {
+			klog.Exitf("Failed to read entry file %q: %q", fp, err)
 		}
-		close(entryChan)
-	}()
 
-	numWorkers := 256
-	if l := len(toAdd); l < numWorkers {
-		numWorkers = l
+		// ask storage to sequence, we'll put the future we get back into the entryChan for later...
+		f := st.Add(ctx, tessera.NewEntry(b))
+		entryChan <- entryInfo{name: fp, f: f}
 	}
+	close(entryChan)
 
-	wg := sync.WaitGroup{}
-	for i := 0; i < numWorkers; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for entry := range entryChan {
-				// ask storage to sequence
-				seq, err := st.Add(context.Background(), entry.e)
-				if err != nil {
-					klog.Exitf("failed to sequence %q: %q", entry.name, err)
-				}
-				klog.Infof("%d: %v", seq, entry.name)
-			}
-		}()
+	for entry := range entryChan {
+		seq, err := entry.f()
+		if err != nil {
+			klog.Exitf("failed to sequence %q: %q", entry.name, err)
+		}
+		klog.Infof("%d: %v", seq, entry.name)
 	}
-	wg.Wait()
 }
 
 func getKeyFile(path string) (string, error) {
