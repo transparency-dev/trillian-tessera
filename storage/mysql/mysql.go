@@ -22,7 +22,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"time"
 
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/transparency-dev/merkle/rfc6962"
@@ -41,10 +40,8 @@ const (
 	selectTiledLeavesSQL             = "SELECT `data` FROM `TiledLeaves` WHERE `tile_index` = ?"
 	replaceTiledLeavesSQL            = "REPLACE INTO `TiledLeaves` (`tile_index`, `data`) VALUES (?, ?)"
 
-	checkpointID        = 0
-	entryBundleSize     = 256
-	defaultBatchMaxSize = entryBundleSize
-	defaultQueueMaxAge  = time.Second
+	checkpointID    = 0
+	entryBundleSize = 256
 )
 
 // Storage is a MySQL-based storage implementation for Tessera.
@@ -59,10 +56,7 @@ type Storage struct {
 // New creates a new instance of the MySQL-based Storage.
 // Note that `tessera.WithCheckpointSignerVerifier()` is mandatory in the `opts` argument.
 func New(ctx context.Context, db *sql.DB, opts ...func(*tessera.StorageOptions)) (*Storage, error) {
-	opt := tessera.ResolveStorageOptions(&tessera.StorageOptions{
-		BatchMaxAge:  defaultQueueMaxAge,
-		BatchMaxSize: defaultBatchMaxSize,
-	}, opts...)
+	opt := tessera.ResolveStorageOptions(opts...)
 	s := &Storage{
 		db:              db,
 		newCheckpoint:   opt.NewCP,

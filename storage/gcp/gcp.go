@@ -110,7 +110,7 @@ type Config struct {
 
 // New creates a new instance of the GCP based Storage.
 func New(ctx context.Context, cfg Config, opts ...func(*tessera.StorageOptions)) (*Storage, error) {
-	opt := tessera.ResolveStorageOptions(nil, opts...)
+	opt := tessera.ResolveStorageOptions(opts...)
 	if opt.PushbackMaxOutstanding == 0 {
 		opt.PushbackMaxOutstanding = DefaultPushbackMaxOutstanding
 	}
