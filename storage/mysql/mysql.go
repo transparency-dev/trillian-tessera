@@ -22,7 +22,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"time"
 
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/transparency-dev/merkle/rfc6962"
@@ -41,10 +40,8 @@ const (
 	selectTiledLeavesSQL             = "SELECT `data` FROM `TiledLeaves` WHERE `tile_index` = ?"
 	replaceTiledLeavesSQL            = "REPLACE INTO `TiledLeaves` (`tile_index`, `data`) VALUES (?, ?)"
 
-	checkpointID        = 0
-	entryBundleSize     = 256
-	defaultBatchMaxSize = entryBundleSize
-	defaultQueueMaxAge  = time.Second
+	checkpointID    = 0
+	entryBundleSize = 256
 )
 
 // Storage is a MySQL-based storage implementation for Tessera.
