@@ -16,7 +16,9 @@ package tessera
 
 import (
 	"context"
+	"fmt"
 
+	"github.com/transparency-dev/trillian-tessera/api/layout"
 	"github.com/transparency-dev/trillian-tessera/ctonly"
 )
 
@@ -55,4 +57,13 @@ func convertCTEntry(e *ctonly.Entry) *Entry {
 	}
 
 	return r
+}
+
+// WithCTLayout instructs the underlying storage to use a Static CT API compatible scheme for layout.
+func WithCTLayout() func(*StorageOptions) {
+	return func(opts *StorageOptions) {
+		opts.EntriesPath = func(n, logSize uint64) string {
+			return fmt.Sprintf("tile/entries%s", layout.NWithSuffix(0, n, logSize))
+		}
+	}
 }
