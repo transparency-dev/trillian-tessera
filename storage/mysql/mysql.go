@@ -216,8 +216,8 @@ func (s *Storage) writeEntryBundle(ctx context.Context, tx *sql.Tx, index uint64
 }
 
 // Add is the entrypoint for adding entries to a sequencing log.
-func (s *Storage) Add(ctx context.Context, entry *tessera.Entry) (uint64, error) {
-	return s.queue.Add(ctx, entry)()
+func (s *Storage) Add(ctx context.Context, entry *tessera.Entry) tessera.IndexFuture {
+	return s.queue.Add(ctx, entry)
 }
 
 // sequenceBatch writes the entries from the provided batch into the entry bundle files of the log.
