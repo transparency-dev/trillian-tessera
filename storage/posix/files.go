@@ -49,6 +49,8 @@ type Storage struct {
 
 	curSize uint64
 	newCP   tessera.NewCPFunc
+
+	entriesPath tessera.EntriesPathFunc
 }
 
 // NewTreeFunc is the signature of a function which receives information about newly integrated trees.
@@ -66,10 +68,11 @@ func New(ctx context.Context, path string, curTree func() (uint64, []byte, error
 	opt := tessera.ResolveStorageOptions(opts...)
 
 	r := &Storage{
-		path:    path,
-		curSize: curSize,
-		curTree: curTree,
-		newCP:   opt.NewCP,
+		path:        path,
+		curSize:     curSize,
+		curTree:     curTree,
+		newCP:       opt.NewCP,
+		entriesPath: opt.EntriesPath,
 	}
 	r.queue = storage.NewQueue(ctx, opt.BatchMaxAge, opt.BatchMaxSize, r.sequenceBatch)
 
@@ -124,7 +127,7 @@ func (s *Storage) Add(ctx context.Context, e *tessera.Entry) (uint64, error) {
 
 // GetEntryBundle retrieves the Nth entries bundle for a log of the given size.
 func (s *Storage) GetEntryBundle(ctx context.Context, index, logSize uint64) ([]byte, error) {
-	return os.ReadFile(filepath.Join(s.path, layout.EntriesPath(index, logSize)))
+	return os.ReadFile(filepath.Join(s.path, s.entriesPath(index, logSize)))
 }
 
 // sequenceBatch writes the entries from the provided batch into the entry bundle files of the log.
@@ -173,7 +176,7 @@ func (s *Storage) sequenceBatch(ctx context.Context, entries []*tessera.Entry) e
 		}
 	}
 	writeBundle := func(bundleIndex uint64) error {
-		bf := filepath.Join(s.path, layout.EntriesPath(bundleIndex, newSize))
+		bf := filepath.Join(s.path, s.entriesPath(bundleIndex, newSize))
 		if err := os.MkdirAll(filepath.Dir(bf), dirPerm); err != nil {
 			return fmt.Errorf("failed to make entries directory structure: %w", err)
 		}
