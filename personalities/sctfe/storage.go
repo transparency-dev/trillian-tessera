@@ -58,10 +58,16 @@ type LI struct {
 	I uint64
 }
 
+type DedupStorage interface {
+	Add(lis []LI) error
+	Get(key []byte) (uint64, bool, error)
+}
+
 // CTStorage implements Storage.
 type CTStorage struct {
 	storeData    func(context.Context, *ctonly.Entry) tessera.IndexFuture
 	storeIssuers func(context.Context, []KV) error
+	dedupStorage DedupStorage
 }
 
 // NewCTStorage instantiates a CTStorage object.
@@ -128,4 +134,23 @@ func cachedStoreIssuers(s IssuerStorage) func(context.Context, []KV) error {
 		}
 		return nil
 	}
+}
+
+// AddCertIndex stores <cert_hash, index> in the deduplication storage.
+func (cts CTStorage) AddCertIndex(ctx context.Context, c *x509.Certificate, idx uint64) error {
+	key := sha256.Sum256(c.Raw)
+	if err := cts.dedupStorage.Add([]LI{{key[:], idx}}); err != nil {
+		return fmt.Errorf("error storing index %d of %q: %v", idx, hex.EncodeToString(key[:]), err)
+	}
+	return nil
+}
+
+// GetCertIndex fetches the index of a give certificate from the deduplication storage.
+func (cts CTStorage) GetCertIndex(ctx context.Context, c *x509.Certificate) (uint64, bool, error) {
+	key := sha256.Sum256(c.Raw)
+	idx, ok, err := cts.dedupStorage.Get(key[:])
+	if err != nil {
+		return 0, false, fmt.Errorf("error fetching index of %q: %v", hex.EncodeToString(key[:]), err)
+	}
+	return idx, ok, nil
 }
