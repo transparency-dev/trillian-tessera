@@ -44,9 +44,6 @@ type Queue struct {
 	inFlight   map[string]*queueItem
 }
 
-// Future is a function which returns an assigned log index, or an error.
-type Future func() (idx uint64, err error)
-
 // FlushFunc is the signature of a function which will receive the slice of queued entries.
 // Normally, this function would be provided by storage implementations. It's important to note
 // that the implementation MUST call each entry's MarshalBundleData function before attempting
@@ -116,7 +113,7 @@ func (q *Queue) squashDupes(e *tessera.Entry) (*queueItem, bool) {
 }
 
 // Add places e into the queue, and returns a func which may be called to retrieve the assigned index.
-func (q *Queue) Add(ctx context.Context, e *tessera.Entry) Future {
+func (q *Queue) Add(ctx context.Context, e *tessera.Entry) tessera.IndexFuture {
 	entry, isDupe := q.squashDupes(e)
 	if isDupe {
 		// This entry is already in the queue, so no need to add it again.
@@ -154,15 +151,15 @@ func (q *Queue) doFlush(ctx context.Context, entries []*queueItem) {
 // hang until assign is called.
 type queueItem struct {
 	entry *tessera.Entry
-	c     chan Future
-	f     Future
+	c     chan tessera.IndexFuture
+	f     tessera.IndexFuture
 }
 
 // newEntry creates a new entry for the provided data.
 func newEntry(data *tessera.Entry) *queueItem {
 	e := &queueItem{
 		entry: data,
-		c:     make(chan Future, 1),
+		c:     make(chan tessera.IndexFuture, 1),
 	}
 	e.f = sync.OnceValues(func() (uint64, error) {
 		return (<-e.c)()

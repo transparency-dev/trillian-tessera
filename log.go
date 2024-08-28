@@ -45,6 +45,9 @@ type ParseCPFunc func(raw []byte) (*f_log.Checkpoint, error)
 // EntriesPathFunc is the signature of a function which knows how to format entry bundle paths.
 type EntriesPathFunc func(n, logSize uint64) string
 
+// IndexFuture is the signature of a function which can return an assigned index or error.
+type IndexFuture func() (uint64, error)
+
 // StorageOptions holds optional settings for all storage implementations.
 type StorageOptions struct {
 	NewCP   NewCPFunc
