@@ -23,7 +23,10 @@ import (
 	"golang.org/x/mod/sumdb/note"
 )
 
-const DefaultBatchMaxSize = 1
+const (
+	DefaultBatchMaxSize = 256
+	DefaultBatchMaxAge  = 250 * time.Millisecond
+)
 
 // ErrPushback is returned by underlying storage implementations when there are too many
 // entries with indices assigned but which have not yet been integrated into the tree.
@@ -53,6 +56,7 @@ type StorageOptions struct {
 func ResolveStorageOptions(opts ...func(*StorageOptions)) *StorageOptions {
 	defaults := &StorageOptions{
 		BatchMaxSize: DefaultBatchMaxSize,
+		BatchMaxAge:  DefaultBatchMaxAge,
 	}
 	for _, opt := range opts {
 		opt(defaults)
