@@ -24,6 +24,7 @@ import (
 	"github.com/google/certificate-transparency-go/x509"
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/ctonly"
+	"github.com/transparency-dev/trillian-tessera/personalities/sctfe/modules/dedup"
 	"k8s.io/klog/v2"
 )
 
@@ -52,22 +53,11 @@ type IssuerStorage interface {
 	AddIssuersIfNotExist(ctx context.Context, kv []KV) error
 }
 
-// LI holds a LeafID and an Idx for deduplication
-type LI struct {
-	L []byte
-	I uint64
-}
-
-type DedupStorage interface {
-	Add(lis []LI) error
-	Get(key []byte) (uint64, bool, error)
-}
-
 // CTStorage implements Storage.
 type CTStorage struct {
 	storeData    func(context.Context, *ctonly.Entry) tessera.IndexFuture
 	storeIssuers func(context.Context, []KV) error
-	dedupStorage DedupStorage
+	dedupStorage dedup.DedupStorage
 }
 
 // NewCTStorage instantiates a CTStorage object.
@@ -139,7 +129,7 @@ func cachedStoreIssuers(s IssuerStorage) func(context.Context, []KV) error {
 // AddCertIndex stores <cert_hash, index> in the deduplication storage.
 func (cts CTStorage) AddCertIndex(ctx context.Context, c *x509.Certificate, idx uint64) error {
 	key := sha256.Sum256(c.Raw)
-	if err := cts.dedupStorage.Add([]LI{{key[:], idx}}); err != nil {
+	if err := cts.dedupStorage.Add([]dedup.KV{{K: key[:], V: idx}}); err != nil {
 		return fmt.Errorf("error storing index %d of %q: %v", idx, hex.EncodeToString(key[:]), err)
 	}
 	return nil

@@ -21,7 +21,8 @@ import (
 	"encoding/binary"
 	"fmt"
 
-	"github.com/transparency-dev/trillian-tessera/personalities/sctfe"
+	"github.com/transparency-dev/trillian-tessera/personalities/sctfe/modules/dedup"
+
 	bolt "go.etcd.io/bbolt"
 	"k8s.io/klog/v2"
 )
@@ -78,8 +79,8 @@ func NewStorage(path string) (*Storage, error) {
 	return s, nil
 }
 
-func (s *Storage) Add(lis []sctfe.LI) error {
-	for _, li := range lis {
+func (s *Storage) Add(kvs []dedup.KV) error {
+	for _, kv := range kvs {
 		err := s.db.Update(func(tx *bolt.Tx) error {
 			db := tx.Bucket([]byte(dedupBucket))
 			sb := tx.Bucket([]byte(sizeBucket))
@@ -89,12 +90,12 @@ func (s *Storage) Add(lis []sctfe.LI) error {
 			}
 			size := btoi(sizeB)
 
-			if err := db.Put(li.L, itob(li.I)); err != nil {
+			if err := db.Put(kv.K, itob(kv.V)); err != nil {
 				return err
 			}
 			// sizeB is indexes from 1 since it's a size, li.I from 0.
 			// Therefore, if they're equal, li is a new entry.
-			if size == li.I {
+			if size == kv.V {
 				if err := sb.Put([]byte("size"), itob(size+1)); err != nil {
 					return err
 				}
@@ -102,7 +103,7 @@ func (s *Storage) Add(lis []sctfe.LI) error {
 			return nil
 		})
 		if err != nil {
-			return fmt.Errorf("b.Put(): error writting leaf index %d: err", li.I)
+			return fmt.Errorf("b.Put(): error writting leaf index %d: err", kv.V)
 		}
 	}
 	return nil
