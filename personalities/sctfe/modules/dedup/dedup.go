@@ -53,7 +53,7 @@ type LocalBEDedup struct {
 	fetcher client.Fetcher
 }
 
-func NewLocalBestEffortDedup(ctx context.Context, lds LocalDedupStorage, t time.Duration, f client.Fetcher, v note.Verifier, origin string, parseBundle func([]byte) []KV) *LocalBEDedup {
+func NewLocalBestEffortDedup(ctx context.Context, lds LocalDedupStorage, t time.Duration, f client.Fetcher, v note.Verifier, origin string, parseBundle func([]byte, uint64) ([]KV, error)) *LocalBEDedup {
 	ret := &LocalBEDedup{DedupStorage: lds, LogSize: lds.LogSize, fetcher: f}
 	go func() {
 		tck := time.NewTicker(t)
@@ -72,7 +72,7 @@ func NewLocalBestEffortDedup(ctx context.Context, lds LocalDedupStorage, t time.
 	return ret
 }
 
-func (d *LocalBEDedup) sync(ctx context.Context, origin string, v note.Verifier, parseBundle func([]byte) []KV) error {
+func (d *LocalBEDedup) sync(ctx context.Context, origin string, v note.Verifier, parseBundle func([]byte, uint64) ([]KV, error)) error {
 	ckpt, _, _, err := client.FetchCheckpoint(ctx, d.fetcher, v, origin)
 	if err != nil {
 		return fmt.Errorf("FetchCheckpoint: %v", err)

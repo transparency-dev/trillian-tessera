@@ -17,7 +17,7 @@ require (
 	github.com/prometheus/client_golang v1.20.2
 	github.com/rivo/tview v0.0.0-20240625185742-b0a7293b8130
 	github.com/rs/cors v1.11.1
-	github.com/transparency-dev/formats v0.0.0-20240715203801-9ff9b9e3905f
+	github.com/transparency-dev/formats v0.0.0-20240826204810-ad21d25a1c7f
 	github.com/transparency-dev/merkle v0.0.2
 	golang.org/x/exp v0.0.0-20240325151524-a685a6edb6d8
 	golang.org/x/mod v0.20.0

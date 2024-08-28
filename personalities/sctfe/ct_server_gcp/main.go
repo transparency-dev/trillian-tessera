@@ -40,10 +40,13 @@ import (
 	"github.com/google/trillian/monitoring/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/cors"
+	tdnote "github.com/transparency-dev/formats/note"
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/personalities/sctfe"
 	"github.com/transparency-dev/trillian-tessera/personalities/sctfe/configpb"
-	gcpMap "github.com/transparency-dev/trillian-tessera/personalities/sctfe/storage/gcp"
+	"github.com/transparency-dev/trillian-tessera/personalities/sctfe/modules/dedup"
+	"github.com/transparency-dev/trillian-tessera/personalities/sctfe/storage/bbolt"
+	gcpSCTFE "github.com/transparency-dev/trillian-tessera/personalities/sctfe/storage/gcp"
 	gcpTessera "github.com/transparency-dev/trillian-tessera/storage/gcp"
 	"golang.org/x/mod/sumdb/note"
 	"google.golang.org/protobuf/proto"
@@ -279,9 +282,33 @@ func newGCPStorage(ctx context.Context, vCfg *sctfe.ValidatedLogConfig, signer n
 		return nil, fmt.Errorf("Failed to initialize GCP Tessera storage: %v", err)
 	}
 
-	issuerStorage, err := gcpMap.NewIssuerStorage(ctx, cfg.ProjectId, cfg.Bucket, "fingerprints/", "application/pkix-cert")
+	issuerStorage, err := gcpSCTFE.NewIssuerStorage(ctx, cfg.ProjectId, cfg.Bucket, "fingerprints/", "application/pkix-cert")
 	if err != nil {
 		return nil, fmt.Errorf("Failed to initialize GCP issuer storage: %v", err)
 	}
-	return sctfe.NewCTSTorage(tesseraStorage, issuerStorage)
+
+	dedupStorage, err := bbolt.NewStorage("test.db")
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize BBolt deduplication database")
+	}
+
+	fetcher, err := gcpSCTFE.GetFetcher(ctx, cfg.Bucket)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get a log fetcher")
+	}
+
+	verifierString, err := tdnote.RFC6962VerifierString(vCfg.Config.Origin, vCfg.PubKey)
+	if err != nil {
+		return nil, fmt.Errorf("error creating static-ct-api checkpoint verifier string: %v", err)
+
+	}
+	verifier, err := tdnote.NewRFC6962Verifier(verifierString)
+	if err != nil {
+		return nil, fmt.Errorf("error creating static-ct-api checkpoint verifier: %v", err)
+
+	}
+
+	localDedup := dedup.NewLocalBestEffortDedup(ctx, dedupStorage, time.Second, fetcher, verifier, vCfg.Config.Origin, sctfe.DedupFromBundle)
+
+	return sctfe.NewCTSTorage(tesseraStorage, issuerStorage, localDedup)
 }
