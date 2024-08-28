@@ -51,6 +51,20 @@ func (mr *MockStorageMockRecorder) Add(arg0, arg1 interface{}) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Add", reflect.TypeOf((*MockStorage)(nil).Add), arg0, arg1)
 }
 
+// AddCertIndex mocks base method.
+func (m *MockStorage) AddCertIndex(arg0 context.Context, arg1 *x509.Certificate, arg2 uint64) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "AddCertIndex", arg0, arg1, arg2)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// AddCertIndex indicates an expected call of AddCertIndex.
+func (mr *MockStorageMockRecorder) AddCertIndex(arg0, arg1, arg2 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddCertIndex", reflect.TypeOf((*MockStorage)(nil).AddCertIndex), arg0, arg1, arg2)
+}
+
 // AddIssuerChain mocks base method.
 func (m *MockStorage) AddIssuerChain(arg0 context.Context, arg1 []*x509.Certificate) error {
 	m.ctrl.T.Helper()
@@ -63,4 +77,20 @@ func (m *MockStorage) AddIssuerChain(arg0 context.Context, arg1 []*x509.Certific
 func (mr *MockStorageMockRecorder) AddIssuerChain(arg0, arg1 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddIssuerChain", reflect.TypeOf((*MockStorage)(nil).AddIssuerChain), arg0, arg1)
+}
+
+// GetCertIndex mocks base method.
+func (m *MockStorage) GetCertIndex(arg0 context.Context, arg1 *x509.Certificate) (uint64, bool, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetCertIndex", arg0, arg1)
+	ret0, _ := ret[0].(uint64)
+	ret1, _ := ret[1].(bool)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
+}
+
+// GetCertIndex indicates an expected call of GetCertIndex.
+func (mr *MockStorageMockRecorder) GetCertIndex(arg0, arg1 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetCertIndex", reflect.TypeOf((*MockStorage)(nil).GetCertIndex), arg0, arg1)
 }
