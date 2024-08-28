@@ -70,7 +70,8 @@ type Storage struct {
 	projectID string
 	bucket    string
 
-	newCP tessera.NewCPFunc
+	newCP       tessera.NewCPFunc
+	entriesPath tessera.EntriesPathFunc
 
 	sequencer sequencer
 	objStore  objStore
@@ -129,12 +130,13 @@ func New(ctx context.Context, cfg Config, opts ...func(*tessera.StorageOptions))
 	}
 
 	r := &Storage{
-		gcsClient: c,
-		projectID: cfg.ProjectID,
-		bucket:    cfg.Bucket,
-		objStore:  gcsStorage,
-		sequencer: seq,
-		newCP:     opt.NewCP,
+		gcsClient:   c,
+		projectID:   cfg.ProjectID,
+		bucket:      cfg.Bucket,
+		objStore:    gcsStorage,
+		sequencer:   seq,
+		newCP:       opt.NewCP,
+		entriesPath: opt.EntriesPath,
 	}
 	r.queue = storage.NewQueue(ctx, opt.BatchMaxAge, opt.BatchMaxSize, r.sequencer.assignEntries)
 
@@ -229,7 +231,7 @@ func (s *Storage) getTiles(ctx context.Context, tileIDs []storage.TileID, logSiz
 //
 // Returns a wrapped os.ErrNotExist if the bundle does not exist.
 func (s *Storage) getEntryBundle(ctx context.Context, bundleIndex uint64, logSize uint64) ([]byte, error) {
-	objName := layout.EntriesPath(bundleIndex, logSize)
+	objName := s.entriesPath(bundleIndex, logSize)
 	data, _, err := s.objStore.getObject(ctx, objName)
 	if err != nil {
 		if errors.Is(err, gcs.ErrObjectNotExist) {
@@ -245,7 +247,7 @@ func (s *Storage) getEntryBundle(ctx context.Context, bundleIndex uint64, logSiz
 
 // setEntryBundle idempotently stores the serialised entry bundle at the location implied by the bundleIndex and treeSize.
 func (s *Storage) setEntryBundle(ctx context.Context, bundleIndex uint64, logSize uint64, bundleRaw []byte) error {
-	objName := layout.EntriesPath(bundleIndex, logSize)
+	objName := s.entriesPath(bundleIndex, logSize)
 	// Note that setObject does an idempotent interpretation of DoesNotExist - it only
 	// returns an error if the named object exists _and_ contains different data to what's
 	// passed in here.

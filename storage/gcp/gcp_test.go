@@ -264,7 +264,8 @@ func TestBundleRoundtrip(t *testing.T) {
 	ctx := context.Background()
 	m := newMemObjStore()
 	s := &Storage{
-		objStore: m,
+		objStore:    m,
+		entriesPath: layout.EntriesPath,
 	}
 
 	for _, test := range []struct {
