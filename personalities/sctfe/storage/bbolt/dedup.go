@@ -37,18 +37,18 @@ type Storage struct {
 }
 
 func NewStorage(path string) (*Storage, error) {
+	// TODO(better logging message)
 	db, err := bolt.Open(path, 0600, nil)
 	if err != nil {
 		return nil, fmt.Errorf("bolt.Open(): %v", err)
 	}
-	fmt.Println("Created a DB")
 	s := &Storage{db: db}
 
 	err = db.Update(func(tx *bolt.Tx) error {
 		dedupB := tx.Bucket([]byte(dedupBucket))
 		sizeB := tx.Bucket([]byte(sizeBucket))
 		if dedupB == nil && sizeB == nil {
-			klog.V(2).Infof("no pre-existing buckets, will create %q and %q.", dedupBucket, sizeBucket)
+			klog.V(2).Infof("NewStorage: no pre-existing buckets, will create %q and %q.", dedupBucket, sizeBucket)
 			_, err := tx.CreateBucket([]byte(dedupBucket))
 			if err != nil {
 				return fmt.Errorf("create %q bucket: %v", dedupBucket, err)
@@ -57,7 +57,7 @@ func NewStorage(path string) (*Storage, error) {
 			if err != nil {
 				return fmt.Errorf("create %q bucket: %v", sizeBucket, err)
 			}
-			klog.V(2).Infof("initializing %q with size 0.", sizeBucket)
+			klog.V(2).Infof("NewStorage: initializing %q with size 0.", sizeBucket)
 			err = sb.Put([]byte("size"), itob(0))
 			if err != nil {
 				return fmt.Errorf("error reading logsize: %v", err)
@@ -67,7 +67,7 @@ func NewStorage(path string) (*Storage, error) {
 		} else if dedupB != nil && sizeB == nil {
 			return fmt.Errorf("inconsistent deduplication storage state, %q is not nil but %q is nil", dedupBucket, sizeBucket)
 		} else {
-			klog.V(2).Infof("found pre-existing %q and %q buckets.", dedupBucket, sizeBucket)
+			klog.V(2).Infof("NewStorage: found pre-existing %q and %q buckets.", dedupBucket, sizeBucket)
 		}
 		return nil
 	})
@@ -79,6 +79,7 @@ func NewStorage(path string) (*Storage, error) {
 	return s, nil
 }
 
+// TODO(phboneff): Make sure that we don't override existing values
 func (s *Storage) Add(kvs []dedup.KV) error {
 	for _, kv := range kvs {
 		err := s.db.Update(func(tx *bolt.Tx) error {
@@ -96,6 +97,7 @@ func (s *Storage) Add(kvs []dedup.KV) error {
 			// sizeB is indexes from 1 since it's a size, li.I from 0.
 			// Therefore, if they're equal, li is a new entry.
 			if size == kv.V {
+				klog.V(3).Infof("Add(): updating deduped size to %d", size+1)
 				if err := sb.Put([]byte("size"), itob(size+1)); err != nil {
 					return err
 				}

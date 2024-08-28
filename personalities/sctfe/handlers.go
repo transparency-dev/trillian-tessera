@@ -300,6 +300,11 @@ func ParseBodyAsJSONChain(r *http.Request) (ct.AddChainRequest, error) {
 // processing these requests is almost identical
 func addChainInternal(ctx context.Context, li *logInfo, w http.ResponseWriter, r *http.Request, isPrecert bool) (int, error) {
 	var method EntrypointName
+	if isPrecert {
+		method = AddPreChainName
+	} else {
+		method = AddChainName
+	}
 
 	// Check the contents of the request and convert to slice of certificates.
 	addChainReq, err := ParseBodyAsJSONChain(r)
@@ -332,12 +337,11 @@ func addChainInternal(ctx context.Context, li *logInfo, w http.ResponseWriter, r
 		return http.StatusInternalServerError, fmt.Errorf("couldn't deduplicate the request: %s", err)
 	}
 
-	if !ok {
-		// TODO(phboneff): refactor entryFromChain to avoid recomputing hashes in AddIssuerChain
-		if len(chain) > 1 {
-			if err := li.storage.AddIssuerChain(ctx, chain[1:]); err != nil {
-				return http.StatusInternalServerError, fmt.Errorf("failed to store issuer chain: %s", err)
-			}
+	if ok {
+		klog.V(3).Infof("%s: %s - found duplicate entry at index %d", li.LogOrigin, method, idx)
+	} else {
+		if err := li.storage.AddIssuerChain(ctx, chain[1:]); err != nil {
+			return http.StatusInternalServerError, fmt.Errorf("failed to store issuer chain: %s", err)
 		}
 
 		klog.V(2).Infof("%s: %s => storage.Add", li.LogOrigin, method)

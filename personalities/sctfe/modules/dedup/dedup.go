@@ -86,6 +86,7 @@ func (d *LocalBEDedup) sync(ctx context.Context, origin string, v note.Verifier,
 	// Greatly inspired by https://github.com/FiloSottile/sunlight/blob/main/tile.go and
 	// https://github.com/transparency-dev/trillian-tessera/blob/main/client/client.go
 	if ckpt.Size > oldSize {
+		klog.V(2).Infof("LocalBEDEdup.sync(): log at size %d, dedup database at size %d, startig to sync", ckpt.Size, oldSize)
 		for i := oldSize / 256; i <= ckpt.Size/256; i++ {
 			p := layout.EntriesPath(i, ckpt.Size)
 			eRaw, err := d.fetcher(ctx, p)
@@ -103,7 +104,9 @@ func (d *LocalBEDedup) sync(ctx context.Context, origin string, v note.Verifier,
 			if err := d.Add(kvs); err != nil {
 				return fmt.Errorf("error storing deduplication data for tile %d: %v", i, err)
 			}
+			klog.V(3).Infof("LocalBEDEdup.sync(): stored dedup data for entry bundle %d, %d more bundles to go", i, ckpt.Size/256-i)
 		}
 	}
+	klog.V(3).Infof("LocalBEDEdup.sync(): dedup data synced to logsize %d", ckpt.Size)
 	return nil
 }
