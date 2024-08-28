@@ -24,7 +24,7 @@ import (
 )
 
 type StorageContract interface {
-	Add(ctx context.Context, entry *tessera.Entry) (uint64, error)
+	Add(ctx context.Context, entry *tessera.Entry) tessera.IndexFuture
 }
 
 var (
