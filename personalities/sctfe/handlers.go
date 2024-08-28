@@ -326,21 +326,29 @@ func addChainInternal(ctx context.Context, li *logInfo, w http.ResponseWriter, r
 		return http.StatusBadRequest, fmt.Errorf("failed to build MerkleTreeLeaf: %s", err)
 	}
 
-	// TODO(phboneff): refactor entryFromChain to avoid recomputing hashes in AddIssuerChain
-	if len(chain) > 1 {
-		if err := li.storage.AddIssuerChain(ctx, chain[1:]); err != nil {
-			return http.StatusInternalServerError, fmt.Errorf("failed to store issuer chain: %s", err)
-		}
+	klog.V(2).Infof("%s: %s => storage.GetCertIndex", li.LogOrigin, method)
+	idx, ok, err := li.storage.GetCertIndex(ctx, chain[0])
+	if err != nil {
+		return http.StatusInternalServerError, fmt.Errorf("couldn't deduplicate the request: %s", err)
 	}
 
-	klog.V(2).Infof("%s: %s => storage.Add", li.LogOrigin, method)
-	idx, err := li.storage.Add(ctx, entry)()
-	if err != nil {
-		if errors.Is(err, tessera.ErrPushback) {
-			w.Header().Add("Retry-After", "1")
-			return http.StatusServiceUnavailable, fmt.Errorf("Tessera sequencer pushed back: %v", err)
+	if !ok {
+		// TODO(phboneff): refactor entryFromChain to avoid recomputing hashes in AddIssuerChain
+		if len(chain) > 1 {
+			if err := li.storage.AddIssuerChain(ctx, chain[1:]); err != nil {
+				return http.StatusInternalServerError, fmt.Errorf("failed to store issuer chain: %s", err)
+			}
 		}
-		return http.StatusInternalServerError, fmt.Errorf("couldn't store the leaf: %v", err)
+
+		klog.V(2).Infof("%s: %s => storage.Add", li.LogOrigin, method)
+		idx, err = li.storage.Add(ctx, entry)
+		if err != nil {
+			if errors.Is(err, tessera.ErrPushback) {
+				w.Header().Add("Retry-After", "1")
+				return http.StatusServiceUnavailable, fmt.Errorf("Tessera sequencer pushed back: %v", err)
+			}
+			return http.StatusInternalServerError, fmt.Errorf("couldn't store the leaf: %v", err)
+		}
 	}
 
 	// Always use the returned leaf as the basis for an SCT.
@@ -373,6 +381,16 @@ func addChainInternal(ctx context.Context, li *logInfo, w http.ResponseWriter, r
 	klog.V(3).Infof("%s: %s <= SCT", li.LogOrigin, method)
 	if sct.Timestamp == timeMillis {
 		lastSCTTimestamp.Set(float64(sct.Timestamp), li.LogOrigin)
+	}
+
+	if !ok {
+		go func() {
+			klog.V(2).Infof("%s: %s => storage.AddCertIndex", li.LogOrigin, method)
+			err := li.storage.AddCertIndex(ctx, chain[0], idx)
+			if err != nil {
+				klog.Warningf("failed to store certificate index: %v", err)
+			}
+		}()
 	}
 
 	return http.StatusOK, nil
