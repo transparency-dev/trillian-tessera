@@ -83,7 +83,7 @@ func main() {
 		defer r.Body.Close()
 
 		id := sha256.Sum256(b)
-		idx, err := storage.Add(r.Context(), tessera.NewEntry(b, tessera.WithIdentity(id[:])))
+		idx, err := storage.Add(r.Context(), tessera.NewEntry(b, tessera.WithIdentity(id[:])))()
 		if err != nil {
 			if errors.Is(err, tessera.ErrPushback) {
 				w.Header().Add("Retry-After", "1")
