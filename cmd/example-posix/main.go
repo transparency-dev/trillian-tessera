@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// example-posix is a command line tool for adding entries to a local
+// example-posix runs a web server that allows new entries to be POSTed to
 // tlog-tiles log stored on a posix filesystem.
 package main
 
@@ -20,9 +20,9 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
-	"path/filepath"
-	"sync"
 	"time"
 
 	"golang.org/x/mod/sumdb/note"
@@ -42,7 +42,7 @@ const (
 var (
 	storageDir  = flag.String("storage_dir", "", "Root directory to store log data.")
 	initialise  = flag.Bool("initialise", false, "Set when creating a new log to initialise the structure.")
-	entries     = flag.String("entries", "", "File path glob of entries to add to the log.")
+	listen      = flag.String("listen", ":2025", "Address:port to listen on")
 	pubKeyFile  = flag.String("public_key", "", "Location of public key file. If unset, uses the contents of the LOG_PUBLIC_KEY environment variable.")
 	privKeyFile = flag.String("private_key", "", "Location of private key file. If unset, uses the contents of the LOG_PRIVATE_KEY environment variable.")
 )
@@ -100,27 +100,16 @@ func main() {
 		return posix.WriteCheckpoint(*storageDir, n)
 	}
 	if *initialise {
+		if err := os.RemoveAll(*storageDir); err != nil {
+			klog.Exitf("Failed to remove existing contents from log directory %q: %v", *storageDir, err)
+		}
 		if err := os.MkdirAll(*storageDir, dirPerm); err != nil {
-			klog.Exitf("Failed to create log directory: %q", err)
+			klog.Exitf("Failed to create log directory %q: %v", *storageDir, err)
 		}
 		if err := writeCP(0, rfc6962.DefaultHasher.EmptyRoot()); err != nil {
 			klog.Exitf("Failed to write empty checkpoint")
 		}
-		os.Exit(0)
-	}
-
-	toAdd, err := filepath.Glob(*entries)
-	if err != nil {
-		klog.Exitf("Failed to glob entries %q: %q", *entries, err)
-	}
-	klog.V(1).Infof("toAdd: %v", toAdd)
-	if len(toAdd) == 0 {
-		klog.Exit("Sequence must be run with at least one valid entry")
-	}
-
-	cpRaw, err := posix.ReadCheckpoint(*storageDir)
-	if err != nil {
-		klog.Exitf("Failed to read log checkpoint: %q", err)
+		klog.Infof("Initialized the log at %q", *storageDir)
 	}
 
 	// Check signatures
@@ -130,57 +119,44 @@ func main() {
 	}
 
 	readCP := func() (uint64, []byte, error) {
+		cpRaw, err := posix.ReadCheckpoint(*storageDir)
+		if err != nil {
+			klog.Exitf("Failed to read log checkpoint: %q", err)
+		}
 		cp, _, _, err := fmtlog.ParseCheckpoint(cpRaw, origin, v)
 		if err != nil {
 			return 0, []byte{}, fmt.Errorf("Failed to parse Checkpoint: %q", err)
 		}
 		return cp.Size, cp.Hash, nil
 	}
-	st := posix.New(ctx, *storageDir, readCP, tessera.WithCheckpointSignerVerifier(s, v), tessera.WithBatching(256, time.Second))
+	storage := posix.New(ctx, *storageDir, readCP, tessera.WithCheckpointSignerVerifier(s, v), tessera.WithBatching(256, time.Second))
 
-	// sequence entries
-
-	// entryInfo binds the actual bytes to be added as a leaf with a
-	// user-recognisable name for the source of those bytes.
-	// The name is only used below in order to inform the user of the
-	// sequence numbers assigned to the data from the provided input files.
-	type entryInfo struct {
-		name string
-		e    *tessera.Entry
-	}
-	entryChan := make(chan entryInfo, 100)
-	go func() {
-		for _, fp := range toAdd {
-			b, err := os.ReadFile(fp)
-			if err != nil {
-				klog.Exitf("Failed to read entry file %q: %q", fp, err)
-			}
-			entryChan <- entryInfo{name: fp, e: tessera.NewEntry(b)}
+	http.HandleFunc("POST /add", func(w http.ResponseWriter, r *http.Request) {
+		b, err := io.ReadAll(r.Body)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
 		}
-		close(entryChan)
-	}()
-
-	numWorkers := 256
-	if l := len(toAdd); l < numWorkers {
-		numWorkers = l
-	}
-
-	wg := sync.WaitGroup{}
-	for i := 0; i < numWorkers; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for entry := range entryChan {
-				// ask storage to sequence
-				seq, err := st.Add(context.Background(), entry.e)
-				if err != nil {
-					klog.Exitf("failed to sequence %q: %q", entry.name, err)
-				}
-				klog.Infof("%d: %v", seq, entry.name)
+		defer func() {
+			if err := r.Body.Close(); err != nil {
+				klog.Warningf("/add: %v", err)
 			}
 		}()
+		idx, err := storage.Add(r.Context(), tessera.NewEntry(b))
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte(err.Error()))
+			return
+		}
+		if _, err = w.Write([]byte(fmt.Sprintf("%d", idx))); err != nil {
+			klog.Errorf("/add: %v", err)
+			return
+		}
+	})
+
+	if err := http.ListenAndServe(*listen, http.DefaultServeMux); err != nil {
+		klog.Exitf("ListenAndServe: %v", err)
 	}
-	wg.Wait()
 }
 
 func getKeyFile(path string) (string, error) {
