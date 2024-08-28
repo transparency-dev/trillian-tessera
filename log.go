@@ -50,11 +50,9 @@ type StorageOptions struct {
 }
 
 // ResolveStorageOptions turns a variadic array of storage options into a StorageOptions instance.
-func ResolveStorageOptions(defaults *StorageOptions, opts ...func(*StorageOptions)) *StorageOptions {
-	if defaults == nil {
-		defaults = &StorageOptions{
-			BatchMaxSize: DefaultBatchMaxSize,
-		}
+func ResolveStorageOptions(opts ...func(*StorageOptions)) *StorageOptions {
+	defaults := &StorageOptions{
+		BatchMaxSize: DefaultBatchMaxSize,
 	}
 	for _, opt := range opts {
 		opt(defaults)

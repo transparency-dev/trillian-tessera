@@ -63,7 +63,7 @@ func New(ctx context.Context, path string, curTree func() (uint64, []byte, error
 	if err != nil {
 		panic(err)
 	}
-	opt := tessera.ResolveStorageOptions(nil, opts...)
+	opt := tessera.ResolveStorageOptions(opts...)
 
 	r := &Storage{
 		path:    path,
