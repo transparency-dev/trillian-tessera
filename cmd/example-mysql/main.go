@@ -92,7 +92,7 @@ func main() {
 				klog.Warningf("/add: %v", err)
 			}
 		}()
-		idx, err := storage.Add(r.Context(), tessera.NewEntry(b))
+		idx, err := storage.Add(r.Context(), tessera.NewEntry(b))()
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			_, _ = w.Write([]byte(err.Error()))
