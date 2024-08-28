@@ -294,7 +294,7 @@ func TestAddChainWhitespace(t *testing.T) {
 		t.Run(test.descr, func(t *testing.T) {
 			if test.want == http.StatusOK {
 				info.storage.EXPECT().AddIssuerChain(deadlineMatcher(), cmpMatcher{leafChain[1:]}).Return(nil)
-				info.storage.EXPECT().Add(deadlineMatcher(), cmpMatcher{req}).Return(rsp, nil)
+				info.storage.EXPECT().Add(deadlineMatcher(), cmpMatcher{req}).Return(func() (uint64, error) { return rsp, nil })
 			}
 
 			recorder := httptest.NewRecorder()
@@ -368,7 +368,7 @@ func TestAddChain(t *testing.T) {
 				req, leafChain := parseChain(t, false, test.chain, info.roots.RawCertificates()[0])
 				rsp := uint64(0)
 				info.storage.EXPECT().AddIssuerChain(deadlineMatcher(), cmpMatcher{leafChain[1:]}).Return(nil)
-				info.storage.EXPECT().Add(deadlineMatcher(), cmpMatcher{req}).Return(rsp, test.err)
+				info.storage.EXPECT().Add(deadlineMatcher(), cmpMatcher{req}).Return(func() (uint64, error) { return rsp, test.err })
 			}
 
 			recorder := makeAddChainRequest(t, info.li, chain)
@@ -457,7 +457,7 @@ func TestAddPrechain(t *testing.T) {
 				req, leafChain := parseChain(t, true, test.chain, info.roots.RawCertificates()[0])
 				rsp := uint64(0)
 				info.storage.EXPECT().AddIssuerChain(deadlineMatcher(), cmpMatcher{leafChain[1:]}).Return(nil)
-				info.storage.EXPECT().Add(deadlineMatcher(), cmpMatcher{req}).Return(rsp, test.err)
+				info.storage.EXPECT().Add(deadlineMatcher(), cmpMatcher{req}).Return(func() (uint64, error) { return rsp, test.err })
 			}
 
 			recorder := makeAddPrechainRequest(t, info.li, chain)

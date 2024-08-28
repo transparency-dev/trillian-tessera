@@ -36,8 +36,8 @@ const (
 
 // Storage provides all the storage primitives necessary to write to a ct-static-api log.
 type Storage interface {
-	// Add assigns an index to the provided Entry, stages the entry for integration, and return it the assigned index.
-	Add(context.Context, *ctonly.Entry) (uint64, error)
+	// Add assigns an index to the provided Entry, stages the entry for integration, and returns a future for the assigned index.
+	Add(context.Context, *ctonly.Entry) tessera.IndexFuture
 	// AddIssuerChain stores every the chain certificate in a content-addressable store under their sha256 hash.
 	AddIssuerChain(context.Context, []*x509.Certificate) error
 }
@@ -54,7 +54,7 @@ type IssuerStorage interface {
 
 // CTStorage implements Storage.
 type CTStorage struct {
-	storeData    func(context.Context, *ctonly.Entry) (uint64, error)
+	storeData    func(context.Context, *ctonly.Entry) tessera.IndexFuture
 	storeIssuers func(context.Context, []KV) error
 }
 
@@ -68,7 +68,7 @@ func NewCTSTorage(logStorage tessera.Storage, issuerStorage IssuerStorage) (*CTS
 }
 
 // Add stores CT entries.
-func (cts *CTStorage) Add(ctx context.Context, entry *ctonly.Entry) (uint64, error) {
+func (cts *CTStorage) Add(ctx context.Context, entry *ctonly.Entry) tessera.IndexFuture {
 	// TODO(phboneff): add deduplication and chain storage
 	return cts.storeData(ctx, entry)
 }

@@ -24,10 +24,10 @@ import (
 
 // Storage described the expected functions from Tessera storage implementations.
 type Storage interface {
-	// Add should duably assign an index to the provided Entry, and return it.
+	// Add should duably assign an index to the provided Entry, returning a future to access that value.
 	//
 	// Implementations MUST call MarshalBundleData method on the entry before persisting/integrating it.
-	Add(context.Context, *Entry) (uint64, error)
+	Add(context.Context, *Entry) IndexFuture
 }
 
 // NewCertificateTransparencySequencedWriter returns a function which knows how to add a CT-specific entry type to the log.
@@ -38,8 +38,8 @@ type Storage interface {
 // b) is not compatible with the https://c2sp.org/tlog-tiles API which we _very strongly_ encourage you to use instead.
 //
 // Returns the assigned index in the log, or an error.
-func NewCertificateTransparencySequencedWriter(s Storage) func(context.Context, *ctonly.Entry) (uint64, error) {
-	return func(ctx context.Context, e *ctonly.Entry) (uint64, error) {
+func NewCertificateTransparencySequencedWriter(s Storage) func(context.Context, *ctonly.Entry) IndexFuture {
+	return func(ctx context.Context, e *ctonly.Entry) IndexFuture {
 		return s.Add(ctx, convertCTEntry(e))
 	}
 }
