@@ -90,6 +90,12 @@ func setupTest(t *testing.T, pemRoots []string, signer crypto.Signer) handlerTes
 	return info
 }
 
+func (info handlerTestInfo) getHandlers() map[string]AppHandler {
+	return map[string]AppHandler{
+		"get-roots": {Info: info.li, Handler: getRoots, Name: "GetRoots", Method: http.MethodGet},
+	}
+}
+
 func (info handlerTestInfo) postHandlers() map[string]AppHandler {
 	return map[string]AppHandler{
 		"add-chain":     {Info: info.li, Handler: addChain, Name: "AddChain", Method: http.MethodPost},
@@ -113,6 +119,27 @@ func TestPostHandlersRejectGet(t *testing.T) {
 			}
 			if got, want := resp.StatusCode, http.StatusMethodNotAllowed; got != want {
 				t.Errorf("http.Get(%s)=(%d,nil); want (%d,nil)", path, got, want)
+			}
+		})
+	}
+}
+
+func TestGetHandlersRejectPost(t *testing.T) {
+	info := setupTest(t, []string{testdata.FakeCACertPEM}, nil)
+	defer info.mockCtrl.Finish()
+
+	// Anything in the get handler list should reject POST.
+	for path, handler := range info.getHandlers() {
+		t.Run(path, func(t *testing.T) {
+			s := httptest.NewServer(handler)
+			defer s.Close()
+
+			resp, err := http.Post(s.URL+"/ct/v1/"+path, "application/json", nil)
+			if err != nil {
+				t.Fatalf("http.Post(%s)=(_,%q); want (_,nil)", path, err)
+			}
+			if got, want := resp.StatusCode, http.StatusMethodNotAllowed; got != want {
+				t.Errorf("http.Post(%s)=(%d,nil); want (%d,nil)", path, got, want)
 			}
 		})
 	}
