@@ -45,6 +45,8 @@ const (
 	contentTypeHeader string = "Content-Type"
 	// MIME content type for JSON
 	contentTypeJSON string = "application/json"
+	// The name of the JSON response map key in get-roots responses
+	jsonMapKeyCertificates string = "certificates"
 )
 
 // EntrypointName identifies a CT entrypoint as defined in section 4 of RFC 6962.
@@ -54,6 +56,7 @@ type EntrypointName string
 const (
 	AddChainName    = EntrypointName("AddChain")
 	AddPreChainName = EntrypointName("AddPreChain")
+	GetRootsName    = EntrypointName("GetRoots")
 )
 
 var (
@@ -81,7 +84,7 @@ func setupMetrics(mf monitoring.MetricFactory) {
 }
 
 // Entrypoints is a list of entrypoint names as exposed in statistics/logging.
-var Entrypoints = []EntrypointName{AddChainName, AddPreChainName}
+var Entrypoints = []EntrypointName{AddChainName, AddPreChainName, GetRootsName}
 
 // PathHandlers maps from a path to the relevant AppHandler instance.
 type PathHandlers map[string]AppHandler
@@ -254,6 +257,7 @@ func (li *logInfo) Handlers(prefix string) PathHandlers {
 	ph := PathHandlers{
 		prefix + ct.AddChainPath:    AppHandler{Info: li, Handler: addChain, Name: AddChainName, Method: http.MethodPost},
 		prefix + ct.AddPreChainPath: AppHandler{Info: li, Handler: addPreChain, Name: AddPreChainName, Method: http.MethodPost},
+		prefix + ct.GetRootsPath:    AppHandler{Info: li, Handler: getRoots, Name: GetRootsName, Method: http.MethodGet},
 	}
 
 	return ph
@@ -375,6 +379,25 @@ func addChain(ctx context.Context, li *logInfo, w http.ResponseWriter, r *http.R
 
 func addPreChain(ctx context.Context, li *logInfo, w http.ResponseWriter, r *http.Request) (int, error) {
 	return addChainInternal(ctx, li, w, r, true)
+}
+
+func getRoots(_ context.Context, li *logInfo, w http.ResponseWriter, _ *http.Request) (int, error) {
+	// Pull out the raw certificates from the parsed versions
+	rawCerts := make([][]byte, 0, len(li.validationOpts.trustedRoots.RawCertificates()))
+	for _, cert := range li.validationOpts.trustedRoots.RawCertificates() {
+		rawCerts = append(rawCerts, cert.Raw)
+	}
+
+	jsonMap := make(map[string]interface{})
+	jsonMap[jsonMapKeyCertificates] = rawCerts
+	enc := json.NewEncoder(w)
+	err := enc.Encode(jsonMap)
+	if err != nil {
+		klog.Warningf("%s: get_roots failed: %v", li.LogOrigin, err)
+		return http.StatusInternalServerError, fmt.Errorf("get-roots failed with: %s", err)
+	}
+
+	return http.StatusOK, nil
 }
 
 // getRPCDeadlineTime calculates the future time an RPC should expire based on our config
