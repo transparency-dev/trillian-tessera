@@ -66,6 +66,9 @@ var (
 	tracingProjectID   = flag.String("tracing_project_id", "", "project ID to pass to stackdriver. Can be empty for GCP, consult docs for other platforms.")
 	tracingPercent     = flag.Int("tracing_percent", 0, "Percent of requests to be traced. Zero is a special case to use the DefaultSampler")
 	pkcs11ModulePath   = flag.String("pkcs11_module_path", "", "Path to the PKCS#11 module to use for keys that use the PKCS#11 interface")
+	// This should be specified in the config proto, but this proto is going to go away in favour of flags, so let's put this one here directly.
+	// TODO: remove comment above when the config proto has been deleted.
+	dedupPath = flag.String("dedup_path", "", "Path to the deduplication database")
 )
 
 // nolint:staticcheck
@@ -287,7 +290,7 @@ func newGCPStorage(ctx context.Context, vCfg *sctfe.ValidatedLogConfig, signer n
 		return nil, fmt.Errorf("Failed to initialize GCP issuer storage: %v", err)
 	}
 
-	dedupStorage, err := bbolt.NewStorage("test.db")
+	dedupStorage, err := bbolt.NewStorage(*dedupPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize BBolt deduplication database")
 	}
