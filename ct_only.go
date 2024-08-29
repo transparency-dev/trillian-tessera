@@ -62,8 +62,10 @@ func convertCTEntry(e *ctonly.Entry) *Entry {
 // WithCTLayout instructs the underlying storage to use a Static CT API compatible scheme for layout.
 func WithCTLayout() func(*StorageOptions) {
 	return func(opts *StorageOptions) {
-		opts.EntriesPath = func(n, logSize uint64) string {
-			return fmt.Sprintf("tile/data/%s", layout.NWithSuffix(0, n, logSize))
-		}
+		opts.EntriesPath = ctEntriesPath
 	}
+}
+
+func ctEntriesPath(n, logSize uint64) string {
+	return fmt.Sprintf("tile/data/%s", layout.NWithSuffix(0, n, logSize))
 }
