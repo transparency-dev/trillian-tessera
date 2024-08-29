@@ -34,6 +34,7 @@ import (
 	"github.com/google/certificate-transparency-go/x509"
 	"github.com/google/certificate-transparency-go/x509util"
 	"github.com/google/trillian/monitoring"
+	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/ctonly"
 	"k8s.io/klog/v2"
 
@@ -331,6 +332,10 @@ func addChainInternal(ctx context.Context, li *logInfo, w http.ResponseWriter, r
 	klog.V(2).Infof("%s: %s => storage.Add", li.LogOrigin, method)
 	idx, err := li.storage.Add(ctx, entry)
 	if err != nil {
+		if errors.Is(err, tessera.ErrPushback) {
+			w.Header().Add("Retry-After", "1")
+			return http.StatusServiceUnavailable, fmt.Errorf("Tessera sequencer pushed back: %v", err)
+		}
 		return http.StatusInternalServerError, fmt.Errorf("couldn't store the leaf: %v", err)
 	}
 
