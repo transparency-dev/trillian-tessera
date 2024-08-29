@@ -100,8 +100,8 @@ func main() {
 		return posix.WriteCheckpoint(*storageDir, n)
 	}
 	if *initialise {
-		if err := os.RemoveAll(*storageDir); err != nil {
-			klog.Exitf("Failed to remove existing contents from log directory %q: %v", *storageDir, err)
+		if files, err := os.ReadDir(*storageDir); err == nil && len(files) > 0 {
+			klog.Exitf("Cannot initialize a log at a non-empty directory")
 		}
 		if err := os.MkdirAll(*storageDir, dirPerm); err != nil {
 			klog.Exitf("Failed to create log directory %q: %v", *storageDir, err)

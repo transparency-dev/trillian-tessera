@@ -5,7 +5,7 @@ This endpoint takes arbitrary data and adds it to a file-based log.
 
 ## Using in the hammer
 
-First bring up a new log:
+First bring up a new log in one terminal:
 ```shell
 export LOG_PRIVATE_KEY="PRIVATE+KEY+example.com/log/testdata+33d7b496+AeymY/SZAX0jZcJ8enZ5FY1Dz+wTML2yWSkK+9DSF3eg"
 export LOG_PUBLIC_KEY="example.com/log/testdata+33d7b496+AeHTu4Q3hEIMHNqc6fASMsq3rKNx280NI+oO5xCFkkSx"
@@ -15,11 +15,11 @@ export LOG_DIR=/tmp/mylog2
 go run ./cmd/example-posix \
   --storage_dir=${LOG_DIR} \
   --initialise \
-  --listen=:2025
+  --listen=:2025 \
   --v=2
 ```
 
-Then run the hammer against the log.
+In another terminal, run the hammer against the log.
 In this example, we're running 32 writers against the log to add 128 new leaves within 1 minute.
 
 ```shell
