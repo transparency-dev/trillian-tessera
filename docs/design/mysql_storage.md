@@ -26,10 +26,6 @@ An internal tile consisting of hashes. There is one row for each internal tile, 
 #### `TiledLeaves`
 
 The data committed to by the leaves of the tree. Follows the same evolution as Subtree.
-
-#### `HashIndex`
-
-An optional table that allows deduplication to be implemented efficiently.
  
 Reads can scale horizontally with very little overhead or contention between frontends.
 

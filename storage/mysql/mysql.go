@@ -217,8 +217,6 @@ func (s *Storage) writeEntryBundle(ctx context.Context, tx *sql.Tx, index uint64
 
 // Add is the entrypoint for adding entries to a sequencing log.
 func (s *Storage) Add(ctx context.Context, entry *tessera.Entry) (uint64, error) {
-	// TODO(#21): Return index if the value is already stored.
-
 	return s.queue.Add(ctx, entry)()
 }
 
