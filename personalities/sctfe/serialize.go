@@ -176,6 +176,11 @@ func NewCpSigner(signer crypto.Signer, origin string, logID [32]byte, timeSource
 	return ctSigner
 }
 
+// DedupFromBundle converts a bundle into an array of {leafID, idx}.
+//
+// The index of a leaf is computed from its position in the log, instead of parsing
+// the SCT.
+// Greatly inspired by https://github.com/FiloSottile/sunlight/blob/main/tile.go and
 func DedupFromBundle(bundle []byte, bundleIdx uint64) ([]dedup.KV, error) {
 	kvs := []dedup.KV{}
 	s := cryptobyte.String(bundle)
@@ -191,7 +196,6 @@ func DedupFromBundle(bundle []byte, bundleIdx uint64) ([]dedup.KV, error) {
 		switch entryType {
 		case 0: // x509_entry
 			if !s.ReadUint24LengthPrefixed((*cryptobyte.String)(&crt)) ||
-				// TODO(phboneff): remove below?
 				!s.ReadUint16LengthPrefixed(&extensions) ||
 				!s.ReadUint16LengthPrefixed(&fingerprints) {
 				return nil, fmt.Errorf("invalid data tile x509_entry")
@@ -203,7 +207,6 @@ func DedupFromBundle(bundle []byte, bundleIdx uint64) ([]dedup.KV, error) {
 				!s.ReadUint24LengthPrefixed(&defangedCrt) ||
 				!s.ReadUint16LengthPrefixed(&extensions) ||
 				!s.ReadUint24LengthPrefixed((*cryptobyte.String)(&crt)) ||
-				// TODO(phboneff): remove below?
 				!s.ReadUint16LengthPrefixed(&fingerprints) {
 				return nil, fmt.Errorf("invalid data tile precert_entry")
 			}

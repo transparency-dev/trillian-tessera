@@ -49,7 +49,7 @@ type LocalDedupStorage interface {
 
 type LocalBEDedup struct {
 	DedupStorage
-	LogSize func() (uint64, error) // returns the largest idx Add has successfully been called with
+	LogSize func() (uint64, error) // returns the largest contiguous idx Add has successfully been called with
 	fetcher client.Fetcher
 }
 
@@ -83,7 +83,7 @@ func (d *LocalBEDedup) sync(ctx context.Context, origin string, v note.Verifier,
 	}
 
 	// TODO(phboneff): add parallelism
-	// Greatly inspired by https://github.com/FiloSottile/sunlight/blob/main/tile.go and
+	// Greatly inspired by
 	// https://github.com/transparency-dev/trillian-tessera/blob/main/client/client.go
 	if ckpt.Size > oldSize {
 		klog.V(2).Infof("LocalBEDEdup.sync(): log at size %d, dedup database at size %d, startig to sync", ckpt.Size, oldSize)
