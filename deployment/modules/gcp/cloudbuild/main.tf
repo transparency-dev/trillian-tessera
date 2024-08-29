@@ -86,6 +86,7 @@ resource "google_cloudbuild_trigger" "docker" {
         "plan",
         "--terragrunt-include-dir", "./deployment/live/gcp/*/*/",
         "--terragrunt-disable-bucket-update",
+        "--lock=false"
       ]
       env = [
         "TF_IN_AUTOMATION=1",
@@ -127,4 +128,10 @@ resource "google_project_iam_member" "cloudrun_deployer" {
   project = var.project_id
   role    = "roles/run.developer"
   member  = "serviceAccount:${google_service_account.cloudbuild_service_account.email}"
+}
+
+resource "google_storage_bucket_iam_member" "member" {
+  bucket   = "${var.project_id}-cloudbuild-${var.env}-terraform-state"
+  role = "roles/storage.objectViewer"
+  member = "serviceAccount:${google_service_account.cloudbuild_service_account.email}"
 }
