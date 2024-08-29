@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// TODO(phboneff): create a doc file with good docstring
 package gcp
 
 import (
@@ -23,7 +22,7 @@ import (
 	gcs "cloud.google.com/go/storage"
 )
 
-// GetFetcher returns a GCS read function for objects in a given bucket
+// GetFetcher returns a GCS read function for objects in a given bucket.
 func GetFetcher(ctx context.Context, bucket string) (func(ctx context.Context, path string) ([]byte, error), error) {
 	c, err := gcs.NewClient(ctx, gcs.WithJSONReads())
 	if err != nil {

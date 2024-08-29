@@ -12,9 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package bbolt implements SCTFE storage systems for deduplication.
-//
-// The interfaces are defined in sctfe/storage.go
+// Package dedup limits the number of duplicate entries a personality allows in a Tessera log.
 package dedup
 
 import (
@@ -53,6 +51,7 @@ type LocalBEDedup struct {
 	fetcher client.Fetcher
 }
 
+// NewLocalBestEffortDedup instantiates a local dedup storage and kicks off a synchronisation routine in the background.
 func NewLocalBestEffortDedup(ctx context.Context, lds LocalDedupStorage, t time.Duration, f client.Fetcher, v note.Verifier, origin string, parseBundle func([]byte, uint64) ([]KV, error)) *LocalBEDedup {
 	ret := &LocalBEDedup{DedupStorage: lds, LogSize: lds.LogSize, fetcher: f}
 	go func() {
@@ -72,6 +71,7 @@ func NewLocalBestEffortDedup(ctx context.Context, lds LocalDedupStorage, t time.
 	return ret
 }
 
+// sync synchronises a deduplication storage with the corresponding log content.
 func (d *LocalBEDedup) sync(ctx context.Context, origin string, v note.Verifier, parseBundle func([]byte, uint64) ([]KV, error)) error {
 	ckpt, _, _, err := client.FetchCheckpoint(ctx, d.fetcher, v, origin)
 	if err != nil {

@@ -12,9 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package gcp implements SCTFE storage systems for issuers.
-//
-// The interfaces are defined in sctfe/storage.go
 package gcp
 
 import (

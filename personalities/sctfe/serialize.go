@@ -178,8 +178,7 @@ func NewCpSigner(signer crypto.Signer, origin string, logID [32]byte, timeSource
 
 // DedupFromBundle converts a bundle into an array of {leafID, idx}.
 //
-// The index of a leaf is computed from its position in the log, instead of parsing
-// the SCT.
+// The index of a leaf is computed from its position in the log, instead of parsing SCTs.
 // Greatly inspired by https://github.com/FiloSottile/sunlight/blob/main/tile.go and
 func DedupFromBundle(bundle []byte, bundleIdx uint64) ([]dedup.KV, error) {
 	kvs := []dedup.KV{}

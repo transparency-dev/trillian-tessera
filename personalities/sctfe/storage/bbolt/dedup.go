@@ -12,9 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package bbolt implements SCTFE storage systems for deduplication.
-//
-// The interfaces are defined in sctfe/storage.go
+// Package bbolt implements modules/dedup using BBolt.
 package bbolt
 
 import (
@@ -37,6 +35,13 @@ type Storage struct {
 	db *bolt.DB
 }
 
+// NewStorage returns a new BBolt storage instance with a dedup and size bucket.
+//
+// The dedup bucket stores <leafID, idx> pairs.
+// The size bucket has a single entry: <"size", X>, where X is the largest contiguous index from 0
+// that has been inserted in the deudp bucket.
+//
+// If a database already exists at the provided path, NewStorage will load it.
 func NewStorage(path string) (*Storage, error) {
 	// TODO(better logging message)
 	db, err := bolt.Open(path, 0600, nil)
@@ -80,6 +85,11 @@ func NewStorage(path string) (*Storage, error) {
 	return s, nil
 }
 
+// Add inserts entries in the dedup bucket and updates the size bucket if need be.
+//
+// If an entry is already stored under a given key, Add does not update it, even if the new value
+// is different.
+// The context is here for consistency with interfaces, but isn't used by BBolt.
 func (s *Storage) Add(_ context.Context, kvs []dedup.KV) error {
 	for _, kv := range kvs {
 		err := s.db.Update(func(tx *bolt.Tx) error {
@@ -114,6 +124,9 @@ func (s *Storage) Add(_ context.Context, kvs []dedup.KV) error {
 	return nil
 }
 
+// Get reads entries from the dedup bucket.
+//
+// The context is here for consistency with interfaces, but isn't used by BBolt.
 func (s *Storage) Get(_ context.Context, leafID []byte) (uint64, bool, error) {
 	var idx []byte
 	_ = s.db.View(func(tx *bolt.Tx) error {
@@ -131,6 +144,7 @@ func (s *Storage) Get(_ context.Context, leafID []byte) (uint64, bool, error) {
 	return btoi(idx), true, nil
 }
 
+// LogSize reads the latest entry from the size bucket.
 func (s *Storage) LogSize() (uint64, error) {
 	var size []byte
 	err := s.db.View(func(tx *bolt.Tx) error {
