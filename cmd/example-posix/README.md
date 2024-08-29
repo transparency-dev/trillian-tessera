@@ -12,11 +12,15 @@ export LOG_PUBLIC_KEY="example.com/log/testdata+33d7b496+AeHTu4Q3hEIMHNqc6fASMsq
 
 # Initialize a new log
 export LOG_DIR=/tmp/mylog2
-go run ./cmd/example-posix --storage_dir=${LOG_DIR} --initialise --v=2
+go run ./cmd/example-posix \
+  --storage_dir=${LOG_DIR} \
+  --initialise \
+  --listen=:2025
+  --v=2
 ```
 
 Then run the hammer against the log.
-In this example, we're running 32 writers agains the log to add 128 new leaves within 1 minute.
+In this example, we're running 32 writers against the log to add 128 new leaves within 1 minute.
 
 ```shell
 go run ./hammer \

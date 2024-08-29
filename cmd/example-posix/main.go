@@ -13,7 +13,7 @@
 // limitations under the License.
 
 // example-posix runs a web server that allows new entries to be POSTed to
-// tlog-tiles log stored on a posix filesystem.
+// a tlog-tiles log stored on a posix filesystem.
 package main
 
 import (
