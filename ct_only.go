@@ -63,7 +63,7 @@ func convertCTEntry(e *ctonly.Entry) *Entry {
 func WithCTLayout() func(*StorageOptions) {
 	return func(opts *StorageOptions) {
 		opts.EntriesPath = func(n, logSize uint64) string {
-			return fmt.Sprintf("tile/data%s", layout.NWithSuffix(0, n, logSize))
+			return fmt.Sprintf("tile/data/%s", layout.NWithSuffix(0, n, logSize))
 		}
 	}
 }
