@@ -80,7 +80,6 @@ func NewStorage(path string) (*Storage, error) {
 	return s, nil
 }
 
-// TODO(phboneff): Make sure that we don't override existing values
 func (s *Storage) Add(_ context.Context, kvs []dedup.KV) error {
 	for _, kv := range kvs {
 		err := s.db.Update(func(tx *bolt.Tx) error {
@@ -92,6 +91,9 @@ func (s *Storage) Add(_ context.Context, kvs []dedup.KV) error {
 			}
 			size := btoi(sizeB)
 
+			if old := db.Get(kv.K); old != nil {
+				klog.V(3).Infof("Add(): bucket %q already contains an entry for %q, not updating", dedupBucket, string(kv.K))
+			}
 			if err := db.Put(kv.K, itob(kv.V)); err != nil {
 				return err
 			}
