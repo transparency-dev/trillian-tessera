@@ -208,6 +208,7 @@ func main() {
 		shutdownWG.Add(1)
 		defer shutdownWG.Done()
 		// Allow 60s for any pending requests to finish then terminate any stragglers
+		// TODO(phboneff): may be wait for the sequencer queue to be empty?
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second*60)
 		defer cancel()
 		klog.Info("Shutting down HTTP server...")
