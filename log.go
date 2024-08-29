@@ -20,6 +20,7 @@ import (
 	"time"
 
 	f_log "github.com/transparency-dev/formats/log"
+	"github.com/transparency-dev/trillian-tessera/api/layout"
 	"golang.org/x/mod/sumdb/note"
 )
 
@@ -41,6 +42,9 @@ type NewCPFunc func(size uint64, hash []byte) ([]byte, error)
 // ParseCPFunc is the signature of a function which knows how to verify and parse checkpoints.
 type ParseCPFunc func(raw []byte) (*f_log.Checkpoint, error)
 
+// EntriesPathFunc is the signature of a function which knows how to format entry bundle paths.
+type EntriesPathFunc func(n, logSize uint64) string
+
 // StorageOptions holds optional settings for all storage implementations.
 type StorageOptions struct {
 	NewCP   NewCPFunc
@@ -50,6 +54,8 @@ type StorageOptions struct {
 	BatchMaxSize uint
 
 	PushbackMaxOutstanding uint
+
+	EntriesPath EntriesPathFunc
 }
 
 // ResolveStorageOptions turns a variadic array of storage options into a StorageOptions instance.
@@ -57,6 +63,7 @@ func ResolveStorageOptions(opts ...func(*StorageOptions)) *StorageOptions {
 	defaults := &StorageOptions{
 		BatchMaxSize: DefaultBatchMaxSize,
 		BatchMaxAge:  DefaultBatchMaxAge,
+		EntriesPath:  layout.EntriesPath,
 	}
 	for _, opt := range opts {
 		opt(defaults)

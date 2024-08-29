@@ -37,25 +37,24 @@ func EntriesPathForLogIndex(seq, logSize uint64) string {
 	return EntriesPath(seq/256, logSize)
 }
 
+// NWithSuffix returns a tiles-spec "N" path, with a partial suffix if applicable.
+func NWithSuffix(l, n, logSize uint64) string {
+	suffix := ""
+	if p := partialTileSize(l, n, logSize); p > 0 {
+		suffix = fmt.Sprintf(".p/%d", p)
+	}
+	return fmt.Sprintf("%s%s", fmtN(n), suffix)
+}
+
 // EntriesPath returns the local path for the nth entry bundle. p denotes the partial
 // tile size, or 0 if the tile is complete.
 func EntriesPath(n, logSize uint64) string {
-	suffix := ""
-	if p := partialTileSize(0, n, logSize); p > 0 {
-		suffix = fmt.Sprintf(".p/%d", p)
-	}
-	return fmt.Sprintf("tile/entries%s%s", fmtN(n), suffix)
+	return fmt.Sprintf("tile/entries/%s", NWithSuffix(0, n, logSize))
 }
 
 // TilePath builds the path to the subtree tile with the given level and index in tile space.
 func TilePath(tileLevel, tileIndex, logSize uint64) string {
-	suffix := ""
-	p := partialTileSize(tileLevel, tileIndex, logSize)
-	if p > 0 {
-		suffix = fmt.Sprintf(".p/%d", p)
-	}
-
-	return fmt.Sprintf("tile/%d%s%s", tileLevel, fmtN(tileIndex), suffix)
+	return fmt.Sprintf("tile/%d/%s", tileLevel, NWithSuffix(tileLevel, tileIndex, logSize))
 }
 
 // fmtN returns the "N" part of a Tiles-spec path.
@@ -67,10 +66,10 @@ func TilePath(tileLevel, tileIndex, logSize uint64) string {
 //
 // See https://github.com/C2SP/C2SP/blob/main/tlog-tiles.md#:~:text=index%201234067%20will%20be%20encoded%20as%20x001/x234/067
 func fmtN(N uint64) string {
-	n := fmt.Sprintf("/%03d", N%1000)
+	n := fmt.Sprintf("%03d", N%1000)
 	N /= 1000
 	for N > 0 {
-		n = fmt.Sprintf("/x%03d%s", N%1000, n)
+		n = fmt.Sprintf("x%03d/%s", N%1000, n)
 		N /= 1000
 	}
 	return n

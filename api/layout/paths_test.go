@@ -169,6 +169,70 @@ func TestTilePath(t *testing.T) {
 	}
 }
 
+func TestNWithSuffix(t *testing.T) {
+	for _, test := range []struct {
+		level    uint64
+		index    uint64
+		logSize  uint64
+		wantPath string
+	}{
+		{
+			level:    0,
+			index:    0,
+			logSize:  256,
+			wantPath: "000",
+		}, {
+			level:    0,
+			index:    0,
+			logSize:  0,
+			wantPath: "000",
+		}, {
+			level:    0,
+			index:    0,
+			logSize:  255,
+			wantPath: "000.p/255",
+		}, {
+			level:    1,
+			index:    0,
+			logSize:  math.MaxUint64,
+			wantPath: "000",
+		}, {
+			level:    1,
+			index:    0,
+			logSize:  256,
+			wantPath: "000.p/1",
+		}, {
+			level:    1,
+			index:    0,
+			logSize:  1024,
+			wantPath: "000.p/4",
+		}, {
+			level:    15,
+			index:    455667,
+			logSize:  math.MaxUint64,
+			wantPath: "x455/667",
+		}, {
+			level:    3,
+			index:    1234567,
+			logSize:  math.MaxUint64,
+			wantPath: "x001/x234/567",
+		}, {
+			level:    15,
+			index:    123456789,
+			logSize:  math.MaxUint64,
+			wantPath: "x123/x456/789",
+		},
+	} {
+		desc := fmt.Sprintf("level %x index %x", test.level, test.index)
+		t.Run(desc, func(t *testing.T) {
+			gotPath := NWithSuffix(test.level, test.index, test.logSize)
+			if gotPath != test.wantPath {
+				t.Errorf("Got path %q want %q", gotPath, test.wantPath)
+			}
+		})
+	}
+}
+
 func TestParseTileLevelIndexWidth(t *testing.T) {
 	for _, test := range []struct {
 		pathLevel string
