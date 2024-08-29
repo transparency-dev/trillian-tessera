@@ -18,6 +18,7 @@
 package bbolt
 
 import (
+	"context"
 	"encoding/binary"
 	"fmt"
 
@@ -80,7 +81,7 @@ func NewStorage(path string) (*Storage, error) {
 }
 
 // TODO(phboneff): Make sure that we don't override existing values
-func (s *Storage) Add(kvs []dedup.KV) error {
+func (s *Storage) Add(_ context.Context, kvs []dedup.KV) error {
 	for _, kv := range kvs {
 		err := s.db.Update(func(tx *bolt.Tx) error {
 			db := tx.Bucket([]byte(dedupBucket))
@@ -111,7 +112,7 @@ func (s *Storage) Add(kvs []dedup.KV) error {
 	return nil
 }
 
-func (s *Storage) Get(leafID []byte) (uint64, bool, error) {
+func (s *Storage) Get(_ context.Context, leafID []byte) (uint64, bool, error) {
 	var idx []byte
 	_ = s.db.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(dedupBucket))

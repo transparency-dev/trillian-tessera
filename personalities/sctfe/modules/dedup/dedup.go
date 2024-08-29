@@ -37,13 +37,13 @@ type KV struct {
 }
 
 type DedupStorage interface {
-	Add(kvs []KV) error
-	Get(key []byte) (uint64, bool, error)
+	Add(ctx context.Context, kvs []KV) error
+	Get(ctx context.Context, key []byte) (uint64, bool, error)
 }
 
 type LocalDedupStorage interface {
-	Add(kvs []KV) error
-	Get(key []byte) (uint64, bool, error)
+	Add(ctx context.Context, kvs []KV) error
+	Get(ctx context.Context, key []byte) (uint64, bool, error)
 	LogSize() (uint64, error)
 }
 
@@ -101,7 +101,7 @@ func (d *LocalBEDedup) sync(ctx context.Context, origin string, v note.Verifier,
 				return fmt.Errorf("parseBundle(): %v", err)
 			}
 
-			if err := d.Add(kvs); err != nil {
+			if err := d.Add(ctx, kvs); err != nil {
 				return fmt.Errorf("error storing deduplication data for tile %d: %v", i, err)
 			}
 			klog.V(3).Infof("LocalBEDEdup.sync(): stored dedup data for entry bundle %d, %d more bundles to go", i, ckpt.Size/256-i)
