@@ -19,16 +19,13 @@ package dedup
 
 import (
 	"context"
-	"crypto/sha256"
 	"errors"
 	"fmt"
-	"math"
 	"os"
 	"time"
 
 	"github.com/transparency-dev/trillian-tessera/api/layout"
 	"github.com/transparency-dev/trillian-tessera/client"
-	"golang.org/x/crypto/cryptobyte"
 	"golang.org/x/mod/sumdb/note"
 	"k8s.io/klog/v2"
 )
@@ -90,7 +87,6 @@ func (d *LocalBEDedup) sync(ctx context.Context, origin string, v note.Verifier,
 	// https://github.com/transparency-dev/trillian-tessera/blob/main/client/client.go
 	if ckpt.Size > oldSize {
 		for i := oldSize / 256; i <= ckpt.Size/256; i++ {
-			kvs := []KV{}
 			p := layout.EntriesPath(i, ckpt.Size)
 			eRaw, err := d.fetcher(ctx, p)
 			if err != nil {
@@ -99,40 +95,9 @@ func (d *LocalBEDedup) sync(ctx context.Context, origin string, v note.Verifier,
 				}
 				return fmt.Errorf("failed to fetch leaf bundle at index %d: %v", i, err)
 			}
-			s := cryptobyte.String(eRaw)
-
-			for len(s) > 0 {
-				var timestamp uint64
-				var entryType uint16
-				var extensions, fingerprints cryptobyte.String
-				if !s.ReadUint64(&timestamp) || !s.ReadUint16(&entryType) || timestamp > math.MaxInt64 {
-					return fmt.Errorf("invalid data tile")
-				}
-				crt := []byte{}
-				switch entryType {
-				case 0: // x509_entry
-					if !s.ReadUint24LengthPrefixed((*cryptobyte.String)(&crt)) ||
-						// TODO(phboneff): remove below?
-						!s.ReadUint16LengthPrefixed(&extensions) ||
-						!s.ReadUint16LengthPrefixed(&fingerprints) {
-						return fmt.Errorf("invalid data tile x509_entry")
-					}
-				case 1: // precert_entry
-					IssuerKeyHash := [32]byte{}
-					var defangedCrt, extensions cryptobyte.String
-					if !s.CopyBytes(IssuerKeyHash[:]) ||
-						!s.ReadUint24LengthPrefixed(&defangedCrt) ||
-						!s.ReadUint16LengthPrefixed(&extensions) ||
-						!s.ReadUint24LengthPrefixed((*cryptobyte.String)(&crt)) ||
-						// TODO(phboneff): remove below?
-						!s.ReadUint16LengthPrefixed(&fingerprints) {
-						return fmt.Errorf("invalid data tile precert_entry")
-					}
-				default:
-					return fmt.Errorf("invalid data tile: unknown type %d", entryType)
-				}
-				k := sha256.Sum256(crt)
-				kvs = append(kvs, KV{K: k[:], V: i*256 + uint64(len(kvs))})
+			kvs, err := parseBundle(eRaw, i)
+			if err != nil {
+				return fmt.Errorf("parseBundle(): %v", err)
 			}
 
 			if err := d.Add(kvs); err != nil {
