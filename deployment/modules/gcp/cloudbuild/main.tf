@@ -78,16 +78,13 @@ resource "google_cloudbuild_trigger" "docker" {
       wait_for = ["docker_build_example"]
     }
     step {
-      id   = "terraform_plan_all"
+      id   = "terraform_apply_ci"
       name = "alpine/terragrunt"
       entrypoint = "terragrunt"
       args = [
-        "run-all",
-        "plan",
-        "--terragrunt-include-dir", "./deployment/live/gcp/*/*/",
-        "--terragrunt-disable-bucket-update",
-        "--lock=false"
+        "apply",
       ]
+      dir = "deployment/live/gcp/example-gcp/ci"
       env = [
         "TF_IN_AUTOMATION=1",
         "TF_INPUT=false",
