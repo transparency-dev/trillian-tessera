@@ -18,6 +18,7 @@ package bbolt
 import (
 	"context"
 	"encoding/binary"
+	"encoding/hex"
 	"fmt"
 
 	"github.com/transparency-dev/trillian-tessera/personalities/sctfe/modules/dedup"
@@ -102,7 +103,7 @@ func (s *Storage) Add(_ context.Context, kvs []dedup.KV) error {
 			size := btoi(sizeB)
 
 			if old := db.Get(kv.K); old != nil {
-				klog.V(3).Infof("Add(): bucket %q already contains an entry for %q, not updating", dedupBucket, string(kv.K))
+				klog.V(3).Infof("Add(): bucket %q already contains an entry for %q, not updating", dedupBucket, hex.EncodeToString(kv.K))
 			}
 			if err := db.Put(kv.K, itob(kv.V)); err != nil {
 				return err
