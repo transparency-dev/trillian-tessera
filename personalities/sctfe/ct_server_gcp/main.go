@@ -40,7 +40,6 @@ import (
 	"github.com/google/trillian/monitoring/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/cors"
-	tdnote "github.com/transparency-dev/formats/note"
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/personalities/sctfe"
 	"github.com/transparency-dev/trillian-tessera/personalities/sctfe/configpb"
@@ -301,18 +300,7 @@ func newGCPStorage(ctx context.Context, vCfg *sctfe.ValidatedLogConfig, signer n
 		return nil, fmt.Errorf("failed to get a log fetcher")
 	}
 
-	verifierString, err := tdnote.RFC6962VerifierString(vCfg.Config.Origin, vCfg.PubKey)
-	if err != nil {
-		return nil, fmt.Errorf("error creating static-ct-api checkpoint verifier string: %v", err)
-
-	}
-	verifier, err := tdnote.NewRFC6962Verifier(verifierString)
-	if err != nil {
-		return nil, fmt.Errorf("error creating static-ct-api checkpoint verifier: %v", err)
-
-	}
-
-	localDedup := dedup.NewLocalBestEffortDedup(ctx, dedupStorage, time.Second, fetcher, verifier, vCfg.Config.Origin, sctfe.DedupFromBundle)
+	localDedup := dedup.NewLocalBestEffortDedup(ctx, dedupStorage, time.Second, fetcher, sctfe.DedupFromBundle)
 
 	return sctfe.NewCTSTorage(tesseraStorage, issuerStorage, localDedup)
 }

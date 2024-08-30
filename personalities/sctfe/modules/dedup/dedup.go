@@ -16,15 +16,16 @@
 package dedup
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/transparency-dev/trillian-tessera/api/layout"
 	"github.com/transparency-dev/trillian-tessera/client"
-	"golang.org/x/mod/sumdb/note"
 	"k8s.io/klog/v2"
 )
 
@@ -52,7 +53,7 @@ type LocalBEDedup struct {
 }
 
 // NewLocalBestEffortDedup instantiates a local dedup storage and kicks off a synchronisation routine in the background.
-func NewLocalBestEffortDedup(ctx context.Context, lds LocalDedupStorage, t time.Duration, f client.Fetcher, v note.Verifier, origin string, parseBundle func([]byte, uint64) ([]KV, error)) *LocalBEDedup {
+func NewLocalBestEffortDedup(ctx context.Context, lds LocalDedupStorage, t time.Duration, f client.Fetcher, parseBundle func([]byte, uint64) ([]KV, error)) *LocalBEDedup {
 	ret := &LocalBEDedup{DedupStorage: lds, LogSize: lds.LogSize, fetcher: f}
 	go func() {
 		tck := time.NewTicker(t)
@@ -62,7 +63,7 @@ func NewLocalBestEffortDedup(ctx context.Context, lds LocalDedupStorage, t time.
 			case <-ctx.Done():
 				return
 			case <-tck.C:
-				if err := ret.sync(ctx, origin, v, parseBundle); err != nil {
+				if err := ret.sync(ctx, parseBundle); err != nil {
 					klog.Warningf("error updating deduplication data: %v", err)
 				}
 			}
@@ -72,10 +73,19 @@ func NewLocalBestEffortDedup(ctx context.Context, lds LocalDedupStorage, t time.
 }
 
 // sync synchronises a deduplication storage with the corresponding log content.
-func (d *LocalBEDedup) sync(ctx context.Context, origin string, v note.Verifier, parseBundle func([]byte, uint64) ([]KV, error)) error {
-	ckpt, _, _, err := client.FetchCheckpoint(ctx, d.fetcher, v, origin)
+func (d *LocalBEDedup) sync(ctx context.Context, parseBundle func([]byte, uint64) ([]KV, error)) error {
+	cpRaw, err := d.fetcher(ctx, layout.CheckpointPath)
 	if err != nil {
-		return fmt.Errorf("FetchCheckpoint: %v", err)
+		return fmt.Errorf("error fetching checkpoint: %v", err)
+	}
+	// A https://c2sp.org/static-ct-api logsize is on the second line
+	l := bytes.SplitN(cpRaw, []byte("\n"), 3)
+	if len(l) < 2 {
+		return errors.New("invalid checkpoint - no size")
+	}
+	ckptSize, err := strconv.ParseUint(string(l[1]), 10, 64)
+	if err != nil {
+		return fmt.Errorf("invalid checkpoint - can't extract size: %v", err)
 	}
 	oldSize, err := d.LogSize()
 	if err != nil {
@@ -85,10 +95,10 @@ func (d *LocalBEDedup) sync(ctx context.Context, origin string, v note.Verifier,
 	// TODO(phboneff): add parallelism
 	// Greatly inspired by
 	// https://github.com/transparency-dev/trillian-tessera/blob/main/client/client.go
-	if ckpt.Size > oldSize {
-		klog.V(2).Infof("LocalBEDEdup.sync(): log at size %d, dedup database at size %d, startig to sync", ckpt.Size, oldSize)
-		for i := oldSize / 256; i <= ckpt.Size/256; i++ {
-			p := layout.EntriesPath(i, ckpt.Size)
+	if ckptSize > oldSize {
+		klog.V(2).Infof("LocalBEDEdup.sync(): log at size %d, dedup database at size %d, startig to sync", ckptSize, oldSize)
+		for i := oldSize / 256; i <= ckptSize/256; i++ {
+			p := layout.EntriesPath(i, ckptSize)
 			eRaw, err := d.fetcher(ctx, p)
 			if err != nil {
 				if errors.Is(err, os.ErrNotExist) {
@@ -104,9 +114,9 @@ func (d *LocalBEDedup) sync(ctx context.Context, origin string, v note.Verifier,
 			if err := d.Add(ctx, kvs); err != nil {
 				return fmt.Errorf("error storing deduplication data for tile %d: %v", i, err)
 			}
-			klog.V(3).Infof("LocalBEDEdup.sync(): stored dedup data for entry bundle %d, %d more bundles to go", i, ckpt.Size/256-i)
+			klog.V(3).Infof("LocalBEDEdup.sync(): stored dedup data for entry bundle %d, %d more bundles to go", i, ckptSize/256-i)
 		}
 	}
-	klog.V(3).Infof("LocalBEDEdup.sync(): dedup data synced to logsize %d", ckpt.Size)
+	klog.V(3).Infof("LocalBEDEdup.sync(): dedup data synced to logsize %d", ckptSize)
 	return nil
 }
