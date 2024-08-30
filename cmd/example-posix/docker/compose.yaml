@@ -1,0 +1,44 @@
+services:
+
+  tessera-example-posix-read-proxy:
+    container_name: tessera-example-posix-read-proxy
+    image: "busybox:stable"
+    ports:
+      - "2024:2024"
+    command: [
+      "/bin/busybox", 
+      "httpd", 
+      "-f", 
+      "-p", 
+      "2024",
+      "-h",
+      "/tmp/tessera-posix-log"
+    ]
+    volumes:
+      - tiles:/tmp/tessera-posix-log
+    restart: always 
+
+  tessera-example-posix:
+    container_name: tessera-example-posix
+    build:
+      context: ../../../
+      dockerfile: ./cmd/example-posix/docker/Dockerfile
+    ports:
+      - "2025:2025"
+    environment:
+      LOG_PRIVATE_KEY: "PRIVATE+KEY+example.com/log/testdata+33d7b496+AeymY/SZAX0jZcJ8enZ5FY1Dz+wTML2yWSkK+9DSF3eg"
+      LOG_PUBLIC_KEY: "example.com/log/testdata+33d7b496+AeHTu4Q3hEIMHNqc6fASMsq3rKNx280NI+oO5xCFkkSx"
+    command: [
+      "--storage_dir=/tmp/tessera-posix-log",
+      "--initialise",
+      "--listen=:2025",
+      "--alsologtostderr",
+      "--v=2",
+    ]
+    volumes:
+      - tiles:/tmp/tessera-posix-log
+    restart: always
+
+volumes:
+  tiles:
+    name: "tiles"
