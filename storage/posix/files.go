@@ -331,7 +331,7 @@ func (s *Storage) StoreTile(_ context.Context, level, index, logSize uint64, til
 	}
 
 	if tileSize == 256 {
-		partials, err := filepath.Glob(fmt.Sprintf("%s.*", tPath))
+		partials, err := filepath.Glob(fmt.Sprintf("%s.p/*", tPath))
 		if err != nil {
 			return fmt.Errorf("failed to list partial tiles for clean up; %w", err)
 		}
