@@ -353,6 +353,9 @@ func addChainInternal(ctx context.Context, li *logInfo, w http.ResponseWriter, r
 			}
 			return http.StatusInternalServerError, fmt.Errorf("couldn't store the leaf: %v", err)
 		}
+		// We store the index for this certificate in the deduplication storage immediately.
+		// It might be stored again later, if a local deduplication storage is synced, potentially
+		// with a smaller value.
 		klog.V(2).Infof("%s: %s => storage.AddCertIndex", li.LogOrigin, method)
 		err := li.storage.AddCertIndex(ctx, chain[0], idx)
 		// TODO: block log writes if deduplication breaks
