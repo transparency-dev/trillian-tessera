@@ -61,11 +61,11 @@ type IssuerStorage interface {
 type CTStorage struct {
 	storeData    func(context.Context, *ctonly.Entry) tessera.IndexFuture
 	storeIssuers func(context.Context, []KV) error
-	dedupStorage dedup.DedupStorage
+	dedupStorage dedup.BEDedupStorage
 }
 
 // NewCTStorage instantiates a CTStorage object.
-func NewCTSTorage(logStorage tessera.Storage, issuerStorage IssuerStorage, dedupStorage dedup.DedupStorage) (*CTStorage, error) {
+func NewCTSTorage(logStorage tessera.Storage, issuerStorage IssuerStorage, dedupStorage dedup.BEDedupStorage) (*CTStorage, error) {
 	ctStorage := &CTStorage{
 		storeData:    tessera.NewCertificateTransparencySequencedWriter(logStorage),
 		storeIssuers: cachedStoreIssuers(issuerStorage),

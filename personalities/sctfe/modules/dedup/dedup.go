@@ -35,46 +35,39 @@ type LeafIdx struct {
 	Idx    uint64
 }
 
-type DedupStorage interface {
+type BEDedupStorage interface {
 	Add(ctx context.Context, lidxs []LeafIdx) error
 	Get(ctx context.Context, leafID []byte) (uint64, bool, error)
 }
 
-type LocalDedupStorage interface {
+// TODO: re-architecture to prevent creating a LocaLBEDedupStorage without calling UpdateFromLog
+type LocalBEDedupStorage interface {
 	Add(ctx context.Context, lidxs []LeafIdx) error
 	Get(ctx context.Context, leafID []byte) (uint64, bool, error)
 	LogSize() (uint64, error)
 }
 
-type LocalBEDedup struct {
-	DedupStorage
-	logSize func() (uint64, error) // returns the largest contiguous idx Add has successfully been called with
-	fetcher client.Fetcher
-}
+type ParseBundleFunc func([]byte, uint64) ([]LeafIdx, error)
 
-// NewLocalBestEffortDedup instantiates a local dedup storage and kicks off a synchronisation routine in the background.
-func NewLocalBestEffortDedup(ctx context.Context, lds LocalDedupStorage, t time.Duration, f client.Fetcher, parseBundle func([]byte, uint64) ([]LeafIdx, error)) *LocalBEDedup {
-	ret := &LocalBEDedup{DedupStorage: lds, logSize: lds.LogSize, fetcher: f}
-	go func() {
-		tck := time.NewTicker(t)
-		defer tck.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-tck.C:
-				if err := ret.sync(ctx, parseBundle); err != nil {
-					klog.Warningf("error updating deduplication data: %v", err)
-				}
+// UpdateFromLog synchronises a local best effort deduplication storage with a log.
+func UpdateFromLog(ctx context.Context, lds LocalBEDedupStorage, t time.Duration, f client.Fetcher, pb ParseBundleFunc) {
+	tck := time.NewTicker(t)
+	defer tck.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-tck.C:
+			if err := sync(ctx, lds, pb, f); err != nil {
+				klog.Warningf("error updating deduplication data: %v", err)
 			}
 		}
-	}()
-	return ret
+	}
 }
 
 // sync synchronises a deduplication storage with the corresponding log content.
-func (d *LocalBEDedup) sync(ctx context.Context, parseBundle func([]byte, uint64) ([]LeafIdx, error)) error {
-	cpRaw, err := d.fetcher(ctx, layout.CheckpointPath)
+func sync(ctx context.Context, lds LocalBEDedupStorage, pb ParseBundleFunc, f client.Fetcher) error {
+	cpRaw, err := f(ctx, layout.CheckpointPath)
 	if err != nil {
 		return fmt.Errorf("error fetching checkpoint: %v", err)
 	}
@@ -87,7 +80,7 @@ func (d *LocalBEDedup) sync(ctx context.Context, parseBundle func([]byte, uint64
 	if err != nil {
 		return fmt.Errorf("invalid checkpoint - can't extract size: %v", err)
 	}
-	oldSize, err := d.logSize()
+	oldSize, err := lds.LogSize()
 	if err != nil {
 		return fmt.Errorf("OldSize(): %v", err)
 	}
@@ -99,19 +92,19 @@ func (d *LocalBEDedup) sync(ctx context.Context, parseBundle func([]byte, uint64
 		klog.V(2).Infof("LocalBEDEdup.sync(): log at size %d, dedup database at size %d, startig to sync", ckptSize, oldSize)
 		for i := oldSize / 256; i <= ckptSize/256; i++ {
 			p := layout.EntriesPath(i, ckptSize)
-			eRaw, err := d.fetcher(ctx, p)
+			eRaw, err := f(ctx, p)
 			if err != nil {
 				if errors.Is(err, os.ErrNotExist) {
 					return fmt.Errorf("leaf bundle at index %d not found: %v", i, err)
 				}
 				return fmt.Errorf("failed to fetch leaf bundle at index %d: %v", i, err)
 			}
-			lidxs, err := parseBundle(eRaw, i)
+			lidxs, err := pb(eRaw, i)
 			if err != nil {
 				return fmt.Errorf("parseBundle(): %v", err)
 			}
 
-			if err := d.Add(ctx, lidxs); err != nil {
+			if err := lds.Add(ctx, lidxs); err != nil {
 				return fmt.Errorf("error storing deduplication data for tile %d: %v", i, err)
 			}
 			klog.V(3).Infof("LocalBEDEdup.sync(): stored dedup data for entry bundle %d, %d more bundles to go", i, ckptSize/256-i)

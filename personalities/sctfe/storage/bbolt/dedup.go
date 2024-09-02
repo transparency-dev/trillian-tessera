@@ -135,6 +135,7 @@ func (s *Storage) Add(_ context.Context, lidxs []dedup.LeafIdx) error {
 
 // Get reads entries from the dedup bucket.
 //
+// If the requested entry is missing from the bucket, returns false ("comma ok" idiom).
 // The context is here for consistency with interfaces, but isn't used by BBolt.
 func (s *Storage) Get(_ context.Context, leafID []byte) (uint64, bool, error) {
 	var idx []byte

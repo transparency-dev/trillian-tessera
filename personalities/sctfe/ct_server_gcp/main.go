@@ -290,8 +290,8 @@ func newGCPStorage(ctx context.Context, vCfg *sctfe.ValidatedLogConfig, signer n
 		return nil, fmt.Errorf("Failed to initialize GCP issuer storage: %v", err)
 	}
 
-	// TODO: repalce with a global dedup storage for GCP
-	dedupStorage, err := bbolt.NewStorage(*dedupPath)
+	// TODO: replace with a global dedup storage for GCP
+	beDedupStorage, err := bbolt.NewStorage(*dedupPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize BBolt deduplication database: %v", err)
 	}
@@ -301,7 +301,7 @@ func newGCPStorage(ctx context.Context, vCfg *sctfe.ValidatedLogConfig, signer n
 		return nil, fmt.Errorf("failed to get a log fetcher: %v", err)
 	}
 
-	localDedup := dedup.NewLocalBestEffortDedup(ctx, dedupStorage, time.Second, fetcher, sctfe.DedupFromBundle)
+	go dedup.UpdateFromLog(ctx, beDedupStorage, time.Second, fetcher, sctfe.DedupFromBundle)
 
-	return sctfe.NewCTSTorage(tesseraStorage, issuerStorage, localDedup)
+	return sctfe.NewCTSTorage(tesseraStorage, issuerStorage, beDedupStorage)
 }
