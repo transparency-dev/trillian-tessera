@@ -171,7 +171,7 @@ func configureTilesReadAPI(mux *http.ServeMux, storage *mysql.Storage) {
 			return
 		}
 
-		entryBundle, err := storage.ReadEntryBundle(r.Context(), index/256)
+		entryBundle, err := storage.ReadEntryBundle(r.Context(), index)
 		if err != nil {
 			klog.Errorf("/tile/entries/{index...}: %v", err)
 			w.WriteHeader(http.StatusInternalServerError)

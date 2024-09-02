@@ -146,7 +146,7 @@ func TestLiveLogIntegration(t *testing.T) {
 		index := v.(uint64)
 
 		// Step 4.1 - Get entry bundles to read back what was written, check leaves are correct.
-		entryBundle, err := client.GetEntryBundle(ctx, httpRead, index, checkpoint.Size)
+		entryBundle, err := client.GetEntryBundle(ctx, httpRead, index/256, checkpoint.Size)
 		if err != nil {
 			t.Errorf("client.GetEntryBundle: %v", err)
 		}
