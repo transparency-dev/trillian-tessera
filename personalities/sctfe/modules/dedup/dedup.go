@@ -29,20 +29,20 @@ import (
 	"k8s.io/klog/v2"
 )
 
-// KV holds a LeafID and an Idx for deduplication
-type KV struct {
-	K []byte
-	V uint64
+// LeafIdx holds a LeafID and an Idx for deduplication
+type LeafIdx struct {
+	LeafID []byte
+	Idx    uint64
 }
 
 type DedupStorage interface {
-	Add(ctx context.Context, kvs []KV) error
-	Get(ctx context.Context, key []byte) (uint64, bool, error)
+	Add(ctx context.Context, lidxs []LeafIdx) error
+	Get(ctx context.Context, leafID []byte) (uint64, bool, error)
 }
 
 type LocalDedupStorage interface {
-	Add(ctx context.Context, kvs []KV) error
-	Get(ctx context.Context, key []byte) (uint64, bool, error)
+	Add(ctx context.Context, lidxs []LeafIdx) error
+	Get(ctx context.Context, leafID []byte) (uint64, bool, error)
 	LogSize() (uint64, error)
 }
 
@@ -53,7 +53,7 @@ type LocalBEDedup struct {
 }
 
 // NewLocalBestEffortDedup instantiates a local dedup storage and kicks off a synchronisation routine in the background.
-func NewLocalBestEffortDedup(ctx context.Context, lds LocalDedupStorage, t time.Duration, f client.Fetcher, parseBundle func([]byte, uint64) ([]KV, error)) *LocalBEDedup {
+func NewLocalBestEffortDedup(ctx context.Context, lds LocalDedupStorage, t time.Duration, f client.Fetcher, parseBundle func([]byte, uint64) ([]LeafIdx, error)) *LocalBEDedup {
 	ret := &LocalBEDedup{DedupStorage: lds, LogSize: lds.LogSize, fetcher: f}
 	go func() {
 		tck := time.NewTicker(t)
@@ -73,7 +73,7 @@ func NewLocalBestEffortDedup(ctx context.Context, lds LocalDedupStorage, t time.
 }
 
 // sync synchronises a deduplication storage with the corresponding log content.
-func (d *LocalBEDedup) sync(ctx context.Context, parseBundle func([]byte, uint64) ([]KV, error)) error {
+func (d *LocalBEDedup) sync(ctx context.Context, parseBundle func([]byte, uint64) ([]LeafIdx, error)) error {
 	cpRaw, err := d.fetcher(ctx, layout.CheckpointPath)
 	if err != nil {
 		return fmt.Errorf("error fetching checkpoint: %v", err)
@@ -106,12 +106,12 @@ func (d *LocalBEDedup) sync(ctx context.Context, parseBundle func([]byte, uint64
 				}
 				return fmt.Errorf("failed to fetch leaf bundle at index %d: %v", i, err)
 			}
-			kvs, err := parseBundle(eRaw, i)
+			lidxs, err := parseBundle(eRaw, i)
 			if err != nil {
 				return fmt.Errorf("parseBundle(): %v", err)
 			}
 
-			if err := d.Add(ctx, kvs); err != nil {
+			if err := d.Add(ctx, lidxs); err != nil {
 				return fmt.Errorf("error storing deduplication data for tile %d: %v", i, err)
 			}
 			klog.V(3).Infof("LocalBEDEdup.sync(): stored dedup data for entry bundle %d, %d more bundles to go", i, ckptSize/256-i)

@@ -134,7 +134,7 @@ func cachedStoreIssuers(s IssuerStorage) func(context.Context, []KV) error {
 // AddCertIndex stores <cert_hash, index> in the deduplication storage.
 func (cts CTStorage) AddCertIndex(ctx context.Context, c *x509.Certificate, idx uint64) error {
 	key := sha256.Sum256(c.Raw)
-	if err := cts.dedupStorage.Add(ctx, []dedup.KV{{K: key[:], V: idx}}); err != nil {
+	if err := cts.dedupStorage.Add(ctx, []dedup.LeafIdx{{LeafID: key[:], Idx: idx}}); err != nil {
 		return fmt.Errorf("error storing index %d of %q: %v", idx, hex.EncodeToString(key[:]), err)
 	}
 	return nil

@@ -91,8 +91,8 @@ func NewStorage(path string) (*Storage, error) {
 // If an entry is already stored under a given key, Add does not update it, even if the new value
 // is different.
 // The context is here for consistency with interfaces, but isn't used by BBolt.
-func (s *Storage) Add(_ context.Context, kvs []dedup.KV) error {
-	for _, kv := range kvs {
+func (s *Storage) Add(_ context.Context, lidxs []dedup.LeafIdx) error {
+	for _, lidx := range lidxs {
 		err := s.db.Update(func(tx *bolt.Tx) error {
 			db := tx.Bucket([]byte(dedupBucket))
 			sb := tx.Bucket([]byte(sizeBucket))
@@ -102,15 +102,15 @@ func (s *Storage) Add(_ context.Context, kvs []dedup.KV) error {
 			}
 			size := btoi(sizeB)
 
-			if old := db.Get(kv.K); old != nil {
-				klog.V(3).Infof("Add(): bucket %q already contains an entry for %q, not updating", dedupBucket, hex.EncodeToString(kv.K))
+			if old := db.Get(lidx.LeafID); old != nil {
+				klog.V(3).Infof("Add(): bucket %q already contains an entry for %q, not updating", dedupBucket, hex.EncodeToString(lidx.LeafID))
 			}
-			if err := db.Put(kv.K, itob(kv.V)); err != nil {
+			if err := db.Put(lidx.LeafID, itob(lidx.Idx)); err != nil {
 				return err
 			}
 			// size is a length, kv.V an index, so if they're equal,
 			// kv is a new entry.
-			if size == kv.V {
+			if size == lidx.Idx {
 				klog.V(3).Infof("Add(): updating deduped size to %d", size+1)
 				if err := sb.Put([]byte("size"), itob(size+1)); err != nil {
 					return err
@@ -119,7 +119,7 @@ func (s *Storage) Add(_ context.Context, kvs []dedup.KV) error {
 			return nil
 		})
 		if err != nil {
-			return fmt.Errorf("b.Put(): error writing leaf index %d: err", kv.V)
+			return fmt.Errorf("b.Put(): error writing leaf index %d: err", lidx.Idx)
 		}
 	}
 	return nil
