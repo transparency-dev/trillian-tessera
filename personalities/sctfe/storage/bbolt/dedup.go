@@ -13,6 +13,16 @@
 // limitations under the License.
 
 // Package bbolt implements modules/dedup using BBolt.
+//
+// It contains two buckets:
+//   - The dedup bucket stores <leafID, idx> pairs. Entries can either be added after sequencing,
+//     by the server that received the request, or later when synchronising the dedup storage with
+//     the log state.
+//   - The size bucket has a single entry: <"size", X>, where X is the largest contiguous index
+//     from 0 that has been inserted in the dedup bucket. This allows to know what is the next
+//     <leafID, idx> to add to the bucket in order to have a full represation of the log.
+//
+// Calls to Add<leafID, idx> will update idx to a smaller value, if possible.
 package bbolt
 
 import (
@@ -40,7 +50,7 @@ type Storage struct {
 //
 // The dedup bucket stores <leafID, idx> pairs.
 // The size bucket has a single entry: <"size", X>, where X is the largest contiguous index from 0
-// that has been inserted in the deudp bucket.
+// that has been inserted in the dedup bucket.
 //
 // If a database already exists at the provided path, NewStorage will load it.
 func NewStorage(path string) (*Storage, error) {
