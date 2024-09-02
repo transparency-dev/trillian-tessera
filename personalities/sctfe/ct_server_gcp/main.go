@@ -207,7 +207,7 @@ func main() {
 		shutdownWG.Add(1)
 		defer shutdownWG.Done()
 		// Allow 60s for any pending requests to finish then terminate any stragglers
-		// TODO(phboneff): may be wait for the sequencer queue to be empty?
+		// TODO(phboneff): maybe wait for the sequencer queue to be empty?
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second*60)
 		defer cancel()
 		klog.Info("Shutting down HTTP server...")
@@ -292,12 +292,12 @@ func newGCPStorage(ctx context.Context, vCfg *sctfe.ValidatedLogConfig, signer n
 
 	dedupStorage, err := bbolt.NewStorage(*dedupPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to initialize BBolt deduplication database")
+		return nil, fmt.Errorf("failed to initialize BBolt deduplication database: %v", err)
 	}
 
 	fetcher, err := gcpSCTFE.GetFetcher(ctx, cfg.Bucket)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get a log fetcher")
+		return nil, fmt.Errorf("failed to get a log fetcher: %v", err)
 	}
 
 	localDedup := dedup.NewLocalBestEffortDedup(ctx, dedupStorage, time.Second, fetcher, sctfe.DedupFromBundle)

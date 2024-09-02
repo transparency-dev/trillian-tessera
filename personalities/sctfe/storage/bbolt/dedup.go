@@ -108,8 +108,8 @@ func (s *Storage) Add(_ context.Context, kvs []dedup.KV) error {
 			if err := db.Put(kv.K, itob(kv.V)); err != nil {
 				return err
 			}
-			// sizeB is indexes from 1 since it's a size, kv.K from 0.
-			// Therefore, if they're equal, kv is a new entry.
+			// size is a length, kv.V an index, so if they're equal,
+			// kv is a new entry.
 			if size == kv.V {
 				klog.V(3).Infof("Add(): updating deduped size to %d", size+1)
 				if err := sb.Put([]byte("size"), itob(size+1)); err != nil {
@@ -119,7 +119,7 @@ func (s *Storage) Add(_ context.Context, kvs []dedup.KV) error {
 			return nil
 		})
 		if err != nil {
-			return fmt.Errorf("b.Put(): error writting leaf index %d: err", kv.V)
+			return fmt.Errorf("b.Put(): error writing leaf index %d: err", kv.V)
 		}
 	}
 	return nil

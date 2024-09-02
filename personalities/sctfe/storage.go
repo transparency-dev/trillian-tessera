@@ -41,9 +41,9 @@ type Storage interface {
 	Add(context.Context, *ctonly.Entry) tessera.IndexFuture
 	// AddIssuerChain stores every the chain certificate in a content-addressable store under their sha256 hash.
 	AddIssuerChain(context.Context, []*x509.Certificate) error
-	// AddCertIndex stores the index of certificate in a content-addressable store.
+	// AddCertIndex stores the index of certificate in a log under its hash.
 	AddCertIndex(context.Context, *x509.Certificate, uint64) error
-	// GetCertIndex gets the index of certificate from a content-addressable store.
+	// GetCertIndex gets the index of certificate in a log from its hash.
 	GetCertIndex(context.Context, *x509.Certificate) (uint64, bool, error)
 }
 
