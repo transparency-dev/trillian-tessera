@@ -166,9 +166,7 @@ func (s *Storage) LogSize() (uint64, error) {
 
 // itob returns an 8-byte big endian representation of idx.
 func itob(idx uint64) []byte {
-	b := make([]byte, 8)
-	binary.BigEndian.PutUint64(b, uint64(idx))
-	return b
+	return binary.BigEndian.AppendUint64(nil, idx)
 }
 
 // btoi converts a byte array to a uint64
