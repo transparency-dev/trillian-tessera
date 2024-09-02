@@ -48,13 +48,13 @@ type LocalDedupStorage interface {
 
 type LocalBEDedup struct {
 	DedupStorage
-	LogSize func() (uint64, error) // returns the largest contiguous idx Add has successfully been called with
+	logSize func() (uint64, error) // returns the largest contiguous idx Add has successfully been called with
 	fetcher client.Fetcher
 }
 
 // NewLocalBestEffortDedup instantiates a local dedup storage and kicks off a synchronisation routine in the background.
 func NewLocalBestEffortDedup(ctx context.Context, lds LocalDedupStorage, t time.Duration, f client.Fetcher, parseBundle func([]byte, uint64) ([]LeafIdx, error)) *LocalBEDedup {
-	ret := &LocalBEDedup{DedupStorage: lds, LogSize: lds.LogSize, fetcher: f}
+	ret := &LocalBEDedup{DedupStorage: lds, logSize: lds.LogSize, fetcher: f}
 	go func() {
 		tck := time.NewTicker(t)
 		defer tck.Stop()
@@ -87,7 +87,7 @@ func (d *LocalBEDedup) sync(ctx context.Context, parseBundle func([]byte, uint64
 	if err != nil {
 		return fmt.Errorf("invalid checkpoint - can't extract size: %v", err)
 	}
-	oldSize, err := d.LogSize()
+	oldSize, err := d.logSize()
 	if err != nil {
 		return fmt.Errorf("OldSize(): %v", err)
 	}

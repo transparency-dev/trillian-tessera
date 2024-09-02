@@ -290,6 +290,7 @@ func newGCPStorage(ctx context.Context, vCfg *sctfe.ValidatedLogConfig, signer n
 		return nil, fmt.Errorf("Failed to initialize GCP issuer storage: %v", err)
 	}
 
+	// TODO: repalce with a global dedup storage for GCP
 	dedupStorage, err := bbolt.NewStorage(*dedupPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize BBolt deduplication database: %v", err)

@@ -88,8 +88,7 @@ func NewStorage(path string) (*Storage, error) {
 
 // Add inserts entries in the dedup bucket and updates the size bucket if need be.
 //
-// If an entry is already stored under a given key, Add does not update it, even if the new value
-// is different.
+// If an entry is already stored under a given key, Add only updates it if the new value is smaller.
 // The context is here for consistency with interfaces, but isn't used by BBolt.
 func (s *Storage) Add(_ context.Context, lidxs []dedup.LeafIdx) error {
 	for _, lidx := range lidxs {
@@ -102,10 +101,9 @@ func (s *Storage) Add(_ context.Context, lidxs []dedup.LeafIdx) error {
 			}
 			size := btoi(sizeB)
 
-			if old := db.Get(lidx.LeafID); old != nil {
-				klog.V(3).Infof("Add(): bucket %q already contains an entry for %q, not updating", dedupBucket, hex.EncodeToString(lidx.LeafID))
-			}
-			if err := db.Put(lidx.LeafID, itob(lidx.Idx)); err != nil {
+			if old := db.Get(lidx.LeafID); old != nil && btoi(old) <= lidx.Idx {
+				klog.V(3).Infof("Add(): bucket %q already contains a smaller index %d < %d for entry %q, not updating", dedupBucket, btoi(old), lidx.Idx, hex.EncodeToString(lidx.LeafID))
+			} else if err := db.Put(lidx.LeafID, itob(lidx.Idx)); err != nil {
 				return err
 			}
 			// size is a length, kv.V an index, so if they're equal,
