@@ -26,7 +26,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -294,13 +293,10 @@ func TestAddChainWhitespace(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.descr, func(t *testing.T) {
 			if test.want == http.StatusOK {
-				var wg sync.WaitGroup
-				wg.Add(1)
-				defer wg.Wait()
 				info.storage.EXPECT().GetCertIndex(deadlineMatcher(), cmpMatcher{leafChain[0]}).Return(uint64(0), false, nil)
 				info.storage.EXPECT().AddIssuerChain(deadlineMatcher(), cmpMatcher{leafChain[1:]}).Return(nil)
 				info.storage.EXPECT().Add(deadlineMatcher(), cmpMatcher{req}).Return(func() (uint64, error) { return rsp, nil })
-				info.storage.EXPECT().AddCertIndex(deadlineMatcher(), cmpMatcher{leafChain[0]}, uint64(0)).Do(func(_ context.Context, _ *x509.Certificate, _ uint64) { wg.Done() }).Return(nil)
+				info.storage.EXPECT().AddCertIndex(deadlineMatcher(), cmpMatcher{leafChain[0]}, uint64(0)).Return(nil)
 			}
 
 			recorder := httptest.NewRecorder()
@@ -377,10 +373,7 @@ func TestAddChain(t *testing.T) {
 				info.storage.EXPECT().AddIssuerChain(deadlineMatcher(), cmpMatcher{leafChain[1:]}).Return(nil)
 				info.storage.EXPECT().Add(deadlineMatcher(), cmpMatcher{req}).Return(func() (uint64, error) { return rsp, test.err })
 				if test.want == http.StatusOK {
-					var wg sync.WaitGroup
-					wg.Add(1)
-					defer wg.Wait()
-					info.storage.EXPECT().AddCertIndex(deadlineMatcher(), cmpMatcher{leafChain[0]}, uint64(0)).Do(func(_ context.Context, _ *x509.Certificate, _ uint64) { wg.Done() }).Return(nil)
+					info.storage.EXPECT().AddCertIndex(deadlineMatcher(), cmpMatcher{leafChain[0]}, uint64(0)).Return(nil)
 				}
 			}
 
@@ -473,10 +466,7 @@ func TestAddPrechain(t *testing.T) {
 				info.storage.EXPECT().AddIssuerChain(deadlineMatcher(), cmpMatcher{leafChain[1:]}).Return(nil)
 				info.storage.EXPECT().Add(deadlineMatcher(), cmpMatcher{req}).Return(func() (uint64, error) { return rsp, test.err })
 				if test.want == http.StatusOK {
-					var wg sync.WaitGroup
-					wg.Add(1)
-					defer wg.Wait()
-					info.storage.EXPECT().AddCertIndex(deadlineMatcher(), cmpMatcher{leafChain[0]}, uint64(0)).Do(func(_ context.Context, _ *x509.Certificate, _ uint64) { wg.Done() }).Return(nil)
+					info.storage.EXPECT().AddCertIndex(deadlineMatcher(), cmpMatcher{leafChain[0]}, uint64(0)).Return(nil)
 				}
 			}
 
