@@ -13,7 +13,7 @@
 // limitations under the License.
 
 // Package integration_test contains some integration tests which are intended to
-// serve as a way of checking that example-mysql binary works as intended,
+// serve as a way of checking that example binary works as intended,
 // as well as providing a simple example of how to run and use it.
 package integration_test
 
@@ -42,9 +42,11 @@ import (
 )
 
 var (
-	runMySQLIntegrationTest = flag.Bool("run_mysql_integration_test", false, "If true, the MySQL integration tests in this package will not be skipped")
-	logURL                  = flag.String("log_url", "http://localhost:2024", "Log storage root URL, e.g. https://log.server/and/path/")
-	testEntrySize           = flag.Int("test_entry_size", 1024, "The number of entries to be tested in the live log integration")
+	runIntegrationTest = flag.Bool("run_integration_test", false, "If true, the integration tests in this package will not be skipped")
+	logURL             = flag.String("log_url", "http://localhost:2024", "Log storage read root URL, e.g. https://log.server/and/path/")
+	writeLogURL        = flag.String("write_log_url", "http://localhost:2024", "Log storage write root URL, e.g. https://log.server/and/path/")
+	logPublicKey       = flag.String("log_public_key", "", "The log's public key value for checkpoint note verification")
+	testEntrySize      = flag.Int("test_entry_size", 1024, "The number of entries to be tested in the live log integration")
 
 	noteVerifier note.Verifier
 
@@ -53,23 +55,21 @@ var (
 			MaxIdleConns:        256,
 			MaxIdleConnsPerHost: 256,
 		},
-		Timeout: 5 * time.Second,
+		Timeout: 60 * time.Second,
 	}
 )
-
-const testPublicKey = "Test-Betty+df84580a+AQQASqPUZoIHcJAF5mBOryctwFdTV1E0GRY4kEAtTzwB"
 
 func TestMain(m *testing.M) {
 	klog.InitFlags(nil)
 	flag.Parse()
 
-	if !*runMySQLIntegrationTest {
-		klog.Warning("example-mysql integration tests are skipped")
+	if !*runIntegrationTest {
+		klog.Warning("example binary integration tests are skipped")
 		return
 	}
 
 	var err error
-	noteVerifier, err = note.NewVerifier(testPublicKey)
+	noteVerifier, err = note.NewVerifier(*logPublicKey)
 	if err != nil {
 		klog.Fatalf("Failed to create new verifier: %v", err)
 	}
@@ -96,7 +96,7 @@ func TestLiveLogIntegration(t *testing.T) {
 	checkpoints[0] = *checkpoint
 
 	// Step 2 - Add entries and get new checkpoints. The entry data comes from the int loop ranging from 0 to the test entry size - 1.
-	addEntriesURL, err := url.JoinPath(*logURL, "add")
+	addEntriesURL, err := url.JoinPath(*writeLogURL, "add")
 	if err != nil {
 		t.Errorf("url.JoinPath: %v", err)
 	}
@@ -116,7 +116,7 @@ func TestLiveLogIntegration(t *testing.T) {
 				t.Errorf("client.FetchCheckpoint: %v", err)
 			}
 			if checkpoint == nil {
-				t.Fatal("checkpoint not found")
+				t.Fatalf("checkpoint not found at index: %d, test entry size: %d", index, i)
 			}
 			checkpoints[i+1] = *checkpoint
 			return err
@@ -153,7 +153,7 @@ func TestLiveLogIntegration(t *testing.T) {
 
 		got, want := entryBundle.Entries[index%256], []byte(fmt.Sprint(data))
 		if !bytes.Equal(got, want) {
-			t.Errorf("Entry bundle got %v want %v", got, want)
+			t.Errorf("Entry bundle (index: %d) got %v want %v", index, got, want)
 		}
 
 		// Step 4.2 - Test inclusion proofs.
