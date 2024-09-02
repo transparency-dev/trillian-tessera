@@ -140,7 +140,7 @@ func (cts CTStorage) AddCertIndex(ctx context.Context, c *x509.Certificate, idx 
 	return nil
 }
 
-// GetCertIndex fetches the index of a give certificate from the deduplication storage.
+// GetCertIndex fetches the index of a given certificate from the deduplication storage.
 func (cts CTStorage) GetCertIndex(ctx context.Context, c *x509.Certificate) (uint64, bool, error) {
 	key := sha256.Sum256(c.Raw)
 	idx, ok, err := cts.dedupStorage.Get(ctx, key[:])
