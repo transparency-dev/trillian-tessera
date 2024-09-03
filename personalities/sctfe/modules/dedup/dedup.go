@@ -91,7 +91,7 @@ func sync(ctx context.Context, lds LocalBEDedupStorage, pb ParseBundleFunc, f cl
 	if ckptSize > oldSize {
 		klog.V(2).Infof("LocalBEDEdup.sync(): log at size %d, dedup database at size %d, startig to sync", ckptSize, oldSize)
 		for i := oldSize / 256; i <= ckptSize/256; i++ {
-			p := layout.EntriesPath(i, ckptSize)
+			p := fmt.Sprintf("tile/data/%s", layout.NWithSuffix(0, i, ckptSize))
 			eRaw, err := f(ctx, p)
 			if err != nil {
 				if errors.Is(err, os.ErrNotExist) {
