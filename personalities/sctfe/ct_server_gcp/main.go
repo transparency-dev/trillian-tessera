@@ -274,7 +274,7 @@ func newGCPStorage(ctx context.Context, vCfg *sctfe.ValidatedLogConfig, signer n
 		Bucket:    cfg.Bucket,
 		Spanner:   cfg.SpannerDbPath,
 	}
-	tesseraStorage, err := gcpTessera.New(ctx, gcpCfg, tessera.WithCheckpointSignerVerifier(signer, nil))
+	tesseraStorage, err := gcpTessera.New(ctx, gcpCfg, tessera.WithCheckpointSignerVerifier(signer, nil), tessera.WithCTLayout())
 	if err != nil {
 		return nil, fmt.Errorf("Failed to initialize GCP Tessera storage: %v", err)
 	}
