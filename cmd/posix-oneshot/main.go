@@ -52,10 +52,84 @@ var (
 func main() {
 	klog.InitFlags(nil)
 	flag.Parse()
-
 	ctx := context.Background()
 
-	// Read log public key from file or environment variable
+	// Gather the info needed for reading/writing checkpoints
+	v := getVerifierOrDie()
+	s := getSignerOrDie()
+	origin := s.Name()
+
+	if *initialise {
+		// Create the directory structure and write out an empty checkpoint
+		if err := os.MkdirAll(*storageDir, dirPerm); err != nil {
+			klog.Exitf("Failed to create log directory: %q", err)
+		}
+		// TODO(mhutchinson): This empty checkpoint initialization should live in Tessera
+		emptyCP := &fmtlog.Checkpoint{
+			Origin: origin,
+			Size:   0,
+			Hash:   rfc6962.DefaultHasher.EmptyRoot(),
+		}
+		n, err := note.Sign(&note.Note{Text: string(emptyCP.Marshal())}, s)
+		if err != nil {
+			klog.Exitf("Failed to sign empty checkpoint: %s", err)
+		}
+		if err := posix.WriteCheckpoint(*storageDir, n); err != nil {
+			klog.Exitf("Failed to write empty checkpoint: %s", err)
+		}
+		// TODO(mhutchinson): This should continue if *entries is provided
+		os.Exit(0)
+	}
+
+	filesToAdd := readEntriesOrDie()
+
+	// TODO(mhutchinson): This function should be implemented inside Tessera (it has the verifier now)
+	readCP := func() (uint64, []byte, error) {
+		cpRaw, err := posix.ReadCheckpoint(*storageDir)
+		if err != nil {
+			klog.Exitf("Failed to read log checkpoint: %q", err)
+		}
+		cp, _, _, err := fmtlog.ParseCheckpoint(cpRaw, origin, v)
+		if err != nil {
+			return 0, []byte{}, fmt.Errorf("Failed to parse Checkpoint: %q", err)
+		}
+		return cp.Size, cp.Hash, nil
+	}
+	st := posix.New(ctx, *storageDir, readCP, tessera.WithCheckpointSignerVerifier(s, v), tessera.WithBatching(uint(len(filesToAdd)), time.Second))
+
+	// sequence entries
+
+	// entryInfo binds the actual bytes to be added as a leaf with a
+	// user-recognisable name for the source of those bytes.
+	// The name is only used below in order to inform the user of the
+	// sequence numbers assigned to the data from the provided input files.
+	type entryInfo struct {
+		name string
+		f    tessera.IndexFuture
+	}
+	indexFutures := make([]entryInfo, 0, len(filesToAdd))
+	for _, fp := range filesToAdd {
+		b, err := os.ReadFile(fp)
+		if err != nil {
+			klog.Exitf("Failed to read entry file %q: %q", fp, err)
+		}
+
+		// ask storage to sequence and we'll store the future for later
+		f := st.Add(ctx, tessera.NewEntry(b))
+		indexFutures = append(indexFutures, entryInfo{name: fp, f: f})
+	}
+
+	for _, entry := range indexFutures {
+		seq, err := entry.f()
+		if err != nil {
+			klog.Exitf("failed to sequence %q: %q", entry.name, err)
+		}
+		klog.Infof("%d: %v", seq, entry.name)
+	}
+}
+
+// Read log public key from file or environment variable
+func getVerifierOrDie() note.Verifier {
 	var pubKey string
 	var err error
 	if len(*pubKeyFile) > 0 {
@@ -69,8 +143,19 @@ func main() {
 			klog.Exit("Supply public key file path using --public_key or set LOG_PUBLIC_KEY environment variable")
 		}
 	}
-	// Read log private key from file or environment variable
+	// Check signatures
+	v, err := note.NewVerifier(pubKey)
+	if err != nil {
+		klog.Exitf("Failed to instantiate Verifier: %q", err)
+	}
+
+	return v
+}
+
+// Read log private key from file or environment variable
+func getSignerOrDie() note.Signer {
 	var privKey string
+	var err error
 	if len(*privKeyFile) > 0 {
 		privKey, err = getKeyFile(*privKeyFile)
 		if err != nil {
@@ -82,94 +167,11 @@ func main() {
 			klog.Exit("Supply private key file path using --private_key or set LOG_PRIVATE_KEY environment variable")
 		}
 	}
-
 	s, err := note.NewSigner(privKey)
 	if err != nil {
 		klog.Exitf("Failed to instantiate signer: %q", err)
 	}
-	origin := s.Name()
-
-	writeCP := func(size uint64, root []byte) error {
-		cp := &fmtlog.Checkpoint{
-			Origin: origin,
-			Size:   size,
-			Hash:   root,
-		}
-		n, err := note.Sign(&note.Note{Text: string(cp.Marshal())}, s)
-		if err != nil {
-			return err
-		}
-		return posix.WriteCheckpoint(*storageDir, n)
-	}
-	if *initialise {
-		if err := os.MkdirAll(*storageDir, dirPerm); err != nil {
-			klog.Exitf("Failed to create log directory: %q", err)
-		}
-		if err := writeCP(0, rfc6962.DefaultHasher.EmptyRoot()); err != nil {
-			klog.Exitf("Failed to write empty checkpoint")
-		}
-		os.Exit(0)
-	}
-
-	toAdd, err := filepath.Glob(*entries)
-	if err != nil {
-		klog.Exitf("Failed to glob entries %q: %q", *entries, err)
-	}
-	klog.V(1).Infof("toAdd: %v", toAdd)
-	if len(toAdd) == 0 {
-		klog.Exit("Sequence must be run with at least one valid entry")
-	}
-
-	cpRaw, err := posix.ReadCheckpoint(*storageDir)
-	if err != nil {
-		klog.Exitf("Failed to read log checkpoint: %q", err)
-	}
-
-	// Check signatures
-	v, err := note.NewVerifier(pubKey)
-	if err != nil {
-		klog.Exitf("Failed to instantiate Verifier: %q", err)
-	}
-
-	readCP := func() (uint64, []byte, error) {
-		cp, _, _, err := fmtlog.ParseCheckpoint(cpRaw, origin, v)
-		if err != nil {
-			return 0, []byte{}, fmt.Errorf("Failed to parse Checkpoint: %q", err)
-		}
-		return cp.Size, cp.Hash, nil
-	}
-	st := posix.New(ctx, *storageDir, readCP, tessera.WithCheckpointSignerVerifier(s, v), tessera.WithBatching(uint(len(toAdd)), time.Second))
-
-	// sequence entries
-
-	// entryInfo binds the actual bytes to be added as a leaf with a
-	// user-recognisable name for the source of those bytes.
-	// The name is only used below in order to inform the user of the
-	// sequence numbers assigned to the data from the provided input files.
-	type entryInfo struct {
-		name string
-		f    tessera.IndexFuture
-	}
-	entryChan := make(chan entryInfo, 100)
-	for _, fp := range toAdd {
-		b, err := os.ReadFile(fp)
-		if err != nil {
-			klog.Exitf("Failed to read entry file %q: %q", fp, err)
-		}
-
-		// ask storage to sequence, we'll put the future we get back into the entryChan for later...
-		f := st.Add(ctx, tessera.NewEntry(b))
-		entryChan <- entryInfo{name: fp, f: f}
-	}
-	close(entryChan)
-
-	for entry := range entryChan {
-		seq, err := entry.f()
-		if err != nil {
-			klog.Exitf("failed to sequence %q: %q", entry.name, err)
-		}
-		klog.Infof("%d: %v", seq, entry.name)
-	}
+	return s
 }
 
 func getKeyFile(path string) (string, error) {
@@ -178,4 +180,16 @@ func getKeyFile(path string) (string, error) {
 		return "", fmt.Errorf("failed to read key file: %w", err)
 	}
 	return string(k), nil
+}
+
+func readEntriesOrDie() []string {
+	toAdd, err := filepath.Glob(*entries)
+	if err != nil {
+		klog.Exitf("Failed to glob entries %q: %q", *entries, err)
+	}
+	klog.V(1).Infof("toAdd: %v", toAdd)
+	if len(toAdd) == 0 {
+		klog.Exit("Sequence must be run with at least one valid entry")
+	}
+	return toAdd
 }
