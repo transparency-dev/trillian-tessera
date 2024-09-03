@@ -10,6 +10,7 @@ import (
 
 	gomock "github.com/golang/mock/gomock"
 	x509 "github.com/google/certificate-transparency-go/x509"
+	tessera "github.com/transparency-dev/trillian-tessera"
 	ctonly "github.com/transparency-dev/trillian-tessera/ctonly"
 )
 
@@ -37,12 +38,11 @@ func (m *MockStorage) EXPECT() *MockStorageMockRecorder {
 }
 
 // Add mocks base method.
-func (m *MockStorage) Add(arg0 context.Context, arg1 *ctonly.Entry) (uint64, error) {
+func (m *MockStorage) Add(arg0 context.Context, arg1 *ctonly.Entry) tessera.IndexFuture {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Add", arg0, arg1)
-	ret0, _ := ret[0].(uint64)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
+	ret0, _ := ret[0].(tessera.IndexFuture)
+	return ret0
 }
 
 // Add indicates an expected call of Add.

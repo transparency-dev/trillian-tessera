@@ -249,7 +249,7 @@ func TestParallelAdd(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			for i := 0; i < 1024; i++ {
 				go func() {
-					if _, err := s.Add(ctx, tessera.NewEntry(test.entry)); err != nil {
+					if _, err := s.Add(ctx, tessera.NewEntry(test.entry))(); err != nil {
 						t.Errorf("got err: %v", err)
 					}
 				}()
@@ -280,7 +280,7 @@ func TestTileRoundTrip(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			entryIndex, err := s.Add(ctx, tessera.NewEntry(test.entry))
+			entryIndex, err := s.Add(ctx, tessera.NewEntry(test.entry))()
 			if err != nil {
 				t.Errorf("Add got err: %v", err)
 			}
@@ -331,7 +331,7 @@ func TestEntryBundleRoundTrip(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			entryIndex, err := s.Add(ctx, tessera.NewEntry(test.entry))
+			entryIndex, err := s.Add(ctx, tessera.NewEntry(test.entry))()
 			if err != nil {
 				t.Errorf("Add got err: %v", err)
 			}

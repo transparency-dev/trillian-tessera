@@ -166,8 +166,8 @@ func New(ctx context.Context, cfg Config, opts ...func(*tessera.StorageOptions))
 }
 
 // Add is the entrypoint for adding entries to a sequencing log.
-func (s *Storage) Add(ctx context.Context, e *tessera.Entry) (uint64, error) {
-	return s.queue.Add(ctx, e)()
+func (s *Storage) Add(ctx context.Context, e *tessera.Entry) tessera.IndexFuture {
+	return s.queue.Add(ctx, e)
 }
 
 // Get returns the requested object.

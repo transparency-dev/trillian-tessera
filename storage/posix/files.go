@@ -121,8 +121,8 @@ func (s *Storage) unlockCP() error {
 
 // Add commits to sequence numbers for an entry
 // Returns the sequence number assigned to the first entry in the batch, or an error.
-func (s *Storage) Add(ctx context.Context, e *tessera.Entry) (uint64, error) {
-	return s.queue.Add(ctx, e)()
+func (s *Storage) Add(ctx context.Context, e *tessera.Entry) tessera.IndexFuture {
+	return s.queue.Add(ctx, e)
 }
 
 // GetEntryBundle retrieves the Nth entries bundle for a log of the given size.

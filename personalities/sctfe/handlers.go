@@ -334,7 +334,7 @@ func addChainInternal(ctx context.Context, li *logInfo, w http.ResponseWriter, r
 	}
 
 	klog.V(2).Infof("%s: %s => storage.Add", li.LogOrigin, method)
-	idx, err := li.storage.Add(ctx, entry)
+	idx, err := li.storage.Add(ctx, entry)()
 	if err != nil {
 		if errors.Is(err, tessera.ErrPushback) {
 			w.Header().Add("Retry-After", "1")
