@@ -293,8 +293,10 @@ func TestAddChainWhitespace(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.descr, func(t *testing.T) {
 			if test.want == http.StatusOK {
+				info.storage.EXPECT().GetCertIndex(deadlineMatcher(), cmpMatcher{leafChain[0]}).Return(uint64(0), false, nil)
 				info.storage.EXPECT().AddIssuerChain(deadlineMatcher(), cmpMatcher{leafChain[1:]}).Return(nil)
 				info.storage.EXPECT().Add(deadlineMatcher(), cmpMatcher{req}).Return(func() (uint64, error) { return rsp, nil })
+				info.storage.EXPECT().AddCertIndex(deadlineMatcher(), cmpMatcher{leafChain[0]}, uint64(0)).Return(nil)
 			}
 
 			recorder := httptest.NewRecorder()
@@ -367,8 +369,12 @@ func TestAddChain(t *testing.T) {
 			if len(test.toSign) > 0 {
 				req, leafChain := parseChain(t, false, test.chain, info.roots.RawCertificates()[0])
 				rsp := uint64(0)
+				info.storage.EXPECT().GetCertIndex(deadlineMatcher(), cmpMatcher{leafChain[0]}).Return(uint64(0), false, nil)
 				info.storage.EXPECT().AddIssuerChain(deadlineMatcher(), cmpMatcher{leafChain[1:]}).Return(nil)
 				info.storage.EXPECT().Add(deadlineMatcher(), cmpMatcher{req}).Return(func() (uint64, error) { return rsp, test.err })
+				if test.want == http.StatusOK {
+					info.storage.EXPECT().AddCertIndex(deadlineMatcher(), cmpMatcher{leafChain[0]}, uint64(0)).Return(nil)
+				}
 			}
 
 			recorder := makeAddChainRequest(t, info.li, chain)
@@ -456,8 +462,12 @@ func TestAddPrechain(t *testing.T) {
 			if len(test.toSign) > 0 {
 				req, leafChain := parseChain(t, true, test.chain, info.roots.RawCertificates()[0])
 				rsp := uint64(0)
+				info.storage.EXPECT().GetCertIndex(deadlineMatcher(), cmpMatcher{leafChain[0]}).Return(uint64(0), false, nil)
 				info.storage.EXPECT().AddIssuerChain(deadlineMatcher(), cmpMatcher{leafChain[1:]}).Return(nil)
 				info.storage.EXPECT().Add(deadlineMatcher(), cmpMatcher{req}).Return(func() (uint64, error) { return rsp, test.err })
+				if test.want == http.StatusOK {
+					info.storage.EXPECT().AddCertIndex(deadlineMatcher(), cmpMatcher{leafChain[0]}, uint64(0)).Return(nil)
+				}
 			}
 
 			recorder := makeAddPrechainRequest(t, info.li, chain)

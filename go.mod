@@ -17,16 +17,15 @@ require (
 	github.com/prometheus/client_golang v1.20.2
 	github.com/rivo/tview v0.0.0-20240625185742-b0a7293b8130
 	github.com/rs/cors v1.11.1
-	github.com/transparency-dev/formats v0.0.0-20240715203801-9ff9b9e3905f
+	github.com/transparency-dev/formats v0.0.0-20240826204810-ad21d25a1c7f
 	github.com/transparency-dev/merkle v0.0.2
+	go.etcd.io/bbolt v1.3.11
 	golang.org/x/exp v0.0.0-20240325151524-a685a6edb6d8
 	golang.org/x/mod v0.20.0
 	google.golang.org/api v0.194.0
 	google.golang.org/grpc v1.66.0
 	k8s.io/klog/v2 v2.130.1
 )
-
-require github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10 // indirect
 
 require (
 	cel.dev/expr v0.15.0 // indirect
@@ -66,6 +65,7 @@ require (
 	github.com/mattn/go-runewidth v0.0.15 // indirect
 	github.com/miekg/pkcs11 v1.1.1 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
+	github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10 // indirect
 	github.com/prometheus/client_model v0.6.1 // indirect
 	github.com/prometheus/common v0.55.0 // indirect
 	github.com/prometheus/procfs v0.15.1 // indirect

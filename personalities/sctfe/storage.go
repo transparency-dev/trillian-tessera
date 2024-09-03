@@ -24,6 +24,7 @@ import (
 	"github.com/google/certificate-transparency-go/x509"
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/ctonly"
+	"github.com/transparency-dev/trillian-tessera/personalities/sctfe/modules/dedup"
 	"k8s.io/klog/v2"
 )
 
@@ -40,6 +41,10 @@ type Storage interface {
 	Add(context.Context, *ctonly.Entry) tessera.IndexFuture
 	// AddIssuerChain stores every the chain certificate in a content-addressable store under their sha256 hash.
 	AddIssuerChain(context.Context, []*x509.Certificate) error
+	// AddCertIndex stores the index of certificate in a log under its hash.
+	AddCertIndex(context.Context, *x509.Certificate, uint64) error
+	// GetCertIndex gets the index of certificate in a log from its hash.
+	GetCertIndex(context.Context, *x509.Certificate) (uint64, bool, error)
 }
 
 type KV struct {
@@ -56,13 +61,15 @@ type IssuerStorage interface {
 type CTStorage struct {
 	storeData    func(context.Context, *ctonly.Entry) tessera.IndexFuture
 	storeIssuers func(context.Context, []KV) error
+	dedupStorage dedup.BEDedupStorage
 }
 
 // NewCTStorage instantiates a CTStorage object.
-func NewCTSTorage(logStorage tessera.Storage, issuerStorage IssuerStorage) (*CTStorage, error) {
+func NewCTSTorage(logStorage tessera.Storage, issuerStorage IssuerStorage, dedupStorage dedup.BEDedupStorage) (*CTStorage, error) {
 	ctStorage := &CTStorage{
 		storeData:    tessera.NewCertificateTransparencySequencedWriter(logStorage),
 		storeIssuers: cachedStoreIssuers(issuerStorage),
+		dedupStorage: dedupStorage,
 	}
 	return ctStorage, nil
 }
@@ -122,4 +129,23 @@ func cachedStoreIssuers(s IssuerStorage) func(context.Context, []KV) error {
 		}
 		return nil
 	}
+}
+
+// AddCertIndex stores <cert_hash, index> in the deduplication storage.
+func (cts CTStorage) AddCertIndex(ctx context.Context, c *x509.Certificate, idx uint64) error {
+	key := sha256.Sum256(c.Raw)
+	if err := cts.dedupStorage.Add(ctx, []dedup.LeafIdx{{LeafID: key[:], Idx: idx}}); err != nil {
+		return fmt.Errorf("error storing index %d of %q: %v", idx, hex.EncodeToString(key[:]), err)
+	}
+	return nil
+}
+
+// GetCertIndex fetches the index of a given certificate from the deduplication storage.
+func (cts CTStorage) GetCertIndex(ctx context.Context, c *x509.Certificate) (uint64, bool, error) {
+	key := sha256.Sum256(c.Raw)
+	idx, ok, err := cts.dedupStorage.Get(ctx, key[:])
+	if err != nil {
+		return 0, false, fmt.Errorf("error fetching index of %q: %v", hex.EncodeToString(key[:]), err)
+	}
+	return idx, ok, nil
 }

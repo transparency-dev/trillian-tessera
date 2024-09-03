@@ -20,9 +20,12 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
+	"math"
 
 	"github.com/google/certificate-transparency-go/tls"
 	"github.com/transparency-dev/formats/log"
+	"github.com/transparency-dev/trillian-tessera/personalities/sctfe/modules/dedup"
+	"golang.org/x/crypto/cryptobyte"
 	"golang.org/x/mod/sumdb/note"
 
 	ct "github.com/google/certificate-transparency-go"
@@ -171,4 +174,46 @@ func NewCpSigner(signer crypto.Signer, origin string, logID [32]byte, timeSource
 		timeSource: timeSource,
 	}
 	return ctSigner
+}
+
+// DedupFromBundle converts a bundle into an array of {leafID, idx}.
+//
+// The index of a leaf is computed from its position in the log, instead of parsing SCTs.
+// Greatly inspired by https://github.com/FiloSottile/sunlight/blob/main/tile.go
+func DedupFromBundle(bundle []byte, bundleIdx uint64) ([]dedup.LeafIdx, error) {
+	kvs := []dedup.LeafIdx{}
+	s := cryptobyte.String(bundle)
+
+	for len(s) > 0 {
+		var timestamp uint64
+		var entryType uint16
+		var extensions, fingerprints cryptobyte.String
+		if !s.ReadUint64(&timestamp) || !s.ReadUint16(&entryType) || timestamp > math.MaxInt64 {
+			return nil, fmt.Errorf("invalid data tile")
+		}
+		crt := []byte{}
+		switch entryType {
+		case 0: // x509_entry
+			if !s.ReadUint24LengthPrefixed((*cryptobyte.String)(&crt)) ||
+				!s.ReadUint16LengthPrefixed(&extensions) ||
+				!s.ReadUint16LengthPrefixed(&fingerprints) {
+				return nil, fmt.Errorf("invalid data tile x509_entry")
+			}
+		case 1: // precert_entry
+			IssuerKeyHash := [32]byte{}
+			var defangedCrt, extensions cryptobyte.String
+			if !s.CopyBytes(IssuerKeyHash[:]) ||
+				!s.ReadUint24LengthPrefixed(&defangedCrt) ||
+				!s.ReadUint16LengthPrefixed(&extensions) ||
+				!s.ReadUint24LengthPrefixed((*cryptobyte.String)(&crt)) ||
+				!s.ReadUint16LengthPrefixed(&fingerprints) {
+				return nil, fmt.Errorf("invalid data tile precert_entry")
+			}
+		default:
+			return nil, fmt.Errorf("invalid data tile: unknown type %d", entryType)
+		}
+		k := sha256.Sum256(crt)
+		kvs = append(kvs, dedup.LeafIdx{LeafID: k[:], Idx: bundleIdx*256 + uint64(len(kvs))})
+	}
+	return kvs, nil
 }

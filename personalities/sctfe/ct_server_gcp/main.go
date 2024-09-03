@@ -43,7 +43,9 @@ import (
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/personalities/sctfe"
 	"github.com/transparency-dev/trillian-tessera/personalities/sctfe/configpb"
-	gcpMap "github.com/transparency-dev/trillian-tessera/personalities/sctfe/storage/gcp"
+	"github.com/transparency-dev/trillian-tessera/personalities/sctfe/modules/dedup"
+	"github.com/transparency-dev/trillian-tessera/personalities/sctfe/storage/bbolt"
+	gcpSCTFE "github.com/transparency-dev/trillian-tessera/personalities/sctfe/storage/gcp"
 	gcpTessera "github.com/transparency-dev/trillian-tessera/storage/gcp"
 	"golang.org/x/mod/sumdb/note"
 	"google.golang.org/protobuf/proto"
@@ -63,6 +65,9 @@ var (
 	tracingProjectID   = flag.String("tracing_project_id", "", "project ID to pass to stackdriver. Can be empty for GCP, consult docs for other platforms.")
 	tracingPercent     = flag.Int("tracing_percent", 0, "Percent of requests to be traced. Zero is a special case to use the DefaultSampler")
 	pkcs11ModulePath   = flag.String("pkcs11_module_path", "", "Path to the PKCS#11 module to use for keys that use the PKCS#11 interface")
+	// This should be specified in the config proto, but this proto is going to go away in favour of flags, so let's put this one here directly.
+	// TODO: remove comment above when the config proto has been deleted.
+	dedupPath = flag.String("dedup_path", "", "Path to the deduplication database")
 )
 
 // nolint:staticcheck
@@ -202,6 +207,7 @@ func main() {
 		shutdownWG.Add(1)
 		defer shutdownWG.Done()
 		// Allow 60s for any pending requests to finish then terminate any stragglers
+		// TODO(phboneff): maybe wait for the sequencer queue to be empty?
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second*60)
 		defer cancel()
 		klog.Info("Shutting down HTTP server...")
@@ -279,9 +285,23 @@ func newGCPStorage(ctx context.Context, vCfg *sctfe.ValidatedLogConfig, signer n
 		return nil, fmt.Errorf("Failed to initialize GCP Tessera storage: %v", err)
 	}
 
-	issuerStorage, err := gcpMap.NewIssuerStorage(ctx, cfg.ProjectId, cfg.Bucket, "fingerprints/", "application/pkix-cert")
+	issuerStorage, err := gcpSCTFE.NewIssuerStorage(ctx, cfg.ProjectId, cfg.Bucket, "fingerprints/", "application/pkix-cert")
 	if err != nil {
 		return nil, fmt.Errorf("Failed to initialize GCP issuer storage: %v", err)
 	}
-	return sctfe.NewCTSTorage(tesseraStorage, issuerStorage)
+
+	// TODO: replace with a global dedup storage for GCP
+	beDedupStorage, err := bbolt.NewStorage(*dedupPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize BBolt deduplication database: %v", err)
+	}
+
+	fetcher, err := gcpSCTFE.GetFetcher(ctx, cfg.Bucket)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get a log fetcher: %v", err)
+	}
+
+	go dedup.UpdateFromLog(ctx, beDedupStorage, time.Second, fetcher, sctfe.DedupFromBundle)
+
+	return sctfe.NewCTSTorage(tesseraStorage, issuerStorage, beDedupStorage)
 }
