@@ -65,13 +65,26 @@ func LogConfigFromFile(filename string) (*configpb.LogConfig, error) {
 //   - Merge delays (if present) are correct.
 //
 // Returns the validated structures (useful to avoid double validation).
-func ValidateLogConfig(cfg *configpb.LogConfig, origin string) (*ValidatedLogConfig, error) {
+func ValidateLogConfig(cfg *configpb.LogConfig, origin string, projectID string, bucket string, spannerDB string) (*ValidatedLogConfig, error) {
 	if len(cfg.Origin) == 0 {
 		return nil, errors.New("empty log origin")
 	}
 
 	if (cfg.Origin) != origin {
 		return nil, errors.New("cfg origin doesn't match with flag origin")
+	}
+
+	// TODO(phboneff): move this logic together with the tests out of config.go and validate the flags directly
+	if len(projectID) == 0 {
+		return nil, errors.New("empty projectID")
+	}
+
+	if len(bucket) == 0 {
+		return nil, errors.New("empty bucket")
+	}
+
+	if len(spannerDB) == 0 {
+		return nil, errors.New("empty spannerDB")
 	}
 
 	vCfg := ValidatedLogConfig{Config: cfg}
@@ -96,11 +109,6 @@ func ValidateLogConfig(cfg *configpb.LogConfig, origin string) (*ValidatedLogCon
 
 	if cfg.RejectExpired && cfg.RejectUnexpired {
 		return nil, errors.New("rejecting all certificates")
-	}
-
-	// validate storage config
-	if cfg.StorageConfig == nil {
-		return nil, errors.New("empty storage config")
 	}
 
 	// Validate the extended key usages list.

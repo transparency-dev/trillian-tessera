@@ -77,17 +77,4 @@ message LogConfig {
   // A list of X.509 extension OIDs, in dotted string form (e.g. "2.3.4.5")
   // which should cause submissions to be rejected.
   repeated string reject_extensions = 13;
-
-  // TODO(phboneff): re-think how this could work with other storage systems
-  // storage_config describes Trillian Tessera storage config
-  oneof storage_config {
-    GCPConfig gcp = 14;
-  }
-}
-
-// GCPConfig describes Trillian Tessera GCP config
-message GCPConfig {
-  string project_id = 1;
-  string bucket = 2;
-  string spanner_db_path = 3;
 }

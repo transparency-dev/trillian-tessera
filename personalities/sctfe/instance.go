@@ -37,7 +37,7 @@ type InstanceOptions struct {
 	// of its fields parsed as a result of validating it.
 	Validated *ValidatedLogConfig
 	// CreateStorage instantiates a Tessera storage implementation with a signer option.
-	CreateStorage func(context.Context, *ValidatedLogConfig, note.Signer) (*CTStorage, error)
+	CreateStorage func(context.Context, note.Signer) (*CTStorage, error)
 	// Deadline is a timeout for Tessera requests.
 	Deadline time.Duration
 	// MetricFactory allows creating metrics.
@@ -137,7 +137,7 @@ func setUpLogInfo(ctx context.Context, opts InstanceOptions) (*logInfo, error) {
 	if opts.CreateStorage == nil {
 		return nil, fmt.Errorf("failed to initiate storage backend: nil createStorage")
 	}
-	storage, err := opts.CreateStorage(ctx, opts.Validated, ctSigner)
+	storage, err := opts.CreateStorage(ctx, ctSigner)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initiate storage backend: %v", err)
 	}

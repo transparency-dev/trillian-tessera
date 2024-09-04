@@ -39,7 +39,6 @@ import (
 	"github.com/rs/cors"
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/personalities/sctfe"
-	"github.com/transparency-dev/trillian-tessera/personalities/sctfe/configpb"
 	"github.com/transparency-dev/trillian-tessera/personalities/sctfe/modules/dedup"
 	"github.com/transparency-dev/trillian-tessera/personalities/sctfe/storage/bbolt"
 	gcpSCTFE "github.com/transparency-dev/trillian-tessera/personalities/sctfe/storage/gcp"
@@ -65,6 +64,9 @@ var (
 	// TODO: remove comment above when the config proto has been deleted.
 	dedupPath = flag.String("dedup_path", "", "Path to the deduplication database")
 	origin    = flag.String("origin", "", "origin of the log, for checkpoints and the monitoring prefix")
+	projectID = flag.String("project_id", "", "origin of the log, for checkpoints and the monitoring prefix")
+	bucket    = flag.String("bucket", "", "name of the bucket to store the log in")
+	spannerDB = flag.String("spanner_db_path", "", "projects/{projectId}/instances/{instanceId}/databases/{databaseId}")
 )
 
 // nolint:staticcheck
@@ -87,7 +89,7 @@ func main() {
 		klog.Exitf("Failed to read config: %v", err)
 	}
 
-	vCfg, err := sctfe.ValidateLogConfig(cfg, *origin)
+	vCfg, err := sctfe.ValidateLogConfig(cfg, *origin, *projectID, *bucket, *spannerDB)
 	if err != nil {
 		klog.Exitf("Invalid config: %v", err)
 	}
@@ -226,14 +228,7 @@ func setupAndRegister(ctx context.Context, deadline time.Duration, vCfg *sctfe.V
 		MetricFactory:      prometheus.MetricFactory{},
 		RequestLog:         new(sctfe.DefaultRequestLog),
 		MaskInternalErrors: maskInternalErrors,
-	}
-
-	switch vCfg.Config.StorageConfig.(type) {
-	case *configpb.LogConfig_Gcp:
-		klog.Info("Found GCP storage config, will set up GCP tessera storage")
-		opts.CreateStorage = newGCPStorage
-	default:
-		return nil, fmt.Errorf("unrecognized storage config")
+		CreateStorage:      newGCPStorage,
 	}
 
 	inst, err := sctfe.SetUpInstance(ctx, opts)
@@ -246,19 +241,18 @@ func setupAndRegister(ctx context.Context, deadline time.Duration, vCfg *sctfe.V
 	return inst, nil
 }
 
-func newGCPStorage(ctx context.Context, vCfg *sctfe.ValidatedLogConfig, signer note.Signer) (*sctfe.CTStorage, error) {
-	cfg := vCfg.Config.GetGcp()
+func newGCPStorage(ctx context.Context, signer note.Signer) (*sctfe.CTStorage, error) {
 	gcpCfg := gcpTessera.Config{
-		ProjectID: cfg.ProjectId,
-		Bucket:    cfg.Bucket,
-		Spanner:   cfg.SpannerDbPath,
+		ProjectID: *projectID,
+		Bucket:    *bucket,
+		Spanner:   *spannerDB,
 	}
 	tesseraStorage, err := gcpTessera.New(ctx, gcpCfg, tessera.WithCheckpointSignerVerifier(signer, nil), tessera.WithCTLayout())
 	if err != nil {
 		return nil, fmt.Errorf("Failed to initialize GCP Tessera storage: %v", err)
 	}
 
-	issuerStorage, err := gcpSCTFE.NewIssuerStorage(ctx, cfg.ProjectId, cfg.Bucket, "fingerprints/", "application/pkix-cert")
+	issuerStorage, err := gcpSCTFE.NewIssuerStorage(ctx, *projectID, *bucket, "fingerprints/", "application/pkix-cert")
 	if err != nil {
 		return nil, fmt.Errorf("Failed to initialize GCP issuer storage: %v", err)
 	}
@@ -269,7 +263,7 @@ func newGCPStorage(ctx context.Context, vCfg *sctfe.ValidatedLogConfig, signer n
 		return nil, fmt.Errorf("failed to initialize BBolt deduplication database: %v", err)
 	}
 
-	fetcher, err := gcpSCTFE.GetFetcher(ctx, cfg.Bucket)
+	fetcher, err := gcpSCTFE.GetFetcher(ctx, *bucket)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get a log fetcher: %v", err)
 	}

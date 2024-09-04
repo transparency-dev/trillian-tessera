@@ -42,19 +42,30 @@ func TestValidateLogConfig(t *testing.T) {
 	privKey := mustMarshalAny(&keyspb.PEMKeyFile{Path: "../testdata/ct-http-server.privkey.pem", Password: "dirk"})
 
 	for _, tc := range []struct {
-		desc    string
-		cfg     *configpb.LogConfig
-		wantErr string
+		desc      string
+		cfg       *configpb.LogConfig
+		origin    string
+		projectID string
+		bucket    string
+		spannerDB string
+		wantErr   string
 	}{
 		{
-			desc:    "empty-submission-prefix",
-			wantErr: "empty log origin",
-			cfg:     &configpb.LogConfig{},
+			desc:      "empty-submission-prefix",
+			wantErr:   "empty log origin",
+			cfg:       &configpb.LogConfig{},
+			projectID: "project",
+			bucket:    "bucket",
+			spannerDB: "spanner",
 		},
 		{
-			desc:    "empty-private-key",
-			wantErr: "empty private key",
-			cfg:     &configpb.LogConfig{Origin: "testlog"},
+			desc:      "empty-private-key",
+			wantErr:   "empty private key",
+			cfg:       &configpb.LogConfig{Origin: "testlog"},
+			origin:    "testlog",
+			projectID: "project",
+			bucket:    "bucket",
+			spannerDB: "spanner",
 		},
 		{
 			desc:    "invalid-private-key",
@@ -63,14 +74,46 @@ func TestValidateLogConfig(t *testing.T) {
 				Origin:     "testlog",
 				PrivateKey: &anypb.Any{},
 			},
+			origin:    "testlog",
+			projectID: "project",
+			bucket:    "bucket",
+			spannerDB: "spanner",
 		},
 		{
-			desc:    "empty-storage-config",
-			wantErr: "empty storage config",
+			desc:    "empty-projectID",
+			wantErr: "empty projectID",
 			cfg: &configpb.LogConfig{
 				Origin:     "testlog",
 				PrivateKey: privKey,
 			},
+			origin:    "testlog",
+			projectID: "",
+			bucket:    "bucket",
+			spannerDB: "spanner",
+		},
+		{
+			desc:    "empty-bucket",
+			wantErr: "empty bucket",
+			cfg: &configpb.LogConfig{
+				Origin:     "testlog",
+				PrivateKey: privKey,
+			},
+			origin:    "testlog",
+			projectID: "project",
+			bucket:    "",
+			spannerDB: "spanner",
+		},
+		{
+			desc:    "empty-spannerDB",
+			wantErr: "empty spannerDB",
+			cfg: &configpb.LogConfig{
+				Origin:     "testlog",
+				PrivateKey: privKey,
+			},
+			origin:    "testlog",
+			projectID: "project",
+			bucket:    "bucket",
+			spannerDB: "",
 		},
 		{
 			desc:    "rejecting-all",
@@ -80,38 +123,50 @@ func TestValidateLogConfig(t *testing.T) {
 				RejectExpired:   true,
 				RejectUnexpired: true,
 				PrivateKey:      privKey,
-				StorageConfig:   &configpb.LogConfig_Gcp{Gcp: &configpb.GCPConfig{Bucket: "bucket", SpannerDbPath: "spanner"}},
 			},
+			origin:    "testlog",
+			projectID: "project",
+			bucket:    "bucket",
+			spannerDB: "spanner",
 		},
 		{
 			desc:    "unknown-ext-key-usage-1",
 			wantErr: "unknown extended key usage",
 			cfg: &configpb.LogConfig{
-				Origin:        "testlog",
-				PrivateKey:    privKey,
-				ExtKeyUsages:  []string{"wrong_usage"},
-				StorageConfig: &configpb.LogConfig_Gcp{Gcp: &configpb.GCPConfig{Bucket: "bucket", SpannerDbPath: "spanner"}},
+				Origin:       "testlog",
+				PrivateKey:   privKey,
+				ExtKeyUsages: []string{"wrong_usage"},
 			},
+			origin:    "testlog",
+			projectID: "project",
+			bucket:    "bucket",
+			spannerDB: "spanner",
 		},
 		{
 			desc:    "unknown-ext-key-usage-2",
 			wantErr: "unknown extended key usage",
 			cfg: &configpb.LogConfig{
-				Origin:        "testlog",
-				PrivateKey:    privKey,
-				ExtKeyUsages:  []string{"ClientAuth", "ServerAuth", "TimeStomping"},
-				StorageConfig: &configpb.LogConfig_Gcp{Gcp: &configpb.GCPConfig{Bucket: "bucket", SpannerDbPath: "spanner"}},
+				Origin:       "testlog",
+				PrivateKey:   privKey,
+				ExtKeyUsages: []string{"ClientAuth", "ServerAuth", "TimeStomping"},
 			},
+			origin:    "testlog",
+			projectID: "project",
+			bucket:    "bucket",
+			spannerDB: "spanner",
 		},
 		{
 			desc:    "unknown-ext-key-usage-3",
 			wantErr: "unknown extended key usage",
 			cfg: &configpb.LogConfig{
-				Origin:        "testlog",
-				PrivateKey:    privKey,
-				ExtKeyUsages:  []string{"Any "},
-				StorageConfig: &configpb.LogConfig_Gcp{Gcp: &configpb.GCPConfig{Bucket: "bucket", SpannerDbPath: "spanner"}},
+				Origin:       "testlog",
+				PrivateKey:   privKey,
+				ExtKeyUsages: []string{"Any "},
 			},
+			origin:    "testlog",
+			projectID: "project",
+			bucket:    "bucket",
+			spannerDB: "spanner",
 		},
 		{
 			desc:    "invalid-start-timestamp",
@@ -120,8 +175,11 @@ func TestValidateLogConfig(t *testing.T) {
 				Origin:        "testlog",
 				PrivateKey:    privKey,
 				NotAfterStart: invalidTimestamp,
-				StorageConfig: &configpb.LogConfig_Gcp{Gcp: &configpb.GCPConfig{Bucket: "bucket", SpannerDbPath: "spanner"}},
 			},
+			origin:    "testlog",
+			projectID: "project",
+			bucket:    "bucket",
+			spannerDB: "spanner",
 		},
 		{
 			desc:    "invalid-limit-timestamp",
@@ -130,8 +188,11 @@ func TestValidateLogConfig(t *testing.T) {
 				Origin:        "testlog",
 				PrivateKey:    privKey,
 				NotAfterLimit: invalidTimestamp,
-				StorageConfig: &configpb.LogConfig_Gcp{Gcp: &configpb.GCPConfig{Bucket: "bucket", SpannerDbPath: "spanner"}},
 			},
+			origin:    "testlog",
+			projectID: "project",
+			bucket:    "bucket",
+			spannerDB: "spanner",
 		},
 		{
 			desc:    "limit-before-start",
@@ -141,8 +202,11 @@ func TestValidateLogConfig(t *testing.T) {
 				PrivateKey:    privKey,
 				NotAfterStart: &timestamppb.Timestamp{Seconds: 200},
 				NotAfterLimit: &timestamppb.Timestamp{Seconds: 100},
-				StorageConfig: &configpb.LogConfig_Gcp{Gcp: &configpb.GCPConfig{Bucket: "bucket", SpannerDbPath: "spanner"}},
 			},
+			origin:    "testlog",
+			projectID: "project",
+			bucket:    "bucket",
+			spannerDB: "spanner",
 		},
 		{
 			desc:    "negative-maximum-merge",
@@ -151,8 +215,11 @@ func TestValidateLogConfig(t *testing.T) {
 				Origin:           "testlog",
 				PrivateKey:       privKey,
 				MaxMergeDelaySec: -100,
-				StorageConfig:    &configpb.LogConfig_Gcp{Gcp: &configpb.GCPConfig{Bucket: "bucket", SpannerDbPath: "spanner"}},
 			},
+			origin:    "testlog",
+			projectID: "project",
+			bucket:    "bucket",
+			spannerDB: "spanner",
 		},
 		{
 			desc:    "negative-expected-merge",
@@ -161,8 +228,11 @@ func TestValidateLogConfig(t *testing.T) {
 				Origin:                "testlog",
 				PrivateKey:            privKey,
 				ExpectedMergeDelaySec: -100,
-				StorageConfig:         &configpb.LogConfig_Gcp{Gcp: &configpb.GCPConfig{Bucket: "bucket", SpannerDbPath: "spanner"}},
 			},
+			origin:    "testlog",
+			projectID: "project",
+			bucket:    "bucket",
+			spannerDB: "spanner",
 		},
 		{
 			desc:    "expected-exceeds-max",
@@ -172,16 +242,22 @@ func TestValidateLogConfig(t *testing.T) {
 				PrivateKey:            privKey,
 				MaxMergeDelaySec:      50,
 				ExpectedMergeDelaySec: 100,
-				StorageConfig:         &configpb.LogConfig_Gcp{Gcp: &configpb.GCPConfig{Bucket: "bucket", SpannerDbPath: "spanner"}},
 			},
+			origin:    "testlog",
+			projectID: "project",
+			bucket:    "bucket",
+			spannerDB: "spanner",
 		},
 		{
 			desc: "ok",
 			cfg: &configpb.LogConfig{
-				Origin:        "testlog",
-				PrivateKey:    privKey,
-				StorageConfig: &configpb.LogConfig_Gcp{Gcp: &configpb.GCPConfig{Bucket: "bucket", SpannerDbPath: "spanner"}},
+				Origin:     "testlog",
+				PrivateKey: privKey,
 			},
+			origin:    "testlog",
+			projectID: "project",
+			bucket:    "bucket",
+			spannerDB: "spanner",
 		},
 		{
 			// Note: Substituting an arbitrary proto.Message as a PrivateKey will not
@@ -190,19 +266,25 @@ func TestValidateLogConfig(t *testing.T) {
 			// make this test fail.
 			desc: "ok-not-a-key",
 			cfg: &configpb.LogConfig{
-				Origin:        "testlog",
-				PrivateKey:    mustMarshalAny(&configpb.LogConfig{}),
-				StorageConfig: &configpb.LogConfig_Gcp{Gcp: &configpb.GCPConfig{Bucket: "bucket", SpannerDbPath: "spanner"}},
+				Origin:     "testlog",
+				PrivateKey: mustMarshalAny(&configpb.LogConfig{}),
 			},
+			origin:    "testlog",
+			projectID: "project",
+			bucket:    "bucket",
+			spannerDB: "spanner",
 		},
 		{
 			desc: "ok-ext-key-usages",
 			cfg: &configpb.LogConfig{
-				Origin:        "testlog",
-				PrivateKey:    privKey,
-				ExtKeyUsages:  []string{"ServerAuth", "ClientAuth", "OCSPSigning"},
-				StorageConfig: &configpb.LogConfig_Gcp{Gcp: &configpb.GCPConfig{Bucket: "bucket", SpannerDbPath: "spanner"}},
+				Origin:       "testlog",
+				PrivateKey:   privKey,
+				ExtKeyUsages: []string{"ServerAuth", "ClientAuth", "OCSPSigning"},
 			},
+			origin:    "testlog",
+			projectID: "project",
+			bucket:    "bucket",
+			spannerDB: "spanner",
 		},
 		{
 			desc: "ok-start-timestamp",
@@ -210,8 +292,11 @@ func TestValidateLogConfig(t *testing.T) {
 				Origin:        "testlog",
 				PrivateKey:    privKey,
 				NotAfterStart: &timestamppb.Timestamp{Seconds: 100},
-				StorageConfig: &configpb.LogConfig_Gcp{Gcp: &configpb.GCPConfig{Bucket: "bucket", SpannerDbPath: "spanner"}},
 			},
+			origin:    "testlog",
+			projectID: "project",
+			bucket:    "bucket",
+			spannerDB: "spanner",
 		},
 		{
 			desc: "ok-limit-timestamp",
@@ -219,8 +304,11 @@ func TestValidateLogConfig(t *testing.T) {
 				Origin:        "testlog",
 				PrivateKey:    privKey,
 				NotAfterLimit: &timestamppb.Timestamp{Seconds: 200},
-				StorageConfig: &configpb.LogConfig_Gcp{Gcp: &configpb.GCPConfig{Bucket: "bucket", SpannerDbPath: "spanner"}},
 			},
+			origin:    "testlog",
+			projectID: "project",
+			bucket:    "bucket",
+			spannerDB: "spanner",
 		},
 		{
 			desc: "ok-range-timestamp",
@@ -229,8 +317,11 @@ func TestValidateLogConfig(t *testing.T) {
 				PrivateKey:    privKey,
 				NotAfterStart: &timestamppb.Timestamp{Seconds: 300},
 				NotAfterLimit: &timestamppb.Timestamp{Seconds: 400},
-				StorageConfig: &configpb.LogConfig_Gcp{Gcp: &configpb.GCPConfig{Bucket: "bucket", SpannerDbPath: "spanner"}},
 			},
+			origin:    "testlog",
+			projectID: "project",
+			bucket:    "bucket",
+			spannerDB: "spanner",
 		},
 		{
 			desc: "ok-merge-delay",
@@ -239,12 +330,15 @@ func TestValidateLogConfig(t *testing.T) {
 				PrivateKey:            privKey,
 				MaxMergeDelaySec:      86400,
 				ExpectedMergeDelaySec: 7200,
-				StorageConfig:         &configpb.LogConfig_Gcp{Gcp: &configpb.GCPConfig{Bucket: "bucket", SpannerDbPath: "spanner"}},
 			},
+			origin:    "testlog",
+			projectID: "project",
+			bucket:    "bucket",
+			spannerDB: "spanner",
 		},
 	} {
 		t.Run(tc.desc, func(t *testing.T) {
-			vc, err := ValidateLogConfig(tc.cfg, tc.cfg.Origin)
+			vc, err := ValidateLogConfig(tc.cfg, tc.origin, tc.projectID, tc.bucket, tc.spannerDB)
 			if len(tc.wantErr) == 0 && err != nil {
 				t.Errorf("ValidateLogConfig()=%v, want nil", err)
 			}
