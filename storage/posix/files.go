@@ -24,6 +24,7 @@ import (
 	"sync"
 	"syscall"
 
+	"github.com/transparency-dev/merkle/rfc6962"
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/api"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
@@ -45,9 +46,9 @@ type Storage struct {
 
 	cpFile *os.File
 
-	curTree func() (uint64, []byte, error)
 	curSize uint64
 	newCP   tessera.NewCPFunc
+	parseCP tessera.ParseCPFunc
 
 	entriesPath tessera.EntriesPathFunc
 }
@@ -56,34 +57,35 @@ type Storage struct {
 type NewTreeFunc func(size uint64, root []byte) error
 
 // New creates a new POSIX storage.
-func New(ctx context.Context, path string, opts ...func(*tessera.StorageOptions)) *Storage {
+// - path is a directory in which the log should be stored
+// - create must only be set when first creating the log, and will create the directory structure and an empty checkpoint
+func New(ctx context.Context, path string, create bool, opts ...func(*tessera.StorageOptions)) (*Storage, error) {
 	opt := tessera.ResolveStorageOptions(opts...)
-	curTree := func() (uint64, []byte, error) {
-		cpRaw, err := readCheckpoint(path)
-		if err != nil {
-			return 0, nil, fmt.Errorf("failed to read log checkpoint: %q", err)
-		}
-		cp, err := opt.ParseCP(cpRaw)
-		if err != nil {
-			return 0, nil, fmt.Errorf("failed to parse Checkpoint: %q", err)
-		}
-		return cp.Size, cp.Hash, nil
-	}
-	curSize, _, err := curTree()
-	if err != nil {
-		panic(err)
-	}
 
 	r := &Storage{
 		path:        path,
-		curSize:     curSize,
-		curTree:     curTree,
 		newCP:       opt.NewCP,
+		parseCP:     opt.ParseCP,
 		entriesPath: opt.EntriesPath,
+	}
+	if err := r.initialise(create); err != nil {
+		return nil, err
 	}
 	r.queue = storage.NewQueue(ctx, opt.BatchMaxAge, opt.BatchMaxSize, r.sequenceBatch)
 
-	return r
+	return r, nil
+}
+
+func (s *Storage) curTree() (uint64, []byte, error) {
+	cpRaw, err := readCheckpoint(s.path)
+	if err != nil {
+		return 0, nil, fmt.Errorf("failed to read log checkpoint: %q", err)
+	}
+	cp, err := s.parseCP(cpRaw)
+	if err != nil {
+		return 0, nil, fmt.Errorf("failed to parse Checkpoint: %q", err)
+	}
+	return cp.Size, cp.Hash, nil
 }
 
 // lockCP places a POSIX advisory lock for the checkpoint.
@@ -358,6 +360,33 @@ func (s *Storage) StoreTile(_ context.Context, level, index, logSize uint64, til
 			}
 		}
 	}
+
+	return nil
+}
+
+// initialise ensures that the storage location is valid by loading the checkpoint from this location.
+// If `create` is set to true, then this will first ensure that the directory path is created, and
+// an empty checkpoint is created in this directory.
+func (s *Storage) initialise(create bool) error {
+	if create {
+		// Create the directory structure and write out an empty checkpoint
+		klog.Infof("Initializing directory for POSIX log at %q (this should only happen ONCE per log!)", s.path)
+		if err := os.MkdirAll(s.path, dirPerm); err != nil {
+			return fmt.Errorf("failed to create log directory: %q", err)
+		}
+		n, err := s.newCP(0, rfc6962.DefaultHasher.EmptyRoot())
+		if err != nil {
+			return fmt.Errorf("failed to sign empty checkpoint: %v", err)
+		}
+		if err := WriteCheckpoint(s.path, n); err != nil {
+			return fmt.Errorf("failed to write empty checkpoint: %v", err)
+		}
+	}
+	curSize, _, err := s.curTree()
+	if err != nil {
+		return fmt.Errorf("failed to load checkpoint for log: %v", err)
+	}
+	s.curSize = curSize
 
 	return nil
 }

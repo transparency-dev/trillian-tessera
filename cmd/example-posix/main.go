@@ -27,16 +27,9 @@ import (
 
 	"golang.org/x/mod/sumdb/note"
 
-	"github.com/transparency-dev/merkle/rfc6962"
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/storage/posix"
 	"k8s.io/klog/v2"
-
-	fmtlog "github.com/transparency-dev/formats/log"
-)
-
-const (
-	dirPerm = 0o755
 )
 
 var (
@@ -85,40 +78,17 @@ func main() {
 	if err != nil {
 		klog.Exitf("Failed to instantiate signer: %q", err)
 	}
-	origin := s.Name()
-
-	writeCP := func(size uint64, root []byte) error {
-		cp := &fmtlog.Checkpoint{
-			Origin: origin,
-			Size:   size,
-			Hash:   root,
-		}
-		n, err := note.Sign(&note.Note{Text: string(cp.Marshal())}, s)
-		if err != nil {
-			return err
-		}
-		return posix.WriteCheckpoint(*storageDir, n)
-	}
-	if *initialise {
-		if files, err := os.ReadDir(*storageDir); err == nil && len(files) > 0 {
-			klog.Exitf("Cannot initialize a log at a non-empty directory")
-		}
-		if err := os.MkdirAll(*storageDir, dirPerm); err != nil {
-			klog.Exitf("Failed to create log directory %q: %v", *storageDir, err)
-		}
-		if err := writeCP(0, rfc6962.DefaultHasher.EmptyRoot()); err != nil {
-			klog.Exitf("Failed to write empty checkpoint")
-		}
-		klog.Infof("Initialized the log at %q", *storageDir)
-	}
 
 	// Check signatures
 	v, err := note.NewVerifier(pubKey)
 	if err != nil {
-		klog.Exitf("Failed to instantiate Verifier: %q", err)
+		klog.Exitf("Failed to instantiate Verifier: %v", err)
 	}
 
-	storage := posix.New(ctx, *storageDir, tessera.WithCheckpointSignerVerifier(s, v), tessera.WithBatching(256, time.Second))
+	storage, err := posix.New(ctx, *storageDir, *initialise, tessera.WithCheckpointSignerVerifier(s, v), tessera.WithBatching(256, time.Second))
+	if err != nil {
+		klog.Exitf("Failed to construct storage: %v", err)
+	}
 
 	http.HandleFunc("POST /add", func(w http.ResponseWriter, r *http.Request) {
 		b, err := io.ReadAll(r.Body)

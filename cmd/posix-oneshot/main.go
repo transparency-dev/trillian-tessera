@@ -29,16 +29,9 @@ import (
 
 	"golang.org/x/mod/sumdb/note"
 
-	"github.com/transparency-dev/merkle/rfc6962"
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/storage/posix"
 	"k8s.io/klog/v2"
-
-	fmtlog "github.com/transparency-dev/formats/log"
-)
-
-const (
-	dirPerm = 0o755
 )
 
 var (
@@ -57,33 +50,23 @@ func main() {
 	// Gather the info needed for reading/writing checkpoints
 	v := getVerifierOrDie()
 	s := getSignerOrDie()
-	origin := s.Name()
 
-	if *initialise {
-		// Create the directory structure and write out an empty checkpoint
-		if err := os.MkdirAll(*storageDir, dirPerm); err != nil {
-			klog.Exitf("Failed to create log directory: %q", err)
+	if len(*entries) == 0 {
+		if *initialise {
+			_, err := posix.New(ctx, *storageDir, *initialise, tessera.WithCheckpointSignerVerifier(s, v))
+			if err != nil {
+				klog.Exitf("Failed to initialise storage: %v", err)
+			}
 		}
-		// TODO(mhutchinson): This empty checkpoint initialization should live in Tessera
-		emptyCP := &fmtlog.Checkpoint{
-			Origin: origin,
-			Size:   0,
-			Hash:   rfc6962.DefaultHasher.EmptyRoot(),
-		}
-		n, err := note.Sign(&note.Note{Text: string(emptyCP.Marshal())}, s)
-		if err != nil {
-			klog.Exitf("Failed to sign empty checkpoint: %s", err)
-		}
-		if err := posix.WriteCheckpoint(*storageDir, n); err != nil {
-			klog.Exitf("Failed to write empty checkpoint: %s", err)
-		}
-		// TODO(mhutchinson): This should continue if *entries is provided
+		klog.Info("No entries provided to integrate; exiting")
 		os.Exit(0)
 	}
 
 	filesToAdd := readEntriesOrDie()
-
-	st := posix.New(ctx, *storageDir, tessera.WithCheckpointSignerVerifier(s, v), tessera.WithBatching(uint(len(filesToAdd)), time.Second))
+	st, err := posix.New(ctx, *storageDir, *initialise, tessera.WithCheckpointSignerVerifier(s, v), tessera.WithBatching(uint(len(filesToAdd)), time.Second))
+	if err != nil {
+		klog.Exitf("Failed to construct storage: %v", err)
+	}
 
 	// sequence entries
 
