@@ -45,8 +45,7 @@ type Storage struct {
 
 	cpFile *os.File
 
-	curTree CurrentTreeFunc
-
+	curTree func() (uint64, []byte, error)
 	curSize uint64
 	newCP   tessera.NewCPFunc
 
@@ -56,16 +55,24 @@ type Storage struct {
 // NewTreeFunc is the signature of a function which receives information about newly integrated trees.
 type NewTreeFunc func(size uint64, root []byte) error
 
-// CurrentTree is the signature of a function which retrieves the current integrated tree size and root hash.
-type CurrentTreeFunc func() (uint64, []byte, error)
-
 // New creates a new POSIX storage.
-func New(ctx context.Context, path string, curTree func() (uint64, []byte, error), opts ...func(*tessera.StorageOptions)) *Storage {
+func New(ctx context.Context, path string, opts ...func(*tessera.StorageOptions)) *Storage {
+	opt := tessera.ResolveStorageOptions(opts...)
+	curTree := func() (uint64, []byte, error) {
+		cpRaw, err := readCheckpoint(path)
+		if err != nil {
+			return 0, nil, fmt.Errorf("failed to read log checkpoint: %q", err)
+		}
+		cp, err := opt.ParseCP(cpRaw)
+		if err != nil {
+			return 0, nil, fmt.Errorf("failed to parse Checkpoint: %q", err)
+		}
+		return cp.Size, cp.Hash, nil
+	}
 	curSize, _, err := curTree()
 	if err != nil {
 		panic(err)
 	}
-	opt := tessera.ResolveStorageOptions(opts...)
 
 	r := &Storage{
 		path:        path,
@@ -363,8 +370,8 @@ func WriteCheckpoint(path string, newCPRaw []byte) error {
 	return nil
 }
 
-// Readcheckpoint returns the latest stored checkpoint.
-func ReadCheckpoint(path string) ([]byte, error) {
+// readcheckpoint returns the latest stored checkpoint.
+func readCheckpoint(path string) ([]byte, error) {
 	return os.ReadFile(filepath.Join(path, layout.CheckpointPath))
 }
 
