@@ -16,10 +16,10 @@ export LOG_DIR=/tmp/mylog
 go run ./cmd/examples/posix-oneshot --storage_dir=${LOG_DIR} --initialise
 
 # Create files containing new leaves to add
-mkdir /tmp/logleaves
-echo "one" > /tmp/logleaves/1
-echo "two" > /tmp/logleaves/2
-echo "three" > /tmp/logleaves/3
+mkdir /tmp/stuff
+echo "foo" > /tmp/stuff/foo
+echo "bar" > /tmp/stuff/bar
+echo "baz" > /tmp/stuff/baz
 
 # Integrate all of these leaves into the tree
 go run ./cmd/examples/posix-oneshot --storage_dir=${LOG_DIR} --entries="/tmp/logleaves/*"
