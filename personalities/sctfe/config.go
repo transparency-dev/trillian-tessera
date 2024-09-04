@@ -65,9 +65,13 @@ func LogConfigFromFile(filename string) (*configpb.LogConfig, error) {
 //   - Merge delays (if present) are correct.
 //
 // Returns the validated structures (useful to avoid double validation).
-func ValidateLogConfig(cfg *configpb.LogConfig) (*ValidatedLogConfig, error) {
+func ValidateLogConfig(cfg *configpb.LogConfig, origin string) (*ValidatedLogConfig, error) {
 	if len(cfg.Origin) == 0 {
 		return nil, errors.New("empty log origin")
+	}
+
+	if (cfg.Origin) != origin {
+		return nil, errors.New("cfg origin doesn't match with flag origin")
 	}
 
 	vCfg := ValidatedLogConfig{Config: cfg}
