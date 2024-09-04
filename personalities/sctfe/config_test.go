@@ -51,8 +51,8 @@ func TestValidateLogConfig(t *testing.T) {
 		wantErr   string
 	}{
 		{
-			desc:      "empty-submission-prefix",
-			wantErr:   "empty log origin",
+			desc:      "empty-origin",
+			wantErr:   "empty origin",
 			cfg:       &configpb.LogConfig{},
 			projectID: "project",
 			bucket:    "bucket",
@@ -61,7 +61,7 @@ func TestValidateLogConfig(t *testing.T) {
 		{
 			desc:      "empty-private-key",
 			wantErr:   "empty private key",
-			cfg:       &configpb.LogConfig{Origin: "testlog"},
+			cfg:       &configpb.LogConfig{},
 			origin:    "testlog",
 			projectID: "project",
 			bucket:    "bucket",
@@ -71,7 +71,6 @@ func TestValidateLogConfig(t *testing.T) {
 			desc:    "invalid-private-key",
 			wantErr: "invalid private key",
 			cfg: &configpb.LogConfig{
-				Origin:     "testlog",
 				PrivateKey: &anypb.Any{},
 			},
 			origin:    "testlog",
@@ -83,7 +82,6 @@ func TestValidateLogConfig(t *testing.T) {
 			desc:    "empty-projectID",
 			wantErr: "empty projectID",
 			cfg: &configpb.LogConfig{
-				Origin:     "testlog",
 				PrivateKey: privKey,
 			},
 			origin:    "testlog",
@@ -95,7 +93,6 @@ func TestValidateLogConfig(t *testing.T) {
 			desc:    "empty-bucket",
 			wantErr: "empty bucket",
 			cfg: &configpb.LogConfig{
-				Origin:     "testlog",
 				PrivateKey: privKey,
 			},
 			origin:    "testlog",
@@ -107,7 +104,6 @@ func TestValidateLogConfig(t *testing.T) {
 			desc:    "empty-spannerDB",
 			wantErr: "empty spannerDB",
 			cfg: &configpb.LogConfig{
-				Origin:     "testlog",
 				PrivateKey: privKey,
 			},
 			origin:    "testlog",
@@ -119,7 +115,6 @@ func TestValidateLogConfig(t *testing.T) {
 			desc:    "rejecting-all",
 			wantErr: "rejecting all certificates",
 			cfg: &configpb.LogConfig{
-				Origin:          "testlog",
 				RejectExpired:   true,
 				RejectUnexpired: true,
 				PrivateKey:      privKey,
@@ -133,7 +128,6 @@ func TestValidateLogConfig(t *testing.T) {
 			desc:    "unknown-ext-key-usage-1",
 			wantErr: "unknown extended key usage",
 			cfg: &configpb.LogConfig{
-				Origin:       "testlog",
 				PrivateKey:   privKey,
 				ExtKeyUsages: []string{"wrong_usage"},
 			},
@@ -146,7 +140,6 @@ func TestValidateLogConfig(t *testing.T) {
 			desc:    "unknown-ext-key-usage-2",
 			wantErr: "unknown extended key usage",
 			cfg: &configpb.LogConfig{
-				Origin:       "testlog",
 				PrivateKey:   privKey,
 				ExtKeyUsages: []string{"ClientAuth", "ServerAuth", "TimeStomping"},
 			},
@@ -159,7 +152,6 @@ func TestValidateLogConfig(t *testing.T) {
 			desc:    "unknown-ext-key-usage-3",
 			wantErr: "unknown extended key usage",
 			cfg: &configpb.LogConfig{
-				Origin:       "testlog",
 				PrivateKey:   privKey,
 				ExtKeyUsages: []string{"Any "},
 			},
@@ -172,7 +164,6 @@ func TestValidateLogConfig(t *testing.T) {
 			desc:    "invalid-start-timestamp",
 			wantErr: "invalid start timestamp",
 			cfg: &configpb.LogConfig{
-				Origin:        "testlog",
 				PrivateKey:    privKey,
 				NotAfterStart: invalidTimestamp,
 			},
@@ -185,7 +176,6 @@ func TestValidateLogConfig(t *testing.T) {
 			desc:    "invalid-limit-timestamp",
 			wantErr: "invalid limit timestamp",
 			cfg: &configpb.LogConfig{
-				Origin:        "testlog",
 				PrivateKey:    privKey,
 				NotAfterLimit: invalidTimestamp,
 			},
@@ -198,7 +188,6 @@ func TestValidateLogConfig(t *testing.T) {
 			desc:    "limit-before-start",
 			wantErr: "limit before start",
 			cfg: &configpb.LogConfig{
-				Origin:        "testlog",
 				PrivateKey:    privKey,
 				NotAfterStart: &timestamppb.Timestamp{Seconds: 200},
 				NotAfterLimit: &timestamppb.Timestamp{Seconds: 100},
@@ -212,7 +201,6 @@ func TestValidateLogConfig(t *testing.T) {
 			desc:    "negative-maximum-merge",
 			wantErr: "negative maximum merge",
 			cfg: &configpb.LogConfig{
-				Origin:           "testlog",
 				PrivateKey:       privKey,
 				MaxMergeDelaySec: -100,
 			},
@@ -225,7 +213,6 @@ func TestValidateLogConfig(t *testing.T) {
 			desc:    "negative-expected-merge",
 			wantErr: "negative expected merge",
 			cfg: &configpb.LogConfig{
-				Origin:                "testlog",
 				PrivateKey:            privKey,
 				ExpectedMergeDelaySec: -100,
 			},
@@ -238,7 +225,6 @@ func TestValidateLogConfig(t *testing.T) {
 			desc:    "expected-exceeds-max",
 			wantErr: "expected merge delay exceeds MMD",
 			cfg: &configpb.LogConfig{
-				Origin:                "testlog",
 				PrivateKey:            privKey,
 				MaxMergeDelaySec:      50,
 				ExpectedMergeDelaySec: 100,
@@ -251,7 +237,6 @@ func TestValidateLogConfig(t *testing.T) {
 		{
 			desc: "ok",
 			cfg: &configpb.LogConfig{
-				Origin:     "testlog",
 				PrivateKey: privKey,
 			},
 			origin:    "testlog",
@@ -266,7 +251,6 @@ func TestValidateLogConfig(t *testing.T) {
 			// make this test fail.
 			desc: "ok-not-a-key",
 			cfg: &configpb.LogConfig{
-				Origin:     "testlog",
 				PrivateKey: mustMarshalAny(&configpb.LogConfig{}),
 			},
 			origin:    "testlog",
@@ -277,7 +261,6 @@ func TestValidateLogConfig(t *testing.T) {
 		{
 			desc: "ok-ext-key-usages",
 			cfg: &configpb.LogConfig{
-				Origin:       "testlog",
 				PrivateKey:   privKey,
 				ExtKeyUsages: []string{"ServerAuth", "ClientAuth", "OCSPSigning"},
 			},
@@ -289,7 +272,6 @@ func TestValidateLogConfig(t *testing.T) {
 		{
 			desc: "ok-start-timestamp",
 			cfg: &configpb.LogConfig{
-				Origin:        "testlog",
 				PrivateKey:    privKey,
 				NotAfterStart: &timestamppb.Timestamp{Seconds: 100},
 			},
@@ -301,7 +283,6 @@ func TestValidateLogConfig(t *testing.T) {
 		{
 			desc: "ok-limit-timestamp",
 			cfg: &configpb.LogConfig{
-				Origin:        "testlog",
 				PrivateKey:    privKey,
 				NotAfterLimit: &timestamppb.Timestamp{Seconds: 200},
 			},
@@ -313,7 +294,6 @@ func TestValidateLogConfig(t *testing.T) {
 		{
 			desc: "ok-range-timestamp",
 			cfg: &configpb.LogConfig{
-				Origin:        "testlog",
 				PrivateKey:    privKey,
 				NotAfterStart: &timestamppb.Timestamp{Seconds: 300},
 				NotAfterLimit: &timestamppb.Timestamp{Seconds: 400},
@@ -326,7 +306,6 @@ func TestValidateLogConfig(t *testing.T) {
 		{
 			desc: "ok-merge-delay",
 			cfg: &configpb.LogConfig{
-				Origin:                "testlog",
 				PrivateKey:            privKey,
 				MaxMergeDelaySec:      86400,
 				ExpectedMergeDelaySec: 7200,

@@ -26,9 +26,6 @@ import "google/protobuf/timestamp.proto";
 //
 // NEXT_ID: 15
 message LogConfig {
-  // origin identifies the log. It will be used in its checkpoint, and
-  // is also its submission prefix, as per https://c2sp.org/static-ct-api
-  string origin = 1;
   // Paths to the files containing root certificates that are acceptable to the
   // log. The certs are served through get-roots endpoint.
   repeated string roots_pem_file = 2;

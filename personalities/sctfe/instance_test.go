@@ -62,7 +62,6 @@ func TestSetUpInstance(t *testing.T) {
 		{
 			desc: "valid",
 			cfg: &configpb.LogConfig{
-				Origin:       "log",
 				RootsPemFile: []string{"./testdata/fake-ca.cert"},
 				PrivateKey:   privKey,
 			},
@@ -75,7 +74,6 @@ func TestSetUpInstance(t *testing.T) {
 		{
 			desc: "no-roots",
 			cfg: &configpb.LogConfig{
-				Origin:     "log",
 				PrivateKey: privKey,
 			},
 			origin:    "log",
@@ -88,7 +86,6 @@ func TestSetUpInstance(t *testing.T) {
 		{
 			desc: "missing-root-cert",
 			cfg: &configpb.LogConfig{
-				Origin:       "log",
 				RootsPemFile: []string{"../testdata/bogus.cert"},
 				PrivateKey:   privKey,
 			},
@@ -102,7 +99,6 @@ func TestSetUpInstance(t *testing.T) {
 		{
 			desc: "missing-privkey",
 			cfg: &configpb.LogConfig{
-				Origin:       "log",
 				RootsPemFile: []string{"./testdata/fake-ca.cert"},
 				PrivateKey:   missingPrivKey,
 			},
@@ -116,7 +112,6 @@ func TestSetUpInstance(t *testing.T) {
 		{
 			desc: "privkey-wrong-password",
 			cfg: &configpb.LogConfig{
-				Origin:       "log",
 				RootsPemFile: []string{"./testdata/fake-ca.cert"},
 				PrivateKey:   wrongPassPrivKey,
 			},
@@ -130,7 +125,6 @@ func TestSetUpInstance(t *testing.T) {
 		{
 			desc: "valid-ekus-1",
 			cfg: &configpb.LogConfig{
-				Origin:       "log",
 				RootsPemFile: []string{"./testdata/fake-ca.cert"},
 				PrivateKey:   privKey,
 				ExtKeyUsages: []string{"Any"},
@@ -144,7 +138,6 @@ func TestSetUpInstance(t *testing.T) {
 		{
 			desc: "valid-ekus-2",
 			cfg: &configpb.LogConfig{
-				Origin:       "log",
 				RootsPemFile: []string{"./testdata/fake-ca.cert"},
 				PrivateKey:   privKey,
 				ExtKeyUsages: []string{"Any", "ServerAuth", "TimeStamping"},
@@ -158,7 +151,6 @@ func TestSetUpInstance(t *testing.T) {
 		{
 			desc: "valid-reject-ext",
 			cfg: &configpb.LogConfig{
-				Origin:           "log",
 				RootsPemFile:     []string{"./testdata/fake-ca.cert"},
 				PrivateKey:       privKey,
 				RejectExtensions: []string{"1.2.3.4", "5.6.7.8"},
@@ -172,7 +164,6 @@ func TestSetUpInstance(t *testing.T) {
 		{
 			desc: "invalid-reject-ext",
 			cfg: &configpb.LogConfig{
-				Origin:           "log",
 				RootsPemFile:     []string{"./testdata/fake-ca.cert"},
 				PrivateKey:       privKey,
 				RejectExtensions: []string{"1.2.3.4", "one.banana.two.bananas"},
@@ -187,7 +178,6 @@ func TestSetUpInstance(t *testing.T) {
 		{
 			desc: "missing-create-storage",
 			cfg: &configpb.LogConfig{
-				Origin:       "log",
 				RootsPemFile: []string{"./testdata/fake-ca.cert"},
 				PrivateKey:   privKey,
 			},
@@ -200,7 +190,6 @@ func TestSetUpInstance(t *testing.T) {
 		{
 			desc: "failing-create-storage",
 			cfg: &configpb.LogConfig{
-				Origin:       "log",
 				RootsPemFile: []string{"./testdata/fake-ca.cert"},
 				PrivateKey:   privKey,
 			},
@@ -271,7 +260,6 @@ func TestSetUpInstanceSetsValidationOpts(t *testing.T) {
 		{
 			desc: "no validation opts",
 			cfg: &configpb.LogConfig{
-				Origin:       "log",
 				RootsPemFile: []string{"./testdata/fake-ca.cert"},
 				PrivateKey:   privKey,
 			},
@@ -283,7 +271,6 @@ func TestSetUpInstanceSetsValidationOpts(t *testing.T) {
 		{
 			desc: "notAfterStart only",
 			cfg: &configpb.LogConfig{
-				Origin:        "log",
 				RootsPemFile:  []string{"./testdata/fake-ca.cert"},
 				PrivateKey:    privKey,
 				NotAfterStart: start,
@@ -296,7 +283,6 @@ func TestSetUpInstanceSetsValidationOpts(t *testing.T) {
 		{
 			desc: "notAfter range",
 			cfg: &configpb.LogConfig{
-				Origin:        "log",
 				RootsPemFile:  []string{"./testdata/fake-ca.cert"},
 				PrivateKey:    privKey,
 				NotAfterStart: start,
@@ -310,7 +296,6 @@ func TestSetUpInstanceSetsValidationOpts(t *testing.T) {
 		{
 			desc: "caOnly",
 			cfg: &configpb.LogConfig{
-				Origin:       "log",
 				RootsPemFile: []string{"./testdata/fake-ca.cert"},
 				PrivateKey:   privKey,
 				AcceptOnlyCa: true,
@@ -334,7 +319,7 @@ func TestSetUpInstanceSetsValidationOpts(t *testing.T) {
 			if err != nil {
 				t.Fatalf("%v: SetUpInstance() = %v, want no error", test.desc, err)
 			}
-			addChainHandler, ok := inst.Handlers["/"+test.cfg.Origin+ct.AddChainPath]
+			addChainHandler, ok := inst.Handlers["/"+test.origin+ct.AddChainPath]
 			if !ok {
 				t.Fatal("Couldn't find AddChain handler")
 			}

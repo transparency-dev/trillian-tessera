@@ -121,12 +121,8 @@ func LogConfigFromFile(filename string) (*configpb.LogConfig, error) {
 //
 // Returns the validated structures (useful to avoid double validation).
 func ValidateLogConfig(cfg *configpb.LogConfig, origin string, projectID string, bucket string, spannerDB string) (*ValidatedLogConfig, error) {
-	if len(cfg.Origin) == 0 {
-		return nil, errors.New("empty log origin")
-	}
-
-	if (cfg.Origin) != origin {
-		return nil, errors.New("cfg origin doesn't match with flag origin")
+	if len(origin) == 0 {
+		return nil, errors.New("empty origin")
 	}
 
 	// TODO(phboneff): move this logic together with the tests out of config.go and validate the flags directly
@@ -143,7 +139,7 @@ func ValidateLogConfig(cfg *configpb.LogConfig, origin string, projectID string,
 	}
 
 	vCfg := ValidatedLogConfig{Config: &LogConfig{
-		Origin:                cfg.Origin,
+		Origin:                origin,
 		RootsPemFile:          cfg.RootsPemFile,
 		PrivateKey:            cfg.PrivateKey,
 		PublicKey:             cfg.PublicKey,
@@ -187,7 +183,7 @@ func ValidateLogConfig(cfg *configpb.LogConfig, origin string, projectID string,
 				// If "Any" is specified, then we can ignore the entire list and
 				// just disable EKU checking.
 				if ku == x509.ExtKeyUsageAny {
-					klog.Infof("%s: Found ExtKeyUsageAny, allowing all EKUs", cfg.Origin)
+					klog.Infof("%s: Found ExtKeyUsageAny, allowing all EKUs", origin)
 					vCfg.KeyUsages = nil
 					break
 				}
