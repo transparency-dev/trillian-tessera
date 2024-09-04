@@ -34,7 +34,7 @@ import (
 // ValidatedLogConfig represents the LogConfig with the information that has
 // been successfully parsed as a result of validating it.
 type ValidatedLogConfig struct {
-	Config        *configpb.LogConfig
+	Config        *LogConfig
 	PubKey        crypto.PublicKey
 	PrivKey       proto.Message
 	KeyUsages     []x509.ExtKeyUsage
@@ -142,7 +142,21 @@ func ValidateLogConfig(cfg *configpb.LogConfig, origin string, projectID string,
 		return nil, errors.New("empty spannerDB")
 	}
 
-	vCfg := ValidatedLogConfig{Config: cfg}
+	vCfg := ValidatedLogConfig{Config: &LogConfig{
+		Origin:                cfg.Origin,
+		RootsPemFile:          cfg.RootsPemFile,
+		PrivateKey:            cfg.PrivateKey,
+		PublicKey:             cfg.PublicKey,
+		RejectExpired:         cfg.RejectExpired,
+		RejectUnexpired:       cfg.RejectUnexpired,
+		ExtKeyUsages:          cfg.ExtKeyUsages,
+		NotAfterStart:         cfg.NotAfterLimit,
+		NotAfterLimit:         cfg.NotAfterLimit,
+		AcceptOnlyCa:          cfg.AcceptOnlyCa,
+		MaxMergeDelaySec:      cfg.MaxMergeDelaySec,
+		ExpectedMergeDelaySec: cfg.ExpectedMergeDelaySec,
+		RejectExtensions:      cfg.RejectExtensions,
+	}}
 
 	// Validate the public key.
 	if pubKey := cfg.PublicKey; pubKey != nil {

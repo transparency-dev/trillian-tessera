@@ -36,7 +36,6 @@ import (
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/google/trillian/monitoring"
 	"github.com/transparency-dev/trillian-tessera/ctonly"
-	"github.com/transparency-dev/trillian-tessera/personalities/sctfe/configpb"
 	"github.com/transparency-dev/trillian-tessera/personalities/sctfe/mockstorage"
 	"github.com/transparency-dev/trillian-tessera/personalities/sctfe/testdata"
 	"google.golang.org/grpc/codes"
@@ -76,7 +75,7 @@ func setupTest(t *testing.T, pemRoots []string, signer crypto.Signer) handlerTes
 		rejectExpired: false,
 	}
 
-	cfg := &configpb.LogConfig{Origin: "example.com"}
+	cfg := &LogConfig{Origin: "example.com"}
 	vCfg := &ValidatedLogConfig{Config: cfg}
 	iOpts := InstanceOptions{Validated: vCfg, Deadline: time.Millisecond * 500, MetricFactory: monitoring.InertMetricFactory{}, RequestLog: new(DefaultRequestLog)}
 	info.li = newLogInfo(iOpts, vOpts, signer, fakeTimeSource, info.storage)
