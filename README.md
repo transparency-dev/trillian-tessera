@@ -49,11 +49,11 @@ migration to Tessera and adopting the patterns it encourages.
 ### Getting started
 
 Take a look at the example personalities in the `/cmd/` directory:
-  - [example-posix](./cmd/example-posix/): example of operating a log backed by a local filesystem
+  - [posix](./cmd/conformance/posix/): example of operating a log backed by a local filesystem
     - This example is not a long-lived process; running the command integrates entries into the log which lives only as files
-  - [example-mysql](./cmd/example-mysql/): example of operating a log that uses MySQL
+  - [mysql](./cmd/conformance/mysql/): example of operating a log that uses MySQL
     - This example is easiest deployed via `docker compose`, which allows for easy setup and teardown
-  - [example-gcp](./cmd/example-gcp/): example of operating a log running in GCP
+  - [gcp](./cmd/conformance/gcp/): example of operating a log running in GCP
     - This example can be deployed via terraform (see the [deployment](./deployment/) directory)
 
 The `main.go` files for each of these example personalities try to strike a balance when demonstrating features of Tessera between simplicity, and demonstrating best practices.

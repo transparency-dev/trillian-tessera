@@ -1,6 +1,6 @@
 services:
 
-  tessera-example-mysql-db:
+  tessera-conformance-mysql-db:
     container_name: tessera-mysql-db
     image: "mysql:8.4"
     ports:
@@ -17,15 +17,15 @@ services:
       timeout: 5s
       retries: 10
 
-  tessera-example-mysql:
-    container_name: tessera-example-mysql
+  tessera-conformance-mysql:
+    container_name: tessera-conformance-mysql
     build:
-      context: ../../../
-      dockerfile: ./cmd/example-mysql/docker/Dockerfile
+      context: ../../../../
+      dockerfile: ./cmd/conformance/mysql/docker/Dockerfile
     ports:
       - "2024:2024"
     command: [
-      "--mysql_uri=tessera:tessera@tcp(tessera-example-mysql-db:3306)/tessera",
+      "--mysql_uri=tessera:tessera@tcp(tessera-conformance-mysql-db:3306)/tessera",
       "--init_schema_path=/schema.sql",
       "--private_key_path=/key",
       "--public_key_path=/key.pub",
@@ -34,5 +34,5 @@ services:
     ]
     restart: always
     depends_on:
-      tessera-example-mysql-db:
+      tessera-conformance-mysql-db:
         condition: service_healthy

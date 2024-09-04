@@ -17,7 +17,7 @@ Note that all the commands are executed at the root directory of this repository
 ### Starting
 
 ```sh
-docker compose -f ./cmd/example-mysql/docker/compose.yaml up
+docker compose -f ./cmd/conformance/mysql/docker/compose.yaml up
 ```
 
 Add `-d` if you want to run the log in detached mode.
@@ -25,7 +25,7 @@ Add `-d` if you want to run the log in detached mode.
 ### Stopping
 
 ```sh
-docker compose -f ./cmd/example-mysql/docker/compose.yaml down
+docker compose -f ./cmd/conformance/mysql/docker/compose.yaml down
 ```
 
 ## Manual 
@@ -41,7 +41,7 @@ docker run --name test-mysql -p 3306:3306 -e MYSQL_ROOT_PASSWORD=root -e MYSQL_D
 ### Starting
 
 ```sh
-go run ./cmd/example-mysql --mysql_uri="root:root@tcp(localhost:3306)/test_tessera" --init_schema_path="./storage/mysql/schema.sql" --private_key_path="./cmd/example-mysql/docker/testdata/key" --public_key_path="./cmd/example-mysql/docker/testdata/key.pub"
+go run ./cmd/conformance/mysql --mysql_uri="root:root@tcp(localhost:3306)/test_tessera" --init_schema_path="./storage/mysql/schema.sql" --private_key_path="./cmd/conformance/mysql/docker/testdata/key" --public_key_path="./cmd/conformance/mysql/docker/testdata/key.pub"
 ```
 
 ### Stopping

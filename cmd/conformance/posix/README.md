@@ -1,4 +1,4 @@
-# example-posix
+# conformance-posix
 
 This command runs an HTTP web server that accepts POST HTTP requests to a `/add` endpoint.
 This endpoint takes arbitrary data and adds it to a file-based log.
@@ -12,7 +12,7 @@ export LOG_PUBLIC_KEY="example.com/log/testdata+33d7b496+AeHTu4Q3hEIMHNqc6fASMsq
 
 # Initialize a new log
 export LOG_DIR=/tmp/mylog2
-go run ./cmd/example-posix \
+go run ./cmd/conformance/posix \
   --storage_dir=${LOG_DIR} \
   --initialise \
   --listen=:2025 \

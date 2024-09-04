@@ -12,8 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// example-gcp is a simple personality showing how to use the Tessera GCP storage
-// implmentation.
+// gcp is a simple personality allowing to run conformance/compliance/performance tests and showing how to use the Tessera GCP storage implmentation.
 package main
 
 import (
