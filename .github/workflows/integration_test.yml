@@ -12,13 +12,13 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
-      - name: Start Docker services (tessera-example-mysql-db and tessera-example-mysql)
-        run: docker compose -f ./cmd/example-mysql/docker/compose.yaml up --build --detach
+      - name: Start Docker services (tessera-conformance-mysql-db and tessera-conformance-mysql)
+        run: docker compose -f ./cmd/conformance/mysql/docker/compose.yaml up --build --detach
       - name: Run integration test 
         run: go test -v -race ./integration/... --run_integration_test=true --log_url="http://localhost:2024" --write_log_url="http://localhost:2024" --log_public_key="Test-Betty+df84580a+AQQASqPUZoIHcJAF5mBOryctwFdTV1E0GRY4kEAtTzwB"
-      - name: Stop Docker services (tessera-example-mysql-db and tessera-example-mysql)
+      - name: Stop Docker services (tessera-conformance-mysql-db and tessera-conformance-mysql)
         if: ${{ always() }}
-        run: docker compose -f ./cmd/example-mysql/docker/compose.yaml down
+        run: docker compose -f ./cmd/conformance/mysql/docker/compose.yaml down
 
   posix-tlog-tiles-api:
     runs-on: ubuntu-latest
@@ -26,10 +26,10 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
-      - name: Start Docker services (tessera-example-posix-read-proxy and tessera-example-posix)
-        run: docker compose -f ./cmd/example-posix/docker/compose.yaml up --build --detach
+      - name: Start Docker services (tessera-conformance-posix-read-proxy and tessera-conformance-posix)
+        run: docker compose -f ./cmd/conformance/posix/docker/compose.yaml up --build --detach
       - name: Run integration test 
         run: go test -v -race ./integration/... --run_integration_test=true --log_url="http://localhost:2024" --write_log_url="http://localhost:2025" --log_public_key="example.com/log/testdata+33d7b496+AeHTu4Q3hEIMHNqc6fASMsq3rKNx280NI+oO5xCFkkSx"
-      - name: Stop Docker services (tessera-example-posix-read-proxy and tessera-example-posix)
+      - name: Stop Docker services (tessera-conformance-posix-read-proxy and tessera-conformance-posix)
         if: ${{ always() }}
-        run: docker compose -f ./cmd/example-posix/docker/compose.yaml down
+        run: docker compose -f ./cmd/conformance/posix/docker/compose.yaml down

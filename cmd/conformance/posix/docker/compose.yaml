@@ -1,7 +1,7 @@
 services:
 
-  tessera-example-posix-read-proxy:
-    container_name: tessera-example-posix-read-proxy
+  tessera-conformance-posix-read-proxy:
+    container_name: tessera-conformance-posix-read-proxy
     image: "busybox:stable"
     ports:
       - "2024:2024"
@@ -18,11 +18,11 @@ services:
       - tiles:/tmp/tessera-posix-log
     restart: always 
 
-  tessera-example-posix:
-    container_name: tessera-example-posix
+  tessera-conformance-posix:
+    container_name: tessera-conformance-posix
     build:
-      context: ../../../
-      dockerfile: ./cmd/example-posix/docker/Dockerfile
+      context: ../../../../
+      dockerfile: ./cmd/conformance/posix/docker/Dockerfile
     ports:
       - "2025:2025"
     environment:

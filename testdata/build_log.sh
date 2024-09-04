@@ -13,13 +13,13 @@ export LOG_PUBLIC_KEY="example.com/log/testdata+33d7b496+AeHTu4Q3hEIMHNqc6fASMsq
 cd ${DIR}
 rm -fr log
 
-go run ../cmd/posix-oneshot --storage_dir=${LOG} --initialise
+go run ../cmd/examples/posix-oneshot --storage_dir=${LOG} --initialise
 cp ${LOG}/checkpoint ${LOG}/checkpoint.0
 
 export LEAF=`mktemp`
 for i in one two three four five six seven eit nain ten ileven twelf threeten fourten fivten; do
   echo -n "$i" > ${LEAF}
-  go run ../cmd/posix-oneshot --storage_dir=${LOG} --entries="${LEAF}"
+  go run ../cmd/examples/posix-oneshot --storage_dir=${LOG} --entries="${LEAF}"
   size=$(sed -n '2 p' ${LOG}/checkpoint)
   cp ${LOG}/checkpoint ${LOG}/checkpoint.${size}
 done

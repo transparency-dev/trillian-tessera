@@ -16,7 +16,7 @@ For real load-testing applications, especially headless runs as part of a CI pip
 
 ## Usage
 
-Example usage to test a deployment of `example-mysql`:
+Example usage to test a deployment of `cmd/conformance/mysql`:
 
 ```shell
 go run ./hammer \

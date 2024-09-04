@@ -12,8 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// example-posix runs a web server that allows new entries to be POSTed to
-// a tlog-tiles log stored on a posix filesystem.
+// posix runs a web server that allows new entries to be POSTed to
+// a tlog-tiles log stored on a posix filesystem. It allows to run
+// conformance/compliance/performance tests and showing how to use
+// the Tessera POSIX storage implmentation.
 package main
 
 import (

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// example-mysql is a simple personality showing how to use the Tessera MySQL storage implmentation.
+// mysql is a simple personality allowing to run conformance/compliance/performance tests and showing how to use the Tessera MySQL storage implmentation.
 package main
 
 import (
