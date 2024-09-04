@@ -128,8 +128,22 @@ func (s *Storage) unlockCP() error {
 	return nil
 }
 
-// Add commits to sequence numbers for an entry
-// Returns the sequence number assigned to the first entry in the batch, or an error.
+// Add takes an entry and queues it for inclusion in the log.
+// Upon placing the entry in an in-memory queue to be sequenced, it returns a future that will
+// evaluate to either the sequence number assigned to this entry, or an error.
+// This future is made available when the entry is queued. Any further calls to Add after
+// this returns will guarantee that the later entry appears later in the log than any
+// earlier entries. Concurrent calls to Add are supported, but the order they are queued and
+// thus included in the log is non-deterministic.
+//
+// If the future resolves to a non-error state then it means that the entry is both
+// sequenced and integrated into the log. This means that a checkpoint will be available
+// that commits to this entry.
+//
+// It is recommended that the caller keeps the process running until all futures returned
+// by this method have successfully evaluated. Terminating earlier than this will likely
+// mean that some of the entries added are not committed to by a checkpoint, and thus are
+// not considered to be in the log.
 func (s *Storage) Add(ctx context.Context, e *tessera.Entry) tessera.IndexFuture {
 	return s.queue.Add(ctx, e)
 }
@@ -229,7 +243,7 @@ func (s *Storage) sequenceBatch(ctx context.Context, entries []*tessera.Entry) e
 		}
 	}
 
-	// For simplicitly, well in-line the integration of these new entries into the Merkle structure too.
+	// For simplicitly, in-line the integration of these new entries into the Merkle structure too.
 	if err := s.doIntegrate(ctx, seq, seqEntries); err != nil {
 		klog.Errorf("Integrate failed: %v", err)
 		return err

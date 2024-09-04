@@ -42,6 +42,15 @@ var (
 	privKeyFile = flag.String("private_key", "", "Location of private key file. If unset, uses the contents of the LOG_PRIVATE_KEY environment variable.")
 )
 
+// entryInfo binds the actual bytes to be added as a leaf with a
+// user-recognisable name for the source of those bytes.
+// The name is only used below in order to inform the user of the
+// sequence numbers assigned to the data from the provided input files.
+type entryInfo struct {
+	name string
+	f    tessera.IndexFuture
+}
+
 func main() {
 	klog.InitFlags(nil)
 	flag.Parse()
@@ -51,6 +60,7 @@ func main() {
 	v := getVerifierOrDie()
 	s := getSignerOrDie()
 
+	// Handle the case where no entries are to be added.
 	if len(*entries) == 0 {
 		if *initialise {
 			_, err := posix.New(ctx, *storageDir, *initialise, tessera.WithCheckpointSignerVerifier(s, v))
@@ -62,22 +72,20 @@ func main() {
 		os.Exit(0)
 	}
 
+	// Evaluate the glob provided by the --entries flag to determine the files containing leaves
 	filesToAdd := readEntriesOrDie()
+
+	// Construct a new Tessera POSIX log storage, anchored at the correct directory, and initialising it if requested.
+	// The options provide the checkpoint signer & verifier, and batch options.
+	// In this case, we want to create a single batch containing all of the leaves being added in order to
+	// add all of these leaves without creating any intermediate checkpoints.
 	st, err := posix.New(ctx, *storageDir, *initialise, tessera.WithCheckpointSignerVerifier(s, v), tessera.WithBatching(uint(len(filesToAdd)), time.Second))
 	if err != nil {
 		klog.Exitf("Failed to construct storage: %v", err)
 	}
 
-	// sequence entries
-
-	// entryInfo binds the actual bytes to be added as a leaf with a
-	// user-recognisable name for the source of those bytes.
-	// The name is only used below in order to inform the user of the
-	// sequence numbers assigned to the data from the provided input files.
-	type entryInfo struct {
-		name string
-		f    tessera.IndexFuture
-	}
+	// Add each of the leaves in order, and store the futures in a slice
+	// that we will check once all leaves are sent to storage.
 	indexFutures := make([]entryInfo, 0, len(filesToAdd))
 	for _, fp := range filesToAdd {
 		b, err := os.ReadFile(fp)
@@ -85,11 +93,11 @@ func main() {
 			klog.Exitf("Failed to read entry file %q: %q", fp, err)
 		}
 
-		// ask storage to sequence and we'll store the future for later
 		f := st.Add(ctx, tessera.NewEntry(b))
 		indexFutures = append(indexFutures, entryInfo{name: fp, f: f})
 	}
 
+	// Check each of the futures to ensure that the leaves are sequenced.
 	for _, entry := range indexFutures {
 		seq, err := entry.f()
 		if err != nil {
@@ -97,6 +105,8 @@ func main() {
 		}
 		klog.Infof("%d: %v", seq, entry.name)
 	}
+
+	// All futures have been resolved, which means the log is built and we can allow the process to terminate. Goodbye!
 }
 
 // Read log public key from file or environment variable
