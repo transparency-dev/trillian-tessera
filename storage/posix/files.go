@@ -129,9 +129,12 @@ func (s *Storage) unlockCP() error {
 }
 
 // Add takes an entry and queues it for inclusion in the log.
-// Upon storing the entry in a queue to be sequenced, it returns a future that will
+// Upon placing the entry in an in-memory queue to be sequenced, it returns a future that will
 // evaluate to either the sequence number assigned to this entry, or an error.
-// This future is made available when the entry is queued, but not sequenced.
+// This future is made available when the entry is queued. Any further calls to Add after
+// this returns will guarantee that the later entry appears later in the log than any
+// earlier entries. Concurrent calls to Add are supported, but the order they are queued and
+// thus included in the log is non-deterministic.
 //
 // If the future resolves to a non-error state then it means that the entry is both
 // sequenced and integrated into the log. This means that a checkpoint will be available

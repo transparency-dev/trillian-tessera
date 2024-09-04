@@ -72,7 +72,7 @@ func main() {
 		os.Exit(0)
 	}
 
-	// Evaluate the glob provided by the flag in to determine the files containing leaves
+	// Evaluate the glob provided by the --entries flag to determine the files containing leaves
 	filesToAdd := readEntriesOrDie()
 
 	// Construct a new Tessera POSIX log storage, anchored at the correct directory, and initialising it if requested.
