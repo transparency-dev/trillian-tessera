@@ -76,9 +76,6 @@ type LogConfig struct {
 	// exclusive.
 	// Leaving this unset implies no upper bound to the range.
 	NotAfterLimit *timestamppb.Timestamp
-	// accept_only_ca controls whether or not *only* certificates with the CA bit
-	// set will be accepted.
-	AcceptOnlyCa bool
 	// A list of X.509 extension OIDs, in dotted string form (e.g. "2.3.4.5")
 	// which, if present, should cause submissions to be rejected.
 	RejectExtensions []string
@@ -146,7 +143,6 @@ func ValidateLogConfig(cfg *configpb.LogConfig, origin string, projectID string,
 		RejectUnexpired:  rejectUnexpired,
 		NotAfterStart:    cfg.NotAfterLimit,
 		NotAfterLimit:    cfg.NotAfterLimit,
-		AcceptOnlyCa:     cfg.AcceptOnlyCa,
 		RejectExtensions: lRejectExtensions,
 	}}
 

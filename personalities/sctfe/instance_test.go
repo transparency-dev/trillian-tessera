@@ -297,18 +297,6 @@ func TestSetUpInstanceSetsValidationOpts(t *testing.T) {
 			spannerDB:    "spanner",
 			rootsPemFile: "./testdata/fake-ca.cert",
 		},
-		{
-			desc: "caOnly",
-			cfg: &configpb.LogConfig{
-				PrivateKey:   privKey,
-				AcceptOnlyCa: true,
-			},
-			origin:       "log",
-			projectID:    "project",
-			bucket:       "bucket",
-			spannerDB:    "spanner",
-			rootsPemFile: "./testdata/fake-ca.cert",
-		},
 	}
 
 	for _, test := range tests {
@@ -333,9 +321,6 @@ func TestSetUpInstanceSetsValidationOpts(t *testing.T) {
 			}
 			if got, want := gotOpts.notAfterLimit, test.cfg.NotAfterLimit; want != nil && !equivalentTimes(got, want) {
 				t.Errorf("%v: handler notAfterLimit %v, want %v", test.desc, got, want)
-			}
-			if got, want := gotOpts.acceptOnlyCA, test.cfg.AcceptOnlyCa; got != want {
-				t.Errorf("%v: handler acceptOnlyCA %v, want %v", test.desc, got, want)
 			}
 		})
 	}

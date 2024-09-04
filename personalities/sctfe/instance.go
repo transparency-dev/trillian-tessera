@@ -118,7 +118,6 @@ func setUpLogInfo(ctx context.Context, opts InstanceOptions) (*logInfo, error) {
 		rejectUnexpired: cfg.RejectUnexpired,
 		notAfterStart:   vCfg.NotAfterStart,
 		notAfterLimit:   vCfg.NotAfterLimit,
-		acceptOnlyCA:    cfg.AcceptOnlyCa,
 		extKeyUsages:    vCfg.KeyUsages,
 	}
 	validationOpts.rejectExtIds, err = parseOIDs(cfg.RejectExtensions)

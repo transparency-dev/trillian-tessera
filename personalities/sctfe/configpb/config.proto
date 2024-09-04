@@ -40,7 +40,4 @@ message LogConfig {
   // exclusive.
   // Leaving this unset implies no upper bound to the range.
   google.protobuf.Timestamp not_after_limit = 9;
-  // accept_only_ca controls whether or not *only* certificates with the CA bit
-  // set will be accepted.
-  bool accept_only_ca = 10;
 }
