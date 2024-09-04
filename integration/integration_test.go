@@ -117,13 +117,14 @@ func TestLiveLogIntegration(t *testing.T) {
 			}
 			if checkpoint == nil {
 				t.Fatalf("checkpoint not found at index: %d, test entry size: %d", index, i)
+				return fmt.Errorf("failed to get checkpoint after writing entry %d (assigned sequence %d)", i, index)
 			}
 			checkpoints[i+1] = *checkpoint
 			return err
 		})
 	}
 	if err := errG.Wait(); err != nil {
-		t.Errorf("addEntry: %v", err)
+		t.Fatalf("addEntry: %v", err)
 	}
 
 	// Step 3 - Validate checkpoint size increment.
@@ -175,7 +176,7 @@ func TestLiveLogIntegration(t *testing.T) {
 
 	// Step 5 - Test consistency proofs.
 	if err := client.CheckConsistency(ctx, httpRead, checkpoints); err != nil {
-		t.Errorf("log consistency for %v: unexpected proof returned", err)
+		t.Errorf("log consistency checks failed: %v", err)
 	}
 }
 
