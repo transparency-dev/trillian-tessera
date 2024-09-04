@@ -83,19 +83,7 @@ func main() {
 
 	filesToAdd := readEntriesOrDie()
 
-	// TODO(mhutchinson): This function should be implemented inside Tessera (it has the verifier now)
-	readCP := func() (uint64, []byte, error) {
-		cpRaw, err := posix.ReadCheckpoint(*storageDir)
-		if err != nil {
-			klog.Exitf("Failed to read log checkpoint: %q", err)
-		}
-		cp, _, _, err := fmtlog.ParseCheckpoint(cpRaw, origin, v)
-		if err != nil {
-			return 0, []byte{}, fmt.Errorf("Failed to parse Checkpoint: %q", err)
-		}
-		return cp.Size, cp.Hash, nil
-	}
-	st := posix.New(ctx, *storageDir, readCP, tessera.WithCheckpointSignerVerifier(s, v), tessera.WithBatching(uint(len(filesToAdd)), time.Second))
+	st := posix.New(ctx, *storageDir, tessera.WithCheckpointSignerVerifier(s, v), tessera.WithBatching(uint(len(filesToAdd)), time.Second))
 
 	// sequence entries
 

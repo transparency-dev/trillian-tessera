@@ -118,18 +118,7 @@ func main() {
 		klog.Exitf("Failed to instantiate Verifier: %q", err)
 	}
 
-	readCP := func() (uint64, []byte, error) {
-		cpRaw, err := posix.ReadCheckpoint(*storageDir)
-		if err != nil {
-			klog.Exitf("Failed to read log checkpoint: %q", err)
-		}
-		cp, _, _, err := fmtlog.ParseCheckpoint(cpRaw, origin, v)
-		if err != nil {
-			return 0, []byte{}, fmt.Errorf("Failed to parse Checkpoint: %q", err)
-		}
-		return cp.Size, cp.Hash, nil
-	}
-	storage := posix.New(ctx, *storageDir, readCP, tessera.WithCheckpointSignerVerifier(s, v), tessera.WithBatching(256, time.Second))
+	storage := posix.New(ctx, *storageDir, tessera.WithCheckpointSignerVerifier(s, v), tessera.WithBatching(256, time.Second))
 
 	http.HandleFunc("POST /add", func(w http.ResponseWriter, r *http.Request) {
 		b, err := io.ReadAll(r.Body)
