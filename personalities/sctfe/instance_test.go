@@ -207,7 +207,7 @@ func TestSetUpInstance(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.desc, func(t *testing.T) {
-			vCfg, err := ValidateLogConfig(test.cfg, test.origin, test.projectID, test.bucket, test.spannerDB, test.rootsPemFile)
+			vCfg, err := ValidateLogConfig(test.cfg, test.origin, test.projectID, test.bucket, test.spannerDB, test.rootsPemFile, false, false)
 			if err != nil {
 				t.Fatalf("ValidateLogConfig(): %v", err)
 			}
@@ -311,7 +311,7 @@ func TestSetUpInstanceSetsValidationOpts(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.desc, func(t *testing.T) {
-			vCfg, err := ValidateLogConfig(test.cfg, test.origin, test.projectID, test.bucket, test.spannerDB, test.rootsPemFile)
+			vCfg, err := ValidateLogConfig(test.cfg, test.origin, test.projectID, test.bucket, test.spannerDB, test.rootsPemFile, false, false)
 			if err != nil {
 				t.Fatalf("ValidateLogConfig(): %v", err)
 			}

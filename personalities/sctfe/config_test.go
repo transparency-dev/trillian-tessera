@@ -42,13 +42,15 @@ func TestValidateLogConfig(t *testing.T) {
 	privKey := mustMarshalAny(&keyspb.PEMKeyFile{Path: "../testdata/ct-http-server.privkey.pem", Password: "dirk"})
 
 	for _, tc := range []struct {
-		desc      string
-		cfg       *configpb.LogConfig
-		origin    string
-		projectID string
-		bucket    string
-		spannerDB string
-		wantErr   string
+		desc            string
+		cfg             *configpb.LogConfig
+		origin          string
+		projectID       string
+		bucket          string
+		spannerDB       string
+		wantErr         string
+		rejectExpired   bool
+		rejectUnexpired bool
 	}{
 		{
 			desc:      "empty-origin",
@@ -115,14 +117,14 @@ func TestValidateLogConfig(t *testing.T) {
 			desc:    "rejecting-all",
 			wantErr: "rejecting all certificates",
 			cfg: &configpb.LogConfig{
-				RejectExpired:   true,
-				RejectUnexpired: true,
-				PrivateKey:      privKey,
+				PrivateKey: privKey,
 			},
-			origin:    "testlog",
-			projectID: "project",
-			bucket:    "bucket",
-			spannerDB: "spanner",
+			origin:          "testlog",
+			projectID:       "project",
+			bucket:          "bucket",
+			spannerDB:       "spanner",
+			rejectExpired:   true,
+			rejectUnexpired: true,
 		},
 		{
 			desc:    "unknown-ext-key-usage-1",
@@ -317,7 +319,7 @@ func TestValidateLogConfig(t *testing.T) {
 		},
 	} {
 		t.Run(tc.desc, func(t *testing.T) {
-			vc, err := ValidateLogConfig(tc.cfg, tc.origin, tc.projectID, tc.bucket, tc.spannerDB, "")
+			vc, err := ValidateLogConfig(tc.cfg, tc.origin, tc.projectID, tc.bucket, tc.spannerDB, "", tc.rejectExpired, tc.rejectUnexpired)
 			if len(tc.wantErr) == 0 && err != nil {
 				t.Errorf("ValidateLogConfig()=%v, want nil", err)
 			}

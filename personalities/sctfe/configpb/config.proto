@@ -32,13 +32,6 @@ message LogConfig {
   // It can be specified for the convenience of test tools, but it not used
   // by the server.
   keyspb.PublicKey public_key = 4;
-  // If reject_expired is true then the certificate validity period will be
-  // checked against the current time during the validation of submissions.
-  // This will cause expired certificates to be rejected.
-  bool reject_expired = 5;
-  // If reject_unexpired is true then CTFE rejects certificates that are either
-  // currently valid or not yet valid.
-  bool reject_unexpired = 6;
   // If set, ext_key_usages will restrict the set of such usages that the
   // server will accept. By default all are accepted. The values specified
   // must be ones known to the x509 package.
