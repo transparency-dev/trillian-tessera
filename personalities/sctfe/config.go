@@ -28,7 +28,6 @@ import (
 	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
-	"google.golang.org/protobuf/types/known/timestamppb"
 	"k8s.io/klog/v2"
 )
 
@@ -68,14 +67,6 @@ type LogConfig struct {
 	// If reject_unexpired is true then CTFE rejects certificates that are either
 	// currently valid or not yet valid.
 	RejectUnexpired bool
-	// not_after_start defines the start of the range of acceptable NotAfter
-	// values, inclusive.
-	// Leaving this unset implies no lower bound to the range.
-	NotAfterStart *timestamppb.Timestamp
-	// not_after_limit defines the end of the range of acceptable NotAfter values,
-	// exclusive.
-	// Leaving this unset implies no upper bound to the range.
-	NotAfterLimit *timestamppb.Timestamp
 	// A list of X.509 extension OIDs, in dotted string form (e.g. "2.3.4.5")
 	// which, if present, should cause submissions to be rejected.
 	RejectExtensions []string
@@ -107,7 +98,7 @@ func LogConfigFromFile(filename string) (*configpb.LogConfig, error) {
 //   - Merge delays (if present) are correct.
 //
 // Returns the validated structures (useful to avoid double validation).
-func ValidateLogConfig(cfg *configpb.LogConfig, origin string, projectID string, bucket string, spannerDB string, rootsPemFile string, rejectExpired bool, rejectUnexpired bool, extKeyUsages string, rejectExtensions string) (*ValidatedLogConfig, error) {
+func ValidateLogConfig(cfg *configpb.LogConfig, origin string, projectID string, bucket string, spannerDB string, rootsPemFile string, rejectExpired bool, rejectUnexpired bool, extKeyUsages string, rejectExtensions string, notAfterStart *time.Time, notAfterLimit *time.Time) (*ValidatedLogConfig, error) {
 	if origin == "" {
 		return nil, errors.New("empty origin")
 	}
@@ -134,17 +125,19 @@ func ValidateLogConfig(cfg *configpb.LogConfig, origin string, projectID string,
 		lRejectExtensions = strings.Split(rejectExtensions, ",")
 	}
 
-	vCfg := ValidatedLogConfig{Config: &LogConfig{
-		Origin:           origin,
-		RootsPemFile:     rootsPemFile,
-		PrivateKey:       cfg.PrivateKey,
-		PublicKey:        cfg.PublicKey,
-		RejectExpired:    rejectExpired,
-		RejectUnexpired:  rejectUnexpired,
-		NotAfterStart:    cfg.NotAfterLimit,
-		NotAfterLimit:    cfg.NotAfterLimit,
-		RejectExtensions: lRejectExtensions,
-	}}
+	vCfg := ValidatedLogConfig{
+		Config: &LogConfig{
+			Origin:           origin,
+			RootsPemFile:     rootsPemFile,
+			PrivateKey:       cfg.PrivateKey,
+			PublicKey:        cfg.PublicKey,
+			RejectExpired:    rejectExpired,
+			RejectUnexpired:  rejectUnexpired,
+			RejectExtensions: lRejectExtensions,
+		},
+		NotAfterStart: notAfterStart,
+		NotAfterLimit: notAfterLimit,
+	}
 
 	// Validate the public key.
 	if pubKey := cfg.PublicKey; pubKey != nil {
@@ -185,22 +178,7 @@ func ValidateLogConfig(cfg *configpb.LogConfig, origin string, projectID string,
 	}
 
 	// Validate the time interval.
-	start, limit := cfg.NotAfterStart, cfg.NotAfterLimit
-	if start != nil {
-		vCfg.NotAfterStart = &time.Time{}
-		if err := start.CheckValid(); err != nil {
-			return nil, fmt.Errorf("invalid start timestamp: %v", err)
-		}
-		*vCfg.NotAfterStart = start.AsTime()
-	}
-	if limit != nil {
-		vCfg.NotAfterLimit = &time.Time{}
-		if err := limit.CheckValid(); err != nil {
-			return nil, fmt.Errorf("invalid limit timestamp: %v", err)
-		}
-		*vCfg.NotAfterLimit = limit.AsTime()
-	}
-	if start != nil && limit != nil && (*vCfg.NotAfterLimit).Before(*vCfg.NotAfterStart) {
+	if notAfterStart != nil && notAfterLimit != nil && (notAfterLimit).Before(*notAfterStart) {
 		return nil, errors.New("limit before start")
 	}
 

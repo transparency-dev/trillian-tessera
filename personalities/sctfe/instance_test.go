@@ -31,7 +31,6 @@ import (
 	"github.com/transparency-dev/trillian-tessera/personalities/sctfe/configpb"
 	"golang.org/x/mod/sumdb/note"
 	"google.golang.org/protobuf/types/known/anypb"
-	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 func init() {
@@ -209,7 +208,7 @@ func TestSetUpInstance(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.desc, func(t *testing.T) {
-			vCfg, err := ValidateLogConfig(test.cfg, test.origin, test.projectID, test.bucket, test.spannerDB, test.rootsPemFile, false, false, test.extKeyUsages, test.rejectExtensions)
+			vCfg, err := ValidateLogConfig(test.cfg, test.origin, test.projectID, test.bucket, test.spannerDB, test.rootsPemFile, false, false, test.extKeyUsages, test.rejectExtensions, nil, nil)
 			if err != nil {
 				t.Fatalf("ValidateLogConfig(): %v", err)
 			}
@@ -230,7 +229,7 @@ func TestSetUpInstance(t *testing.T) {
 	}
 }
 
-func equivalentTimes(a *time.Time, b *timestamppb.Timestamp) bool {
+func equivalentTimes(a *time.Time, b *time.Time) bool {
 	if a == nil && b == nil {
 		return true
 	}
@@ -238,28 +237,29 @@ func equivalentTimes(a *time.Time, b *timestamppb.Timestamp) bool {
 		// b can't be nil as it would have returned above.
 		return false
 	}
-	tsA := timestamppb.New(*a)
-	return tsA.AsTime().Format(time.RFC3339Nano) == b.AsTime().Format(time.RFC3339Nano)
+	return a.Equal(*b)
 }
 
 func TestSetUpInstanceSetsValidationOpts(t *testing.T) {
 	ctx := context.Background()
 
-	start := timestamppb.New(time.Unix(10000, 0))
-	limit := timestamppb.New(time.Unix(12000, 0))
+	start := time.Unix(10000, 0)
+	limit := time.Unix(12000, 0)
 
 	privKey, err := anypb.New(&keyspb.PEMKeyFile{Path: "./testdata/ct-http-server.privkey.pem", Password: "dirk"})
 	if err != nil {
 		t.Fatalf("Could not marshal private key proto: %v", err)
 	}
 	var tests = []struct {
-		desc         string
-		cfg          *configpb.LogConfig
-		origin       string
-		projectID    string
-		bucket       string
-		spannerDB    string
-		rootsPemFile string
+		desc          string
+		cfg           *configpb.LogConfig
+		origin        string
+		projectID     string
+		bucket        string
+		spannerDB     string
+		rootsPemFile  string
+		notAfterStart *time.Time
+		notAfterLimit *time.Time
 	}{
 		{
 			desc: "no validation opts",
@@ -275,33 +275,33 @@ func TestSetUpInstanceSetsValidationOpts(t *testing.T) {
 		{
 			desc: "notAfterStart only",
 			cfg: &configpb.LogConfig{
-				PrivateKey:    privKey,
-				NotAfterStart: start,
+				PrivateKey: privKey,
 			},
-			origin:       "log",
-			projectID:    "project",
-			bucket:       "bucket",
-			spannerDB:    "spanner",
-			rootsPemFile: "./testdata/fake-ca.cert",
+			origin:        "log",
+			projectID:     "project",
+			bucket:        "bucket",
+			spannerDB:     "spanner",
+			rootsPemFile:  "./testdata/fake-ca.cert",
+			notAfterStart: &start,
 		},
 		{
 			desc: "notAfter range",
 			cfg: &configpb.LogConfig{
-				PrivateKey:    privKey,
-				NotAfterStart: start,
-				NotAfterLimit: limit,
+				PrivateKey: privKey,
 			},
-			origin:       "log",
-			projectID:    "project",
-			bucket:       "bucket",
-			spannerDB:    "spanner",
-			rootsPemFile: "./testdata/fake-ca.cert",
+			origin:        "log",
+			projectID:     "project",
+			bucket:        "bucket",
+			spannerDB:     "spanner",
+			rootsPemFile:  "./testdata/fake-ca.cert",
+			notAfterStart: &start,
+			notAfterLimit: &limit,
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.desc, func(t *testing.T) {
-			vCfg, err := ValidateLogConfig(test.cfg, test.origin, test.projectID, test.bucket, test.spannerDB, test.rootsPemFile, false, false, "", "")
+			vCfg, err := ValidateLogConfig(test.cfg, test.origin, test.projectID, test.bucket, test.spannerDB, test.rootsPemFile, false, false, "", "", test.notAfterStart, test.notAfterLimit)
 			if err != nil {
 				t.Fatalf("ValidateLogConfig(): %v", err)
 			}
@@ -316,10 +316,10 @@ func TestSetUpInstanceSetsValidationOpts(t *testing.T) {
 				t.Fatal("Couldn't find AddChain handler")
 			}
 			gotOpts := addChainHandler.Info.validationOpts
-			if got, want := gotOpts.notAfterStart, test.cfg.NotAfterStart; want != nil && !equivalentTimes(got, want) {
+			if got, want := gotOpts.notAfterStart, test.notAfterStart; !equivalentTimes(got, want) {
 				t.Errorf("%v: handler notAfterStart %v, want %v", test.desc, got, want)
 			}
-			if got, want := gotOpts.notAfterLimit, test.cfg.NotAfterLimit; want != nil && !equivalentTimes(got, want) {
+			if got, want := gotOpts.notAfterLimit, test.notAfterLimit; !equivalentTimes(got, want) {
 				t.Errorf("%v: handler notAfterLimit %v, want %v", test.desc, got, want)
 			}
 		})

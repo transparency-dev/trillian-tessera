@@ -18,16 +18,12 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/trillian/crypto/keyspb"
 	"github.com/transparency-dev/trillian-tessera/personalities/sctfe/configpb"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
-	"google.golang.org/protobuf/types/known/timestamppb"
-)
-
-var (
-	invalidTimestamp = &timestamppb.Timestamp{Nanos: int32(1e9)}
 )
 
 func mustMarshalAny(pb proto.Message) *anypb.Any {
@@ -41,6 +37,9 @@ func mustMarshalAny(pb proto.Message) *anypb.Any {
 func TestValidateLogConfig(t *testing.T) {
 	privKey := mustMarshalAny(&keyspb.PEMKeyFile{Path: "../testdata/ct-http-server.privkey.pem", Password: "dirk"})
 
+	t100 := time.Unix(100, 0)
+	t200 := time.Unix(200, 0)
+
 	for _, tc := range []struct {
 		desc            string
 		cfg             *configpb.LogConfig
@@ -52,6 +51,8 @@ func TestValidateLogConfig(t *testing.T) {
 		rejectExpired   bool
 		rejectUnexpired bool
 		extKeyUsages    string
+		notAfterStart   *time.Time
+		notAfterLimit   *time.Time
 	}{
 		{
 			desc:      "empty-origin",
@@ -164,41 +165,17 @@ func TestValidateLogConfig(t *testing.T) {
 			extKeyUsages: "Any ",
 		},
 		{
-			desc:    "invalid-start-timestamp",
-			wantErr: "invalid start timestamp",
-			cfg: &configpb.LogConfig{
-				PrivateKey:    privKey,
-				NotAfterStart: invalidTimestamp,
-			},
-			origin:    "testlog",
-			projectID: "project",
-			bucket:    "bucket",
-			spannerDB: "spanner",
-		},
-		{
-			desc:    "invalid-limit-timestamp",
-			wantErr: "invalid limit timestamp",
-			cfg: &configpb.LogConfig{
-				PrivateKey:    privKey,
-				NotAfterLimit: invalidTimestamp,
-			},
-			origin:    "testlog",
-			projectID: "project",
-			bucket:    "bucket",
-			spannerDB: "spanner",
-		},
-		{
 			desc:    "limit-before-start",
 			wantErr: "limit before start",
 			cfg: &configpb.LogConfig{
-				PrivateKey:    privKey,
-				NotAfterStart: &timestamppb.Timestamp{Seconds: 200},
-				NotAfterLimit: &timestamppb.Timestamp{Seconds: 100},
+				PrivateKey: privKey,
 			},
-			origin:    "testlog",
-			projectID: "project",
-			bucket:    "bucket",
-			spannerDB: "spanner",
+			origin:        "testlog",
+			projectID:     "project",
+			bucket:        "bucket",
+			spannerDB:     "spanner",
+			notAfterStart: &t200,
+			notAfterLimit: &t100,
 		},
 		{
 			desc: "ok",
@@ -238,40 +215,40 @@ func TestValidateLogConfig(t *testing.T) {
 		{
 			desc: "ok-start-timestamp",
 			cfg: &configpb.LogConfig{
-				PrivateKey:    privKey,
-				NotAfterStart: &timestamppb.Timestamp{Seconds: 100},
+				PrivateKey: privKey,
 			},
-			origin:    "testlog",
-			projectID: "project",
-			bucket:    "bucket",
-			spannerDB: "spanner",
+			origin:        "testlog",
+			projectID:     "project",
+			bucket:        "bucket",
+			spannerDB:     "spanner",
+			notAfterStart: &t100,
 		},
 		{
 			desc: "ok-limit-timestamp",
 			cfg: &configpb.LogConfig{
-				PrivateKey:    privKey,
-				NotAfterLimit: &timestamppb.Timestamp{Seconds: 200},
+				PrivateKey: privKey,
 			},
-			origin:    "testlog",
-			projectID: "project",
-			bucket:    "bucket",
-			spannerDB: "spanner",
+			origin:        "testlog",
+			projectID:     "project",
+			bucket:        "bucket",
+			spannerDB:     "spanner",
+			notAfterStart: &t200,
 		},
 		{
 			desc: "ok-range-timestamp",
 			cfg: &configpb.LogConfig{
-				PrivateKey:    privKey,
-				NotAfterStart: &timestamppb.Timestamp{Seconds: 300},
-				NotAfterLimit: &timestamppb.Timestamp{Seconds: 400},
+				PrivateKey: privKey,
 			},
-			origin:    "testlog",
-			projectID: "project",
-			bucket:    "bucket",
-			spannerDB: "spanner",
+			origin:        "testlog",
+			projectID:     "project",
+			bucket:        "bucket",
+			spannerDB:     "spanner",
+			notAfterStart: &t100,
+			notAfterLimit: &t200,
 		},
 	} {
 		t.Run(tc.desc, func(t *testing.T) {
-			vc, err := ValidateLogConfig(tc.cfg, tc.origin, tc.projectID, tc.bucket, tc.spannerDB, "", tc.rejectExpired, tc.rejectUnexpired, tc.extKeyUsages, "")
+			vc, err := ValidateLogConfig(tc.cfg, tc.origin, tc.projectID, tc.bucket, tc.spannerDB, "", tc.rejectExpired, tc.rejectUnexpired, tc.extKeyUsages, "", tc.notAfterStart, tc.notAfterLimit)
 			if len(tc.wantErr) == 0 && err != nil {
 				t.Errorf("ValidateLogConfig()=%v, want nil", err)
 			}

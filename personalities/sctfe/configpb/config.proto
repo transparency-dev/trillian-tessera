@@ -20,7 +20,6 @@ package configpb;
 
 import "crypto/keyspb/keyspb.proto";
 import "google/protobuf/any.proto";
-import "google/protobuf/timestamp.proto";
 
 // LogConfig describes the configuration options for a log instance.
 //
@@ -32,12 +31,4 @@ message LogConfig {
   // It can be specified for the convenience of test tools, but it not used
   // by the server.
   keyspb.PublicKey public_key = 4;
-  // not_after_start defines the start of the range of acceptable NotAfter
-  // values, inclusive.
-  // Leaving this unset implies no lower bound to the range.
-  google.protobuf.Timestamp not_after_start = 8;
-  // not_after_limit defines the end of the range of acceptable NotAfter values,
-  // exclusive.
-  // Leaving this unset implies no upper bound to the range.
-  google.protobuf.Timestamp not_after_limit = 9;
 }
