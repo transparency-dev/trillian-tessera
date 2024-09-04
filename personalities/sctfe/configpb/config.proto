@@ -22,11 +22,6 @@ import "crypto/keyspb/keyspb.proto";
 import "google/protobuf/any.proto";
 import "google/protobuf/timestamp.proto";
 
-// LogConfigSet is a set of LogConfig messages.
-message LogConfigSet {
-  repeated LogConfig config = 1;
-}
-
 // LogConfig describes the configuration options for a log instance.
 //
 // NEXT_ID: 15
