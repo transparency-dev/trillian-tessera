@@ -372,7 +372,7 @@ func (s *Storage) initialise(create bool) error {
 		// Create the directory structure and write out an empty checkpoint
 		klog.Infof("Initializing directory for POSIX log at %q (this should only happen ONCE per log!)", s.path)
 		if err := os.MkdirAll(s.path, dirPerm); err != nil {
-			return fmt.Errorf("Failed to create log directory: %q", err)
+			return fmt.Errorf("failed to create log directory: %q", err)
 		}
 		n, err := s.newCP(0, rfc6962.DefaultHasher.EmptyRoot())
 		if err != nil {
