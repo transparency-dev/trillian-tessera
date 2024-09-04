@@ -85,12 +85,12 @@ func main() {
 		return nil, fmt.Errorf("pkcs11: got %T, want *keyspb.PKCS11Config", pb)
 	})
 
-	cfgs, err := sctfe.LogConfigSetFromFile(*logConfig)
+	cfg, err := sctfe.LogConfigFromFile(*logConfig)
 	if err != nil {
 		klog.Exitf("Failed to read config: %v", err)
 	}
 
-	vCfgs, err := sctfe.ValidateLogConfigSet(cfgs)
+	vCfg, err := sctfe.ValidateLogConfig(cfg)
 	if err != nil {
 		klog.Exitf("Invalid config: %v", err)
 	}
@@ -113,38 +113,36 @@ func main() {
 	// Register handlers for all the configured logs using the correct RPC
 	// client.
 	var publicKeys []crypto.PublicKey
-	for _, vc := range vCfgs {
-		inst, err := setupAndRegister(ctx,
-			*rpcDeadline,
-			vc,
-			corsMux,
-			*maskInternalErrors,
-		)
-		if err != nil {
-			klog.Exitf("Failed to set up log instance for %+v: %v", cfgs, err)
-		}
+	inst, err := setupAndRegister(ctx,
+		*rpcDeadline,
+		vCfg,
+		corsMux,
+		*maskInternalErrors,
+	)
+	if err != nil {
+		klog.Exitf("Failed to set up log instance for %+v: %v", vCfg, err)
+	}
 
-		// Ensure that this log does not share the same private key as any other
-		// log that has already been set up and registered.
-		if publicKey := inst.GetPublicKey(); publicKey != nil {
-			for _, p := range publicKeys {
-				switch pub := publicKey.(type) {
-				case *ecdsa.PublicKey:
-					if pub.Equal(p) {
-						klog.Exitf("Same private key used by more than one log")
-					}
-				case ed25519.PublicKey:
-					if pub.Equal(p) {
-						klog.Exitf("Same private key used by more than one log")
-					}
-				case *rsa.PublicKey:
-					if pub.Equal(p) {
-						klog.Exitf("Same private key used by more than one log")
-					}
+	// Ensure that this log does not share the same private key as any other
+	// log that has already been set up and registered.
+	if publicKey := inst.GetPublicKey(); publicKey != nil {
+		for _, p := range publicKeys {
+			switch pub := publicKey.(type) {
+			case *ecdsa.PublicKey:
+				if pub.Equal(p) {
+					klog.Exitf("Same private key used by more than one log")
+				}
+			case ed25519.PublicKey:
+				if pub.Equal(p) {
+					klog.Exitf("Same private key used by more than one log")
+				}
+			case *rsa.PublicKey:
+				if pub.Equal(p) {
+					klog.Exitf("Same private key used by more than one log")
 				}
 			}
-			publicKeys = append(publicKeys, publicKey)
 		}
+		publicKeys = append(publicKeys, publicKey)
 	}
 
 	// Return a 200 on the root, for GCE default health checking :/
