@@ -22,9 +22,12 @@ import (
 	"time"
 
 	"github.com/google/certificate-transparency-go/x509"
+	"github.com/google/trillian/crypto/keyspb"
 	"github.com/transparency-dev/trillian-tessera/personalities/sctfe/configpb"
 	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/anypb"
+	"google.golang.org/protobuf/types/known/timestamppb"
 	"k8s.io/klog/v2"
 )
 
@@ -37,6 +40,58 @@ type ValidatedLogConfig struct {
 	KeyUsages     []x509.ExtKeyUsage
 	NotAfterStart *time.Time
 	NotAfterLimit *time.Time
+}
+
+type LogConfig struct {
+	// origin identifies the log. It will be used in its checkpoint, and
+	// is also its submission prefix, as per https://c2sp.org/static-ct-api
+	Origin string
+	// Paths to the files containing root certificates that are acceptable to the
+	// log. The certs are served through get-roots endpoint.
+	RootsPemFile []string
+	// The private key used for signing Checkpoints or SCTs.
+	PrivateKey *anypb.Any
+	// The public key matching the above private key (if both are present).
+	// It can be specified for the convenience of test tools, but it not used
+	// by the server.
+	PublicKey *keyspb.PublicKey
+	// If reject_expired is true then the certificate validity period will be
+	// checked against the current time during the validation of submissions.
+	// This will cause expired certificates to be rejected.
+	RejectExpired bool
+	// If reject_unexpired is true then CTFE rejects certificates that are either
+	// currently valid or not yet valid.
+	RejectUnexpired bool
+	// If set, ext_key_usages will restrict the set of such usages that the
+	// server will accept. By default all are accepted. The values specified
+	// must be ones known to the x509 package.
+	ExtKeyUsages []string
+	// not_after_start defines the start of the range of acceptable NotAfter
+	// values, inclusive.
+	// Leaving this unset implies no lower bound to the range.
+	NotAfterStart *timestamppb.Timestamp
+	// not_after_limit defines the end of the range of acceptable NotAfter values,
+	// exclusive.
+	// Leaving this unset implies no upper bound to the range.
+	NotAfterLimit *timestamppb.Timestamp
+	// accept_only_ca controls whether or not *only* certificates with the CA bit
+	// set will be accepted.
+	AcceptOnlyCa bool
+	// The Maximum Merge Delay (MMD) of this log in seconds. See RFC6962 section 3
+	// for definition of MMD. If zero, the log does not provide an MMD guarantee
+	// (for example, it is a frozen log).
+	MaxMergeDelaySec int32
+	// The merge delay that the underlying log implementation is able/targeting to
+	// provide. This option is exposed in CTFE metrics, and can be particularly
+	// useful to catch when the log is behind but has not yet violated the strict
+	// MMD limit.
+	// Log operator should decide what exactly EMD means for them. For example, it
+	// can be a 99-th percentile of merge delays that they observe, and they can
+	// alert on the actual merge delay going above a certain multiple of this EMD.
+	ExpectedMergeDelaySec int32
+	// A list of X.509 extension OIDs, in dotted string form (e.g. "2.3.4.5")
+	// which should cause submissions to be rejected.
+	RejectExtensions []string
 }
 
 // LogConfigFromFile creates a LogConfig options from the given
