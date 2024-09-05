@@ -2,7 +2,7 @@
 
 Log lifecycle is a useful concept for outlining expected modes the log can be in, and state transitions between these states.
 The lifecycle states outlined below exist conceptually, but there are no explicit enums or state defined or maintained in code.
-The requirements for each state are documented, and the log operator takes responsibility to ensure that they only migrates between these states in the supported directions.
+The requirements for each state are documented, and the log operator takes responsibility to ensure that they only migrate between these states in the supported directions.
 
 [![](https://mermaid.ink/img/pako:eNqFUD1rAzEM_StGYzkvHV3odGMKodkSdzC2cjE9y4kiF0LIf6_P1_QoFKJJ70s27wo-BwQDWmtLEmVEo1Zxj_7iR7TU6LM4wT66gV3SX8-WVJ0QGb3ETGr1_mJpJndPH0rrV7XBU0HykYa__Joxc0DGMCWatlDN0bOL9Ju7o3-PLvhRsscRZXqzKTNoQv2XJeggIScXQ-3hOpksyAETWjB1DY4_LVi6VZ8rkjcX8mCEC3bAuQwHMHs3nisqx7AUdbdgiJL5bW65ld3B0dE25_QTvH0DWex-jw?type=png)](https://mermaid.live/edit#pako:eNqFUD1rAzEM_StGYzkvHV3odGMKodkSdzC2cjE9y4kiF0LIf6_P1_QoFKJJ70s27wo-BwQDWmtLEmVEo1Zxj_7iR7TU6LM4wT66gV3SX8-WVJ0QGb3ETGr1_mJpJndPH0rrV7XBU0HykYa__Joxc0DGMCWatlDN0bOL9Ju7o3-PLvhRsscRZXqzKTNoQv2XJeggIScXQ-3hOpksyAETWjB1DY4_LVi6VZ8rkjcX8mCEC3bAuQwHMHs3nisqx7AUdbdgiJL5bW65ld3B0dE25_QTvH0DWex-jw)
 
