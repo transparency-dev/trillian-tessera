@@ -18,5 +18,13 @@ services:
       "--v=2",
     ]
     volumes:
-      - /tmp/tessera-posix-log:/tmp/tessera-posix-log
+      - tessera-posix-log-data:/tmp/tessera-posix-log
     restart: always
+
+volumes:
+  tessera-posix-log-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: "/tmp/tessera-posix-log"
