@@ -39,36 +39,33 @@ type ValidatedLogConfig struct {
 	NotAfterLimit *time.Time
 }
 
-// LogConfigSetFromFile creates a slice of LogConfigSet options from the given
+// LogConfigFromFile creates a LogConfig options from the given
 // filename, which should contain text or binary-encoded protobuf configuration
 // data.
-func LogConfigSetFromFile(filename string) (*configpb.LogConfigSet, error) {
+func LogConfigFromFile(filename string) (*configpb.LogConfig, error) {
 	cfgBytes, err := os.ReadFile(filename)
 	if err != nil {
 		return nil, err
 	}
 
-	var cfg configpb.LogConfigSet
+	var cfg configpb.LogConfig
 	if txtErr := prototext.Unmarshal(cfgBytes, &cfg); txtErr != nil {
 		if binErr := proto.Unmarshal(cfgBytes, &cfg); binErr != nil {
-			return nil, fmt.Errorf("failed to parse LogConfigSet from %q as text protobuf (%v) or binary protobuf (%v)", filename, txtErr, binErr)
+			return nil, fmt.Errorf("failed to parse LogConfig from %q as text protobuf (%v) or binary protobuf (%v)", filename, txtErr, binErr)
 		}
 	}
 
-	if len(cfg.Config) == 0 {
-		return nil, errors.New("empty log config found")
-	}
 	return &cfg, nil
 }
 
-// validateLogConfig checks that a single log config is valid. In particular:
+// ValidateLogConfig checks that a single log config is valid. In particular:
 //   - A log has a private, and optionally a public key (both valid).
 //   - Each of NotBeforeStart and NotBeforeLimit, if set, is a valid timestamp
 //     proto. If both are set then NotBeforeStart <= NotBeforeLimit.
 //   - Merge delays (if present) are correct.
 //
 // Returns the validated structures (useful to avoid double validation).
-func validateLogConfig(cfg *configpb.LogConfig) (*ValidatedLogConfig, error) {
+func ValidateLogConfig(cfg *configpb.LogConfig) (*ValidatedLogConfig, error) {
 	if len(cfg.Origin) == 0 {
 		return nil, errors.New("empty log origin")
 	}
@@ -150,26 +147,6 @@ func validateLogConfig(cfg *configpb.LogConfig) (*ValidatedLogConfig, error) {
 	}
 
 	return &vCfg, nil
-}
-
-// ValidateLogConfigSet validate each configs independently and makes sure
-// there aren't any duplicate entries.
-func ValidateLogConfigSet(cfg *configpb.LogConfigSet) ([]*ValidatedLogConfig, error) {
-	logNameMap := make(map[string]bool)
-	ret := []*ValidatedLogConfig{}
-	for _, logCfg := range cfg.Config {
-		vcfg, err := validateLogConfig(logCfg)
-		if err != nil {
-			return nil, fmt.Errorf("log config: %v: %v", err, logCfg)
-		}
-		if logNameMap[logCfg.Origin] {
-			return nil, fmt.Errorf("log config: duplicate origin: %s: %v", logCfg.Origin, logCfg)
-		}
-		logNameMap[logCfg.Origin] = true
-		ret = append(ret, vcfg)
-	}
-
-	return ret, nil
 }
 
 var stringToKeyUsage = map[string]x509.ExtKeyUsage{

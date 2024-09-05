@@ -244,7 +244,7 @@ func TestValidateLogConfig(t *testing.T) {
 		},
 	} {
 		t.Run(tc.desc, func(t *testing.T) {
-			vc, err := validateLogConfig(tc.cfg)
+			vc, err := ValidateLogConfig(tc.cfg)
 			if len(tc.wantErr) == 0 && err != nil {
 				t.Errorf("ValidateLogConfig()=%v, want nil", err)
 			}
@@ -255,67 +255,6 @@ func TestValidateLogConfig(t *testing.T) {
 				t.Error("err and ValidatedLogConfig are both nil")
 			}
 			// TODO(pavelkalinnikov): Test that ValidatedLogConfig is correct.
-		})
-	}
-}
-
-func TestValidateLogConfigSet(t *testing.T) {
-	privKey := mustMarshalAny(&keyspb.PEMKeyFile{Path: "../testdata/ct-http-server.privkey.pem", Password: "dirk"})
-	for _, tc := range []struct {
-		desc    string
-		cfg     *configpb.LogConfigSet
-		wantErr string
-	}{
-		// TODO(phboneff): add config for multiple storage
-		{
-			desc:    "duplicate-prefix",
-			wantErr: "duplicate origin",
-			cfg: &configpb.LogConfigSet{
-				Config: []*configpb.LogConfig{
-					{
-						Origin:        "pref1",
-						StorageConfig: &configpb.LogConfig_Gcp{Gcp: &configpb.GCPConfig{Bucket: "bucket", SpannerDbPath: "spanner"}},
-						PrivateKey:    privKey,
-					},
-					{
-						Origin:        "pref1",
-						StorageConfig: &configpb.LogConfig_Gcp{Gcp: &configpb.GCPConfig{Bucket: "bucket", SpannerDbPath: "spanner"}},
-						PrivateKey:    privKey,
-					},
-				},
-			},
-		},
-		{
-			desc: "ok-all-distinct",
-			cfg: &configpb.LogConfigSet{
-				Config: []*configpb.LogConfig{
-					{
-						Origin:        "pref1",
-						StorageConfig: &configpb.LogConfig_Gcp{Gcp: &configpb.GCPConfig{Bucket: "bucket", SpannerDbPath: "spanner"}},
-						PrivateKey:    privKey,
-					},
-					{
-						Origin:        "pref2",
-						StorageConfig: &configpb.LogConfig_Gcp{Gcp: &configpb.GCPConfig{Bucket: "bucket", SpannerDbPath: "spanner"}},
-						PrivateKey:    privKey,
-					},
-					{
-						Origin:        "pref3",
-						StorageConfig: &configpb.LogConfig_Gcp{Gcp: &configpb.GCPConfig{Bucket: "bucket", SpannerDbPath: "spanner"}},
-						PrivateKey:    privKey,
-					},
-				},
-			},
-		},
-	} {
-		t.Run(tc.desc, func(t *testing.T) {
-			_, err := ValidateLogConfigSet(tc.cfg)
-			if len(tc.wantErr) == 0 && err != nil {
-				t.Fatalf("ValidateLogConfigSet()=%v, want nil", err)
-			}
-			if len(tc.wantErr) > 0 && (err == nil || !strings.Contains(err.Error(), tc.wantErr)) {
-				t.Errorf("ValidateLogConfigSet()=%v, want err containing %q", err, tc.wantErr)
-			}
 		})
 	}
 }
