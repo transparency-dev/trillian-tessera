@@ -17,7 +17,6 @@ package main
 
 import (
 	"context"
-	"crypto"
 	"crypto/tls"
 	"flag"
 	"fmt"
@@ -29,12 +28,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/emicklei/proto"
-	"github.com/google/trillian/crypto/keys"
-	"github.com/google/trillian/crypto/keys/der"
 	"github.com/google/trillian/crypto/keys/pem"
-	"github.com/google/trillian/crypto/keys/pkcs11"
-	"github.com/google/trillian/crypto/keyspb"
 	"github.com/google/trillian/monitoring/opencensus"
 	"github.com/google/trillian/monitoring/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -81,6 +75,7 @@ var (
 	extKeyUsages       = flag.String("ext_key_usages", "", "If set, will restrict the set of such usages that the server will accept. By default all are accepted. The values specified must be ones known to the x509 package.")
 	rejectExtensions   = flag.String("reject_extension", "", "A list of X.509 extension OIDs, in dotted string form (e.g. '2.3.4.5') which, if present, should cause submissions to be rejected.")
 	privKey            = flag.String("private_key", "", "Path to a private key .der file. Used to sign checkpoints and SCTs.")
+	privKeyPass        = flag.String("password", "", "private_key password.")
 )
 
 // nolint:staticcheck
@@ -89,16 +84,7 @@ func main() {
 	flag.Parse()
 	ctx := context.Background()
 
-	keys.RegisterHandler(&keyspb.PEMKeyFile{}, pem.FromProto)
-	keys.RegisterHandler(&keyspb.PrivateKey{}, der.FromProto)
-	keys.RegisterHandler(&keyspb.PKCS11Config{}, func(ctx context.Context, pb proto.Message) (crypto.Signer, error) {
-		if cfg, ok := pb.(*keyspb.PKCS11Config); ok {
-			return pkcs11.FromConfig(*pkcs11ModulePath, cfg)
-		}
-		return nil, fmt.Errorf("pkcs11: got %T, want *keyspb.PKCS11Config", pb)
-	})
-
-	signer, err := pem.ReadPrivateKeyFile(*privKey, *privKeyPassword)
+	signer, err := pem.ReadPrivateKeyFile(*privKey, *privKeyPass)
 	if err != nil {
 		klog.Exitf("Can't open key: %v", err)
 	}
