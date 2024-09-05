@@ -17,14 +17,12 @@ package main
 
 import (
 	"context"
-	"crypto/sha256"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
-	"strings"
 	"time"
 
 	kms "cloud.google.com/go/kms/apiv1"
@@ -52,11 +50,6 @@ func main() {
 		klog.Exit("Must supply --origin")
 	}
 
-	gcpCfg := gcp.Config{
-		ProjectID: *project,
-		Bucket:    *bucket,
-		Spanner:   *spanner,
-	}
 	signer, verifier, kmsClose := signerFromFlags(ctx)
 	defer func() {
 		if err := kmsClose(); err != nil {
@@ -64,6 +57,8 @@ func main() {
 		}
 	}()
 
+	// Create our Tessera storage backend:
+	gcpCfg := storageConfigFromFlags()
 	storage, err := gcp.New(ctx, gcpCfg,
 		tessera.WithCheckpointSignerVerifier(signer, verifier),
 		tessera.WithBatching(1024, time.Second),
@@ -73,6 +68,9 @@ func main() {
 		klog.Exitf("Failed to create new GCP storage: %v", err)
 	}
 
+	// Expose a HTTP handler for the conformance test writes.
+	// This should accept arbitary bytes POSTed to /add, and return an ascii
+	// decimal representation of the index assigned to the entry.
 	http.HandleFunc("POST /add", func(w http.ResponseWriter, r *http.Request) {
 		b, err := io.ReadAll(r.Body)
 		if err != nil {
@@ -80,8 +78,7 @@ func main() {
 			return
 		}
 
-		id := sha256.Sum256(b)
-		idx, err := storage.Add(r.Context(), tessera.NewEntry(b, tessera.WithIdentity(id[:])))()
+		idx, err := storage.Add(r.Context(), tessera.NewEntry(b))()
 		if err != nil {
 			if errors.Is(err, tessera.ErrPushback) {
 				w.Header().Add("Retry-After", "1")
@@ -92,30 +89,36 @@ func main() {
 			_, _ = w.Write([]byte(err.Error()))
 			return
 		}
+		// Write out the assigned index
 		_, _ = w.Write([]byte(fmt.Sprintf("%d", idx)))
 	})
-
-	// TODO: remove this proxy
-	serveGCS := func(w http.ResponseWriter, r *http.Request) {
-		resource := strings.TrimLeft(r.URL.Path, "/")
-		b, err := storage.Get(r.Context(), resource)
-		if err != nil {
-			klog.V(1).Infof("Get: %v", err)
-			w.WriteHeader(http.StatusBadRequest)
-			_, _ = w.Write([]byte(fmt.Sprintf("Get: %v", err)))
-			return
-		}
-		_, _ = w.Write(b)
-	}
-	http.HandleFunc("GET /checkpoint", serveGCS)
-	http.HandleFunc("GET /tile/", serveGCS)
 
 	if err := http.ListenAndServe(*listen, http.DefaultServeMux); err != nil {
 		klog.Exitf("ListenAndServe: %v", err)
 	}
 }
 
-// signerFromFlags creates and returns a new KMSSigner from the flags, along with a close func.
+// storageConfigFromFlags returns a gcp.Config struct populated with values
+// provided via flags.
+func storageConfigFromFlags() gcp.Config {
+	if *project == "" {
+		klog.Exit("--project flag or GOOGLE_CLOUD_PROJECT env must be set.")
+	}
+	if *bucket == "" {
+		klog.Exit("--bucket must be set")
+	}
+	if *spanner == "" {
+		klog.Exit("--spanner must be set")
+	}
+	return gcp.Config{
+		ProjectID: *project,
+		Bucket:    *bucket,
+		Spanner:   *spanner,
+	}
+}
+
+// signerFromFlags creates and returns a new KMSSigner from the flags, along with a close func which
+// should be called when we're finished with the signer.
 func signerFromFlags(ctx context.Context) (note.Signer, note.Verifier, func() error) {
 	kmClient, err := kms.NewKeyManagementClient(ctx)
 	if err != nil {
