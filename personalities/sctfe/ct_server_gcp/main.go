@@ -29,6 +29,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/emicklei/proto"
 	"github.com/google/trillian/crypto/keys"
 	"github.com/google/trillian/crypto/keys/der"
 	"github.com/google/trillian/crypto/keys/pem"
@@ -45,7 +46,6 @@ import (
 	gcpSCTFE "github.com/transparency-dev/trillian-tessera/personalities/sctfe/storage/gcp"
 	gcpTessera "github.com/transparency-dev/trillian-tessera/storage/gcp"
 	"golang.org/x/mod/sumdb/note"
-	"google.golang.org/protobuf/proto"
 	"k8s.io/klog/v2"
 )
 
@@ -97,11 +97,6 @@ func main() {
 		}
 		return nil, fmt.Errorf("pkcs11: got %T, want *keyspb.PKCS11Config", pb)
 	})
-
-	cfg, err := sctfe.LogConfigFromFile(*logConfig)
-	if err != nil {
-		klog.Exitf("Failed to read config: %v", err)
-	}
 
 	signer, err := pem.ReadPrivateKeyFile(*privKey, *privKeyPassword)
 	if err != nil {
