@@ -416,7 +416,7 @@ func readCheckpoint(path string) ([]byte, error) {
 func createExclusive(f string, d []byte) error {
 	tmpName := f + ".temp"
 	if err := os.WriteFile(tmpName, d, filePerm); err != nil {
-		return fmt.Errorf("unable to write leafdata to temporary file: %w", err)
+		return fmt.Errorf("unable to write data to temporary file: %w", err)
 	}
 	if err := os.Rename(tmpName, f); err != nil {
 		return err
