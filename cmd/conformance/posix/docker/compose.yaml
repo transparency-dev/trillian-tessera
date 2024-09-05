@@ -18,9 +18,5 @@ services:
       "--v=2",
     ]
     volumes:
-      - tiles:/tmp/tessera-posix-log
+      - /tmp/tessera-posix-log:/tmp/tessera-posix-log
     restart: always
-
-volumes:
-  tiles:
-    name: "tiles"
