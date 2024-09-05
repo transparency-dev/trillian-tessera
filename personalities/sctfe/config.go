@@ -123,20 +123,20 @@ func LogConfigFromFile(filename string) (*configpb.LogConfig, error) {
 //
 // Returns the validated structures (useful to avoid double validation).
 func ValidateLogConfig(cfg *configpb.LogConfig, origin string, projectID string, bucket string, spannerDB string) (*ValidatedLogConfig, error) {
-	if len(origin) == 0 {
+	if origin == "" {
 		return nil, errors.New("empty origin")
 	}
 
 	// TODO(phboneff): move this logic together with the tests out of config.go and validate the flags directly
-	if len(projectID) == 0 {
+	if projectID == "" {
 		return nil, errors.New("empty projectID")
 	}
 
-	if len(bucket) == 0 {
+	if bucket == "" {
 		return nil, errors.New("empty bucket")
 	}
 
-	if len(spannerDB) == 0 {
+	if spannerDB == "" {
 		return nil, errors.New("empty spannerDB")
 	}
 
