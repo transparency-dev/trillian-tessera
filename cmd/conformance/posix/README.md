@@ -22,13 +22,10 @@ go run ./cmd/conformance/posix \
 In another terminal, run the hammer against the log.
 In this example, we're running 32 writers against the log to add 128 new leaves within 1 minute.
 
-Note that the writes are sent to the HTTP server we brought up in the previous step, but reads are sent directly to the file system.
-
 ```shell
 go run ./hammer \
   --log_public_key=example.com/log/testdata+33d7b496+AeHTu4Q3hEIMHNqc6fASMsq3rKNx280NI+oO5xCFkkSx \
   --write_log_url=http://localhost:2025 \
-  --log_url=file:///tmp/mylog2/ \
   --max_read_ops=0 \
   --num_writers=32 \
   --max_write_ops=64 \
@@ -37,7 +34,8 @@ go run ./hammer \
   --show_ui=false
 ```
 
-Optionally, inspect the log using the woodpecker tool to see the contents:
+Optionally, inspect the log on the filesystem using the woodpecker tool to see the contents.
+Note that this reads only from the files on disk, so none of the commands above need to be running for this to work.
 
 ```shell
 go run github.com/mhutchinson/woodpecker@main --custom_log_type=tiles --custom_log_url=file:///${LOG_DIR}/ --custom_log_origin=example.com/log/testdata --custom_log_vkey=${LOG_PUBLIC_KEY}
