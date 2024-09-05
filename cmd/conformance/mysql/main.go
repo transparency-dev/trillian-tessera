@@ -48,38 +48,17 @@ func main() {
 	flag.Parse()
 	ctx := context.Background()
 
-	db, err := sql.Open("mysql", *mysqlURI)
-	if err != nil {
-		klog.Exitf("Failed to connect to DB: %v", err)
-	}
-	db.SetConnMaxLifetime(*dbConnMaxLifetime)
-	db.SetMaxOpenConns(*dbMaxOpenConns)
-	db.SetMaxIdleConns(*dbMaxIdleConns)
+	db := createDatabaseOrDie(ctx)
+	noteSigner := createSignerOrDie()
+	noteVerifier := createVerifierOrDie()
 
-	initDatabaseSchema(ctx)
-
-	rawPrivateKey, err := os.ReadFile(*privateKeyPath)
-	if err != nil {
-		klog.Exitf("Failed to read private key file %q: %v", *privateKeyPath, err)
-	}
-	noteSigner, err := note.NewSigner(string(rawPrivateKey))
-	if err != nil {
-		klog.Exitf("Failed to create new signer: %v", err)
-	}
-	rawPublicKey, err := os.ReadFile(*publicKeyPath)
-	if err != nil {
-		klog.Exitf("Failed to read public key file %q: %v", *publicKeyPath, err)
-	}
-	noteVerifier, err := note.NewVerifier(string(rawPublicKey))
-	if err != nil {
-		klog.Exitf("Failed to create new verifier: %v", err)
-	}
-
+	// Initialise the Tessera MySQL storage
 	storage, err := mysql.New(ctx, db, tessera.WithCheckpointSignerVerifier(noteSigner, noteVerifier))
 	if err != nil {
 		klog.Exitf("Failed to create new MySQL storage: %v", err)
 	}
 
+	// Set up the handlers for the tlog-tiles GET methods, and a custom handler for HTTP POSTs to /add
 	configureTilesReadAPI(http.DefaultServeMux, storage)
 	http.HandleFunc("POST /add", func(w http.ResponseWriter, r *http.Request) {
 		b, err := io.ReadAll(r.Body)
@@ -104,9 +83,47 @@ func main() {
 		}
 	})
 
+	// Serve HTTP requests until the process is terminated
 	if err := http.ListenAndServe(*listen, http.DefaultServeMux); err != nil {
 		klog.Exitf("ListenAndServe: %v", err)
 	}
+}
+
+func createDatabaseOrDie(ctx context.Context) *sql.DB {
+	db, err := sql.Open("mysql", *mysqlURI)
+	if err != nil {
+		klog.Exitf("Failed to connect to DB: %v", err)
+	}
+	db.SetConnMaxLifetime(*dbConnMaxLifetime)
+	db.SetMaxOpenConns(*dbMaxOpenConns)
+	db.SetMaxIdleConns(*dbMaxIdleConns)
+
+	initDatabaseSchema(ctx)
+	return db
+}
+
+func createSignerOrDie() note.Signer {
+	rawPrivateKey, err := os.ReadFile(*privateKeyPath)
+	if err != nil {
+		klog.Exitf("Failed to read private key file %q: %v", *privateKeyPath, err)
+	}
+	noteSigner, err := note.NewSigner(string(rawPrivateKey))
+	if err != nil {
+		klog.Exitf("Failed to create new signer: %v", err)
+	}
+	return noteSigner
+}
+
+func createVerifierOrDie() note.Verifier {
+	rawPublicKey, err := os.ReadFile(*publicKeyPath)
+	if err != nil {
+		klog.Exitf("Failed to read public key file %q: %v", *publicKeyPath, err)
+	}
+	noteVerifier, err := note.NewVerifier(string(rawPublicKey))
+	if err != nil {
+		klog.Exitf("Failed to create new verifier: %v", err)
+	}
+	return noteVerifier
 }
 
 // configureTilesReadAPI adds the API methods from https://c2sp.org/tlog-tiles to the mux,
