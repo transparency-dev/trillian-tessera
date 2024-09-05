@@ -42,6 +42,7 @@ type ValidatedLogConfig struct {
 	NotAfterLimit *time.Time
 }
 
+// TODO(phboneff): inline this in ValidatedLogConfig and probably inline things further
 type LogConfig struct {
 	// origin identifies the log. It will be used in its checkpoint, and
 	// is also its submission prefix, as per https://c2sp.org/static-ct-api
