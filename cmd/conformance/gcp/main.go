@@ -17,14 +17,12 @@ package main
 
 import (
 	"context"
-	"crypto/sha256"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
-	"strings"
 	"time"
 
 	kms "cloud.google.com/go/kms/apiv1"
@@ -79,9 +77,6 @@ func main() {
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
-		defer func() {
-			_ = r.Body.Close()
-		}()
 
 		idx, err := storage.Add(r.Context(), tessera.NewEntry(b))()
 		if err != nil {
