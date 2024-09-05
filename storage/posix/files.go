@@ -341,16 +341,8 @@ func (s *Storage) StoreTile(_ context.Context, level, index, logSize uint64, til
 		return fmt.Errorf("failed to create directory %q: %w", tDir, err)
 	}
 
-	// TODO(al): use unlinked temp file
-	temp := fmt.Sprintf("%s.temp", tPath)
-	if err := os.WriteFile(temp, t, filePerm); err != nil {
-		return fmt.Errorf("failed to write temporary tile file: %w", err)
-	}
-	if err := os.Rename(temp, tPath); err != nil {
-		if !errors.Is(err, os.ErrExist) {
-			return fmt.Errorf("failed to rename temporary tile file: %w", err)
-		}
-		os.Remove(temp)
+	if err := createExclusive(tPath, t); err != nil {
+		return err
 	}
 
 	if tileSize == 256 {
@@ -422,20 +414,9 @@ func readCheckpoint(path string) ([]byte, error) {
 // It will error if the file already exists, or it's unable to fully write the
 // data & close the file.
 func createExclusive(f string, d []byte) error {
-	tmpFile, err := os.CreateTemp(filepath.Dir(f), "")
-	if err != nil {
-		return fmt.Errorf("unable to create temporary file: %w", err)
-	}
-	tmpName := tmpFile.Name()
-	n, err := tmpFile.Write(d)
-	if err != nil {
-		return fmt.Errorf("unable to write leafdata to temporary file: %w", err)
-	}
-	if got, want := n, len(d); got != want {
-		return fmt.Errorf("short write on leaf, wrote %d expected %d", got, want)
-	}
-	if err := tmpFile.Close(); err != nil {
-		return err
+	tmpName := f + ".temp"
+	if err := os.WriteFile(tmpName, d, filePerm); err != nil {
+		return fmt.Errorf("unable to write data to temporary file: %w", err)
 	}
 	if err := os.Rename(tmpName, f); err != nil {
 		return err
