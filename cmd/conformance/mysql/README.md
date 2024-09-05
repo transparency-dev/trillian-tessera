@@ -47,3 +47,29 @@ go run ./cmd/conformance/mysql --mysql_uri="root:root@tcp(localhost:3306)/test_t
 ### Stopping
 
 <kbd>Ctrl</kbd> <kbd>C</kbd>
+
+## Using the log
+
+In this example, we're running 256 writers against the log to add 1024 new leaves within 1 minute.
+
+Note that the writes are sent to the HTTP server we brought up in the previous step, but reads are sent directly to the file system.
+
+```shell
+go run ./hammer \
+  --log_public_key=Test-Betty+df84580a+AQQASqPUZoIHcJAF5mBOryctwFdTV1E0GRY4kEAtTzwB \
+  --log_url=http://localhost:2024/ \
+  --max_read_ops=0 \
+  --num_writers=256 \
+  --max_write_ops=256 \
+  --max_runtime=1m \
+  --leaf_write_goal=1024 \
+  --show_ui=false
+```
+
+Optionally, inspect the log using the woodpecker tool to see the contents:
+
+```shell
+go run github.com/mhutchinson/woodpecker@main --custom_log_type=tiles --custom_log_url=http://localhost:2024/ --custom_log_origin=Test-Betty --custom_log_vkey=Test-Betty+df84580a+AQQASqPUZoIHcJAF5mBOryctwFdTV1E0GRY4kEAtTzwB
+```
+
+
