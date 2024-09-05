@@ -29,7 +29,7 @@ jobs:
       - name: Start Docker services (tessera-conformance-posix)
         run: docker compose -f ./cmd/conformance/posix/docker/compose.yaml up --build --detach
       - name: Run integration test 
-        run: go test -v -race ./integration/... --run_integration_test=true --log_url="http://localhost:2025" --log_public_key="example.com/log/testdata+33d7b496+AeHTu4Q3hEIMHNqc6fASMsq3rKNx280NI+oO5xCFkkSx"
+        run: go test -v -race ./integration/... --run_integration_test=true --log_url="http://localhost:2025" --write_log_url="http://localhost:2025" --log_public_key="example.com/log/testdata+33d7b496+AeHTu4Q3hEIMHNqc6fASMsq3rKNx280NI+oO5xCFkkSx"
       - name: Stop Docker services (tessera-conformance-posix)
         if: ${{ always() }}
         run: docker compose -f ./cmd/conformance/posix/docker/compose.yaml down
