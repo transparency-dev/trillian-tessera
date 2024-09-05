@@ -45,53 +45,19 @@ var (
 func main() {
 	klog.InitFlags(nil)
 	flag.Parse()
-
 	ctx := context.Background()
 
-	// Read log public key from file or environment variable
-	var pubKey string
-	var err error
-	if len(*pubKeyFile) > 0 {
-		pubKey, err = getKeyFile(*pubKeyFile)
-		if err != nil {
-			klog.Exitf("Unable to get public key: %q", err)
-		}
-	} else {
-		pubKey = os.Getenv("LOG_PUBLIC_KEY")
-		if len(pubKey) == 0 {
-			klog.Exit("Supply public key file path using --public_key or set LOG_PUBLIC_KEY environment variable")
-		}
-	}
-	// Read log private key from file or environment variable
-	var privKey string
-	if len(*privKeyFile) > 0 {
-		privKey, err = getKeyFile(*privKeyFile)
-		if err != nil {
-			klog.Exitf("Unable to get private key: %q", err)
-		}
-	} else {
-		privKey = os.Getenv("LOG_PRIVATE_KEY")
-		if len(privKey) == 0 {
-			klog.Exit("Supply private key file path using --private_key or set LOG_PRIVATE_KEY environment variable")
-		}
-	}
+	// Gather the info needed for reading/writing checkpoints
+	v := getVerifierOrDie()
+	s := getSignerOrDie()
 
-	s, err := note.NewSigner(privKey)
-	if err != nil {
-		klog.Exitf("Failed to instantiate signer: %q", err)
-	}
-
-	// Check signatures
-	v, err := note.NewVerifier(pubKey)
-	if err != nil {
-		klog.Exitf("Failed to instantiate Verifier: %v", err)
-	}
-
+	// Create the Tessera POSIX storage, using the directory from the --storage_dir flag
 	storage, err := posix.New(ctx, *storageDir, *initialise, tessera.WithCheckpointSignerVerifier(s, v), tessera.WithBatching(256, time.Second))
 	if err != nil {
 		klog.Exitf("Failed to construct storage: %v", err)
 	}
 
+	// Define a handler for /add that accepts POST requests and adds the POST body to the log
 	http.HandleFunc("POST /add", func(w http.ResponseWriter, r *http.Request) {
 		b, err := io.ReadAll(r.Body)
 		if err != nil {
@@ -115,9 +81,56 @@ func main() {
 		}
 	})
 
+	// Run the HTTP server with the single handler and block until this is terminated
 	if err := http.ListenAndServe(*listen, http.DefaultServeMux); err != nil {
 		klog.Exitf("ListenAndServe: %v", err)
 	}
+}
+
+// Read log public key from file or environment variable
+func getVerifierOrDie() note.Verifier {
+	var pubKey string
+	var err error
+	if len(*pubKeyFile) > 0 {
+		pubKey, err = getKeyFile(*pubKeyFile)
+		if err != nil {
+			klog.Exitf("Unable to get public key: %q", err)
+		}
+	} else {
+		pubKey = os.Getenv("LOG_PUBLIC_KEY")
+		if len(pubKey) == 0 {
+			klog.Exit("Supply public key file path using --public_key or set LOG_PUBLIC_KEY environment variable")
+		}
+	}
+	// Check signatures
+	v, err := note.NewVerifier(pubKey)
+	if err != nil {
+		klog.Exitf("Failed to instantiate Verifier: %q", err)
+	}
+
+	return v
+}
+
+// Read log private key from file or environment variable
+func getSignerOrDie() note.Signer {
+	var privKey string
+	var err error
+	if len(*privKeyFile) > 0 {
+		privKey, err = getKeyFile(*privKeyFile)
+		if err != nil {
+			klog.Exitf("Unable to get private key: %q", err)
+		}
+	} else {
+		privKey = os.Getenv("LOG_PRIVATE_KEY")
+		if len(privKey) == 0 {
+			klog.Exit("Supply private key file path using --private_key or set LOG_PRIVATE_KEY environment variable")
+		}
+	}
+	s, err := note.NewSigner(privKey)
+	if err != nil {
+		klog.Exitf("Failed to instantiate signer: %q", err)
+	}
+	return s
 }
 
 func getKeyFile(path string) (string, error) {
