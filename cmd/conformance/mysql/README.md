@@ -35,7 +35,7 @@ docker compose -f ./cmd/conformance/mysql/docker/compose.yaml down
 Assume you have the MySQL database ready. An alternative way is to run a MySQL database via [Docker](https://docs.docker.com/engine/install/).
 
 ```sh
-docker run --name test-mysql -p 3306:3306 -e MYSQL_ROOT_PASSWORD=root -e MYSQL_DATABASE=test_tessera -d mysql
+docker run --name test-mysql -p 3306:3306 -e MYSQL_ROOT_PASSWORD=root -e MYSQL_DATABASE=test_tessera -d mysql:8.4
 ```
 
 ### Starting
@@ -71,5 +71,3 @@ Optionally, inspect the log using the woodpecker tool to see the contents:
 ```shell
 go run github.com/mhutchinson/woodpecker@main --custom_log_type=tiles --custom_log_url=http://localhost:2024/ --custom_log_origin=Test-Betty --custom_log_vkey=Test-Betty+df84580a+AQQASqPUZoIHcJAF5mBOryctwFdTV1E0GRY4kEAtTzwB
 ```
-
-
