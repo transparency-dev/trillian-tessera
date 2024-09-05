@@ -116,7 +116,8 @@ func TestLiveLogIntegration(t *testing.T) {
 				t.Errorf("client.FetchCheckpoint: %v", err)
 			}
 			if checkpoint == nil {
-				t.Fatalf("checkpoint not found at index: %d, test entry size: %d", index, i)
+				// This was a t.Fatalf but that terminates the goroutine, stopping the error being returned on the next line
+				t.Errorf("checkpoint not found at index: %d, test entry size: %d", index, i)
 				return fmt.Errorf("failed to get checkpoint after writing entry %d (assigned sequence %d)", i, index)
 			}
 			checkpoints[i+1] = *checkpoint
@@ -181,29 +182,36 @@ func TestLiveLogIntegration(t *testing.T) {
 }
 
 func httpRead(ctx context.Context, path string) ([]byte, error) {
-	url, err := url.JoinPath(*logURL, path)
+	u, err := url.JoinPath(*logURL, path)
 	if err != nil {
 		return nil, err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return nil, err
 	}
-	resp, err := hc.Do(req)
+	resp, err := hc.Do(req.WithContext(ctx))
 	if err != nil {
 		return nil, err
 	}
-	body, err := io.ReadAll(resp.Body)
 	defer func() {
 		if err := resp.Body.Close(); err != nil {
-			klog.Warningf("resp.Body.Close(): %v", err)
+			klog.Errorf("resp.Body.Close(): %v", err)
 		}
 	}()
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read response from %s: %w", path, err)
+		return nil, fmt.Errorf("failed to read body: %v", err)
 	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("code: %s, path: %s, body: %s", resp.Status, path, strings.TrimSpace(string(body)))
+
+	switch resp.StatusCode {
+	case http.StatusNotFound:
+		klog.Infof("Not found: %q", u)
+		return nil, os.ErrNotExist
+	case http.StatusOK:
+		break
+	default:
+		return nil, fmt.Errorf("unexpected http status %q", resp.Status)
 	}
 	return body, nil
 }
