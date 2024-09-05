@@ -25,17 +25,10 @@ import (
 	"time"
 
 	ct "github.com/google/certificate-transparency-go"
-	"github.com/google/trillian/crypto/keys"
 	"github.com/google/trillian/crypto/keys/pem"
-	"github.com/google/trillian/crypto/keyspb"
 	"github.com/google/trillian/monitoring"
-	"github.com/transparency-dev/trillian-tessera/personalities/sctfe/configpb"
 	"golang.org/x/mod/sumdb/note"
 )
-
-func init() {
-	keys.RegisterHandler(&keyspb.PEMKeyFile{}, pem.FromProto)
-}
 
 func fakeCTStorage(_ context.Context, _ note.Signer) (*CTStorage, error) {
 	return &CTStorage{}, nil
@@ -51,7 +44,6 @@ func TestSetUpInstance(t *testing.T) {
 
 	var tests = []struct {
 		desc             string
-		cfg              *configpb.LogConfig
 		origin           string
 		projectID        string
 		bucket           string
@@ -65,7 +57,6 @@ func TestSetUpInstance(t *testing.T) {
 	}{
 		{
 			desc:         "valid",
-			cfg:          &configpb.LogConfig{},
 			origin:       "log",
 			projectID:    "project",
 			bucket:       "bucket",
@@ -76,7 +67,6 @@ func TestSetUpInstance(t *testing.T) {
 		},
 		{
 			desc:      "no-roots",
-			cfg:       &configpb.LogConfig{},
 			origin:    "log",
 			projectID: "project",
 			bucket:    "bucket",
@@ -87,7 +77,6 @@ func TestSetUpInstance(t *testing.T) {
 		},
 		{
 			desc:         "missing-root-cert",
-			cfg:          &configpb.LogConfig{},
 			origin:       "log",
 			projectID:    "project",
 			bucket:       "bucket",
@@ -99,7 +88,6 @@ func TestSetUpInstance(t *testing.T) {
 		},
 		{
 			desc:         "valid-ekus-1",
-			cfg:          &configpb.LogConfig{},
 			origin:       "log",
 			projectID:    "project",
 			bucket:       "bucket",
@@ -111,7 +99,6 @@ func TestSetUpInstance(t *testing.T) {
 		},
 		{
 			desc:         "valid-ekus-2",
-			cfg:          &configpb.LogConfig{},
 			origin:       "log",
 			projectID:    "project",
 			bucket:       "bucket",
@@ -123,7 +110,6 @@ func TestSetUpInstance(t *testing.T) {
 		},
 		{
 			desc:             "valid-reject-ext",
-			cfg:              &configpb.LogConfig{},
 			origin:           "log",
 			projectID:        "project",
 			bucket:           "bucket",
@@ -135,7 +121,6 @@ func TestSetUpInstance(t *testing.T) {
 		},
 		{
 			desc:             "invalid-reject-ext",
-			cfg:              &configpb.LogConfig{},
 			origin:           "log",
 			projectID:        "project",
 			bucket:           "bucket",
@@ -148,7 +133,6 @@ func TestSetUpInstance(t *testing.T) {
 		},
 		{
 			desc:         "missing-create-storage",
-			cfg:          &configpb.LogConfig{},
 			origin:       "log",
 			projectID:    "project",
 			bucket:       "bucket",
@@ -159,7 +143,6 @@ func TestSetUpInstance(t *testing.T) {
 		},
 		{
 			desc:         "failing-create-storage",
-			cfg:          &configpb.LogConfig{},
 			origin:       "log",
 			projectID:    "project",
 			bucket:       "bucket",
@@ -175,7 +158,7 @@ func TestSetUpInstance(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.desc, func(t *testing.T) {
-			vCfg, err := ValidateLogConfig(test.cfg, test.origin, test.projectID, test.bucket, test.spannerDB, test.rootsPemFile, false, false, test.extKeyUsages, test.rejectExtensions, nil, nil, signer)
+			vCfg, err := ValidateLogConfig(test.origin, test.projectID, test.bucket, test.spannerDB, test.rootsPemFile, false, false, test.extKeyUsages, test.rejectExtensions, nil, nil, signer)
 			if err != nil {
 				t.Fatalf("ValidateLogConfig(): %v", err)
 			}
@@ -220,7 +203,6 @@ func TestSetUpInstanceSetsValidationOpts(t *testing.T) {
 
 	var tests = []struct {
 		desc          string
-		cfg           *configpb.LogConfig
 		origin        string
 		projectID     string
 		bucket        string
@@ -232,7 +214,6 @@ func TestSetUpInstanceSetsValidationOpts(t *testing.T) {
 	}{
 		{
 			desc:         "no validation opts",
-			cfg:          &configpb.LogConfig{},
 			origin:       "log",
 			projectID:    "project",
 			bucket:       "bucket",
@@ -242,7 +223,6 @@ func TestSetUpInstanceSetsValidationOpts(t *testing.T) {
 		},
 		{
 			desc:          "notAfterStart only",
-			cfg:           &configpb.LogConfig{},
 			origin:        "log",
 			projectID:     "project",
 			bucket:        "bucket",
@@ -252,7 +232,6 @@ func TestSetUpInstanceSetsValidationOpts(t *testing.T) {
 		},
 		{
 			desc:          "notAfter range",
-			cfg:           &configpb.LogConfig{},
 			origin:        "log",
 			projectID:     "project",
 			bucket:        "bucket",
@@ -266,7 +245,7 @@ func TestSetUpInstanceSetsValidationOpts(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.desc, func(t *testing.T) {
-			vCfg, err := ValidateLogConfig(test.cfg, test.origin, test.projectID, test.bucket, test.spannerDB, test.rootsPemFile, false, false, "", "", test.notAfterStart, test.notAfterLimit, signer)
+			vCfg, err := ValidateLogConfig(test.origin, test.projectID, test.bucket, test.spannerDB, test.rootsPemFile, false, false, "", "", test.notAfterStart, test.notAfterLimit, signer)
 			if err != nil {
 				t.Fatalf("ValidateLogConfig(): %v", err)
 			}

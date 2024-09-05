@@ -16,24 +16,12 @@ package sctfe
 
 import (
 	"crypto"
-	"fmt"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/trillian/crypto/keys/pem"
-	"github.com/transparency-dev/trillian-tessera/personalities/sctfe/configpb"
-	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/types/known/anypb"
 )
-
-func mustMarshalAny(pb proto.Message) *anypb.Any {
-	ret, err := anypb.New(pb)
-	if err != nil {
-		panic(fmt.Sprintf("MarshalAny failed: %v", err))
-	}
-	return ret
-}
 
 func TestValidateLogConfig(t *testing.T) {
 	signer, err := pem.ReadPrivateKeyFile("./testdata/ct-http-server.privkey.pem", "dirk")
@@ -46,7 +34,6 @@ func TestValidateLogConfig(t *testing.T) {
 
 	for _, tc := range []struct {
 		desc            string
-		cfg             *configpb.LogConfig
 		origin          string
 		projectID       string
 		bucket          string
@@ -62,7 +49,6 @@ func TestValidateLogConfig(t *testing.T) {
 		{
 			desc:      "empty-origin",
 			wantErr:   "empty origin",
-			cfg:       &configpb.LogConfig{},
 			projectID: "project",
 			bucket:    "bucket",
 			spannerDB: "spanner",
@@ -70,7 +56,6 @@ func TestValidateLogConfig(t *testing.T) {
 		{
 			desc:      "empty-projectID",
 			wantErr:   "empty projectID",
-			cfg:       &configpb.LogConfig{},
 			origin:    "testlog",
 			projectID: "",
 			bucket:    "bucket",
@@ -80,7 +65,6 @@ func TestValidateLogConfig(t *testing.T) {
 		{
 			desc:      "empty-bucket",
 			wantErr:   "empty bucket",
-			cfg:       &configpb.LogConfig{},
 			origin:    "testlog",
 			projectID: "project",
 			bucket:    "",
@@ -90,7 +74,6 @@ func TestValidateLogConfig(t *testing.T) {
 		{
 			desc:      "empty-spannerDB",
 			wantErr:   "empty spannerDB",
-			cfg:       &configpb.LogConfig{},
 			origin:    "testlog",
 			projectID: "project",
 			bucket:    "bucket",
@@ -100,7 +83,6 @@ func TestValidateLogConfig(t *testing.T) {
 		{
 			desc:            "rejecting-all",
 			wantErr:         "rejecting all certificates",
-			cfg:             &configpb.LogConfig{},
 			origin:          "testlog",
 			projectID:       "project",
 			bucket:          "bucket",
@@ -112,7 +94,6 @@ func TestValidateLogConfig(t *testing.T) {
 		{
 			desc:         "unknown-ext-key-usage-1",
 			wantErr:      "unknown extended key usage",
-			cfg:          &configpb.LogConfig{},
 			origin:       "testlog",
 			projectID:    "project",
 			bucket:       "bucket",
@@ -123,7 +104,6 @@ func TestValidateLogConfig(t *testing.T) {
 		{
 			desc:         "unknown-ext-key-usage-2",
 			wantErr:      "unknown extended key usage",
-			cfg:          &configpb.LogConfig{},
 			origin:       "testlog",
 			projectID:    "project",
 			bucket:       "bucket",
@@ -134,7 +114,6 @@ func TestValidateLogConfig(t *testing.T) {
 		{
 			desc:         "unknown-ext-key-usage-3",
 			wantErr:      "unknown extended key usage",
-			cfg:          &configpb.LogConfig{},
 			origin:       "testlog",
 			projectID:    "project",
 			bucket:       "bucket",
@@ -145,7 +124,6 @@ func TestValidateLogConfig(t *testing.T) {
 		{
 			desc:          "limit-before-start",
 			wantErr:       "limit before start",
-			cfg:           &configpb.LogConfig{},
 			origin:        "testlog",
 			projectID:     "project",
 			bucket:        "bucket",
@@ -156,7 +134,6 @@ func TestValidateLogConfig(t *testing.T) {
 		},
 		{
 			desc:      "ok",
-			cfg:       &configpb.LogConfig{},
 			origin:    "testlog",
 			projectID: "project",
 			bucket:    "bucket",
@@ -165,7 +142,6 @@ func TestValidateLogConfig(t *testing.T) {
 		},
 		{
 			desc:         "ok-ext-key-usages",
-			cfg:          &configpb.LogConfig{},
 			origin:       "testlog",
 			projectID:    "project",
 			bucket:       "bucket",
@@ -175,7 +151,6 @@ func TestValidateLogConfig(t *testing.T) {
 		},
 		{
 			desc:          "ok-start-timestamp",
-			cfg:           &configpb.LogConfig{},
 			origin:        "testlog",
 			projectID:     "project",
 			bucket:        "bucket",
@@ -185,7 +160,6 @@ func TestValidateLogConfig(t *testing.T) {
 		},
 		{
 			desc:          "ok-limit-timestamp",
-			cfg:           &configpb.LogConfig{},
 			origin:        "testlog",
 			projectID:     "project",
 			bucket:        "bucket",
@@ -195,7 +169,6 @@ func TestValidateLogConfig(t *testing.T) {
 		},
 		{
 			desc:          "ok-range-timestamp",
-			cfg:           &configpb.LogConfig{},
 			origin:        "testlog",
 			projectID:     "project",
 			bucket:        "bucket",
@@ -206,7 +179,7 @@ func TestValidateLogConfig(t *testing.T) {
 		},
 	} {
 		t.Run(tc.desc, func(t *testing.T) {
-			vc, err := ValidateLogConfig(tc.cfg, tc.origin, tc.projectID, tc.bucket, tc.spannerDB, "", tc.rejectExpired, tc.rejectUnexpired, tc.extKeyUsages, "", tc.notAfterStart, tc.notAfterLimit, signer)
+			vc, err := ValidateLogConfig(tc.origin, tc.projectID, tc.bucket, tc.spannerDB, "", tc.rejectExpired, tc.rejectUnexpired, tc.extKeyUsages, "", tc.notAfterStart, tc.notAfterLimit, signer)
 			if len(tc.wantErr) == 0 && err != nil {
 				t.Errorf("ValidateLogConfig()=%v, want nil", err)
 			}

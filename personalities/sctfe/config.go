@@ -18,15 +18,10 @@ import (
 	"crypto"
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
 	"github.com/google/certificate-transparency-go/x509"
-	"github.com/google/trillian/crypto/keyspb"
-	"github.com/transparency-dev/trillian-tessera/personalities/sctfe/configpb"
-	"google.golang.org/protobuf/encoding/prototext"
-	"google.golang.org/protobuf/proto"
 	"k8s.io/klog/v2"
 )
 
@@ -34,7 +29,6 @@ import (
 // been successfully parsed as a result of validating it.
 type ValidatedLogConfig struct {
 	Config *LogConfig
-	PubKey crypto.PublicKey
 	Signer crypto.Signer
 	// If set, ExtKeyUsages will restrict the set of such usages that the
 	// server will accept. By default all are accepted. The values specified
@@ -53,10 +47,6 @@ type LogConfig struct {
 	// Path to the file containing root certificates that are acceptable to the
 	// log. The certs are served through get-roots endpoint.
 	RootsPemFile string
-	// The public key matching the above private key (if both are present).
-	// It can be specified for the convenience of test tools, but it not used
-	// by the server.
-	PublicKey *keyspb.PublicKey
 	// If reject_expired is true then the certificate validity period will be
 	// checked against the current time during the validation of submissions.
 	// This will cause expired certificates to be rejected.
@@ -69,25 +59,6 @@ type LogConfig struct {
 	RejectExtensions []string
 }
 
-// LogConfigFromFile creates a LogConfig options from the given
-// filename, which should contain text or binary-encoded protobuf configuration
-// data.
-func LogConfigFromFile(filename string) (*configpb.LogConfig, error) {
-	cfgBytes, err := os.ReadFile(filename)
-	if err != nil {
-		return nil, err
-	}
-
-	var cfg configpb.LogConfig
-	if txtErr := prototext.Unmarshal(cfgBytes, &cfg); txtErr != nil {
-		if binErr := proto.Unmarshal(cfgBytes, &cfg); binErr != nil {
-			return nil, fmt.Errorf("failed to parse LogConfig from %q as text protobuf (%v) or binary protobuf (%v)", filename, txtErr, binErr)
-		}
-	}
-
-	return &cfg, nil
-}
-
 // ValidateLogConfig checks that a single log config is valid. In particular:
 //   - A log has a private, and optionally a public key (both valid).
 //   - Each of NotBeforeStart and NotBeforeLimit, if set, is a valid timestamp
@@ -95,7 +66,7 @@ func LogConfigFromFile(filename string) (*configpb.LogConfig, error) {
 //   - Merge delays (if present) are correct.
 //
 // Returns the validated structures (useful to avoid double validation).
-func ValidateLogConfig(cfg *configpb.LogConfig, origin string, projectID string, bucket string, spannerDB string, rootsPemFile string, rejectExpired bool, rejectUnexpired bool, extKeyUsages string, rejectExtensions string, notAfterStart *time.Time, notAfterLimit *time.Time, signer crypto.Signer) (*ValidatedLogConfig, error) {
+func ValidateLogConfig(origin string, projectID string, bucket string, spannerDB string, rootsPemFile string, rejectExpired bool, rejectUnexpired bool, extKeyUsages string, rejectExtensions string, notAfterStart *time.Time, notAfterLimit *time.Time, signer crypto.Signer) (*ValidatedLogConfig, error) {
 	if origin == "" {
 		return nil, errors.New("empty origin")
 	}
@@ -126,7 +97,6 @@ func ValidateLogConfig(cfg *configpb.LogConfig, origin string, projectID string,
 		Config: &LogConfig{
 			Origin:           origin,
 			RootsPemFile:     rootsPemFile,
-			PublicKey:        cfg.PublicKey,
 			RejectExpired:    rejectExpired,
 			RejectUnexpired:  rejectUnexpired,
 			RejectExtensions: lRejectExtensions,
@@ -134,14 +104,6 @@ func ValidateLogConfig(cfg *configpb.LogConfig, origin string, projectID string,
 		NotAfterStart: notAfterStart,
 		NotAfterLimit: notAfterLimit,
 		Signer:        signer,
-	}
-
-	// Validate the public key.
-	if pubKey := cfg.PublicKey; pubKey != nil {
-		var err error
-		if vCfg.PubKey, err = x509.ParsePKIXPublicKey(pubKey.Der); err != nil {
-			return nil, fmt.Errorf("x509.ParsePKIXPublicKey: %w", err)
-		}
 	}
 
 	if rejectExpired && rejectUnexpired {

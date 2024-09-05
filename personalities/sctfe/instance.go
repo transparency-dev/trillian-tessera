@@ -17,7 +17,6 @@ package sctfe
 import (
 	"context"
 	"crypto"
-	"crypto/ecdsa"
 	"errors"
 	"fmt"
 	"strconv"
@@ -90,19 +89,6 @@ func setUpLogInfo(ctx context.Context, opts InstanceOptions) (*logInfo, error) {
 	roots := x509util.NewPEMCertPool()
 	if err := roots.AppendCertsFromPEMFile(cfg.RootsPemFile); err != nil {
 		return nil, fmt.Errorf("failed to read trusted roots: %v", err)
-	}
-
-	// TODO(phboneff): are pub keys actually used? If not, remove
-	// If a public key has been configured for a log, check that it is consistent with the private key.
-	if vCfg.PubKey != nil {
-		switch pub := vCfg.PubKey.(type) {
-		case *ecdsa.PublicKey:
-			if !pub.Equal(vCfg.Signer.Public()) {
-				return nil, errors.New("public key is not consistent with private key")
-			}
-		default:
-			return nil, errors.New("failed to verify consistency of public key with private key")
-		}
 	}
 
 	validationOpts := CertValidationOpts{
