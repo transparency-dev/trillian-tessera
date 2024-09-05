@@ -50,8 +50,8 @@ var (
 
 	noteVerifier note.Verifier
 
-	logBaseURL url.URL
-	logRead    client.Fetcher
+	logReadBaseURL *url.URL
+	logRead        client.Fetcher
 
 	hc = &http.Client{
 		Transport: &http.Transport{
@@ -77,18 +77,18 @@ func TestMain(m *testing.M) {
 		klog.Fatalf("Failed to create new verifier: %v", err)
 	}
 
-	logBaseURL, err := url.Parse(*logURL)
+	logReadBaseURL, err = url.Parse(*logURL)
 	if err != nil {
 		klog.Fatalf("failed to parse logURL: %v", err)
 	}
 
-	switch logBaseURL.Scheme {
+	switch logReadBaseURL.Scheme {
 	case "http", "https":
 		logRead = httpRead
 	case "file":
 		logRead = fileRead
 	default:
-		klog.Fatalf("unsupported url scheme: %s", logBaseURL.Scheme)
+		klog.Fatalf("unsupported url scheme: %s", logReadBaseURL.Scheme)
 	}
 
 	os.Exit(m.Run())
@@ -234,7 +234,7 @@ func httpRead(ctx context.Context, path string) ([]byte, error) {
 }
 
 func fileRead(_ context.Context, path string) ([]byte, error) {
-	return os.ReadFile(logBaseURL.JoinPath(path).Path)
+	return os.ReadFile(logReadBaseURL.JoinPath(path).Path)
 }
 
 type entryWriter struct {
