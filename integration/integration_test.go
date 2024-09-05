@@ -116,7 +116,8 @@ func TestLiveLogIntegration(t *testing.T) {
 				t.Errorf("client.FetchCheckpoint: %v", err)
 			}
 			if checkpoint == nil {
-				t.Fatalf("checkpoint not found at index: %d, test entry size: %d", index, i)
+				// This was a t.Fatalf but that terminates the goroutine, stopping the error being returned on the next line
+				t.Errorf("checkpoint not found at index: %d, test entry size: %d", index, i)
 				return fmt.Errorf("failed to get checkpoint after writing entry %d (assigned sequence %d)", i, index)
 			}
 			checkpoints[i+1] = *checkpoint
