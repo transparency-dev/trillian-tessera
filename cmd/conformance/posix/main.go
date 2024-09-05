@@ -75,6 +75,9 @@ func main() {
 			return
 		}
 	})
+	// Proxy all GET requests to the filesystem as a lightweight file server.
+	// This makes it easier to test this implementation from another machine.
+	http.Handle("GET /", http.FileServer(http.Dir(*storageDir)))
 
 	// Run the HTTP server with the single handler and block until this is terminated
 	if err := http.ListenAndServe(*listen, http.DefaultServeMux); err != nil {

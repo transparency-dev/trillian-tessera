@@ -1,23 +1,5 @@
 services:
 
-  tessera-conformance-posix-read-proxy:
-    container_name: tessera-conformance-posix-read-proxy
-    image: "busybox:stable"
-    ports:
-      - "2024:2024"
-    command: [
-      "/bin/busybox", 
-      "httpd", 
-      "-f", 
-      "-p", 
-      "2024",
-      "-h",
-      "/tmp/tessera-posix-log"
-    ]
-    volumes:
-      - tiles:/tmp/tessera-posix-log
-    restart: always 
-
   tessera-conformance-posix:
     container_name: tessera-conformance-posix
     build:
