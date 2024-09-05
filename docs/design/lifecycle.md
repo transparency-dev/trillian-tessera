@@ -14,37 +14,37 @@ The definitions below will use terms that we'll define here:
 
 ## States
 
-### Sequencing
+### `Sequencing`
 
 This is the "normal" state of most active logs.
 The purpose of this state is to allow entries to be sequenced by, and integrated into, the log.
 
-This state can start from an empty tree, or from the Draining state, in which case there can be any number of entries already in the tree, but they must all be integrated.
+This state can start from an empty tree, or from the `Draining` state, in which case there can be any number of entries already in the tree, but they must all be integrated.
 This state is characterized by the writer personality only calling the `Add` method.
-The only valid transition outwards is to [Draining](#Draining).
+The only valid transition outwards is to [`Draining`](#Draining).
 
-### Preordered
+### `Preordered`
 
 This state is used for logs where the precise index assigned to each entry in the log is critical.
 The most common example of this is when a log is mirroring another log.
 
 This state must start from an empty tree.
 It is characterized by the personality that writes only via calls to the `Set` method.
-The only valid transition outwards is to [Draining](#Draining).
+The only valid transition outwards is to [`Draining`](#Draining).
 
-### Draining
+### `Draining`
 
 The purpose of this state is to prevent any new entries being added and to integrate any pending sequenced entries.
 This state may be realized as a terminal state, in which case the log is frozen.
 
-This state requires [Preordered](#Preordered) or [Sequencing](#Sequencing) first.
+This state requires [`Preordered`](#Preordered) or [`Sequencing`](#Sequencing) first.
 No calls to the write methods should be made while in this state.
-The only valid transitions are to [Sequencing](#Sequencing), or [Deleted](#Deleted).
+The only valid transitions are to [`Sequencing`](#Sequencing), or [`Deleted`](#Deleted).
 
-### Deleted
+### `Deleted`
 
 Each storage implementation will define instructions for deleting the contents of the log when no longer required.
-It can only be reached from the [Draining](#Draining) state.
+It can only be reached from the [`Draining`](#Draining) state.
 The concept of a soft-delete is not supported by Tessera, though the deployer may be able to realize this via their own infrastructure (e.g. by deleting URL mappings to the log handlers).
 
 ## Lifecycle in Trillian v1
