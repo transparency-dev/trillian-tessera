@@ -55,9 +55,6 @@ func LogConfigFromFile(filename string) (*configpb.LogConfig, error) {
 		}
 	}
 
-	if cfg.Origin == "" {
-		return nil, errors.New("empty log config found")
-	}
 	return &cfg, nil
 }
 
