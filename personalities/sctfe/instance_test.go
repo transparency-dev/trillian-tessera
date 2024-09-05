@@ -38,7 +38,7 @@ func init() {
 	keys.RegisterHandler(&keyspb.PEMKeyFile{}, pem.FromProto)
 }
 
-func fakeCTStorage(_ context.Context, _ *ValidatedLogConfig, _ note.Signer) (*CTStorage, error) {
+func fakeCTStorage(_ context.Context, _ note.Signer) (*CTStorage, error) {
 	return &CTStorage{}, nil
 }
 
@@ -52,126 +52,152 @@ func TestSetUpInstance(t *testing.T) {
 	var tests = []struct {
 		desc      string
 		cfg       *configpb.LogConfig
-		ctStorage func(context.Context, *ValidatedLogConfig, note.Signer) (*CTStorage, error)
+		origin    string
+		projectID string
+		bucket    string
+		spannerDB string
+		ctStorage func(context.Context, note.Signer) (*CTStorage, error)
 		wantErr   string
 	}{
 		{
 			desc: "valid",
 			cfg: &configpb.LogConfig{
-				Origin:        "log",
-				RootsPemFile:  []string{"./testdata/fake-ca.cert"},
-				PrivateKey:    privKey,
-				StorageConfig: &configpb.LogConfig_Gcp{Gcp: &configpb.GCPConfig{Bucket: "bucket", SpannerDbPath: "spanner"}},
+				RootsPemFile: []string{"./testdata/fake-ca.cert"},
+				PrivateKey:   privKey,
 			},
+			origin:    "log",
+			projectID: "project",
+			bucket:    "bucket",
+			spannerDB: "spanner",
 			ctStorage: fakeCTStorage,
 		},
 		{
 			desc: "no-roots",
 			cfg: &configpb.LogConfig{
-				Origin:        "log",
-				PrivateKey:    privKey,
-				StorageConfig: &configpb.LogConfig_Gcp{Gcp: &configpb.GCPConfig{Bucket: "bucket", SpannerDbPath: "spanner"}},
+				PrivateKey: privKey,
 			},
+			origin:    "log",
+			projectID: "project",
+			bucket:    "bucket",
+			spannerDB: "spanner",
 			ctStorage: fakeCTStorage,
 			wantErr:   "specify RootsPemFile",
 		},
 		{
 			desc: "missing-root-cert",
 			cfg: &configpb.LogConfig{
-				Origin:        "log",
-				RootsPemFile:  []string{"../testdata/bogus.cert"},
-				PrivateKey:    privKey,
-				StorageConfig: &configpb.LogConfig_Gcp{Gcp: &configpb.GCPConfig{Bucket: "bucket", SpannerDbPath: "spanner"}},
+				RootsPemFile: []string{"../testdata/bogus.cert"},
+				PrivateKey:   privKey,
 			},
+			origin:    "log",
+			projectID: "project",
+			bucket:    "bucket",
+			spannerDB: "spanner",
 			ctStorage: fakeCTStorage,
 			wantErr:   "failed to read trusted roots",
 		},
 		{
 			desc: "missing-privkey",
 			cfg: &configpb.LogConfig{
-				Origin:        "log",
-				RootsPemFile:  []string{"./testdata/fake-ca.cert"},
-				PrivateKey:    missingPrivKey,
-				StorageConfig: &configpb.LogConfig_Gcp{Gcp: &configpb.GCPConfig{Bucket: "bucket", SpannerDbPath: "spanner"}},
+				RootsPemFile: []string{"./testdata/fake-ca.cert"},
+				PrivateKey:   missingPrivKey,
 			},
+			origin:    "log",
+			projectID: "project",
+			bucket:    "bucket",
+			spannerDB: "spanner",
 			ctStorage: fakeCTStorage,
 			wantErr:   "failed to load private key",
 		},
 		{
 			desc: "privkey-wrong-password",
 			cfg: &configpb.LogConfig{
-				Origin:        "log",
-				RootsPemFile:  []string{"./testdata/fake-ca.cert"},
-				PrivateKey:    wrongPassPrivKey,
-				StorageConfig: &configpb.LogConfig_Gcp{Gcp: &configpb.GCPConfig{Bucket: "bucket", SpannerDbPath: "spanner"}},
+				RootsPemFile: []string{"./testdata/fake-ca.cert"},
+				PrivateKey:   wrongPassPrivKey,
 			},
+			origin:    "log",
+			projectID: "project",
+			bucket:    "bucket",
+			spannerDB: "spanner",
 			ctStorage: fakeCTStorage,
 			wantErr:   "failed to load private key",
 		},
 		{
 			desc: "valid-ekus-1",
 			cfg: &configpb.LogConfig{
-				Origin:        "log",
-				RootsPemFile:  []string{"./testdata/fake-ca.cert"},
-				PrivateKey:    privKey,
-				ExtKeyUsages:  []string{"Any"},
-				StorageConfig: &configpb.LogConfig_Gcp{Gcp: &configpb.GCPConfig{Bucket: "bucket", SpannerDbPath: "spanner"}},
+				RootsPemFile: []string{"./testdata/fake-ca.cert"},
+				PrivateKey:   privKey,
+				ExtKeyUsages: []string{"Any"},
 			},
+			origin:    "log",
+			projectID: "project",
+			bucket:    "bucket",
+			spannerDB: "spanner",
 			ctStorage: fakeCTStorage,
 		},
 		{
 			desc: "valid-ekus-2",
 			cfg: &configpb.LogConfig{
-				Origin:        "log",
-				RootsPemFile:  []string{"./testdata/fake-ca.cert"},
-				PrivateKey:    privKey,
-				ExtKeyUsages:  []string{"Any", "ServerAuth", "TimeStamping"},
-				StorageConfig: &configpb.LogConfig_Gcp{Gcp: &configpb.GCPConfig{Bucket: "bucket", SpannerDbPath: "spanner"}},
+				RootsPemFile: []string{"./testdata/fake-ca.cert"},
+				PrivateKey:   privKey,
+				ExtKeyUsages: []string{"Any", "ServerAuth", "TimeStamping"},
 			},
+			origin:    "log",
+			projectID: "project",
+			bucket:    "bucket",
+			spannerDB: "spanner",
 			ctStorage: fakeCTStorage,
 		},
 		{
 			desc: "valid-reject-ext",
 			cfg: &configpb.LogConfig{
-				Origin:           "log",
 				RootsPemFile:     []string{"./testdata/fake-ca.cert"},
 				PrivateKey:       privKey,
 				RejectExtensions: []string{"1.2.3.4", "5.6.7.8"},
-				StorageConfig:    &configpb.LogConfig_Gcp{Gcp: &configpb.GCPConfig{Bucket: "bucket", SpannerDbPath: "spanner"}},
 			},
+			origin:    "log",
+			projectID: "project",
+			bucket:    "bucket",
+			spannerDB: "spanner",
 			ctStorage: fakeCTStorage,
 		},
 		{
 			desc: "invalid-reject-ext",
 			cfg: &configpb.LogConfig{
-				Origin:           "log",
 				RootsPemFile:     []string{"./testdata/fake-ca.cert"},
 				PrivateKey:       privKey,
 				RejectExtensions: []string{"1.2.3.4", "one.banana.two.bananas"},
-				StorageConfig:    &configpb.LogConfig_Gcp{Gcp: &configpb.GCPConfig{Bucket: "bucket", SpannerDbPath: "spanner"}},
 			},
+			origin:    "log",
+			projectID: "project",
+			bucket:    "bucket",
+			spannerDB: "spanner",
 			ctStorage: fakeCTStorage,
 			wantErr:   "one",
 		},
 		{
 			desc: "missing-create-storage",
 			cfg: &configpb.LogConfig{
-				Origin:        "log",
-				RootsPemFile:  []string{"./testdata/fake-ca.cert"},
-				PrivateKey:    privKey,
-				StorageConfig: &configpb.LogConfig_Gcp{Gcp: &configpb.GCPConfig{Bucket: "bucket", SpannerDbPath: "spanner"}},
+				RootsPemFile: []string{"./testdata/fake-ca.cert"},
+				PrivateKey:   privKey,
 			},
-			wantErr: "failed to initiate storage backend",
+			origin:    "log",
+			projectID: "project",
+			bucket:    "bucket",
+			spannerDB: "spanner",
+			wantErr:   "failed to initiate storage backend",
 		},
 		{
 			desc: "failing-create-storage",
 			cfg: &configpb.LogConfig{
-				Origin:        "log",
-				RootsPemFile:  []string{"./testdata/fake-ca.cert"},
-				PrivateKey:    privKey,
-				StorageConfig: &configpb.LogConfig_Gcp{Gcp: &configpb.GCPConfig{Bucket: "bucket", SpannerDbPath: "spanner"}},
+				RootsPemFile: []string{"./testdata/fake-ca.cert"},
+				PrivateKey:   privKey,
 			},
-			ctStorage: func(_ context.Context, _ *ValidatedLogConfig, _ note.Signer) (*CTStorage, error) {
+			origin:    "log",
+			projectID: "project",
+			bucket:    "bucket",
+			spannerDB: "spanner",
+			ctStorage: func(_ context.Context, _ note.Signer) (*CTStorage, error) {
 				return nil, fmt.Errorf("I failed")
 			},
 			wantErr: "failed to initiate storage backend",
@@ -180,7 +206,7 @@ func TestSetUpInstance(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.desc, func(t *testing.T) {
-			vCfg, err := ValidateLogConfig(test.cfg)
+			vCfg, err := ValidateLogConfig(test.cfg, test.origin, test.projectID, test.bucket, test.spannerDB)
 			if err != nil {
 				t.Fatalf("ValidateLogConfig(): %v", err)
 			}
@@ -224,54 +250,66 @@ func TestSetUpInstanceSetsValidationOpts(t *testing.T) {
 		t.Fatalf("Could not marshal private key proto: %v", err)
 	}
 	var tests = []struct {
-		desc string
-		cfg  *configpb.LogConfig
+		desc      string
+		cfg       *configpb.LogConfig
+		origin    string
+		projectID string
+		bucket    string
+		spannerDB string
 	}{
 		{
 			desc: "no validation opts",
 			cfg: &configpb.LogConfig{
-				Origin:        "/log",
-				RootsPemFile:  []string{"./testdata/fake-ca.cert"},
-				PrivateKey:    privKey,
-				StorageConfig: &configpb.LogConfig_Gcp{Gcp: &configpb.GCPConfig{Bucket: "bucket", SpannerDbPath: "spanner"}},
+				RootsPemFile: []string{"./testdata/fake-ca.cert"},
+				PrivateKey:   privKey,
 			},
+			origin:    "log",
+			projectID: "project",
+			bucket:    "bucket",
+			spannerDB: "spanner",
 		},
 		{
 			desc: "notAfterStart only",
 			cfg: &configpb.LogConfig{
-				Origin:        "/log",
 				RootsPemFile:  []string{"./testdata/fake-ca.cert"},
 				PrivateKey:    privKey,
 				NotAfterStart: start,
-				StorageConfig: &configpb.LogConfig_Gcp{Gcp: &configpb.GCPConfig{Bucket: "bucket", SpannerDbPath: "spanner"}},
 			},
+			origin:    "log",
+			projectID: "project",
+			bucket:    "bucket",
+			spannerDB: "spanner",
 		},
 		{
 			desc: "notAfter range",
 			cfg: &configpb.LogConfig{
-				Origin:        "/log",
 				RootsPemFile:  []string{"./testdata/fake-ca.cert"},
 				PrivateKey:    privKey,
 				NotAfterStart: start,
 				NotAfterLimit: limit,
-				StorageConfig: &configpb.LogConfig_Gcp{Gcp: &configpb.GCPConfig{Bucket: "bucket", SpannerDbPath: "spanner"}},
 			},
+			origin:    "log",
+			projectID: "project",
+			bucket:    "bucket",
+			spannerDB: "spanner",
 		},
 		{
 			desc: "caOnly",
 			cfg: &configpb.LogConfig{
-				Origin:        "/log",
-				RootsPemFile:  []string{"./testdata/fake-ca.cert"},
-				PrivateKey:    privKey,
-				AcceptOnlyCa:  true,
-				StorageConfig: &configpb.LogConfig_Gcp{Gcp: &configpb.GCPConfig{Bucket: "bucket", SpannerDbPath: "spanner"}},
+				RootsPemFile: []string{"./testdata/fake-ca.cert"},
+				PrivateKey:   privKey,
+				AcceptOnlyCa: true,
 			},
+			origin:    "log",
+			projectID: "project",
+			bucket:    "bucket",
+			spannerDB: "spanner",
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.desc, func(t *testing.T) {
-			vCfg, err := ValidateLogConfig(test.cfg)
+			vCfg, err := ValidateLogConfig(test.cfg, test.origin, test.projectID, test.bucket, test.spannerDB)
 			if err != nil {
 				t.Fatalf("ValidateLogConfig(): %v", err)
 			}
@@ -281,7 +319,7 @@ func TestSetUpInstanceSetsValidationOpts(t *testing.T) {
 			if err != nil {
 				t.Fatalf("%v: SetUpInstance() = %v, want no error", test.desc, err)
 			}
-			addChainHandler, ok := inst.Handlers[test.cfg.Origin+ct.AddChainPath]
+			addChainHandler, ok := inst.Handlers["/"+test.origin+ct.AddChainPath]
 			if !ok {
 				t.Fatal("Couldn't find AddChain handler")
 			}
