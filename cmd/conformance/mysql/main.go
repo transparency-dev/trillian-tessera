@@ -66,11 +66,6 @@ func main() {
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
-		defer func() {
-			if err := r.Body.Close(); err != nil {
-				klog.Warningf("/add: %v", err)
-			}
-		}()
 		idx, err := storage.Add(r.Context(), tessera.NewEntry(b))()
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
