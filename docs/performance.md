@@ -2,6 +2,9 @@
 
 This document describes the performance of each Trillian Tessera storage implementation under different conditions.
 
+> [!TIP]
+> The performance test result shows that Trillian Tessera can run on the free tier VM instance on GCP.
+
 ## MySQL
 
 ### GCP Free Tier VM Instance
