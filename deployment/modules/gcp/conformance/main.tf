@@ -86,15 +86,15 @@ locals {
 }
 
 resource "google_cloud_run_v2_service" "default" {
-  name         = "example-service-${var.env}"
+  name         = "conformance-${var.env}"
   location     = var.location
   launch_stage = "GA"
 
   template {
     service_account = google_service_account.cloudrun_service_account.email
     containers {
-      image = var.example_gcp_docker_image
-      name  = "example-gcp"
+      image = var.server_docker_image
+      name  = "conformance"
       args = [
         "--logtostderr",
         "--v=1",

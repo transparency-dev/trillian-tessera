@@ -18,12 +18,12 @@ variable "env" {
   type        = string
 }
 
-variable "example_gcp_docker_image" {
-  description = "The full image URL (path & tag) for the example-gcp Docker image to deploy"
+variable "server_docker_image" {
+  description = "The full image URL (path & tag) for the Docker image to deploy in Cloud Run"
   type        = string
 }
 
 variable "log_origin" {
-  description = "The origin string for the example log"
+  description = "The origin string for the conformance log"
   type        = string
 }
