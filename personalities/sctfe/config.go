@@ -187,20 +187,18 @@ func ValidateLogConfig(cfg *configpb.LogConfig, origin string, projectID string,
 	}
 
 	// Validate the extended key usages list.
-	if len(lExtKeyUsages) > 0 {
-		for _, kuStr := range lExtKeyUsages {
-			if ku, ok := stringToKeyUsage[kuStr]; ok {
-				// If "Any" is specified, then we can ignore the entire list and
-				// just disable EKU checking.
-				if ku == x509.ExtKeyUsageAny {
-					klog.Infof("%s: Found ExtKeyUsageAny, allowing all EKUs", origin)
-					vCfg.KeyUsages = nil
-					break
-				}
-				vCfg.KeyUsages = append(vCfg.KeyUsages, ku)
-			} else {
-				return nil, fmt.Errorf("unknown extended key usage: %s", kuStr)
+	for _, kuStr := range lExtKeyUsages {
+		if ku, ok := stringToKeyUsage[kuStr]; ok {
+			// If "Any" is specified, then we can ignore the entire list and
+			// just disable EKU checking.
+			if ku == x509.ExtKeyUsageAny {
+				klog.Infof("%s: Found ExtKeyUsageAny, allowing all EKUs", origin)
+				vCfg.KeyUsages = nil
+				break
 			}
+			vCfg.KeyUsages = append(vCfg.KeyUsages, ku)
+		} else {
+			return nil, fmt.Errorf("unknown extended key usage: %s", kuStr)
 		}
 	}
 
