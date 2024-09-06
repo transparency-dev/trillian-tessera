@@ -82,10 +82,6 @@ func validateChain(rawChain [][]byte, validationOpts CertValidationOpts) ([]*x50
 		return nil, fmt.Errorf("certificate NotAfter (%v) >= %v", cert.NotAfter, *naLimit)
 	}
 
-	if validationOpts.acceptOnlyCA && !cert.IsCA {
-		return nil, errors.New("only certificates with CA bit set are accepted")
-	}
-
 	now := validationOpts.currentTime
 	if now.IsZero() {
 		now = time.Now()

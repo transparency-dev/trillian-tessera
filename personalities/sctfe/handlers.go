@@ -65,8 +65,6 @@ var (
 	// per-entrypoint (label "ep") or per-return-code (label "rc").
 	once             sync.Once
 	knownLogs        monitoring.Gauge     // origin => value (always 1.0)
-	maxMergeDelay    monitoring.Gauge     // origin => value
-	expMergeDelay    monitoring.Gauge     // origin => value
 	lastSCTTimestamp monitoring.Gauge     // origin => value
 	reqsCounter      monitoring.Counter   // origin, ep => value
 	rspsCounter      monitoring.Counter   // origin, ep, rc => value
@@ -76,8 +74,6 @@ var (
 // setupMetrics initializes all the exported metrics.
 func setupMetrics(mf monitoring.MetricFactory) {
 	knownLogs = mf.NewGauge("known_logs", "Set to 1 for known logs", "logid")
-	maxMergeDelay = mf.NewGauge("max_merge_delay", "Maximum Merge Delay in seconds", "logid")
-	expMergeDelay = mf.NewGauge("expected_merge_delay", "Expected Merge Delay in seconds", "logid")
 	lastSCTTimestamp = mf.NewGauge("last_sct_timestamp", "Time of last SCT in ms since epoch", "logid")
 	reqsCounter = mf.NewCounter("http_reqs", "Number of requests", "logid", "ep")
 	rspsCounter = mf.NewCounter("http_rsps", "Number of responses", "logid", "ep", "rc")
@@ -173,8 +169,6 @@ type CertValidationOpts struct {
 	// dates strictly *before* notAfterLimit will be accepted.
 	// nil means no upper bound on the accepted range.
 	notAfterLimit *time.Time
-	// acceptOnlyCA will reject any certificate without the CA bit set.
-	acceptOnlyCA bool
 	// extKeyUsages contains the list of EKUs to use during chain verification
 	extKeyUsages []x509.ExtKeyUsage
 	// rejectExtIds contains a list of X.509 extension IDs to reject during chain verification.
@@ -190,7 +184,6 @@ func NewCertValidationOpts(trustedRoots *x509util.PEMCertPool, currentTime time.
 	vOpts.rejectUnexpired = rejectUnexpired
 	vOpts.notAfterStart = notAfterStart
 	vOpts.notAfterLimit = notAfterLimit
-	vOpts.acceptOnlyCA = acceptOnlyCA
 	vOpts.extKeyUsages = extKeyUsages
 	return vOpts
 }
@@ -237,11 +230,7 @@ func newLogInfo(
 	}
 
 	once.Do(func() { setupMetrics(instanceOpts.MetricFactory) })
-	label := cfg.Origin
 	knownLogs.Set(1.0, cfg.Origin)
-
-	maxMergeDelay.Set(float64(cfg.MaxMergeDelaySec), label)
-	expMergeDelay.Set(float64(cfg.ExpectedMergeDelaySec), label)
 
 	return li
 }
