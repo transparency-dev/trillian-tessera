@@ -12,6 +12,9 @@ This document describes the performance of each Trillian Tessera storage impleme
 - Memory: 1 GB
 - OS: Debian GNU/Linux 12 (bookworm)
 
+> [!NOTE]
+> Virtual CPUs (vCPUs) in virtualized environments often share physical CPU cores with other vCPUs and introduce variability and potential performance impacts.
+
 #### Result
 
 ```
@@ -89,6 +92,9 @@ MiB Swap:      0.0 total,      0.0 free,      0.0 used.     37.3 avail Mem
 - vCPU: 0.25-2 vCPU (1 shared core)
 - Memory: 1 GB
 - OS: Debian GNU/Linux 12 (bookworm)
+
+> [!NOTE]
+> Virtual CPUs (vCPUs) in virtualized environments often share physical CPU cores with other vCPUs and introduce variability and potential performance impacts.
 
 **Cloud SQL (MySQL 8.0.31)**
 
@@ -171,6 +177,9 @@ The bottleneck comes from CPU usage of the `cmd/conformance/mysql` binary on the
 - vCPU: 0.25-2 vCPU (1 shared core)
 - Memory: 1 GB
 - OS: Debian GNU/Linux 12 (bookworm)
+
+> [!NOTE]
+> Virtual CPUs (vCPUs) in virtualized environments often share physical CPU cores with other vCPUs and introduce variability and potential performance impacts.
 
 #### Result
 
