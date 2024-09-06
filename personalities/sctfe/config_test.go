@@ -39,6 +39,7 @@ func TestValidateLogConfig(t *testing.T) {
 		bucket          string
 		spannerDB       string
 		wantErr         string
+		rootsPemFile    string
 		rejectExpired   bool
 		rejectUnexpired bool
 		extKeyUsages    string
@@ -81,12 +82,22 @@ func TestValidateLogConfig(t *testing.T) {
 			signer:    signer,
 		},
 		{
+			desc:      "empty-rootsPemFile",
+			wantErr:   "empty rootsPemFile",
+			origin:    "testlog",
+			projectID: "project",
+			bucket:    "bucket",
+			spannerDB: "spanner",
+			signer:    signer,
+		},
+		{
 			desc:            "rejecting-all",
 			wantErr:         "rejecting all certificates",
 			origin:          "testlog",
 			projectID:       "project",
 			bucket:          "bucket",
 			spannerDB:       "spanner",
+			rootsPemFile:    "./testdata/fake-ca.cert",
 			rejectExpired:   true,
 			rejectUnexpired: true,
 			signer:          signer,
@@ -98,6 +109,7 @@ func TestValidateLogConfig(t *testing.T) {
 			projectID:    "project",
 			bucket:       "bucket",
 			spannerDB:    "spanner",
+			rootsPemFile: "./testdata/fake-ca.cert",
 			extKeyUsages: "wrong_usage",
 			signer:       signer,
 		},
@@ -108,6 +120,7 @@ func TestValidateLogConfig(t *testing.T) {
 			projectID:    "project",
 			bucket:       "bucket",
 			spannerDB:    "spanner",
+			rootsPemFile: "./testdata/fake-ca.cert",
 			extKeyUsages: "ClientAuth,ServerAuth,TimeStomping",
 			signer:       signer,
 		},
@@ -118,6 +131,7 @@ func TestValidateLogConfig(t *testing.T) {
 			projectID:    "project",
 			bucket:       "bucket",
 			spannerDB:    "spanner",
+			rootsPemFile: "./testdata/fake-ca.cert",
 			extKeyUsages: "Any ",
 			signer:       signer,
 		},
@@ -128,17 +142,19 @@ func TestValidateLogConfig(t *testing.T) {
 			projectID:     "project",
 			bucket:        "bucket",
 			spannerDB:     "spanner",
+			rootsPemFile:  "./testdata/fake-ca.cert",
 			notAfterStart: &t200,
 			notAfterLimit: &t100,
 			signer:        signer,
 		},
 		{
-			desc:      "ok",
-			origin:    "testlog",
-			projectID: "project",
-			bucket:    "bucket",
-			spannerDB: "spanner",
-			signer:    signer,
+			desc:         "ok",
+			origin:       "testlog",
+			projectID:    "project",
+			bucket:       "bucket",
+			spannerDB:    "spanner",
+			rootsPemFile: "./testdata/fake-ca.cert",
+			signer:       signer,
 		},
 		{
 			desc:         "ok-ext-key-usages",
@@ -146,6 +162,7 @@ func TestValidateLogConfig(t *testing.T) {
 			projectID:    "project",
 			bucket:       "bucket",
 			spannerDB:    "spanner",
+			rootsPemFile: "./testdata/fake-ca.cert",
 			extKeyUsages: "ServerAuth,ClientAuth,OCSPSigning",
 			signer:       signer,
 		},
@@ -155,6 +172,7 @@ func TestValidateLogConfig(t *testing.T) {
 			projectID:     "project",
 			bucket:        "bucket",
 			spannerDB:     "spanner",
+			rootsPemFile:  "./testdata/fake-ca.cert",
 			notAfterStart: &t100,
 			signer:        signer,
 		},
@@ -164,6 +182,7 @@ func TestValidateLogConfig(t *testing.T) {
 			projectID:     "project",
 			bucket:        "bucket",
 			spannerDB:     "spanner",
+			rootsPemFile:  "./testdata/fake-ca.cert",
 			notAfterStart: &t200,
 			signer:        signer,
 		},
@@ -173,13 +192,14 @@ func TestValidateLogConfig(t *testing.T) {
 			projectID:     "project",
 			bucket:        "bucket",
 			spannerDB:     "spanner",
+			rootsPemFile:  "./testdata/fake-ca.cert",
 			notAfterStart: &t100,
 			notAfterLimit: &t200,
 			signer:        signer,
 		},
 	} {
 		t.Run(tc.desc, func(t *testing.T) {
-			vc, err := ValidateLogConfig(tc.origin, tc.projectID, tc.bucket, tc.spannerDB, "", tc.rejectExpired, tc.rejectUnexpired, tc.extKeyUsages, "", tc.notAfterStart, tc.notAfterLimit, signer)
+			vc, err := ValidateLogConfig(tc.origin, tc.projectID, tc.bucket, tc.spannerDB, tc.rootsPemFile, tc.rejectExpired, tc.rejectUnexpired, tc.extKeyUsages, "", tc.notAfterStart, tc.notAfterLimit, signer)
 			if len(tc.wantErr) == 0 && err != nil {
 				t.Errorf("ValidateLogConfig()=%v, want nil", err)
 			}

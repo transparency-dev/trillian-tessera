@@ -17,7 +17,6 @@ package sctfe
 import (
 	"context"
 	"crypto"
-	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -68,12 +67,6 @@ func (i *Instance) GetPublicKey() crypto.PublicKey {
 // log, and an STH getter.
 func SetUpInstance(ctx context.Context, opts InstanceOptions) (*Instance, error) {
 	cfg := opts.Validated
-
-	// TODO(phboneff): move to ValidateLogConfig
-	// Check config validity.
-	if len(cfg.RootsPemFile) == 0 {
-		return nil, errors.New("need to specify RootsPemFile")
-	}
 
 	// Load the trusted roots.
 	roots := x509util.NewPEMCertPool()

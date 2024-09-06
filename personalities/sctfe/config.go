@@ -86,6 +86,10 @@ func ValidateLogConfig(origin string, projectID string, bucket string, spannerDB
 		return nil, errors.New("empty spannerDB")
 	}
 
+	if rootsPemFile == "" {
+		return nil, errors.New("empty rootsPemFile")
+	}
+
 	lExtKeyUsages := []string{}
 	lRejectExtensions := []string{}
 	if extKeyUsages != "" {
