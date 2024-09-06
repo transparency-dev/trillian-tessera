@@ -42,13 +42,16 @@ func TestValidateLogConfig(t *testing.T) {
 	privKey := mustMarshalAny(&keyspb.PEMKeyFile{Path: "../testdata/ct-http-server.privkey.pem", Password: "dirk"})
 
 	for _, tc := range []struct {
-		desc      string
-		cfg       *configpb.LogConfig
-		origin    string
-		projectID string
-		bucket    string
-		spannerDB string
-		wantErr   string
+		desc            string
+		cfg             *configpb.LogConfig
+		origin          string
+		projectID       string
+		bucket          string
+		spannerDB       string
+		wantErr         string
+		rejectExpired   bool
+		rejectUnexpired bool
+		extKeyUsages    string
 	}{
 		{
 			desc:      "empty-origin",
@@ -115,50 +118,50 @@ func TestValidateLogConfig(t *testing.T) {
 			desc:    "rejecting-all",
 			wantErr: "rejecting all certificates",
 			cfg: &configpb.LogConfig{
-				RejectExpired:   true,
-				RejectUnexpired: true,
-				PrivateKey:      privKey,
+				PrivateKey: privKey,
 			},
-			origin:    "testlog",
-			projectID: "project",
-			bucket:    "bucket",
-			spannerDB: "spanner",
+			origin:          "testlog",
+			projectID:       "project",
+			bucket:          "bucket",
+			spannerDB:       "spanner",
+			rejectExpired:   true,
+			rejectUnexpired: true,
 		},
 		{
 			desc:    "unknown-ext-key-usage-1",
 			wantErr: "unknown extended key usage",
 			cfg: &configpb.LogConfig{
-				PrivateKey:   privKey,
-				ExtKeyUsages: []string{"wrong_usage"},
+				PrivateKey: privKey,
 			},
-			origin:    "testlog",
-			projectID: "project",
-			bucket:    "bucket",
-			spannerDB: "spanner",
+			origin:       "testlog",
+			projectID:    "project",
+			bucket:       "bucket",
+			spannerDB:    "spanner",
+			extKeyUsages: "wrong_usage",
 		},
 		{
 			desc:    "unknown-ext-key-usage-2",
 			wantErr: "unknown extended key usage",
 			cfg: &configpb.LogConfig{
-				PrivateKey:   privKey,
-				ExtKeyUsages: []string{"ClientAuth", "ServerAuth", "TimeStomping"},
+				PrivateKey: privKey,
 			},
-			origin:    "testlog",
-			projectID: "project",
-			bucket:    "bucket",
-			spannerDB: "spanner",
+			origin:       "testlog",
+			projectID:    "project",
+			bucket:       "bucket",
+			spannerDB:    "spanner",
+			extKeyUsages: "ClientAuth,ServerAuth,TimeStomping",
 		},
 		{
 			desc:    "unknown-ext-key-usage-3",
 			wantErr: "unknown extended key usage",
 			cfg: &configpb.LogConfig{
-				PrivateKey:   privKey,
-				ExtKeyUsages: []string{"Any "},
+				PrivateKey: privKey,
 			},
-			origin:    "testlog",
-			projectID: "project",
-			bucket:    "bucket",
-			spannerDB: "spanner",
+			origin:       "testlog",
+			projectID:    "project",
+			bucket:       "bucket",
+			spannerDB:    "spanner",
+			extKeyUsages: "Any ",
 		},
 		{
 			desc:    "invalid-start-timestamp",
@@ -261,13 +264,13 @@ func TestValidateLogConfig(t *testing.T) {
 		{
 			desc: "ok-ext-key-usages",
 			cfg: &configpb.LogConfig{
-				PrivateKey:   privKey,
-				ExtKeyUsages: []string{"ServerAuth", "ClientAuth", "OCSPSigning"},
+				PrivateKey: privKey,
 			},
-			origin:    "testlog",
-			projectID: "project",
-			bucket:    "bucket",
-			spannerDB: "spanner",
+			origin:       "testlog",
+			projectID:    "project",
+			bucket:       "bucket",
+			spannerDB:    "spanner",
+			extKeyUsages: "ServerAuth,ClientAuth,OCSPSigning",
 		},
 		{
 			desc: "ok-start-timestamp",
@@ -317,7 +320,7 @@ func TestValidateLogConfig(t *testing.T) {
 		},
 	} {
 		t.Run(tc.desc, func(t *testing.T) {
-			vc, err := ValidateLogConfig(tc.cfg, tc.origin, tc.projectID, tc.bucket, tc.spannerDB, "")
+			vc, err := ValidateLogConfig(tc.cfg, tc.origin, tc.projectID, tc.bucket, tc.spannerDB, "", tc.rejectExpired, tc.rejectUnexpired, tc.extKeyUsages, "")
 			if len(tc.wantErr) == 0 && err != nil {
 				t.Errorf("ValidateLogConfig()=%v, want nil", err)
 			}

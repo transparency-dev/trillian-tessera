@@ -50,15 +50,17 @@ func TestSetUpInstance(t *testing.T) {
 	wrongPassPrivKey := mustMarshalAny(&keyspb.PEMKeyFile{Path: "./testdata/ct-http-server.privkey.pem", Password: "dirkly"})
 
 	var tests = []struct {
-		desc         string
-		cfg          *configpb.LogConfig
-		origin       string
-		projectID    string
-		bucket       string
-		spannerDB    string
-		rootsPemFile string
-		ctStorage    func(context.Context, note.Signer) (*CTStorage, error)
-		wantErr      string
+		desc             string
+		cfg              *configpb.LogConfig
+		origin           string
+		projectID        string
+		bucket           string
+		spannerDB        string
+		rootsPemFile     string
+		extKeyUsages     string
+		rejectExtensions string
+		ctStorage        func(context.Context, note.Signer) (*CTStorage, error)
+		wantErr          string
 	}{
 		{
 			desc: "valid",
@@ -126,55 +128,55 @@ func TestSetUpInstance(t *testing.T) {
 		{
 			desc: "valid-ekus-1",
 			cfg: &configpb.LogConfig{
-				PrivateKey:   privKey,
-				ExtKeyUsages: []string{"Any"},
+				PrivateKey: privKey,
 			},
 			origin:       "log",
 			projectID:    "project",
 			bucket:       "bucket",
 			spannerDB:    "spanner",
 			rootsPemFile: "./testdata/fake-ca.cert",
+			extKeyUsages: "Any",
 			ctStorage:    fakeCTStorage,
 		},
 		{
 			desc: "valid-ekus-2",
 			cfg: &configpb.LogConfig{
-				PrivateKey:   privKey,
-				ExtKeyUsages: []string{"Any", "ServerAuth", "TimeStamping"},
+				PrivateKey: privKey,
 			},
 			origin:       "log",
 			projectID:    "project",
 			bucket:       "bucket",
 			spannerDB:    "spanner",
 			rootsPemFile: "./testdata/fake-ca.cert",
+			extKeyUsages: "Any,ServerAuth,TimeStamping",
 			ctStorage:    fakeCTStorage,
 		},
 		{
 			desc: "valid-reject-ext",
 			cfg: &configpb.LogConfig{
-				PrivateKey:       privKey,
-				RejectExtensions: []string{"1.2.3.4", "5.6.7.8"},
+				PrivateKey: privKey,
 			},
-			origin:       "log",
-			projectID:    "project",
-			bucket:       "bucket",
-			spannerDB:    "spanner",
-			rootsPemFile: "./testdata/fake-ca.cert",
-			ctStorage:    fakeCTStorage,
+			origin:           "log",
+			projectID:        "project",
+			bucket:           "bucket",
+			spannerDB:        "spanner",
+			rootsPemFile:     "./testdata/fake-ca.cert",
+			rejectExtensions: "1.2.3.4,5.6.7.8",
+			ctStorage:        fakeCTStorage,
 		},
 		{
 			desc: "invalid-reject-ext",
 			cfg: &configpb.LogConfig{
-				PrivateKey:       privKey,
-				RejectExtensions: []string{"1.2.3.4", "one.banana.two.bananas"},
+				PrivateKey: privKey,
 			},
-			origin:       "log",
-			projectID:    "project",
-			bucket:       "bucket",
-			spannerDB:    "spanner",
-			ctStorage:    fakeCTStorage,
-			rootsPemFile: "./testdata/fake-ca.cert",
-			wantErr:      "one",
+			origin:           "log",
+			projectID:        "project",
+			bucket:           "bucket",
+			spannerDB:        "spanner",
+			ctStorage:        fakeCTStorage,
+			rootsPemFile:     "./testdata/fake-ca.cert",
+			rejectExtensions: "1.2.3.4,one.banana.two.bananas",
+			wantErr:          "one",
 		},
 		{
 			desc: "missing-create-storage",
@@ -207,7 +209,7 @@ func TestSetUpInstance(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.desc, func(t *testing.T) {
-			vCfg, err := ValidateLogConfig(test.cfg, test.origin, test.projectID, test.bucket, test.spannerDB, test.rootsPemFile)
+			vCfg, err := ValidateLogConfig(test.cfg, test.origin, test.projectID, test.bucket, test.spannerDB, test.rootsPemFile, false, false, test.extKeyUsages, test.rejectExtensions)
 			if err != nil {
 				t.Fatalf("ValidateLogConfig(): %v", err)
 			}
@@ -311,7 +313,7 @@ func TestSetUpInstanceSetsValidationOpts(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.desc, func(t *testing.T) {
-			vCfg, err := ValidateLogConfig(test.cfg, test.origin, test.projectID, test.bucket, test.spannerDB, test.rootsPemFile)
+			vCfg, err := ValidateLogConfig(test.cfg, test.origin, test.projectID, test.bucket, test.spannerDB, test.rootsPemFile, false, false, "", "")
 			if err != nil {
 				t.Fatalf("ValidateLogConfig(): %v", err)
 			}

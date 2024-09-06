@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/google/certificate-transparency-go/x509"
@@ -34,9 +35,12 @@ import (
 // ValidatedLogConfig represents the LogConfig with the information that has
 // been successfully parsed as a result of validating it.
 type ValidatedLogConfig struct {
-	Config        *LogConfig
-	PubKey        crypto.PublicKey
-	PrivKey       proto.Message
+	Config  *LogConfig
+	PubKey  crypto.PublicKey
+	PrivKey proto.Message
+	// If set, ExtKeyUsages will restrict the set of such usages that the
+	// server will accept. By default all are accepted. The values specified
+	// must be ones known to the x509 package.
 	KeyUsages     []x509.ExtKeyUsage
 	NotAfterStart *time.Time
 	NotAfterLimit *time.Time
@@ -64,10 +68,6 @@ type LogConfig struct {
 	// If reject_unexpired is true then CTFE rejects certificates that are either
 	// currently valid or not yet valid.
 	RejectUnexpired bool
-	// If set, ext_key_usages will restrict the set of such usages that the
-	// server will accept. By default all are accepted. The values specified
-	// must be ones known to the x509 package.
-	ExtKeyUsages []string
 	// not_after_start defines the start of the range of acceptable NotAfter
 	// values, inclusive.
 	// Leaving this unset implies no lower bound to the range.
@@ -92,7 +92,7 @@ type LogConfig struct {
 	// alert on the actual merge delay going above a certain multiple of this EMD.
 	ExpectedMergeDelaySec int32
 	// A list of X.509 extension OIDs, in dotted string form (e.g. "2.3.4.5")
-	// which should cause submissions to be rejected.
+	// which, if present, should cause submissions to be rejected.
 	RejectExtensions []string
 }
 
@@ -122,7 +122,7 @@ func LogConfigFromFile(filename string) (*configpb.LogConfig, error) {
 //   - Merge delays (if present) are correct.
 //
 // Returns the validated structures (useful to avoid double validation).
-func ValidateLogConfig(cfg *configpb.LogConfig, origin string, projectID string, bucket string, spannerDB string, rootsPemFile string) (*ValidatedLogConfig, error) {
+func ValidateLogConfig(cfg *configpb.LogConfig, origin string, projectID string, bucket string, spannerDB string, rootsPemFile string, rejectExpired bool, rejectUnexpired bool, extKeyUsages string, rejectExtensions string) (*ValidatedLogConfig, error) {
 	if origin == "" {
 		return nil, errors.New("empty origin")
 	}
@@ -140,20 +140,28 @@ func ValidateLogConfig(cfg *configpb.LogConfig, origin string, projectID string,
 		return nil, errors.New("empty spannerDB")
 	}
 
+	lExtKeyUsages := []string{}
+	lRejectExtensions := []string{}
+	if extKeyUsages != "" {
+		lExtKeyUsages = strings.Split(extKeyUsages, ",")
+	}
+	if rejectExtensions != "" {
+		lRejectExtensions = strings.Split(rejectExtensions, ",")
+	}
+
 	vCfg := ValidatedLogConfig{Config: &LogConfig{
 		Origin:                origin,
 		RootsPemFile:          rootsPemFile,
 		PrivateKey:            cfg.PrivateKey,
 		PublicKey:             cfg.PublicKey,
-		RejectExpired:         cfg.RejectExpired,
-		RejectUnexpired:       cfg.RejectUnexpired,
-		ExtKeyUsages:          cfg.ExtKeyUsages,
+		RejectExpired:         rejectExpired,
+		RejectUnexpired:       rejectUnexpired,
 		NotAfterStart:         cfg.NotAfterLimit,
 		NotAfterLimit:         cfg.NotAfterLimit,
 		AcceptOnlyCa:          cfg.AcceptOnlyCa,
 		MaxMergeDelaySec:      cfg.MaxMergeDelaySec,
 		ExpectedMergeDelaySec: cfg.ExpectedMergeDelaySec,
-		RejectExtensions:      cfg.RejectExtensions,
+		RejectExtensions:      lRejectExtensions,
 	}}
 
 	// Validate the public key.
@@ -174,25 +182,23 @@ func ValidateLogConfig(cfg *configpb.LogConfig, origin string, projectID string,
 	}
 	vCfg.PrivKey = privKey
 
-	if cfg.RejectExpired && cfg.RejectUnexpired {
+	if rejectExpired && rejectUnexpired {
 		return nil, errors.New("rejecting all certificates")
 	}
 
 	// Validate the extended key usages list.
-	if len(cfg.ExtKeyUsages) > 0 {
-		for _, kuStr := range cfg.ExtKeyUsages {
-			if ku, ok := stringToKeyUsage[kuStr]; ok {
-				// If "Any" is specified, then we can ignore the entire list and
-				// just disable EKU checking.
-				if ku == x509.ExtKeyUsageAny {
-					klog.Infof("%s: Found ExtKeyUsageAny, allowing all EKUs", origin)
-					vCfg.KeyUsages = nil
-					break
-				}
-				vCfg.KeyUsages = append(vCfg.KeyUsages, ku)
-			} else {
-				return nil, fmt.Errorf("unknown extended key usage: %s", kuStr)
+	for _, kuStr := range lExtKeyUsages {
+		if ku, ok := stringToKeyUsage[kuStr]; ok {
+			// If "Any" is specified, then we can ignore the entire list and
+			// just disable EKU checking.
+			if ku == x509.ExtKeyUsageAny {
+				klog.Infof("%s: Found ExtKeyUsageAny, allowing all EKUs", origin)
+				vCfg.KeyUsages = nil
+				break
 			}
+			vCfg.KeyUsages = append(vCfg.KeyUsages, ku)
+		} else {
+			return nil, fmt.Errorf("unknown extended key usage: %s", kuStr)
 		}
 	}
 
