@@ -13,7 +13,7 @@ output "cloudbuild_trigger_id" {
   value       = google_cloudbuild_trigger.docker.id
 }
 
-output "docker_image" {
-  description = "The address of the docker image that will be built"
-  value       = local.example_gcp_docker_image
+output "conformance_gcp_docker_image" {
+  description = "The address of the GCP conformance docker image that will be built"
+  value       = local.conformance_gcp_docker_image
 }

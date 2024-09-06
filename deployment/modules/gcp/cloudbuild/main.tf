@@ -20,13 +20,13 @@ terraform {
 resource "google_artifact_registry_repository" "docker" {
   repository_id = "docker-${var.env}"
   location      = var.region
-  description   = "Tessera example docker images"
+  description   = "Tessera testing docker images"
   format        = "DOCKER"
 }
 
 locals {
   artifact_repo            = "${var.region}-docker.pkg.dev/${var.project_id}/${google_artifact_registry_repository.docker.name}"
-  example_gcp_docker_image = "${local.artifact_repo}/example-gcp"
+  conformance_gcp_docker_image = "${local.artifact_repo}/conformance-gcp"
   hammer_docker_image      = "${local.artifact_repo}/hammer"
 }
 
@@ -57,13 +57,13 @@ resource "google_cloudbuild_trigger" "docker" {
       wait_for = ["-"]
     }
     step {
-      id   = "docker_build_example"
+      id   = "docker_build_conformance_gcp"
       name = "gcr.io/cloud-builders/docker"
       args = [
         "build",
-        "-t", "${local.example_gcp_docker_image}:$SHORT_SHA",
-        "-t", "${local.example_gcp_docker_image}:latest",
-        "-f", "./cmd/example-gcp/Dockerfile",
+        "-t", "${local.conformance_gcp_docker_image}:$SHORT_SHA",
+        "-t", "${local.conformance_gcp_docker_image}:latest",
+        "-f", "./cmd/conformance/gcp/Dockerfile",
         "."
       ]
       wait_for = ["-"]
@@ -73,18 +73,18 @@ resource "google_cloudbuild_trigger" "docker" {
       args = [
         "push",
         "--all-tags",
-        local.example_gcp_docker_image
+        local.conformance_gcp_docker_image
       ]
-      wait_for = ["docker_build_example"]
+      wait_for = ["docker_build_conformance_gcp"]
     }
     step {
-      id   = "terraform_apply_ci"
+      id   = "terraform_apply_conformance_ci"
       name = "alpine/terragrunt"
       entrypoint = "terragrunt"
       args = [
         "apply",
       ]
-      dir = "deployment/live/gcp/example-gcp/ci"
+      dir = "deployment/live/gcp/conformance/ci"
       env = [
         "TF_IN_AUTOMATION=1",
         "TF_INPUT=false",
