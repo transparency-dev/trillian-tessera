@@ -57,7 +57,9 @@ resource "google_cloudbuild_trigger" "docker" {
       name = "alpine/terragrunt"
       entrypoint = "terragrunt"
       args = [
+        "--terragrunt-non-interactive",
         "apply",
+        "-auto-approve",
       ]
       dir = "deployment/live/gcp/conformance/ci"
       env = [
