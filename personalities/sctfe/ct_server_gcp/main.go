@@ -66,7 +66,7 @@ var (
 	projectID          = flag.String("project_id", "", "origin of the log, for checkpoints and the monitoring prefix")
 	bucket             = flag.String("bucket", "", "name of the bucket to store the log in")
 	spannerDB          = flag.String("spanner_db_path", "", "projects/{projectId}/instances/{instanceId}/databases/{databaseId}")
-	rootsPemFile       = flag.String("roots_pem_file", "", "Paths to the file containing root certificates that are acceptable to the log. The certs are served through get-roots endpoint.")
+	rootsPemFile       = flag.String("roots_pem_file", "", "Path to the file containing root certificates that are acceptable to the log. The certs are served through get-roots endpoint.")
 )
 
 // nolint:staticcheck

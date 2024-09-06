@@ -48,7 +48,7 @@ type LogConfig struct {
 	// origin identifies the log. It will be used in its checkpoint, and
 	// is also its submission prefix, as per https://c2sp.org/static-ct-api
 	Origin string
-	// Paths to the file containing root certificates that are acceptable to the
+	// Path to the file containing root certificates that are acceptable to the
 	// log. The certs are served through get-roots endpoint.
 	RootsPemFile string
 	// The private key used for signing Checkpoints or SCTs.
