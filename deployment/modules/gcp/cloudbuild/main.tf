@@ -60,6 +60,23 @@ resource "google_cloudbuild_trigger" "docker" {
         "--all-tags",
         local.example_gcp_docker_image
       ]
+      wait_for = ["docker_build_conformance_gcp"]
+    }
+    step {
+      id   = "terraform_apply_conformance_ci"
+      name = "alpine/terragrunt"
+      entrypoint = "terragrunt"
+      args = [
+        "apply",
+      ]
+      dir = "deployment/live/gcp/conformance/ci"
+      env = [
+        "GOOGLE_PROJECT=${var.project_id}",
+        "TF_IN_AUTOMATION=1",
+        "TF_INPUT=false",
+        "TF_VAR_project_id=${var.project_id}"
+      ]
+      wait_for = ["-"]
     }
     options {
       logging = "CLOUD_LOGGING_ONLY"
