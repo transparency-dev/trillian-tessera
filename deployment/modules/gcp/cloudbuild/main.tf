@@ -1,20 +1,10 @@
 terraform {
-  required_providers {
-    google = {
-      source  = "hashicorp/google"
-      version = "5.41.0"
-    }
-  }
+  backend "gcs" {}
 }
 
 provider "google" {
   project = var.project_id
   region  = var.region
-}
-
-# This will be configured by terragrunt when deploying
-terraform {
-  backend "gcs" {}
 }
 
 resource "google_artifact_registry_repository" "docker" {
@@ -89,10 +79,13 @@ resource "google_service_account" "cloudbuild_service_account" {
   display_name = "Service Account for CloudBuild (${var.env})"
 }
 
-resource "google_project_iam_member" "act_as" {
+resource "google_project_iam_binding" "act_as" {
   project = var.project_id
   role    = "roles/iam.serviceAccountUser"
-  member  = "serviceAccount:${google_service_account.cloudbuild_service_account.email}"
+  members = [
+    "serviceAccount:${google_service_account.cloudbuild_service_account.email}",
+    "serviceAccount:cloudrun-ci-sa@trillian-tessera.iam.gserviceaccount.com",
+  ]
 }
 
 resource "google_project_iam_member" "logs_writer" {
