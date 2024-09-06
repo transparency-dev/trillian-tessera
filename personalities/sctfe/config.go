@@ -48,9 +48,9 @@ type LogConfig struct {
 	// origin identifies the log. It will be used in its checkpoint, and
 	// is also its submission prefix, as per https://c2sp.org/static-ct-api
 	Origin string
-	// Paths to the files containing root certificates that are acceptable to the
+	// Path to the file containing root certificates that are acceptable to the
 	// log. The certs are served through get-roots endpoint.
-	RootsPemFile []string
+	RootsPemFile string
 	// The private key used for signing Checkpoints or SCTs.
 	PrivateKey *anypb.Any
 	// The public key matching the above private key (if both are present).
@@ -122,7 +122,7 @@ func LogConfigFromFile(filename string) (*configpb.LogConfig, error) {
 //   - Merge delays (if present) are correct.
 //
 // Returns the validated structures (useful to avoid double validation).
-func ValidateLogConfig(cfg *configpb.LogConfig, origin string, projectID string, bucket string, spannerDB string) (*ValidatedLogConfig, error) {
+func ValidateLogConfig(cfg *configpb.LogConfig, origin string, projectID string, bucket string, spannerDB string, rootsPemFile string) (*ValidatedLogConfig, error) {
 	if origin == "" {
 		return nil, errors.New("empty origin")
 	}
@@ -142,7 +142,7 @@ func ValidateLogConfig(cfg *configpb.LogConfig, origin string, projectID string,
 
 	vCfg := ValidatedLogConfig{Config: &LogConfig{
 		Origin:                origin,
-		RootsPemFile:          cfg.RootsPemFile,
+		RootsPemFile:          rootsPemFile,
 		PrivateKey:            cfg.PrivateKey,
 		PublicKey:             cfg.PublicKey,
 		RejectExpired:         cfg.RejectExpired,
