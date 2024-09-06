@@ -67,15 +67,6 @@ func (i *Instance) GetPublicKey() crypto.PublicKey {
 // configuration, and returns an object containing a set of handlers for this
 // log, and an STH getter.
 func SetUpInstance(ctx context.Context, opts InstanceOptions) (*Instance, error) {
-	logInfo, err := setUpLogInfo(ctx, opts)
-	if err != nil {
-		return nil, err
-	}
-	handlers := logInfo.Handlers(opts.Validated.Origin)
-	return &Instance{Handlers: handlers, li: logInfo}, nil
-}
-
-func setUpLogInfo(ctx context.Context, opts InstanceOptions) (*logInfo, error) {
 	cfg := opts.Validated
 
 	// TODO(phboneff): move to ValidateLogConfig
@@ -120,7 +111,9 @@ func setUpLogInfo(ctx context.Context, opts InstanceOptions) (*logInfo, error) {
 	}
 
 	logInfo := newLogInfo(opts, validationOpts, cfg.Signer, timeSource, storage)
-	return logInfo, nil
+
+	handlers := logInfo.Handlers(opts.Validated.Origin)
+	return &Instance{Handlers: handlers, li: logInfo}, nil
 }
 
 func parseOIDs(oids []string) ([]asn1.ObjectIdentifier, error) {
