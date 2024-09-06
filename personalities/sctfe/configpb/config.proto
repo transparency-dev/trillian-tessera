@@ -19,14 +19,11 @@ option go_package = "github.com/transparency-dev/trillian-tessera/personalities/
 package configpb;
 
 import "crypto/keyspb/keyspb.proto";
-import "google/protobuf/any.proto";
 
 // LogConfig describes the configuration options for a log instance.
 //
 // NEXT_ID: 15
 message LogConfig {
-  // The private key used for signing Checkpoints or SCTs.
-  google.protobuf.Any private_key = 3;
   // The public key matching the above private key (if both are present). 
   // It can be specified for the convenience of test tools, but it not used
   // by the server.

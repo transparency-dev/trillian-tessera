@@ -27,16 +27,15 @@ import (
 	"github.com/transparency-dev/trillian-tessera/personalities/sctfe/configpb"
 	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/types/known/anypb"
 	"k8s.io/klog/v2"
 )
 
 // ValidatedLogConfig represents the LogConfig with the information that has
 // been successfully parsed as a result of validating it.
 type ValidatedLogConfig struct {
-	Config  *LogConfig
-	PubKey  crypto.PublicKey
-	PrivKey proto.Message
+	Config *LogConfig
+	PubKey crypto.PublicKey
+	Signer crypto.Signer
 	// If set, ExtKeyUsages will restrict the set of such usages that the
 	// server will accept. By default all are accepted. The values specified
 	// must be ones known to the x509 package.
@@ -54,8 +53,6 @@ type LogConfig struct {
 	// Path to the file containing root certificates that are acceptable to the
 	// log. The certs are served through get-roots endpoint.
 	RootsPemFile string
-	// The private key used for signing Checkpoints or SCTs.
-	PrivateKey *anypb.Any
 	// The public key matching the above private key (if both are present).
 	// It can be specified for the convenience of test tools, but it not used
 	// by the server.
@@ -98,7 +95,7 @@ func LogConfigFromFile(filename string) (*configpb.LogConfig, error) {
 //   - Merge delays (if present) are correct.
 //
 // Returns the validated structures (useful to avoid double validation).
-func ValidateLogConfig(cfg *configpb.LogConfig, origin string, projectID string, bucket string, spannerDB string, rootsPemFile string, rejectExpired bool, rejectUnexpired bool, extKeyUsages string, rejectExtensions string, notAfterStart *time.Time, notAfterLimit *time.Time) (*ValidatedLogConfig, error) {
+func ValidateLogConfig(cfg *configpb.LogConfig, origin string, projectID string, bucket string, spannerDB string, rootsPemFile string, rejectExpired bool, rejectUnexpired bool, extKeyUsages string, rejectExtensions string, notAfterStart *time.Time, notAfterLimit *time.Time, signer crypto.Signer) (*ValidatedLogConfig, error) {
 	if origin == "" {
 		return nil, errors.New("empty origin")
 	}
@@ -129,7 +126,6 @@ func ValidateLogConfig(cfg *configpb.LogConfig, origin string, projectID string,
 		Config: &LogConfig{
 			Origin:           origin,
 			RootsPemFile:     rootsPemFile,
-			PrivateKey:       cfg.PrivateKey,
 			PublicKey:        cfg.PublicKey,
 			RejectExpired:    rejectExpired,
 			RejectUnexpired:  rejectUnexpired,
@@ -137,6 +133,7 @@ func ValidateLogConfig(cfg *configpb.LogConfig, origin string, projectID string,
 		},
 		NotAfterStart: notAfterStart,
 		NotAfterLimit: notAfterLimit,
+		Signer:        signer,
 	}
 
 	// Validate the public key.
@@ -146,16 +143,6 @@ func ValidateLogConfig(cfg *configpb.LogConfig, origin string, projectID string,
 			return nil, fmt.Errorf("x509.ParsePKIXPublicKey: %w", err)
 		}
 	}
-
-	// Validate the private key.
-	if cfg.PrivateKey == nil {
-		return nil, errors.New("empty private key")
-	}
-	privKey, err := cfg.PrivateKey.UnmarshalNew()
-	if err != nil {
-		return nil, fmt.Errorf("invalid private key: %v", err)
-	}
-	vCfg.PrivKey = privKey
 
 	if rejectExpired && rejectUnexpired {
 		return nil, errors.New("rejecting all certificates")

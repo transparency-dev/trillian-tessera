@@ -80,6 +80,7 @@ var (
 	rejectUnexpired    = flag.Bool("reject_unexpired", false, "If true then CTFE rejects certificates that are either currently valid or not yet valid.")
 	extKeyUsages       = flag.String("ext_key_usages", "", "If set, will restrict the set of such usages that the server will accept. By default all are accepted. The values specified must be ones known to the x509 package.")
 	rejectExtensions   = flag.String("reject_extension", "", "A list of X.509 extension OIDs, in dotted string form (e.g. '2.3.4.5') which, if present, should cause submissions to be rejected.")
+	privKey            = flag.String("private_key", "", "Path to a private key .der file. Used to sign checkpoints and SCTs.")
 )
 
 // nolint:staticcheck
@@ -102,7 +103,12 @@ func main() {
 		klog.Exitf("Failed to read config: %v", err)
 	}
 
-	vCfg, err := sctfe.ValidateLogConfig(cfg, *origin, *projectID, *bucket, *spannerDB, *rootsPemFile, *rejectExpired, *rejectUnexpired, *extKeyUsages, *rejectExtensions, notAfterStart.t, notAfterLimit.t)
+	signer, err := pem.ReadPrivateKeyFile(*privKey, *privKeyPassword)
+	if err != nil {
+		klog.Exitf("Can't open key: %v", err)
+	}
+
+	vCfg, err := sctfe.ValidateLogConfig(cfg, *origin, *projectID, *bucket, *spannerDB, *rootsPemFile, *rejectExpired, *rejectUnexpired, *extKeyUsages, *rejectExtensions, notAfterStart.t, notAfterLimit.t, signer)
 	if err != nil {
 		klog.Exitf("Invalid config: %v", err)
 	}

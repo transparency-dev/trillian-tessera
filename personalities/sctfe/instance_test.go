@@ -16,6 +16,7 @@ package sctfe
 
 import (
 	"context"
+	"crypto"
 	"errors"
 	"fmt"
 	"net/http/httptest"
@@ -30,7 +31,6 @@ import (
 	"github.com/google/trillian/monitoring"
 	"github.com/transparency-dev/trillian-tessera/personalities/sctfe/configpb"
 	"golang.org/x/mod/sumdb/note"
-	"google.golang.org/protobuf/types/known/anypb"
 )
 
 func init() {
@@ -44,9 +44,10 @@ func fakeCTStorage(_ context.Context, _ note.Signer) (*CTStorage, error) {
 func TestSetUpInstance(t *testing.T) {
 	ctx := context.Background()
 
-	privKey := mustMarshalAny(&keyspb.PEMKeyFile{Path: "./testdata/ct-http-server.privkey.pem", Password: "dirk"})
-	missingPrivKey := mustMarshalAny(&keyspb.PEMKeyFile{Path: "./testdata/bogus.privkey.pem", Password: "dirk"})
-	wrongPassPrivKey := mustMarshalAny(&keyspb.PEMKeyFile{Path: "./testdata/ct-http-server.privkey.pem", Password: "dirkly"})
+	signer, err := pem.ReadPrivateKeyFile("./testdata/ct-http-server.privkey.pem", "dirk")
+	if err != nil {
+		t.Fatalf("Can't open key: %v", err)
+	}
 
 	var tests = []struct {
 		desc             string
@@ -58,116 +59,83 @@ func TestSetUpInstance(t *testing.T) {
 		rootsPemFile     string
 		extKeyUsages     string
 		rejectExtensions string
+		signer           crypto.Signer
 		ctStorage        func(context.Context, note.Signer) (*CTStorage, error)
 		wantErr          string
 	}{
 		{
-			desc: "valid",
-			cfg: &configpb.LogConfig{
-				PrivateKey: privKey,
-			},
+			desc:         "valid",
+			cfg:          &configpb.LogConfig{},
 			origin:       "log",
 			projectID:    "project",
 			bucket:       "bucket",
 			spannerDB:    "spanner",
 			rootsPemFile: "./testdata/fake-ca.cert",
 			ctStorage:    fakeCTStorage,
+			signer:       signer,
 		},
 		{
-			desc: "no-roots",
-			cfg: &configpb.LogConfig{
-				PrivateKey: privKey,
-			},
+			desc:      "no-roots",
+			cfg:       &configpb.LogConfig{},
 			origin:    "log",
 			projectID: "project",
 			bucket:    "bucket",
 			spannerDB: "spanner",
 			ctStorage: fakeCTStorage,
 			wantErr:   "specify RootsPemFile",
+			signer:    signer,
 		},
 		{
-			desc: "missing-root-cert",
-			cfg: &configpb.LogConfig{
-				PrivateKey: privKey,
-			},
+			desc:         "missing-root-cert",
+			cfg:          &configpb.LogConfig{},
 			origin:       "log",
 			projectID:    "project",
 			bucket:       "bucket",
 			spannerDB:    "spanner",
 			ctStorage:    fakeCTStorage,
 			rootsPemFile: "./testdata/bogus.cert",
+			signer:       signer,
 			wantErr:      "failed to read trusted roots",
 		},
 		{
-			desc: "missing-privkey",
-			cfg: &configpb.LogConfig{
-				PrivateKey: missingPrivKey,
-			},
-			origin:       "log",
-			projectID:    "project",
-			bucket:       "bucket",
-			spannerDB:    "spanner",
-			rootsPemFile: "./testdata/fake-ca.cert",
-			ctStorage:    fakeCTStorage,
-			wantErr:      "failed to load private key",
-		},
-		{
-			desc: "privkey-wrong-password",
-			cfg: &configpb.LogConfig{
-				PrivateKey: wrongPassPrivKey,
-			},
-			origin:       "log",
-			projectID:    "projeot",
-			bucket:       "bucket",
-			spannerDB:    "spanner",
-			rootsPemFile: "./testdata/fake-ca.cert",
-			ctStorage:    fakeCTStorage,
-			wantErr:      "failed to load private key",
-		},
-		{
-			desc: "valid-ekus-1",
-			cfg: &configpb.LogConfig{
-				PrivateKey: privKey,
-			},
+			desc:         "valid-ekus-1",
+			cfg:          &configpb.LogConfig{},
 			origin:       "log",
 			projectID:    "project",
 			bucket:       "bucket",
 			spannerDB:    "spanner",
 			rootsPemFile: "./testdata/fake-ca.cert",
 			extKeyUsages: "Any",
+			signer:       signer,
 			ctStorage:    fakeCTStorage,
 		},
 		{
-			desc: "valid-ekus-2",
-			cfg: &configpb.LogConfig{
-				PrivateKey: privKey,
-			},
+			desc:         "valid-ekus-2",
+			cfg:          &configpb.LogConfig{},
 			origin:       "log",
 			projectID:    "project",
 			bucket:       "bucket",
 			spannerDB:    "spanner",
 			rootsPemFile: "./testdata/fake-ca.cert",
 			extKeyUsages: "Any,ServerAuth,TimeStamping",
+			signer:       signer,
 			ctStorage:    fakeCTStorage,
 		},
 		{
-			desc: "valid-reject-ext",
-			cfg: &configpb.LogConfig{
-				PrivateKey: privKey,
-			},
+			desc:             "valid-reject-ext",
+			cfg:              &configpb.LogConfig{},
 			origin:           "log",
 			projectID:        "project",
 			bucket:           "bucket",
 			spannerDB:        "spanner",
 			rootsPemFile:     "./testdata/fake-ca.cert",
 			rejectExtensions: "1.2.3.4,5.6.7.8",
+			signer:           signer,
 			ctStorage:        fakeCTStorage,
 		},
 		{
-			desc: "invalid-reject-ext",
-			cfg: &configpb.LogConfig{
-				PrivateKey: privKey,
-			},
+			desc:             "invalid-reject-ext",
+			cfg:              &configpb.LogConfig{},
 			origin:           "log",
 			projectID:        "project",
 			bucket:           "bucket",
@@ -175,30 +143,29 @@ func TestSetUpInstance(t *testing.T) {
 			ctStorage:        fakeCTStorage,
 			rootsPemFile:     "./testdata/fake-ca.cert",
 			rejectExtensions: "1.2.3.4,one.banana.two.bananas",
+			signer:           signer,
 			wantErr:          "one",
 		},
 		{
-			desc: "missing-create-storage",
-			cfg: &configpb.LogConfig{
-				PrivateKey: privKey,
-			},
+			desc:         "missing-create-storage",
+			cfg:          &configpb.LogConfig{},
 			origin:       "log",
 			projectID:    "project",
 			bucket:       "bucket",
 			spannerDB:    "spanner",
 			rootsPemFile: "./testdata/fake-ca.cert",
+			signer:       signer,
 			wantErr:      "failed to initiate storage backend",
 		},
 		{
-			desc: "failing-create-storage",
-			cfg: &configpb.LogConfig{
-				PrivateKey: privKey,
-			},
+			desc:         "failing-create-storage",
+			cfg:          &configpb.LogConfig{},
 			origin:       "log",
 			projectID:    "project",
 			bucket:       "bucket",
 			spannerDB:    "spanner",
 			rootsPemFile: "./testdata/fake-ca.cert",
+			signer:       signer,
 			ctStorage: func(_ context.Context, _ note.Signer) (*CTStorage, error) {
 				return nil, fmt.Errorf("I failed")
 			},
@@ -208,7 +175,7 @@ func TestSetUpInstance(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.desc, func(t *testing.T) {
-			vCfg, err := ValidateLogConfig(test.cfg, test.origin, test.projectID, test.bucket, test.spannerDB, test.rootsPemFile, false, false, test.extKeyUsages, test.rejectExtensions, nil, nil)
+			vCfg, err := ValidateLogConfig(test.cfg, test.origin, test.projectID, test.bucket, test.spannerDB, test.rootsPemFile, false, false, test.extKeyUsages, test.rejectExtensions, nil, nil, signer)
 			if err != nil {
 				t.Fatalf("ValidateLogConfig(): %v", err)
 			}
@@ -246,10 +213,11 @@ func TestSetUpInstanceSetsValidationOpts(t *testing.T) {
 	start := time.Unix(10000, 0)
 	limit := time.Unix(12000, 0)
 
-	privKey, err := anypb.New(&keyspb.PEMKeyFile{Path: "./testdata/ct-http-server.privkey.pem", Password: "dirk"})
+	signer, err := pem.ReadPrivateKeyFile("./testdata/ct-http-server.privkey.pem", "dirk")
 	if err != nil {
-		t.Fatalf("Could not marshal private key proto: %v", err)
+		t.Fatalf(fmt.Sprintf("Can't open key: %v", err))
 	}
+
 	var tests = []struct {
 		desc          string
 		cfg           *configpb.LogConfig
@@ -260,23 +228,21 @@ func TestSetUpInstanceSetsValidationOpts(t *testing.T) {
 		rootsPemFile  string
 		notAfterStart *time.Time
 		notAfterLimit *time.Time
+		signer        crypto.Signer
 	}{
 		{
-			desc: "no validation opts",
-			cfg: &configpb.LogConfig{
-				PrivateKey: privKey,
-			},
+			desc:         "no validation opts",
+			cfg:          &configpb.LogConfig{},
 			origin:       "log",
 			projectID:    "project",
 			bucket:       "bucket",
 			spannerDB:    "spanner",
 			rootsPemFile: "./testdata/fake-ca.cert",
+			signer:       signer,
 		},
 		{
-			desc: "notAfterStart only",
-			cfg: &configpb.LogConfig{
-				PrivateKey: privKey,
-			},
+			desc:          "notAfterStart only",
+			cfg:           &configpb.LogConfig{},
 			origin:        "log",
 			projectID:     "project",
 			bucket:        "bucket",
@@ -285,10 +251,8 @@ func TestSetUpInstanceSetsValidationOpts(t *testing.T) {
 			notAfterStart: &start,
 		},
 		{
-			desc: "notAfter range",
-			cfg: &configpb.LogConfig{
-				PrivateKey: privKey,
-			},
+			desc:          "notAfter range",
+			cfg:           &configpb.LogConfig{},
 			origin:        "log",
 			projectID:     "project",
 			bucket:        "bucket",
@@ -296,12 +260,13 @@ func TestSetUpInstanceSetsValidationOpts(t *testing.T) {
 			rootsPemFile:  "./testdata/fake-ca.cert",
 			notAfterStart: &start,
 			notAfterLimit: &limit,
+			signer:        signer,
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.desc, func(t *testing.T) {
-			vCfg, err := ValidateLogConfig(test.cfg, test.origin, test.projectID, test.bucket, test.spannerDB, test.rootsPemFile, false, false, "", "", test.notAfterStart, test.notAfterLimit)
+			vCfg, err := ValidateLogConfig(test.cfg, test.origin, test.projectID, test.bucket, test.spannerDB, test.rootsPemFile, false, false, "", "", test.notAfterStart, test.notAfterLimit, signer)
 			if err != nil {
 				t.Fatalf("ValidateLogConfig(): %v", err)
 			}
