@@ -27,3 +27,8 @@ variable "log_origin" {
   description = "The origin string for the conformance log"
   type        = string
 }
+
+variable "kms_key_version_id" {
+  description = "The resource ID for the (externally created) KMS key version to use for signing checkpoints"
+  type        = string
+}

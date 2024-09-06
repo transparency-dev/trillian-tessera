@@ -1,3 +1,11 @@
+## Prerequisites
+
+You'll need to have already configured/created a KMS key which can safely be used by the
+conformance log.
+
+> [Warning]
+> This key should not be used elsewhere or be in any way valuable!
+
 ## Deployment 
 
 First authenticate via `gcloud` as a principle with sufficient ACLs for
@@ -6,9 +14,10 @@ the project:
 gcloud auth application-default login
 ```
 
-Set your GCP project ID with:
+Set the required environment variables:
 ```bash
 export GOOGLE_PROJECT={VALUE}
+export TESSERA_KMS_KEY_VERSION={VALUE} # This should be the resource name of the key version created above
 ```
 
 Optionally, customize the GCP region (defaults to "us-central1"),

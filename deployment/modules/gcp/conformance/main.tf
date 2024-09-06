@@ -27,12 +27,21 @@ resource "google_project_service" "cloudkms_googleapis_com" {
   service = "cloudkms.googleapis.com"
 }
 
+/*
+## This KMS config is left here for reference, but commented out to avoid
+## attempts to delete and re-create these keys with each of the conformance
+## runs.
+
 ##
 ## KMS for log signing
 ##
 resource "google_kms_key_ring" "log_signer" {
   location = var.location
   name     = var.base_name
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 resource "google_kms_crypto_key" "log_signer" {
@@ -42,10 +51,21 @@ resource "google_kms_crypto_key" "log_signer" {
   version_template {
     algorithm = "EC_SIGN_ED25519"
   }
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
+
 resource "google_kms_crypto_key_version" "log_signer" {
   crypto_key = google_kms_crypto_key.log_signer.id
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
+*/
+
 
 ###
 ### Set up Cloud Run service
@@ -102,7 +122,7 @@ resource "google_cloud_run_v2_service" "default" {
         "--spanner=${local.spanner_db_full}",
         "--project=${var.project_id}",
         "--listen=:8080",
-        "--kms_key=${google_kms_crypto_key_version.log_signer.id}",
+        "--kms_key=${var.kms_key_version_id}",
         "--origin=${var.log_origin}",
       ]
       ports {
