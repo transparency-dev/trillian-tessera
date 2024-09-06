@@ -37,7 +37,7 @@ resource "google_project_service" "cloudkms_googleapis_com" {
 ##
 resource "google_kms_key_ring" "log_signer" {
   location = var.location
-  name     = var.base_name
+  name     = var.base_namj
 
   lifecycle {
     prevent_destroy = true
@@ -45,8 +45,8 @@ resource "google_kms_key_ring" "log_signer" {
 }
 
 resource "google_kms_crypto_key" "log_signer" {
-  key_ring = google_kms_key_ring.log_signer.id
-  name     = "log_signer"
+  key_ring = google_kms_key_ring.log-signer.id
+  name     = "log-signer"
   purpose  = "ASYMMETRIC_SIGN"
   version_template {
     algorithm = "EC_SIGN_ED25519"
