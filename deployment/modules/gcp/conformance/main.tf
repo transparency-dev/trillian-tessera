@@ -115,6 +115,9 @@ resource "google_cloud_run_v2_service" "default" {
       }
     }
   }
+
+  deletion_protection = false
+
   client = "terraform"
   depends_on = [
     module.gcs,
