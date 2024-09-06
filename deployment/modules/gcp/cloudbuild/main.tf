@@ -74,34 +74,9 @@ resource "google_cloudbuild_trigger" "docker" {
   }
 }
 
+# roles managed externally.
 resource "google_service_account" "cloudbuild_service_account" {
   account_id   = "cloudbuild-${var.env}-sa"
   display_name = "Service Account for CloudBuild (${var.env})"
 }
 
-resource "google_project_iam_binding" "act_as" {
-  project = var.project_id
-  role    = "roles/iam.serviceAccountUser"
-  members = [
-    "serviceAccount:${google_service_account.cloudbuild_service_account.email}",
-    "serviceAccount:cloudrun-ci-sa@trillian-tessera.iam.gserviceaccount.com",
-  ]
-}
-
-resource "google_project_iam_member" "logs_writer" {
-  project = var.project_id
-  role    = "roles/logging.logWriter"
-  member  = "serviceAccount:${google_service_account.cloudbuild_service_account.email}"
-}
-
-resource "google_project_iam_member" "artifact_registry_writer" {
-  project = var.project_id
-  role    = "roles/artifactregistry.writer"
-  member  = "serviceAccount:${google_service_account.cloudbuild_service_account.email}"
-}
-
-resource "google_project_iam_member" "cloudrun_deployer" {
-  project = var.project_id
-  role    = "roles/run.developer"
-  member  = "serviceAccount:${google_service_account.cloudbuild_service_account.email}"
-}

@@ -70,35 +70,10 @@ resource "google_kms_crypto_key_version" "log_signer" {
 ###
 ### Set up Cloud Run service
 ###
+### Roles managed externally.
 resource "google_service_account" "cloudrun_service_account" {
   account_id   = "cloudrun-${var.env}-sa"
   display_name = "Service Account for Cloud Run (${var.base_name})"
-}
-
-resource "google_project_iam_member" "iam_act_as" {
-  project = var.project_id
-  role    = "roles/iam.serviceAccountUser"
-  member  = "serviceAccount:${google_service_account.cloudrun_service_account.email}"
-}
-resource "google_project_iam_member" "iam_metrics_writer" {
-  project = var.project_id
-  role    = "roles/monitoring.metricWriter"
-  member  = "serviceAccount:${google_service_account.cloudrun_service_account.email}"
-}
-resource "google_spanner_database_iam_binding" "iam_spanner_database_user" {
-  project  = var.project_id
-  instance = module.gcs.log_spanner_instance.name
-  database = module.gcs.log_spanner_db.name
-  role     = "roles/spanner.databaseUser"
-
-  members = [
-    "serviceAccount:${google_service_account.cloudrun_service_account.email}"
-  ]
-}
-resource "google_project_iam_member" "iam_service_agent" {
-  project = var.project_id
-  role    = "roles/run.serviceAgent"
-  member  = "serviceAccount:${google_service_account.cloudrun_service_account.email}"
 }
 
 locals {
@@ -144,10 +119,6 @@ resource "google_cloud_run_v2_service" "default" {
   depends_on = [
     module.gcs,
     google_project_service.cloudrun_api,
-    google_project_iam_member.iam_act_as,
-    google_project_iam_member.iam_metrics_writer,
-    google_project_iam_member.iam_service_agent,
-    google_spanner_database_iam_binding.iam_spanner_database_user,
   ]
 }
 
