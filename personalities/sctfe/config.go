@@ -29,29 +29,36 @@ import (
 // been successfully parsed as a result of validating it.
 type ValidatedLogConfig struct {
 	Config *LogConfig
+	// Used to sign the checkpoint and SCTs.
+	// TODO(phboneff): check that this is RSA or ECDSA only.
 	Signer crypto.Signer
 	// If set, ExtKeyUsages will restrict the set of such usages that the
 	// server will accept. By default all are accepted. The values specified
 	// must be ones known to the x509 package.
-	KeyUsages     []x509.ExtKeyUsage
+	KeyUsages []x509.ExtKeyUsage
+	// NotAfterStart defines the start of the range of acceptable NotAfter
+	// values, inclusive.
+	// Leaving this unset implies no lower bound to the range.
 	NotAfterStart *time.Time
+	// NotAfterLimit defines the end of the range of acceptable NotAfter values,
+	// exclusive.
+	// Leaving this unset implies no upper bound to the range.
 	NotAfterLimit *time.Time
 }
 
 // TODO(phboneff): inline this in ValidatedLogConfig and probably inline things further
-// TODO(phboneff): edit comments
 type LogConfig struct {
-	// origin identifies the log. It will be used in its checkpoint, and
-	// is also its submission prefix, as per https://c2sp.org/static-ct-api
+	// Origin identifies the log. It will be used in its checkpoint, and
+	// is also its submission prefix, as per https://c2sp.org/static-ct-api.
 	Origin string
 	// Path to the file containing root certificates that are acceptable to the
 	// log. The certs are served through get-roots endpoint.
 	RootsPemFile string
-	// If reject_expired is true then the certificate validity period will be
+	// If RejectExpired is true then the certificate validity period will be
 	// checked against the current time during the validation of submissions.
 	// This will cause expired certificates to be rejected.
 	RejectExpired bool
-	// If reject_unexpired is true then CTFE rejects certificates that are either
+	// If RejectUnexpired is true then CTFE rejects certificates that are either
 	// currently valid or not yet valid.
 	RejectUnexpired bool
 	// A list of X.509 extension OIDs, in dotted string form (e.g. "2.3.4.5")
