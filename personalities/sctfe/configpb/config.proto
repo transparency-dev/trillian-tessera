@@ -43,17 +43,4 @@ message LogConfig {
   // accept_only_ca controls whether or not *only* certificates with the CA bit
   // set will be accepted.
   bool accept_only_ca = 10;
-
-  // The Maximum Merge Delay (MMD) of this log in seconds. See RFC6962 section 3
-  // for definition of MMD. If zero, the log does not provide an MMD guarantee
-  // (for example, it is a frozen log).
-  int32 max_merge_delay_sec = 11;
-  // The merge delay that the underlying log implementation is able/targeting to
-  // provide. This option is exposed in CTFE metrics, and can be particularly
-  // useful to catch when the log is behind but has not yet violated the strict
-  // MMD limit.
-  // Log operator should decide what exactly EMD means for them. For example, it
-  // can be a 99-th percentile of merge delays that they observe, and they can
-  // alert on the actual merge delay going above a certain multiple of this EMD.
-  int32 expected_merge_delay_sec = 12;
 }

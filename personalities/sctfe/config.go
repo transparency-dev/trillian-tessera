@@ -79,18 +79,6 @@ type LogConfig struct {
 	// accept_only_ca controls whether or not *only* certificates with the CA bit
 	// set will be accepted.
 	AcceptOnlyCa bool
-	// The Maximum Merge Delay (MMD) of this log in seconds. See RFC6962 section 3
-	// for definition of MMD. If zero, the log does not provide an MMD guarantee
-	// (for example, it is a frozen log).
-	MaxMergeDelaySec int32
-	// The merge delay that the underlying log implementation is able/targeting to
-	// provide. This option is exposed in CTFE metrics, and can be particularly
-	// useful to catch when the log is behind but has not yet violated the strict
-	// MMD limit.
-	// Log operator should decide what exactly EMD means for them. For example, it
-	// can be a 99-th percentile of merge delays that they observe, and they can
-	// alert on the actual merge delay going above a certain multiple of this EMD.
-	ExpectedMergeDelaySec int32
 	// A list of X.509 extension OIDs, in dotted string form (e.g. "2.3.4.5")
 	// which, if present, should cause submissions to be rejected.
 	RejectExtensions []string
@@ -150,18 +138,16 @@ func ValidateLogConfig(cfg *configpb.LogConfig, origin string, projectID string,
 	}
 
 	vCfg := ValidatedLogConfig{Config: &LogConfig{
-		Origin:                origin,
-		RootsPemFile:          rootsPemFile,
-		PrivateKey:            cfg.PrivateKey,
-		PublicKey:             cfg.PublicKey,
-		RejectExpired:         rejectExpired,
-		RejectUnexpired:       rejectUnexpired,
-		NotAfterStart:         cfg.NotAfterLimit,
-		NotAfterLimit:         cfg.NotAfterLimit,
-		AcceptOnlyCa:          cfg.AcceptOnlyCa,
-		MaxMergeDelaySec:      cfg.MaxMergeDelaySec,
-		ExpectedMergeDelaySec: cfg.ExpectedMergeDelaySec,
-		RejectExtensions:      lRejectExtensions,
+		Origin:           origin,
+		RootsPemFile:     rootsPemFile,
+		PrivateKey:       cfg.PrivateKey,
+		PublicKey:        cfg.PublicKey,
+		RejectExpired:    rejectExpired,
+		RejectUnexpired:  rejectUnexpired,
+		NotAfterStart:    cfg.NotAfterLimit,
+		NotAfterLimit:    cfg.NotAfterLimit,
+		AcceptOnlyCa:     cfg.AcceptOnlyCa,
+		RejectExtensions: lRejectExtensions,
 	}}
 
 	// Validate the public key.
@@ -220,15 +206,6 @@ func ValidateLogConfig(cfg *configpb.LogConfig, origin string, projectID string,
 	}
 	if start != nil && limit != nil && (*vCfg.NotAfterLimit).Before(*vCfg.NotAfterStart) {
 		return nil, errors.New("limit before start")
-	}
-
-	switch {
-	case cfg.MaxMergeDelaySec < 0:
-		return nil, errors.New("negative maximum merge delay")
-	case cfg.ExpectedMergeDelaySec < 0:
-		return nil, errors.New("negative expected merge delay")
-	case cfg.ExpectedMergeDelaySec > cfg.MaxMergeDelaySec:
-		return nil, errors.New("expected merge delay exceeds MMD")
 	}
 
 	return &vCfg, nil

@@ -201,43 +201,6 @@ func TestValidateLogConfig(t *testing.T) {
 			spannerDB: "spanner",
 		},
 		{
-			desc:    "negative-maximum-merge",
-			wantErr: "negative maximum merge",
-			cfg: &configpb.LogConfig{
-				PrivateKey:       privKey,
-				MaxMergeDelaySec: -100,
-			},
-			origin:    "testlog",
-			projectID: "project",
-			bucket:    "bucket",
-			spannerDB: "spanner",
-		},
-		{
-			desc:    "negative-expected-merge",
-			wantErr: "negative expected merge",
-			cfg: &configpb.LogConfig{
-				PrivateKey:            privKey,
-				ExpectedMergeDelaySec: -100,
-			},
-			origin:    "testlog",
-			projectID: "project",
-			bucket:    "bucket",
-			spannerDB: "spanner",
-		},
-		{
-			desc:    "expected-exceeds-max",
-			wantErr: "expected merge delay exceeds MMD",
-			cfg: &configpb.LogConfig{
-				PrivateKey:            privKey,
-				MaxMergeDelaySec:      50,
-				ExpectedMergeDelaySec: 100,
-			},
-			origin:    "testlog",
-			projectID: "project",
-			bucket:    "bucket",
-			spannerDB: "spanner",
-		},
-		{
 			desc: "ok",
 			cfg: &configpb.LogConfig{
 				PrivateKey: privKey,
@@ -300,18 +263,6 @@ func TestValidateLogConfig(t *testing.T) {
 				PrivateKey:    privKey,
 				NotAfterStart: &timestamppb.Timestamp{Seconds: 300},
 				NotAfterLimit: &timestamppb.Timestamp{Seconds: 400},
-			},
-			origin:    "testlog",
-			projectID: "project",
-			bucket:    "bucket",
-			spannerDB: "spanner",
-		},
-		{
-			desc: "ok-merge-delay",
-			cfg: &configpb.LogConfig{
-				PrivateKey:            privKey,
-				MaxMergeDelaySec:      86400,
-				ExpectedMergeDelaySec: 7200,
 			},
 			origin:    "testlog",
 			projectID: "project",
