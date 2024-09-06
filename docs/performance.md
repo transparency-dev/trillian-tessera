@@ -54,10 +54,6 @@ MiB Swap:      0.0 total,      0.0 free,      0.0 used.     37.3 avail Mem
 
 1. [Install Docker using the `apt` repository](https://docs.docker.com/engine/install/ubuntu/#install-using-the-repository)
 
-   ```sh
-   https://docs.docker.com/engine/install/debian/
-   ```
-
 1. Install Git
 
    ```sh
@@ -112,7 +108,7 @@ MiB Swap:      0.0 total,      0.0 free,      0.0 used.     37.3 avail Mem
 └───────────────────────────────────────────────────────────────────────┘
 ```
 
-The bottleneck comes from the `cmd/conformance/mysql` binary on the free tier VM instance. The MySQL CPU usage is lower than 10%.
+The bottleneck comes from CPU usage of the `cmd/conformance/mysql` binary on the free tier VM instance. The Cloud SQL (MySQL) CPU usage is lower than 10%.
 
 #### Steps
 
@@ -195,9 +191,9 @@ Tasks:  97 total,   1 running,  96 sleeping,   0 stopped,   0 zombie
 MiB Mem :    970.0 total,    158.7 free,    566.8 used,    409.3 buff/cache     
 MiB Swap:      0.0 total,      0.0 free,      0.0 used.    403.2 avail Mem 
 
-    PID USER      PR  NI    VIRT    RES    SHR S  %CPU  %MEM     TIME+ COMMAND                                                                                                                                                                               
-   8336 root      20   0 1231800  34784   5080 S 200.0   3.5   2:59.50 conformance-pos                                                                                                                                                                                                                                                                                                                                              
-    409 root      20   0 2442648  79112  26836 S   1.0   8.0   0:49.10 dockerd                                                                                                                                                                               
+    PID USER      PR  NI    VIRT    RES    SHR S  %CPU  %MEM     TIME+ COMMAND
+   8336 root      20   0 1231800  34784   5080 S 200.0   3.5   2:59.50 conformance-pos
+    409 root      20   0 2442648  79112  26836 S   1.0   8.0   0:49.10 dockerd
    6848 root      20   0 1800176  34376  16940 S   0.7   3.5   0:12.57 docker-compose
 ```
 
@@ -216,10 +212,6 @@ MiB Swap:      0.0 total,      0.0 free,      0.0 used.    403.2 avail Mem
    ```
 
 1. [Install Docker using the `apt` repository](https://docs.docker.com/engine/install/ubuntu/#install-using-the-repository)
-
-   ```sh
-   https://docs.docker.com/engine/install/debian/
-   ```
 
 1. Install Git
 
