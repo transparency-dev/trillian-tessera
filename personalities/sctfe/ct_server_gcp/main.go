@@ -70,7 +70,7 @@ var (
 	rejectExpired      = flag.Bool("reject_expired", false, "if true then the certificate validity period will be checked against the current time during the validation of submissions. This will cause expired certificates to be rejected.")
 	rejectUnexpired    = flag.Bool("reject_unexpired", false, "If reject_unexpired is true then CTFE rejects certificates that are either currently valid or not yet valid.")
 	extKeyUsages       = flag.String("ext_key_usages", "", "If set, ext_key_usages will restrict the set of such usages that the server will accept. By default all are accepted. The values specified must be ones known to the x509 package.")
-	rejectExtensions   = flag.String("reject_extension", "", "A list of X.509 extension OIDs, in dotted string form (e.g. '2.3.4.5') which should cause submissions to be rejected.")
+	rejectExtensions   = flag.String("reject_extension", "", "A list of X.509 extension OIDs, in dotted string form (e.g. '2.3.4.5') which, if present, should cause submissions to be rejected.")
 )
 
 // nolint:staticcheck

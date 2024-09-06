@@ -92,7 +92,7 @@ type LogConfig struct {
 	// alert on the actual merge delay going above a certain multiple of this EMD.
 	ExpectedMergeDelaySec int32
 	// A list of X.509 extension OIDs, in dotted string form (e.g. "2.3.4.5")
-	// which should cause submissions to be rejected.
+	// which, if present, should cause submissions to be rejected.
 	RejectExtensions []string
 }
 
