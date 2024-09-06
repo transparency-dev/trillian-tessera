@@ -1,12 +1,13 @@
 terraform {
-  source = "${get_repo_root()}/deployment/modules/gcp//example-gcp"
+  source = "${get_repo_root()}/deployment/modules/gcp//conformance"
 }
 
 locals {
   env        = path_relative_to_include()
   project_id = get_env("GOOGLE_PROJECT", "trillian-tessera")
   location   = get_env("GOOGLE_REGION", "us-central1")
-  base_name  = get_env("TESSERA_BASE_NAME", "${local.env}-example-gcp")
+  base_name  = get_env("TESSERA_BASE_NAME", "${local.env}-conformance")
+  log_origin = "conformance-gcp-${local.env}"
 }
 
 remote_state {
