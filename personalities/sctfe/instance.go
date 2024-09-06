@@ -81,6 +81,7 @@ func setUpLogInfo(ctx context.Context, opts InstanceOptions) (*logInfo, error) {
 	vCfg := opts.Validated
 	cfg := vCfg.Config
 
+	// TODO(phboneff): move to ValidateLogConfig
 	// Check config validity.
 	if len(cfg.RootsPemFile) == 0 {
 		return nil, errors.New("need to specify RootsPemFile")
@@ -88,10 +89,8 @@ func setUpLogInfo(ctx context.Context, opts InstanceOptions) (*logInfo, error) {
 
 	// Load the trusted roots.
 	roots := x509util.NewPEMCertPool()
-	for _, pemFile := range cfg.RootsPemFile {
-		if err := roots.AppendCertsFromPEMFile(pemFile); err != nil {
-			return nil, fmt.Errorf("failed to read trusted roots: %v", err)
-		}
+	if err := roots.AppendCertsFromPEMFile(cfg.RootsPemFile); err != nil {
+		return nil, fmt.Errorf("failed to read trusted roots: %v", err)
 	}
 
 	var signer crypto.Signer

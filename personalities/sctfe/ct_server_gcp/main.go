@@ -61,12 +61,12 @@ var (
 	tracingProjectID   = flag.String("tracing_project_id", "", "project ID to pass to stackdriver. Can be empty for GCP, consult docs for other platforms.")
 	tracingPercent     = flag.Int("tracing_percent", 0, "Percent of requests to be traced. Zero is a special case to use the DefaultSampler")
 	pkcs11ModulePath   = flag.String("pkcs11_module_path", "", "Path to the PKCS#11 module to use for keys that use the PKCS#11 interface")
-	// TODO: remove comment above when the config proto has been deleted.
-	dedupPath = flag.String("dedup_path", "", "Path to the deduplication database")
-	origin    = flag.String("origin", "", "origin of the log, for checkpoints and the monitoring prefix")
-	projectID = flag.String("project_id", "", "origin of the log, for checkpoints and the monitoring prefix")
-	bucket    = flag.String("bucket", "", "name of the bucket to store the log in")
-	spannerDB = flag.String("spanner_db_path", "", "projects/{projectId}/instances/{instanceId}/databases/{databaseId}")
+	dedupPath          = flag.String("dedup_path", "", "Path to the deduplication database")
+	origin             = flag.String("origin", "", "origin of the log, for checkpoints and the monitoring prefix")
+	projectID          = flag.String("project_id", "", "origin of the log, for checkpoints and the monitoring prefix")
+	bucket             = flag.String("bucket", "", "name of the bucket to store the log in")
+	spannerDB          = flag.String("spanner_db_path", "", "projects/{projectId}/instances/{instanceId}/databases/{databaseId}")
+	rootsPemFile       = flag.String("roots_pem_file", "", "Paths to the file containing root certificates that are acceptable to the log. The certs are served through get-roots endpoint.")
 )
 
 // nolint:staticcheck
@@ -89,7 +89,7 @@ func main() {
 		klog.Exitf("Failed to read config: %v", err)
 	}
 
-	vCfg, err := sctfe.ValidateLogConfig(cfg, *origin, *projectID, *bucket, *spannerDB)
+	vCfg, err := sctfe.ValidateLogConfig(cfg, *origin, *projectID, *bucket, *spannerDB, *rootsPemFile)
 	if err != nil {
 		klog.Exitf("Invalid config: %v", err)
 	}
