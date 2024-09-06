@@ -278,64 +278,6 @@ func TestValidateChain(t *testing.T) {
 	}
 }
 
-func TestCA(t *testing.T) {
-	fakeCARoots := x509util.NewPEMCertPool()
-	if !fakeCARoots.AppendCertsFromPEM([]byte(testdata.FakeCACertPEM)) {
-		t.Fatal("failed to load fake root")
-	}
-	validateOpts := CertValidationOpts{
-		trustedRoots: fakeCARoots,
-	}
-	chain := pemsToDERChain(t, []string{testdata.LeafSignedByFakeIntermediateCertPEM, testdata.FakeIntermediateCertPEM})
-	leaf, err := x509.ParseCertificate(chain[0])
-	if x509.IsFatal(err) {
-		t.Fatalf("Failed to parse golden certificate DER: %v", err)
-	}
-	t.Logf("Cert expiry date: %v", leaf.NotAfter)
-
-	var tests = []struct {
-		desc    string
-		chain   [][]byte
-		caOnly  bool
-		wantErr bool
-	}{
-		{
-			desc:  "end-entity, allow non-CA",
-			chain: chain,
-		},
-		{
-			desc:    "end-entity, disallow non-CA",
-			chain:   chain,
-			caOnly:  true,
-			wantErr: true,
-		},
-		{
-			desc:  "intermediate, allow non-CA",
-			chain: chain[1:],
-		},
-		{
-			desc:   "intermediate, disallow non-CA",
-			chain:  chain[1:],
-			caOnly: true,
-		},
-	}
-	for _, test := range tests {
-		t.Run(test.desc, func(t *testing.T) {
-			validateOpts.acceptOnlyCA = test.caOnly
-			gotPath, err := validateChain(test.chain, validateOpts)
-			if err != nil {
-				if !test.wantErr {
-					t.Errorf("ValidateChain()=%v,%v; want _,nil", gotPath, err)
-				}
-				return
-			}
-			if test.wantErr {
-				t.Errorf("ValidateChain()=%v,%v; want _,non-nil", gotPath, err)
-			}
-		})
-	}
-}
-
 func TestNotAfterRange(t *testing.T) {
 	fakeCARoots := x509util.NewPEMCertPool()
 	if !fakeCARoots.AppendCertsFromPEM([]byte(testdata.FakeCACertPEM)) {

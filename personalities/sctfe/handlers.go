@@ -169,8 +169,6 @@ type CertValidationOpts struct {
 	// dates strictly *before* notAfterLimit will be accepted.
 	// nil means no upper bound on the accepted range.
 	notAfterLimit *time.Time
-	// acceptOnlyCA will reject any certificate without the CA bit set.
-	acceptOnlyCA bool
 	// extKeyUsages contains the list of EKUs to use during chain verification
 	extKeyUsages []x509.ExtKeyUsage
 	// rejectExtIds contains a list of X.509 extension IDs to reject during chain verification.
@@ -186,7 +184,6 @@ func NewCertValidationOpts(trustedRoots *x509util.PEMCertPool, currentTime time.
 	vOpts.rejectUnexpired = rejectUnexpired
 	vOpts.notAfterStart = notAfterStart
 	vOpts.notAfterLimit = notAfterLimit
-	vOpts.acceptOnlyCA = acceptOnlyCA
 	vOpts.extKeyUsages = extKeyUsages
 	return vOpts
 }
