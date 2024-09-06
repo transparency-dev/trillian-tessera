@@ -37,7 +37,7 @@ resource "google_project_service" "cloudkms_googleapis_com" {
 ##
 resource "google_kms_key_ring" "log_signer" {
   location = var.location
-  name     = var.base_namj
+  name     = var.base_name
 
   lifecycle {
     prevent_destroy = true
