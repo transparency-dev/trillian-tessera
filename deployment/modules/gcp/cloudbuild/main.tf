@@ -44,6 +44,7 @@ resource "google_cloudbuild_trigger" "docker" {
       ]
     }
     step {
+      id   = "docker_push_conformance_gcp"
       name = "gcr.io/cloud-builders/docker"
       args = [
         "push",
@@ -68,7 +69,7 @@ resource "google_cloudbuild_trigger" "docker" {
         "TF_INPUT=false",
         "TF_VAR_project_id=${var.project_id}"
       ]
-      wait_for = ["-"]
+      wait_for = ["docker_push_conformance_gcp"]
     }
     options {
       logging = "CLOUD_LOGGING_ONLY"
