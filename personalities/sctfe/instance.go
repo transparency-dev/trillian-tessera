@@ -71,13 +71,12 @@ func SetUpInstance(ctx context.Context, opts InstanceOptions) (*Instance, error)
 	if err != nil {
 		return nil, err
 	}
-	handlers := logInfo.Handlers(opts.Validated.Config.Origin)
+	handlers := logInfo.Handlers(opts.Validated.Origin)
 	return &Instance{Handlers: handlers, li: logInfo}, nil
 }
 
 func setUpLogInfo(ctx context.Context, opts InstanceOptions) (*logInfo, error) {
-	vCfg := opts.Validated
-	cfg := vCfg.Config
+	cfg := opts.Validated
 
 	// TODO(phboneff): move to ValidateLogConfig
 	// Check config validity.
@@ -95,9 +94,9 @@ func setUpLogInfo(ctx context.Context, opts InstanceOptions) (*logInfo, error) {
 		trustedRoots:    roots,
 		rejectExpired:   cfg.RejectExpired,
 		rejectUnexpired: cfg.RejectUnexpired,
-		notAfterStart:   vCfg.NotAfterStart,
-		notAfterLimit:   vCfg.NotAfterLimit,
-		extKeyUsages:    vCfg.KeyUsages,
+		notAfterStart:   cfg.NotAfterStart,
+		notAfterLimit:   cfg.NotAfterLimit,
+		extKeyUsages:    cfg.KeyUsages,
 	}
 	var err error
 	validationOpts.rejectExtIds, err = parseOIDs(cfg.RejectExtensions)
@@ -105,12 +104,12 @@ func setUpLogInfo(ctx context.Context, opts InstanceOptions) (*logInfo, error) {
 		return nil, fmt.Errorf("failed to parse RejectExtensions: %v", err)
 	}
 
-	logID, err := GetCTLogID(vCfg.Signer.Public())
+	logID, err := GetCTLogID(cfg.Signer.Public())
 	if err != nil {
 		return nil, fmt.Errorf("failed to get logID for signing: %v", err)
 	}
 	timeSource := new(SystemTimeSource)
-	ctSigner := NewCpSigner(vCfg.Signer, vCfg.Config.Origin, logID, timeSource)
+	ctSigner := NewCpSigner(cfg.Signer, cfg.Origin, logID, timeSource)
 
 	if opts.CreateStorage == nil {
 		return nil, fmt.Errorf("failed to initiate storage backend: nil createStorage")
@@ -120,7 +119,7 @@ func setUpLogInfo(ctx context.Context, opts InstanceOptions) (*logInfo, error) {
 		return nil, fmt.Errorf("failed to initiate storage backend: %v", err)
 	}
 
-	logInfo := newLogInfo(opts, validationOpts, vCfg.Signer, timeSource, storage)
+	logInfo := newLogInfo(opts, validationOpts, cfg.Signer, timeSource, storage)
 	return logInfo, nil
 }
 

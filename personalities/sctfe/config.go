@@ -28,7 +28,9 @@ import (
 // ValidatedLogConfig represents the LogConfig with the information that has
 // been successfully parsed as a result of validating it.
 type ValidatedLogConfig struct {
-	Config *LogConfig
+	// Origin identifies the log. It will be used in its checkpoint, and
+	// is also its submission prefix, as per https://c2sp.org/static-ct-api.
+	Origin string
 	// Used to sign the checkpoint and SCTs.
 	// TODO(phboneff): check that this is RSA or ECDSA only.
 	Signer crypto.Signer
@@ -44,13 +46,6 @@ type ValidatedLogConfig struct {
 	// exclusive.
 	// Leaving this unset implies no upper bound to the range.
 	NotAfterLimit *time.Time
-}
-
-// TODO(phboneff): inline this in ValidatedLogConfig and probably inline things further
-type LogConfig struct {
-	// Origin identifies the log. It will be used in its checkpoint, and
-	// is also its submission prefix, as per https://c2sp.org/static-ct-api.
-	Origin string
 	// Path to the file containing root certificates that are acceptable to the
 	// log. The certs are served through get-roots endpoint.
 	RootsPemFile string
@@ -101,16 +96,14 @@ func ValidateLogConfig(origin string, projectID string, bucket string, spannerDB
 	}
 
 	vCfg := ValidatedLogConfig{
-		Config: &LogConfig{
-			Origin:           origin,
-			RootsPemFile:     rootsPemFile,
-			RejectExpired:    rejectExpired,
-			RejectUnexpired:  rejectUnexpired,
-			RejectExtensions: lRejectExtensions,
-		},
-		NotAfterStart: notAfterStart,
-		NotAfterLimit: notAfterLimit,
-		Signer:        signer,
+		Origin:           origin,
+		RootsPemFile:     rootsPemFile,
+		RejectExpired:    rejectExpired,
+		RejectUnexpired:  rejectUnexpired,
+		RejectExtensions: lRejectExtensions,
+		NotAfterStart:    notAfterStart,
+		NotAfterLimit:    notAfterLimit,
+		Signer:           signer,
 	}
 
 	if rejectExpired && rejectUnexpired {

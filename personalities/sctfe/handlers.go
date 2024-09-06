@@ -216,8 +216,7 @@ func newLogInfo(
 	timeSource TimeSource,
 	storage Storage,
 ) *logInfo {
-	vCfg := instanceOpts.Validated
-	cfg := vCfg.Config
+	cfg := instanceOpts.Validated
 
 	li := &logInfo{
 		LogOrigin:      cfg.Origin,
