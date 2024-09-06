@@ -1,5 +1,5 @@
 terraform {
-  source = "${get_repo_root()}/deployment/modules/gcp//example-gcp"
+  source = "${get_repo_root()}/deployment/modules/gcp//conformance"
 }
 
 include "root" {
@@ -10,7 +10,7 @@ include "root" {
 inputs = merge(
   include.root.locals,
   {
-    example_gcp_docker_image = "us-central1-docker.pkg.dev/trillian-tessera/docker-prod/example-gcp:latest"
-    log_origin               = "example-gcp"
+    server_docker_image = "us-central1-docker.pkg.dev/trillian-tessera/docker-prod/conformance-gcp:latest"
+    log_origin          = include.root.locals.base_name
   }
 )

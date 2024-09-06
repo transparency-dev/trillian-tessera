@@ -52,7 +52,7 @@ resource "google_kms_crypto_key_version" "log_signer" {
 ###
 resource "google_service_account" "cloudrun_service_account" {
   account_id   = "cloudrun-${var.env}-sa"
-  display_name = "Service Account for Cloud Run (${var.env})"
+  display_name = "Service Account for Cloud Run (${var.base_name})"
 }
 
 resource "google_project_iam_member" "iam_act_as" {
@@ -86,7 +86,7 @@ locals {
 }
 
 resource "google_cloud_run_v2_service" "default" {
-  name         = "conformance-${var.env}"
+  name         = var.base_name
   location     = var.location
   launch_stage = "GA"
 

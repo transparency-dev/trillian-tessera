@@ -12,7 +12,7 @@ export GOOGLE_PROJECT={VALUE}
 ```
 
 Optionally, customize the GCP region (defaults to "us-central1"),
-and bucket name prefix (defaults to "example-gcp"):
+and bucket name prefix (defaults to "conformance"):
 ```bash
 export GOOGLE_REGION={VALUE}
 export TESSERA_BASE_NAME={VALUE}
