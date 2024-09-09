@@ -1,5 +1,12 @@
 terraform {
   backend "gcs" {}
+
+  required_providers {
+    google = {
+      source  = "registry.terraform.io/hashicorp/google"
+      version = "6.1.0"
+    }
+  }
 }
 
 ## Call the Tessera GCP module
@@ -79,6 +86,34 @@ resource "google_service_account" "cloudrun_service_account" {
 locals {
   spanner_db_full = "projects/${var.project_id}/instances/${module.gcs.log_spanner_instance.name}/databases/${module.gcs.log_spanner_db.name}"
 }
+
+/*
+module "gce-container" {
+  source  = "terraform-google-modules/container-vm/google"
+  version = "~> 3.1"
+
+  container = {
+    image = var.server_docker_image
+
+    args = [
+      "--logtostderr",
+      "--v=1",
+      "--bucket=${module.gcs.log_bucket.id}",
+      "--spanner=${local.spanner_db_full}",
+      "--project=${var.project_id}",
+      "--listen=:8080",
+      "--kms_key=${var.kms_key_version_id}",
+      "--origin=${var.log_origin}",
+    ]
+  }
+
+  restart_policy = "Always"
+
+  depends_on = [
+    module.gcs,
+  ]
+}
+*/
 
 resource "google_cloud_run_v2_service" "default" {
   name         = var.base_name
