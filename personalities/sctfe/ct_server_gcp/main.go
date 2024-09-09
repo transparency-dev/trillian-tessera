@@ -53,17 +53,16 @@ var (
 	notAfterStart timestampFlag
 	notAfterLimit timestampFlag
 
-	httpEndpoint       = flag.String("http_endpoint", "localhost:6962", "Endpoint for HTTP (host:port).")
-	tlsCert            = flag.String("tls_certificate", "", "Path to server TLS certificate.")
-	tlsKey             = flag.String("tls_key", "", "Path to server TLS private key.")
-	metricsEndpoint    = flag.String("metrics_endpoint", "", "Endpoint for serving metrics; if left empty, metrics will be visible on --http_endpoint.")
+	httpEndpoint    = flag.String("http_endpoint", "localhost:6962", "Endpoint for HTTP (host:port).")
+	tlsCert         = flag.String("tls_certificate", "", "Path to server TLS certificate.")
+	tlsKey          = flag.String("tls_key", "", "Path to server TLS private key.")
+	metricsEndpoint = flag.String("metrics_endpoint", "", "Endpoint for serving metrics; if left empty, metrics will be visible on --http_endpoint.")
+	// TODO(phboneff): delete / rename
 	rpcDeadline        = flag.Duration("rpc_deadline", time.Second*10, "Deadline for backend RPC requests.")
-	logConfig          = flag.String("log_config", "", "File holding log config in text proto format.")
 	maskInternalErrors = flag.Bool("mask_internal_errors", false, "Don't return error strings with Internal Server Error HTTP responses.")
 	tracing            = flag.Bool("tracing", false, "If true opencensus Stackdriver tracing will be enabled. See https://opencensus.io/.")
 	tracingProjectID   = flag.String("tracing_project_id", "", "project ID to pass to stackdriver. Can be empty for GCP, consult docs for other platforms.")
 	tracingPercent     = flag.Int("tracing_percent", 0, "Percent of requests to be traced. Zero is a special case to use the DefaultSampler.")
-	pkcs11ModulePath   = flag.String("pkcs11_module_path", "", "Path to the PKCS#11 module to use for keys that use the PKCS#11 interface.")
 	dedupPath          = flag.String("dedup_path", "", "Path to the deduplication database.")
 	origin             = flag.String("origin", "", "Origin of the log, for checkpoints and the monitoring prefix.")
 	projectID          = flag.String("project_id", "", "GCP ProjectID.")
