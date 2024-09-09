@@ -84,6 +84,7 @@ func main() {
 	flag.Parse()
 	ctx := context.Background()
 
+	// TODO(phboneff): move to something else, like KMS
 	signer, err := pem.ReadPrivateKeyFile(*privKey, *privKeyPass)
 	if err != nil {
 		klog.Exitf("Can't open key: %v", err)
