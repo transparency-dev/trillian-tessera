@@ -164,6 +164,9 @@ func (w httpLeafWriter) Write(ctx context.Context, newLeaf []byte) (uint64, erro
 	if err != nil {
 		return 0, fmt.Errorf("failed to create request: %v", err)
 	}
+	if *bearerToken != "" {
+		req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", *bearerToken))
+	}
 	resp, err := hc.Do(req.WithContext(ctx))
 	if err != nil {
 		return 0, fmt.Errorf("failed to write leaf: %v", err)
