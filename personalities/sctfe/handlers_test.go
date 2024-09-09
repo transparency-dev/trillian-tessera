@@ -75,9 +75,8 @@ func setupTest(t *testing.T, pemRoots []string, signer crypto.Signer) handlerTes
 		rejectExpired: false,
 	}
 
-	cfg := &LogConfig{Origin: "example.com"}
-	vCfg := &ValidatedLogConfig{Config: cfg}
-	iOpts := InstanceOptions{Validated: vCfg, Deadline: time.Millisecond * 500, MetricFactory: monitoring.InertMetricFactory{}, RequestLog: new(DefaultRequestLog)}
+	cfg := &ValidatedLogConfig{Origin: "example.com"}
+	iOpts := InstanceOptions{Validated: cfg, Deadline: time.Millisecond * 500, MetricFactory: monitoring.InertMetricFactory{}, RequestLog: new(DefaultRequestLog)}
 	info.li = newLogInfo(iOpts, vOpts, signer, fakeTimeSource, info.storage)
 
 	for _, pemRoot := range pemRoots {

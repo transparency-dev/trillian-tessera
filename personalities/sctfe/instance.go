@@ -17,8 +17,6 @@ package sctfe
 import (
 	"context"
 	"crypto"
-	"crypto/ecdsa"
-	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -26,7 +24,6 @@ import (
 
 	"github.com/google/certificate-transparency-go/asn1"
 	"github.com/google/certificate-transparency-go/x509util"
-	"github.com/google/trillian/crypto/keys"
 	"github.com/google/trillian/monitoring"
 	"golang.org/x/mod/sumdb/note"
 )
@@ -69,23 +66,7 @@ func (i *Instance) GetPublicKey() crypto.PublicKey {
 // configuration, and returns an object containing a set of handlers for this
 // log, and an STH getter.
 func SetUpInstance(ctx context.Context, opts InstanceOptions) (*Instance, error) {
-	logInfo, err := setUpLogInfo(ctx, opts)
-	if err != nil {
-		return nil, err
-	}
-	handlers := logInfo.Handlers(opts.Validated.Config.Origin)
-	return &Instance{Handlers: handlers, li: logInfo}, nil
-}
-
-func setUpLogInfo(ctx context.Context, opts InstanceOptions) (*logInfo, error) {
-	vCfg := opts.Validated
-	cfg := vCfg.Config
-
-	// TODO(phboneff): move to ValidateLogConfig
-	// Check config validity.
-	if len(cfg.RootsPemFile) == 0 {
-		return nil, errors.New("need to specify RootsPemFile")
-	}
+	cfg := opts.Validated
 
 	// Load the trusted roots.
 	roots := x509util.NewPEMCertPool()
@@ -93,44 +74,26 @@ func setUpLogInfo(ctx context.Context, opts InstanceOptions) (*logInfo, error) {
 		return nil, fmt.Errorf("failed to read trusted roots: %v", err)
 	}
 
-	var signer crypto.Signer
-	var err error
-	if signer, err = keys.NewSigner(ctx, vCfg.PrivKey); err != nil {
-		return nil, fmt.Errorf("failed to load private key: %v", err)
-	}
-
-	// TODO(phboneff): are pub keys actually used? If not, remove
-	// If a public key has been configured for a log, check that it is consistent with the private key.
-	if vCfg.PubKey != nil {
-		switch pub := vCfg.PubKey.(type) {
-		case *ecdsa.PublicKey:
-			if !pub.Equal(signer.Public()) {
-				return nil, errors.New("public key is not consistent with private key")
-			}
-		default:
-			return nil, errors.New("failed to verify consistency of public key with private key")
-		}
-	}
-
 	validationOpts := CertValidationOpts{
 		trustedRoots:    roots,
 		rejectExpired:   cfg.RejectExpired,
 		rejectUnexpired: cfg.RejectUnexpired,
-		notAfterStart:   vCfg.NotAfterStart,
-		notAfterLimit:   vCfg.NotAfterLimit,
-		extKeyUsages:    vCfg.KeyUsages,
+		notAfterStart:   cfg.NotAfterStart,
+		notAfterLimit:   cfg.NotAfterLimit,
+		extKeyUsages:    cfg.KeyUsages,
 	}
+	var err error
 	validationOpts.rejectExtIds, err = parseOIDs(cfg.RejectExtensions)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse RejectExtensions: %v", err)
 	}
 
-	logID, err := GetCTLogID(signer.Public())
+	logID, err := GetCTLogID(cfg.Signer.Public())
 	if err != nil {
 		return nil, fmt.Errorf("failed to get logID for signing: %v", err)
 	}
 	timeSource := new(SystemTimeSource)
-	ctSigner := NewCpSigner(signer, vCfg.Config.Origin, logID, timeSource)
+	ctSigner := NewCpSigner(cfg.Signer, cfg.Origin, logID, timeSource)
 
 	if opts.CreateStorage == nil {
 		return nil, fmt.Errorf("failed to initiate storage backend: nil createStorage")
@@ -140,8 +103,10 @@ func setUpLogInfo(ctx context.Context, opts InstanceOptions) (*logInfo, error) {
 		return nil, fmt.Errorf("failed to initiate storage backend: %v", err)
 	}
 
-	logInfo := newLogInfo(opts, validationOpts, signer, timeSource, storage)
-	return logInfo, nil
+	logInfo := newLogInfo(opts, validationOpts, cfg.Signer, timeSource, storage)
+
+	handlers := logInfo.Handlers(opts.Validated.Origin)
+	return &Instance{Handlers: handlers, li: logInfo}, nil
 }
 
 func parseOIDs(oids []string) ([]asn1.ObjectIdentifier, error) {

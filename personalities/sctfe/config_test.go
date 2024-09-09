@@ -15,240 +15,191 @@
 package sctfe
 
 import (
-	"fmt"
+	"crypto"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/google/trillian/crypto/keyspb"
-	"github.com/transparency-dev/trillian-tessera/personalities/sctfe/configpb"
-	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/types/known/anypb"
+	"github.com/google/trillian/crypto/keys/pem"
 )
 
-func mustMarshalAny(pb proto.Message) *anypb.Any {
-	ret, err := anypb.New(pb)
-	if err != nil {
-		panic(fmt.Sprintf("MarshalAny failed: %v", err))
-	}
-	return ret
-}
-
 func TestValidateLogConfig(t *testing.T) {
-	privKey := mustMarshalAny(&keyspb.PEMKeyFile{Path: "../testdata/ct-http-server.privkey.pem", Password: "dirk"})
+	signer, err := pem.ReadPrivateKeyFile("./testdata/ct-http-server.privkey.pem", "dirk")
+	if err != nil {
+		t.Fatalf("Can't open key: %v", err)
+	}
 
 	t100 := time.Unix(100, 0)
 	t200 := time.Unix(200, 0)
 
 	for _, tc := range []struct {
 		desc            string
-		cfg             *configpb.LogConfig
 		origin          string
 		projectID       string
 		bucket          string
 		spannerDB       string
 		wantErr         string
+		rootsPemFile    string
 		rejectExpired   bool
 		rejectUnexpired bool
 		extKeyUsages    string
 		notAfterStart   *time.Time
 		notAfterLimit   *time.Time
+		signer          crypto.Signer
 	}{
 		{
 			desc:      "empty-origin",
 			wantErr:   "empty origin",
-			cfg:       &configpb.LogConfig{},
 			projectID: "project",
 			bucket:    "bucket",
 			spannerDB: "spanner",
 		},
 		{
-			desc:      "empty-private-key",
-			wantErr:   "empty private key",
-			cfg:       &configpb.LogConfig{},
-			origin:    "testlog",
-			projectID: "project",
-			bucket:    "bucket",
-			spannerDB: "spanner",
-		},
-		{
-			desc:    "invalid-private-key",
-			wantErr: "invalid private key",
-			cfg: &configpb.LogConfig{
-				PrivateKey: &anypb.Any{},
-			},
-			origin:    "testlog",
-			projectID: "project",
-			bucket:    "bucket",
-			spannerDB: "spanner",
-		},
-		{
-			desc:    "empty-projectID",
-			wantErr: "empty projectID",
-			cfg: &configpb.LogConfig{
-				PrivateKey: privKey,
-			},
+			desc:      "empty-projectID",
+			wantErr:   "empty projectID",
 			origin:    "testlog",
 			projectID: "",
 			bucket:    "bucket",
 			spannerDB: "spanner",
+			signer:    signer,
 		},
 		{
-			desc:    "empty-bucket",
-			wantErr: "empty bucket",
-			cfg: &configpb.LogConfig{
-				PrivateKey: privKey,
-			},
+			desc:      "empty-bucket",
+			wantErr:   "empty bucket",
 			origin:    "testlog",
 			projectID: "project",
 			bucket:    "",
 			spannerDB: "spanner",
+			signer:    signer,
 		},
 		{
-			desc:    "empty-spannerDB",
-			wantErr: "empty spannerDB",
-			cfg: &configpb.LogConfig{
-				PrivateKey: privKey,
-			},
+			desc:      "empty-spannerDB",
+			wantErr:   "empty spannerDB",
 			origin:    "testlog",
 			projectID: "project",
 			bucket:    "bucket",
 			spannerDB: "",
+			signer:    signer,
 		},
 		{
-			desc:    "rejecting-all",
-			wantErr: "rejecting all certificates",
-			cfg: &configpb.LogConfig{
-				PrivateKey: privKey,
-			},
+			desc:      "empty-rootsPemFile",
+			wantErr:   "empty rootsPemFile",
+			origin:    "testlog",
+			projectID: "project",
+			bucket:    "bucket",
+			spannerDB: "spanner",
+			signer:    signer,
+		},
+		{
+			desc:            "rejecting-all",
+			wantErr:         "rejecting all certificates",
 			origin:          "testlog",
 			projectID:       "project",
 			bucket:          "bucket",
 			spannerDB:       "spanner",
+			rootsPemFile:    "./testdata/fake-ca.cert",
 			rejectExpired:   true,
 			rejectUnexpired: true,
+			signer:          signer,
 		},
 		{
-			desc:    "unknown-ext-key-usage-1",
-			wantErr: "unknown extended key usage",
-			cfg: &configpb.LogConfig{
-				PrivateKey: privKey,
-			},
+			desc:         "unknown-ext-key-usage-1",
+			wantErr:      "unknown extended key usage",
 			origin:       "testlog",
 			projectID:    "project",
 			bucket:       "bucket",
 			spannerDB:    "spanner",
+			rootsPemFile: "./testdata/fake-ca.cert",
 			extKeyUsages: "wrong_usage",
+			signer:       signer,
 		},
 		{
-			desc:    "unknown-ext-key-usage-2",
-			wantErr: "unknown extended key usage",
-			cfg: &configpb.LogConfig{
-				PrivateKey: privKey,
-			},
+			desc:         "unknown-ext-key-usage-2",
+			wantErr:      "unknown extended key usage",
 			origin:       "testlog",
 			projectID:    "project",
 			bucket:       "bucket",
 			spannerDB:    "spanner",
+			rootsPemFile: "./testdata/fake-ca.cert",
 			extKeyUsages: "ClientAuth,ServerAuth,TimeStomping",
+			signer:       signer,
 		},
 		{
-			desc:    "unknown-ext-key-usage-3",
-			wantErr: "unknown extended key usage",
-			cfg: &configpb.LogConfig{
-				PrivateKey: privKey,
-			},
+			desc:         "unknown-ext-key-usage-3",
+			wantErr:      "unknown extended key usage",
 			origin:       "testlog",
 			projectID:    "project",
 			bucket:       "bucket",
 			spannerDB:    "spanner",
+			rootsPemFile: "./testdata/fake-ca.cert",
 			extKeyUsages: "Any ",
+			signer:       signer,
 		},
 		{
-			desc:    "limit-before-start",
-			wantErr: "limit before start",
-			cfg: &configpb.LogConfig{
-				PrivateKey: privKey,
-			},
+			desc:          "limit-before-start",
+			wantErr:       "limit before start",
 			origin:        "testlog",
 			projectID:     "project",
 			bucket:        "bucket",
 			spannerDB:     "spanner",
+			rootsPemFile:  "./testdata/fake-ca.cert",
 			notAfterStart: &t200,
 			notAfterLimit: &t100,
+			signer:        signer,
 		},
 		{
-			desc: "ok",
-			cfg: &configpb.LogConfig{
-				PrivateKey: privKey,
-			},
-			origin:    "testlog",
-			projectID: "project",
-			bucket:    "bucket",
-			spannerDB: "spanner",
-		},
-		{
-			// Note: Substituting an arbitrary proto.Message as a PrivateKey will not
-			// fail the validation because the actual key loading happens at runtime.
-			// TODO(pavelkalinnikov): Decouple key protos validation and loading, and
-			// make this test fail.
-			desc: "ok-not-a-key",
-			cfg: &configpb.LogConfig{
-				PrivateKey: mustMarshalAny(&configpb.LogConfig{}),
-			},
-			origin:    "testlog",
-			projectID: "project",
-			bucket:    "bucket",
-			spannerDB: "spanner",
-		},
-		{
-			desc: "ok-ext-key-usages",
-			cfg: &configpb.LogConfig{
-				PrivateKey: privKey,
-			},
+			desc:         "ok",
 			origin:       "testlog",
 			projectID:    "project",
 			bucket:       "bucket",
 			spannerDB:    "spanner",
+			rootsPemFile: "./testdata/fake-ca.cert",
+			signer:       signer,
+		},
+		{
+			desc:         "ok-ext-key-usages",
+			origin:       "testlog",
+			projectID:    "project",
+			bucket:       "bucket",
+			spannerDB:    "spanner",
+			rootsPemFile: "./testdata/fake-ca.cert",
 			extKeyUsages: "ServerAuth,ClientAuth,OCSPSigning",
+			signer:       signer,
 		},
 		{
-			desc: "ok-start-timestamp",
-			cfg: &configpb.LogConfig{
-				PrivateKey: privKey,
-			},
+			desc:          "ok-start-timestamp",
 			origin:        "testlog",
 			projectID:     "project",
 			bucket:        "bucket",
 			spannerDB:     "spanner",
+			rootsPemFile:  "./testdata/fake-ca.cert",
 			notAfterStart: &t100,
+			signer:        signer,
 		},
 		{
-			desc: "ok-limit-timestamp",
-			cfg: &configpb.LogConfig{
-				PrivateKey: privKey,
-			},
+			desc:          "ok-limit-timestamp",
 			origin:        "testlog",
 			projectID:     "project",
 			bucket:        "bucket",
 			spannerDB:     "spanner",
+			rootsPemFile:  "./testdata/fake-ca.cert",
 			notAfterStart: &t200,
+			signer:        signer,
 		},
 		{
-			desc: "ok-range-timestamp",
-			cfg: &configpb.LogConfig{
-				PrivateKey: privKey,
-			},
+			desc:          "ok-range-timestamp",
 			origin:        "testlog",
 			projectID:     "project",
 			bucket:        "bucket",
 			spannerDB:     "spanner",
+			rootsPemFile:  "./testdata/fake-ca.cert",
 			notAfterStart: &t100,
 			notAfterLimit: &t200,
+			signer:        signer,
 		},
 	} {
 		t.Run(tc.desc, func(t *testing.T) {
-			vc, err := ValidateLogConfig(tc.cfg, tc.origin, tc.projectID, tc.bucket, tc.spannerDB, "", tc.rejectExpired, tc.rejectUnexpired, tc.extKeyUsages, "", tc.notAfterStart, tc.notAfterLimit)
+			vc, err := ValidateLogConfig(tc.origin, tc.projectID, tc.bucket, tc.spannerDB, tc.rootsPemFile, tc.rejectExpired, tc.rejectUnexpired, tc.extKeyUsages, "", tc.notAfterStart, tc.notAfterLimit, signer)
 			if len(tc.wantErr) == 0 && err != nil {
 				t.Errorf("ValidateLogConfig()=%v, want nil", err)
 			}

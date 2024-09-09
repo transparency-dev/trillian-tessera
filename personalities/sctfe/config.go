@@ -18,77 +18,47 @@ import (
 	"crypto"
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
 	"github.com/google/certificate-transparency-go/x509"
-	"github.com/google/trillian/crypto/keyspb"
-	"github.com/transparency-dev/trillian-tessera/personalities/sctfe/configpb"
-	"google.golang.org/protobuf/encoding/prototext"
-	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/types/known/anypb"
 	"k8s.io/klog/v2"
 )
 
 // ValidatedLogConfig represents the LogConfig with the information that has
 // been successfully parsed as a result of validating it.
 type ValidatedLogConfig struct {
-	Config  *LogConfig
-	PubKey  crypto.PublicKey
-	PrivKey proto.Message
+	// Origin identifies the log. It will be used in its checkpoint, and
+	// is also its submission prefix, as per https://c2sp.org/static-ct-api.
+	Origin string
+	// Used to sign the checkpoint and SCTs.
+	// TODO(phboneff): check that this is RSA or ECDSA only.
+	Signer crypto.Signer
 	// If set, ExtKeyUsages will restrict the set of such usages that the
 	// server will accept. By default all are accepted. The values specified
 	// must be ones known to the x509 package.
-	KeyUsages     []x509.ExtKeyUsage
+	KeyUsages []x509.ExtKeyUsage
+	// NotAfterStart defines the start of the range of acceptable NotAfter
+	// values, inclusive.
+	// Leaving this unset implies no lower bound to the range.
 	NotAfterStart *time.Time
+	// NotAfterLimit defines the end of the range of acceptable NotAfter values,
+	// exclusive.
+	// Leaving this unset implies no upper bound to the range.
 	NotAfterLimit *time.Time
-}
-
-// TODO(phboneff): inline this in ValidatedLogConfig and probably inline things further
-// TODO(phboneff): edit comments
-type LogConfig struct {
-	// origin identifies the log. It will be used in its checkpoint, and
-	// is also its submission prefix, as per https://c2sp.org/static-ct-api
-	Origin string
 	// Path to the file containing root certificates that are acceptable to the
 	// log. The certs are served through get-roots endpoint.
 	RootsPemFile string
-	// The private key used for signing Checkpoints or SCTs.
-	PrivateKey *anypb.Any
-	// The public key matching the above private key (if both are present).
-	// It can be specified for the convenience of test tools, but it not used
-	// by the server.
-	PublicKey *keyspb.PublicKey
-	// If reject_expired is true then the certificate validity period will be
+	// If RejectExpired is true then the certificate validity period will be
 	// checked against the current time during the validation of submissions.
 	// This will cause expired certificates to be rejected.
 	RejectExpired bool
-	// If reject_unexpired is true then CTFE rejects certificates that are either
+	// If RejectUnexpired is true then CTFE rejects certificates that are either
 	// currently valid or not yet valid.
 	RejectUnexpired bool
 	// A list of X.509 extension OIDs, in dotted string form (e.g. "2.3.4.5")
 	// which, if present, should cause submissions to be rejected.
 	RejectExtensions []string
-}
-
-// LogConfigFromFile creates a LogConfig options from the given
-// filename, which should contain text or binary-encoded protobuf configuration
-// data.
-func LogConfigFromFile(filename string) (*configpb.LogConfig, error) {
-	cfgBytes, err := os.ReadFile(filename)
-	if err != nil {
-		return nil, err
-	}
-
-	var cfg configpb.LogConfig
-	if txtErr := prototext.Unmarshal(cfgBytes, &cfg); txtErr != nil {
-		if binErr := proto.Unmarshal(cfgBytes, &cfg); binErr != nil {
-			return nil, fmt.Errorf("failed to parse LogConfig from %q as text protobuf (%v) or binary protobuf (%v)", filename, txtErr, binErr)
-		}
-	}
-
-	return &cfg, nil
 }
 
 // ValidateLogConfig checks that a single log config is valid. In particular:
@@ -98,7 +68,7 @@ func LogConfigFromFile(filename string) (*configpb.LogConfig, error) {
 //   - Merge delays (if present) are correct.
 //
 // Returns the validated structures (useful to avoid double validation).
-func ValidateLogConfig(cfg *configpb.LogConfig, origin string, projectID string, bucket string, spannerDB string, rootsPemFile string, rejectExpired bool, rejectUnexpired bool, extKeyUsages string, rejectExtensions string, notAfterStart *time.Time, notAfterLimit *time.Time) (*ValidatedLogConfig, error) {
+func ValidateLogConfig(origin string, projectID string, bucket string, spannerDB string, rootsPemFile string, rejectExpired bool, rejectUnexpired bool, extKeyUsages string, rejectExtensions string, notAfterStart *time.Time, notAfterLimit *time.Time, signer crypto.Signer) (*ValidatedLogConfig, error) {
 	if origin == "" {
 		return nil, errors.New("empty origin")
 	}
@@ -116,6 +86,10 @@ func ValidateLogConfig(cfg *configpb.LogConfig, origin string, projectID string,
 		return nil, errors.New("empty spannerDB")
 	}
 
+	if rootsPemFile == "" {
+		return nil, errors.New("empty rootsPemFile")
+	}
+
 	lExtKeyUsages := []string{}
 	lRejectExtensions := []string{}
 	if extKeyUsages != "" {
@@ -126,36 +100,15 @@ func ValidateLogConfig(cfg *configpb.LogConfig, origin string, projectID string,
 	}
 
 	vCfg := ValidatedLogConfig{
-		Config: &LogConfig{
-			Origin:           origin,
-			RootsPemFile:     rootsPemFile,
-			PrivateKey:       cfg.PrivateKey,
-			PublicKey:        cfg.PublicKey,
-			RejectExpired:    rejectExpired,
-			RejectUnexpired:  rejectUnexpired,
-			RejectExtensions: lRejectExtensions,
-		},
-		NotAfterStart: notAfterStart,
-		NotAfterLimit: notAfterLimit,
+		Origin:           origin,
+		RootsPemFile:     rootsPemFile,
+		RejectExpired:    rejectExpired,
+		RejectUnexpired:  rejectUnexpired,
+		RejectExtensions: lRejectExtensions,
+		NotAfterStart:    notAfterStart,
+		NotAfterLimit:    notAfterLimit,
+		Signer:           signer,
 	}
-
-	// Validate the public key.
-	if pubKey := cfg.PublicKey; pubKey != nil {
-		var err error
-		if vCfg.PubKey, err = x509.ParsePKIXPublicKey(pubKey.Der); err != nil {
-			return nil, fmt.Errorf("x509.ParsePKIXPublicKey: %w", err)
-		}
-	}
-
-	// Validate the private key.
-	if cfg.PrivateKey == nil {
-		return nil, errors.New("empty private key")
-	}
-	privKey, err := cfg.PrivateKey.UnmarshalNew()
-	if err != nil {
-		return nil, fmt.Errorf("invalid private key: %v", err)
-	}
-	vCfg.PrivKey = privKey
 
 	if rejectExpired && rejectUnexpired {
 		return nil, errors.New("rejecting all certificates")
