@@ -24,7 +24,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"log"
 
 	kms "cloud.google.com/go/kms/apiv1"
 	"golang.org/x/mod/sumdb/note"
@@ -53,7 +52,7 @@ func main() {
 	ctx := context.Background()
 	kmClient, err := kms.NewKeyManagementClient(ctx)
 	if err != nil {
-		log.Fatalf("failed to create KeyManagementClient: %v", err)
+		klog.Exitf("Failed to create KeyManagementClient: %v", err)
 	}
 	defer kmClient.Close()
 
