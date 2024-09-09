@@ -102,6 +102,10 @@ func readHTTP(ctx context.Context, u *url.URL) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	if *bearerToken != "" {
+		req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", *bearerToken))
+	}
+
 	resp, err := hc.Do(req.WithContext(ctx))
 	if err != nil {
 		return nil, err

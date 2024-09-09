@@ -59,6 +59,8 @@ var (
 
 	showUI = flag.Bool("show_ui", true, "Set to false to disable the text-based UI")
 
+	bearerToken = flag.String("bearer_token", "", "The bearer token for auth. For GCP this is the result of `gcloud auth print-identity-token`")
+
 	hc = &http.Client{
 		Transport: &http.Transport{
 			MaxIdleConns:        256,
