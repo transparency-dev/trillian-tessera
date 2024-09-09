@@ -102,6 +102,10 @@ func readHTTP(ctx context.Context, u *url.URL) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	if *bearerToken != "" {
+		req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", *bearerToken))
+	}
+
 	resp, err := hc.Do(req.WithContext(ctx))
 	if err != nil {
 		return nil, err
@@ -159,6 +163,9 @@ func (w httpLeafWriter) Write(ctx context.Context, newLeaf []byte) (uint64, erro
 	req, err := http.NewRequest(http.MethodPost, w.u.String(), bytes.NewReader(newLeaf))
 	if err != nil {
 		return 0, fmt.Errorf("failed to create request: %v", err)
+	}
+	if *bearerToken != "" {
+		req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", *bearerToken))
 	}
 	resp, err := hc.Do(req.WithContext(ctx))
 	if err != nil {
