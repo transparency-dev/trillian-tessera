@@ -37,11 +37,8 @@ import (
 const (
 	// KeyVersionNameFormat is the GCP resource identifier for a key version.
 	// google.cloud.kms.v1.CryptoKeyVersion.name
-	// https://cloud.google.com/php/docs/reference/cloud-kms/latest/V1.CryptoKeyVersion
+	// https://cloud.google.com/kms/docs/reference/rest/v1/projects.locations.keyRings.cryptoKeys.cryptoKeyVersions
 	KeyVersionNameFormat = "projects/%s/locations/%s/keyRings/%s/cryptoKeys/%s/cryptoKeyVersions/%d"
-	// From
-	// https://cs.opensource.google/go/x/mod/+/refs/tags/v0.12.0:sumdb/note/note.go;l=232;drc=baa5c2d058db25484c20d76985ba394e73176132
-	algEd25519 = 1
 )
 
 var (
