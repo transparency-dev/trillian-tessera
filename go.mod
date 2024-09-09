@@ -60,10 +60,8 @@ require (
 	github.com/googleapis/gax-go/v2 v2.13.0 // indirect
 	github.com/jmespath/go-jmespath v0.4.1-0.20220621161143-b0104c826a24 // indirect
 	github.com/klauspost/compress v1.17.9 // indirect
-	github.com/letsencrypt/pkcs11key/v4 v4.0.0 // indirect
 	github.com/lucasb-eyer/go-colorful v1.2.0 // indirect
 	github.com/mattn/go-runewidth v0.0.15 // indirect
-	github.com/miekg/pkcs11 v1.1.1 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10 // indirect
 	github.com/prometheus/client_model v0.6.1 // indirect
