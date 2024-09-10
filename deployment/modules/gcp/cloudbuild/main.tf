@@ -34,6 +34,7 @@ resource "google_cloudbuild_trigger" "docker" {
 
   build {
     step {
+      id = "docker_build_conformance_gcp"
       name = "gcr.io/cloud-builders/docker"
       args = [
         "build",
