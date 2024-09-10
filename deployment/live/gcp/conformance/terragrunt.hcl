@@ -11,6 +11,7 @@ locals {
   log_origin               = "conformance-gcp-${local.env}"
   kms_key_version_id       = get_env("TESSERA_KMS_KEY_VERSION", "projects/${local.project_id}/locations/${local.location}/keyRings/${local.base_name}/cryptoKeys/log-signer/cryptoKeyVersions/1")
   conformance_users        = ["serviceAccount:cloudbuild-prod-sa@trillian-tessera.iam.gserviceaccount.com"]
+  bucket_readers = ["allAuthenticatedUsers"]
 }
 
 remote_state {

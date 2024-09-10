@@ -19,6 +19,7 @@ module "gcs" {
   env        = var.env
   location   = var.location
   project_id = var.project_id
+  bucket_readers = var.bucket_readers
 }
 
 ##

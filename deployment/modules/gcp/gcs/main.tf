@@ -35,6 +35,15 @@ resource "google_storage_bucket" "log_bucket" {
   uniform_bucket_level_access = true
 }
 
+resource "google_storage_bucket_iam_binding" "log_bucket_reader" {
+  bucket = google_storage_bucket.log_bucket.name
+  role   = "roles/storage.legacyBucketReader"
+  members = concat(
+    [ google_service_account.log_writer.member ],
+    var.bucket_readers
+  )
+}
+
 resource "google_storage_bucket_iam_binding" "log_bucket_writer" {
   bucket = google_storage_bucket.log_bucket.name
   role   = "roles/storage.legacyBucketWriter"
