@@ -14,6 +14,18 @@
 
 // kmsnote is a tool for creating a note verifier from an Ed25519 public key
 // retrieved from KMS.
+//
+// This tool will fetch the specified public key from Cloud KMS, and use it to
+// create an Ed25519 note.Verifier string using the provided name, which will
+// be printed to stdout.
+//
+// Example usage:
+//
+//	$ go run github.com/transparency-dev/trillian-tessera/cmd/conformance/gcp/kmsnote \
+//		  --key_id=projects/trillian-tessera/locations/us-central1/keyRings/ci-conformance/cryptoKeys/log-signer/cryptoKeyVersions/1 \
+//		  --name="ci-conformance"
+//
+//	ci-conformance+1e5feae8+ARe2PncWChrXMrQtDOqJrKkn2XXOGwsJ+amwLnaWyhEK
 package main
 
 import (
