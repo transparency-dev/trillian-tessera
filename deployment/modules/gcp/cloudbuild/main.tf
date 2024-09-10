@@ -15,7 +15,7 @@ resource "google_artifact_registry_repository" "docker" {
 }
 
 locals {
-  artifact_repo            = "${var.region}-docker.pkg.dev/${var.project_id}/${google_artifact_registry_repository.docker.name}"
+  artifact_repo                = "${var.region}-docker.pkg.dev/${var.project_id}/${google_artifact_registry_repository.docker.name}"
   conformance_gcp_docker_image = "${local.artifact_repo}/conformance-gcp"
 }
 
@@ -55,8 +55,8 @@ resource "google_cloudbuild_trigger" "docker" {
       wait_for = ["docker_build_conformance_gcp"]
     }
     step {
-      id   = "terraform_apply_conformance_ci"
-      name = "alpine/terragrunt"
+      id         = "terraform_apply_conformance_ci"
+      name       = "alpine/terragrunt"
       entrypoint = "terragrunt"
       args = [
         "--terragrunt-non-interactive",
@@ -71,6 +71,18 @@ resource "google_cloudbuild_trigger" "docker" {
         "TF_VAR_project_id=${var.project_id}"
       ]
       wait_for = ["docker_push_conformance_gcp"]
+    }
+    step {
+      id   = "generate_verifier"
+      name = "golang"
+      args = [
+        "go",
+        "run",
+        "./cmd/conformance/gcp/kmsnote",
+        "--key_id=${var.kms_key_version_id}",
+        "--name=${var.log_origin}",
+        "--output=/workspace/verifier.pub"
+      ]
     }
     options {
       logging = "CLOUD_LOGGING_ONLY"
