@@ -46,7 +46,7 @@ import (
 )
 
 var (
-	keyID = flag.String("key_id", "", "cryptoKeyVersion ID string ('projects/.../locations/.../keyRings/.../cryptoKeys/.../cryptoKeyVersions/...')")
+	keyID = flag.String("key_id", "", "cryptoKeyVersion ID string ('projects/.../locations/.../keyRings/.../cryptoKeys/.../cryptoKeyVersions/...'), see https://cloud.google.com/kms/docs/reference/rest/v1/projects.locations.keyRings.cryptoKeys.cryptoKeyVersions")
 	name  = flag.String("name", "", "Name for generated note Verifier")
 )
 
