@@ -243,13 +243,12 @@ func (s *Storage) sequenceBatch(ctx context.Context, entries []*tessera.Entry) e
 		}
 	}
 
-	// For simplicitly, in-line the integration of these new entries into the Merkle structure too.
+	// For simplicity, in-line the integration of these new entries into the Merkle structure too.
 	if err := s.doIntegrate(ctx, seq, seqEntries); err != nil {
 		klog.Errorf("Integrate failed: %v", err)
 		return err
 	}
 	return nil
-
 }
 
 // doIntegrate handles integrating new entries into the log, and updating the checkpoint.

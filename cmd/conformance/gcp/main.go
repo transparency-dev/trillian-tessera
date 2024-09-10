@@ -69,7 +69,7 @@ func main() {
 	}
 
 	// Expose a HTTP handler for the conformance test writes.
-	// This should accept arbitary bytes POSTed to /add, and return an ascii
+	// This should accept arbitrary bytes POSTed to /add, and return an ascii
 	// decimal representation of the index assigned to the entry.
 	http.HandleFunc("POST /add", func(w http.ResponseWriter, r *http.Request) {
 		b, err := io.ReadAll(r.Body)
