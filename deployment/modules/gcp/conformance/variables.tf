@@ -37,3 +37,8 @@ variable "conformance_users" {
   description = "The list of users allowed to invoke calls to the conformance instance."
   type = list
 }
+
+variable "bucket_readers" {
+  description = "The list of users allowed to read the conformance bucket contents"
+  type = list
+}
