@@ -33,6 +33,7 @@ resource "google_cloudbuild_trigger" "docker" {
   }
 
   build {
+    /*
     step {
       id = "docker_build_conformance_gcp"
       name = "gcr.io/cloud-builders/docker"
@@ -54,6 +55,7 @@ resource "google_cloudbuild_trigger" "docker" {
       ]
       wait_for = ["docker_build_conformance_gcp"]
     }
+    */
     step {
       id         = "terraform_apply_conformance_ci"
       name       = "alpine/terragrunt"
@@ -70,8 +72,18 @@ resource "google_cloudbuild_trigger" "docker" {
         "TF_INPUT=false",
         "TF_VAR_project_id=${var.project_id}"
       ]
-      wait_for = ["docker_push_conformance_gcp"]
+    //  wait_for = ["docker_push_conformance_gcp"]
     }
+    step {
+      id = "terraform_outputs"
+      name = "alpine/terragrunt"
+      script = <<EOT
+        cd deployment/live/gcp/conformance/ci
+        terragrunt output --raw conformance_url > /workspace/conformance_url
+      EOT
+      wait_for = ["terraform_apply_conformance_ci"]
+    }
+    /*
     step {
       id   = "generate_verifier"
       name = "golang"
@@ -83,6 +95,25 @@ resource "google_cloudbuild_trigger" "docker" {
         "--name=${var.log_origin}",
         "--output=/workspace/verifier.pub"
       ]
+    }
+    */
+    step { 
+      id = "access"
+      name = "gcr.io/cloud-builders/gcloud"
+      script = <<EOT
+      gcloud auth print-access-token > /workspace/cb_access
+      curl -H "Metadata-Flavor: Google" "http://metadata/computeMetadata/v1/instance/service-accounts/${google_service_account.cloudbuild_service_account.email}/identity?audience=$(cat /workspace/conformance_url)" > /workspace/cb_identity
+      cat /workspace/cb_identity
+      EOT
+      wait_for = ["terraform_outputs"]
+    }
+    step {
+      id   = "hammer"
+      name = "golang"
+      script = <<EOT
+      go run ./hammer --log_public_key=ci-conformance+1e5feae8+ARe2PncWChrXMrQtDOqJrKkn2XXOGwsJ+amwLnaWyhEK --log_url=https://storage.googleapis.com/trillian-tessera-ci-conformance-bucket/ --write_log_url="$(cat /workspace/conformance_url)" -v=2 --show_ui=false --bearer_token="$(cat /workspace/cb_access)" --bearer_token_write="$(cat /workspace/cb_identity)" --logtostderr --num_writers=1500 --max_write_ops=2000 --leaf_min_size=1024 --leaf_write_goal=100000
+      EOT
+      wait_for = ["terraform_outputs", "access"]
     }
     options {
       logging = "CLOUD_LOGGING_ONLY"

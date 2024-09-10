@@ -161,11 +161,11 @@ resource "google_cloud_run_v2_service" "default" {
   ]
 }
 
-resource "google_cloud_run_service_iam_binding" "cloudrun_invoker" {
+resource "google_cloud_run_v2_service_iam_binding" "cloudrun_invoker" {
   location = google_cloud_run_v2_service.default.location
-  service  = google_cloud_run_v2_service.default.name
+  name     = google_cloud_run_v2_service.default.name
   role     = "roles/run.invoker"
-  members = var.conformance_users
+  members  = var.conformance_users
 }
 
 
