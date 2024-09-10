@@ -36,6 +36,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"os"
 
 	kms "cloud.google.com/go/kms/apiv1"
 	"golang.org/x/mod/sumdb/note"
@@ -46,8 +47,9 @@ import (
 )
 
 var (
-	keyID = flag.String("key_id", "", "cryptoKeyVersion ID string ('projects/.../locations/.../keyRings/.../cryptoKeys/.../cryptoKeyVersions/...'), see https://cloud.google.com/kms/docs/reference/rest/v1/projects.locations.keyRings.cryptoKeys.cryptoKeyVersions")
-	name  = flag.String("name", "", "Name for generated note Verifier")
+	keyID  = flag.String("key_id", "", "cryptoKeyVersion ID string ('projects/.../locations/.../keyRings/.../cryptoKeys/.../cryptoKeyVersions/...'), see https://cloud.google.com/kms/docs/reference/rest/v1/projects.locations.keyRings.cryptoKeys.cryptoKeyVersions")
+	name   = flag.String("name", "", "Name for generated note Verifier")
+	output = flag.String("output", "", "Optional filename to write the generated note to, leave unset to write to stdout")
 )
 
 func main() {
@@ -66,7 +68,13 @@ func main() {
 		klog.Exitf("Failed to generate verifier string: %v", err)
 	}
 
-	fmt.Println(v)
+	if *output == "" {
+		fmt.Println(v)
+	} else {
+		if err := os.WriteFile(*output, []byte(v), 0o644); err != nil {
+			klog.Exitf("Failed to write output to %q: %v", *output, err)
+		}
+	}
 }
 
 func publicKeyFromPEM(pemKey []byte) ([]byte, error) {
