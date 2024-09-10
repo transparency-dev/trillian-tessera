@@ -45,13 +45,6 @@ import (
 	"k8s.io/klog/v2"
 )
 
-const (
-	// KeyVersionNameFormat is the GCP resource identifier for a key version.
-	// google.cloud.kms.v1.CryptoKeyVersion.name
-	// https://cloud.google.com/kms/docs/reference/rest/v1/projects.locations.keyRings.cryptoKeys.cryptoKeyVersions
-	KeyVersionNameFormat = "projects/%s/locations/%s/keyRings/%s/cryptoKeys/%s/cryptoKeyVersions/%d"
-)
-
 var (
 	keyID = flag.String("key_id", "", "cryptoKeyVersion ID string ('projects/.../locations/.../keyRings/.../cryptoKeys/.../cryptoKeyVersions/...')")
 	name  = flag.String("name", "", "Name for generated note Verifier")
