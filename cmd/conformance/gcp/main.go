@@ -29,6 +29,8 @@ import (
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/storage/gcp"
 	"golang.org/x/mod/sumdb/note"
+	"golang.org/x/net/http2"
+	"golang.org/x/net/http2/h2c"
 	"k8s.io/klog/v2"
 )
 
@@ -93,7 +95,13 @@ func main() {
 		_, _ = w.Write([]byte(fmt.Sprintf("%d", idx)))
 	})
 
-	if err := http.ListenAndServe(*listen, http.DefaultServeMux); err != nil {
+	h2s := &http2.Server{}
+	h1s := &http.Server{
+		Addr:    *listen,
+		Handler: h2c.NewHandler(http.DefaultServeMux, h2s),
+	}
+
+	if err := h1s.ListenAndServe(); err != nil {
 		klog.Exitf("ListenAndServe: %v", err)
 	}
 }
