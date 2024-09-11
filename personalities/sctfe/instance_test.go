@@ -199,7 +199,7 @@ func TestSetUpInstanceSetsValidationOpts(t *testing.T) {
 
 	signer, err := pem.ReadPrivateKeyFile("./testdata/ct-http-server.privkey.pem", "dirk")
 	if err != nil {
-		t.Fatalf(fmt.Sprintf("Can't open key: %v", err))
+		t.Fatalf("Can't open key: %v", err)
 	}
 
 	var tests = []struct {
