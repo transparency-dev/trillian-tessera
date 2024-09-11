@@ -33,6 +33,8 @@ resource "google_cloudbuild_trigger" "docker" {
   }
 
   build {
+    ## Build the GCP conformance server docker image.
+    ## This will be used by the conformance terragrunt config step further down.
     step {
       id = "docker_build_conformance_gcp"
       name = "gcr.io/cloud-builders/docker"
@@ -44,6 +46,7 @@ resource "google_cloudbuild_trigger" "docker" {
         "."
       ]
     }
+    ## Push the image.
     step {
       id   = "docker_push_conformance_gcp"
       name = "gcr.io/cloud-builders/docker"
@@ -54,6 +57,9 @@ resource "google_cloudbuild_trigger" "docker" {
       ]
       wait_for = ["docker_build_conformance_gcp"]
     }
+    ## Apply the deployment/live/gcp/conformance/ci terragrunt config.
+    ## This will bring up the conformance infrastructure, including a service
+    ## running the confirmance server docker image built above.
     step {
       id         = "terraform_apply_conformance_ci"
       name       = "alpine/terragrunt"
@@ -72,6 +78,8 @@ resource "google_cloudbuild_trigger" "docker" {
       ]
       wait_for = ["docker_push_conformance_gcp"]
     }
+    ## Grab some outputs from the terragrunt apply above (e.g. conformance server URL) and store
+    ## them in files under /workspace. These are needed for later steps.
     step {
       id = "terraform_outputs"
       name = "alpine/terragrunt"
@@ -81,6 +89,8 @@ resource "google_cloudbuild_trigger" "docker" {
       EOT
       wait_for = ["terraform_apply_conformance_ci"]
     }
+    ## Build a note verifier string which can be used for verifying checkpoint signatures on the
+    ## conformange logs.
     step {
       id   = "generate_verifier"
       name = "golang"
@@ -94,6 +104,9 @@ resource "google_cloudbuild_trigger" "docker" {
       ]
       wait_for = ["terraform_apply_conformance_ci"]
     }
+    ## Since the conformance infrastructure is not publicly accessible, we need to use bearer tokens
+    ## for the hammer to access them.
+    ## This step creates those, and stores them for later use.
     step { 
       id = "access"
       name = "gcr.io/cloud-builders/gcloud"
@@ -103,6 +116,8 @@ resource "google_cloudbuild_trigger" "docker" {
       EOT
       wait_for = ["terraform_outputs"]
     }
+    ## Run the hammer against the conformance server.
+    ## We're using it in "target throughput" mode.
     step {
       id   = "hammer"
       name = "golang"

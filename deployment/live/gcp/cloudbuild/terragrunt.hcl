@@ -3,12 +3,9 @@ terraform {
 }
 
 locals {
-  project_id         = "trillian-tessera"
-  region             = "us-central1"
-  env                = path_relative_to_include()
-  kms_key_version_id = get_env("TESSERA_KMS_KEY_VERSION", "projects/${local.project_id}/locations/${local.region}/keyRings/ci-conformance/cryptoKeys/log-signer/cryptoKeyVersions/1")
-  log_origin         = "ci-conformance"
-
+  project_id = "trillian-tessera"
+  region     = "us-central1"
+  env        = path_relative_to_include()
 }
 
 remote_state {
