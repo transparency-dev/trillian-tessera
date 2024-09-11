@@ -122,7 +122,7 @@ resource "google_cloudbuild_trigger" "docker" {
       id   = "hammer"
       name = "golang"
       script = <<EOT
-      go run ./hammer --log_public_key=$(cat /workspace/verifier.pub) --log_url=https://storage.googleapis.com/trillian-tessera-ci-conformance-bucket/ --write_log_url="$(cat /workspace/conformance_url)" -v=1 --show_ui=false --bearer_token="$(cat /workspace/cb_access)" --bearer_token_write="$(cat /workspace/cb_identity)" --logtostderr --num_writers=2000 --max_write_ops=2000 --leaf_min_size=1024 --leaf_write_goal=50000 --force_http2
+      go run ./hammer --log_public_key=$(cat /workspace/verifier.pub) --log_url=https://storage.googleapis.com/trillian-tessera-ci-conformance-bucket/ --write_log_url="$(cat /workspace/conformance_url)" -v=1 --show_ui=false --bearer_token="$(cat /workspace/cb_access)" --bearer_token_write="$(cat /workspace/cb_identity)" --logtostderr --num_writers=1100 --max_write_ops=1500 --leaf_min_size=1024 --leaf_write_goal=50000 --force_http2
       EOT
       wait_for = ["terraform_outputs", "generate_verifier", "access"]
     }

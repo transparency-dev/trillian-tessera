@@ -99,7 +99,7 @@ resource "google_cloud_run_v2_service" "default" {
     timeout = "10s"
 
     scaling {
-      max_instance_count = 4
+      max_instance_count = 3
     }
 
     containers {
@@ -123,7 +123,7 @@ resource "google_cloud_run_v2_service" "default" {
       resources {
         limits = {
           cpu = "2"
-          memory = "512Mi"
+          memory = "1024Mi"
         }
       }
 
