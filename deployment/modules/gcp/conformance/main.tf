@@ -124,6 +124,7 @@ resource "google_cloud_run_v2_service" "default" {
   template {
     service_account = google_service_account.cloudrun_service_account.email
     max_instance_request_concurrency = 700
+    timeout = "10s"
 
     scaling {
       max_instance_count = 4

@@ -3,15 +3,15 @@ terraform {
 }
 
 locals {
-  env                      = path_relative_to_include()
-  project_id               = get_env("GOOGLE_PROJECT", "trillian-tessera")
-  location                 = get_env("GOOGLE_REGION", "us-central1")
-  base_name                = get_env("TESSERA_BASE_NAME", "${local.env}-conformance")
+  env                          = path_relative_to_include()
+  project_id                   = get_env("GOOGLE_PROJECT", "trillian-tessera")
+  location                     = get_env("GOOGLE_REGION", "us-central1")
+  base_name                    = get_env("TESSERA_BASE_NAME", "${local.env}-conformance")
   conformance_gcp_docker_image = "us-central1-docker.pkg.dev/trillian-tessera/docker-${local.env}/conformance-gcp:latest"
-  log_origin               = "conformance-gcp-${local.env}"
-  kms_key_version_id       = get_env("TESSERA_KMS_KEY_VERSION", "projects/${local.project_id}/locations/${local.location}/keyRings/${local.base_name}/cryptoKeys/log-signer/cryptoKeyVersions/1")
-  conformance_users        = ["serviceAccount:cloudbuild-prod-sa@trillian-tessera.iam.gserviceaccount.com"]
-  bucket_readers           = ["serviceAccount:cloudbuild-prod-sa@trillian-tessera.iam.gserviceaccount.com"]
+  log_origin                   = "conformance-gcp-${local.env}"
+  kms_key_version_id           = get_env("TESSERA_KMS_KEY_VERSION", "projects/${local.project_id}/locations/${local.location}/keyRings/${local.base_name}/cryptoKeys/log-signer/cryptoKeyVersions/1")
+  conformance_users            = ["serviceAccount:cloudbuild-prod-sa@trillian-tessera.iam.gserviceaccount.com"]
+  bucket_readers               = ["serviceAccount:cloudbuild-prod-sa@trillian-tessera.iam.gserviceaccount.com"]
 }
 
 remote_state {
