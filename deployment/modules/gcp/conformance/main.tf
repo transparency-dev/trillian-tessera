@@ -116,6 +116,7 @@ resource "google_cloud_run_v2_service" "default" {
         "--origin=${var.log_origin}",
       ]
       ports {
+        name = "h2c"
         container_port = 8080
       }
 
