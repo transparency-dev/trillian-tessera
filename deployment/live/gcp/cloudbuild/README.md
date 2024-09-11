@@ -6,8 +6,8 @@ define the necessary triggers and steps in GCB.
 
 These steps will:
  1. Trigger on a change to the `main` branch of the trillian-tessera repo
- 2. Build the `example-gcp` docker image from the `main` branch
- 3. Publish this docker image in artifact repository
+ 2. Build the `cmd/gcp/conformance` docker image from the `main` branch
+ 3. Run conformance tests.
 
 The first time this is run for a pair of {GCP Project, GitHub Repo} you will get an error 
 message such as the following:

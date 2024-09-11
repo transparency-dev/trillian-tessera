@@ -1,5 +1,12 @@
 terraform {
   backend "gcs" {}
+
+  required_providers {
+    google = {
+      source  = "registry.terraform.io/hashicorp/google"
+      version = "6.1.0"
+    }
+  }
 }
 
 ## Call the Tessera GCP module
@@ -12,6 +19,7 @@ module "gcs" {
   env        = var.env
   location   = var.location
   project_id = var.project_id
+  bucket_readers = var.bucket_readers
 }
 
 ##
@@ -27,58 +35,53 @@ resource "google_project_service" "cloudkms_googleapis_com" {
   service = "cloudkms.googleapis.com"
 }
 
+/*
+## This KMS config is left here for reference, but commented out to avoid
+## attempts to delete and re-create these keys with each of the conformance
+## runs.
+
 ##
 ## KMS for log signing
 ##
 resource "google_kms_key_ring" "log_signer" {
   location = var.location
   name     = var.base_name
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 resource "google_kms_crypto_key" "log_signer" {
-  key_ring = google_kms_key_ring.log_signer.id
-  name     = "log_signer"
+  key_ring = google_kms_key_ring.log-signer.id
+  name     = "log-signer"
   purpose  = "ASYMMETRIC_SIGN"
   version_template {
     algorithm = "EC_SIGN_ED25519"
   }
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
+
 resource "google_kms_crypto_key_version" "log_signer" {
   crypto_key = google_kms_crypto_key.log_signer.id
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
+*/
+
 
 ###
 ### Set up Cloud Run service
 ###
+### Roles managed externally.
 resource "google_service_account" "cloudrun_service_account" {
   account_id   = "cloudrun-${var.env}-sa"
   display_name = "Service Account for Cloud Run (${var.base_name})"
-}
-
-resource "google_project_iam_member" "iam_act_as" {
-  project = var.project_id
-  role    = "roles/iam.serviceAccountUser"
-  member  = "serviceAccount:${google_service_account.cloudrun_service_account.email}"
-}
-resource "google_project_iam_member" "iam_metrics_writer" {
-  project = var.project_id
-  role    = "roles/monitoring.metricWriter"
-  member  = "serviceAccount:${google_service_account.cloudrun_service_account.email}"
-}
-resource "google_spanner_database_iam_binding" "iam_spanner_database_user" {
-  project  = var.project_id
-  instance = module.gcs.log_spanner_instance.name
-  database = module.gcs.log_spanner_db.name
-  role     = "roles/spanner.databaseUser"
-
-  members = [
-    "serviceAccount:${google_service_account.cloudrun_service_account.email}"
-  ]
-}
-resource "google_project_iam_member" "iam_service_agent" {
-  project = var.project_id
-  role    = "roles/run.serviceAgent"
-  member  = "serviceAccount:${google_service_account.cloudrun_service_account.email}"
 }
 
 locals {
@@ -92,6 +95,13 @@ resource "google_cloud_run_v2_service" "default" {
 
   template {
     service_account = google_service_account.cloudrun_service_account.email
+    max_instance_request_concurrency = 700
+    timeout = "10s"
+
+    scaling {
+      max_instance_count = 4
+    }
+
     containers {
       image = var.server_docker_image
       name  = "conformance"
@@ -102,11 +112,18 @@ resource "google_cloud_run_v2_service" "default" {
         "--spanner=${local.spanner_db_full}",
         "--project=${var.project_id}",
         "--listen=:8080",
-        "--kms_key=${google_kms_crypto_key_version.log_signer.id}",
+        "--kms_key=${var.kms_key_version_id}",
         "--origin=${var.log_origin}",
       ]
       ports {
         container_port = 8080
+      }
+
+      resources {
+        limits = {
+          cpu = "2"
+          memory = "512Mi"
+        }
       }
 
       startup_probe {
@@ -120,14 +137,21 @@ resource "google_cloud_run_v2_service" "default" {
       }
     }
   }
+
+  deletion_protection = false
+
   client = "terraform"
   depends_on = [
     module.gcs,
     google_project_service.cloudrun_api,
-    google_project_iam_member.iam_act_as,
-    google_project_iam_member.iam_metrics_writer,
-    google_project_iam_member.iam_service_agent,
-    google_spanner_database_iam_binding.iam_spanner_database_user,
   ]
 }
+
+resource "google_cloud_run_v2_service_iam_binding" "cloudrun_invoker" {
+  location = google_cloud_run_v2_service.default.location
+  name     = google_cloud_run_v2_service.default.name
+  role     = "roles/run.invoker"
+  members  = var.conformance_users
+}
+
 
