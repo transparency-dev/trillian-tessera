@@ -59,7 +59,8 @@ var (
 
 	showUI = flag.Bool("show_ui", true, "Set to false to disable the text-based UI")
 
-	bearerToken = flag.String("bearer_token", "", "The bearer token for auth. For GCP this is the result of `gcloud auth print-identity-token`")
+	bearerToken      = flag.String("bearer_token", "", "The bearer token for auth. For GCP this is the result of `gcloud auth print-access-token`")
+	bearerTokenWrite = flag.String("bearer_token_write", "", "The bearer token for auth to write. For GCP this is the result of `gcloud auth print-identity-token`. If unset will default to --bearer_token.")
 
 	hc = &http.Client{
 		Transport: &http.Transport{
@@ -74,6 +75,11 @@ var (
 func main() {
 	klog.InitFlags(nil)
 	flag.Parse()
+
+	// If bearerTokenWrite is unset, default it to whatever bearerToken has (which may too be unset).
+	if *bearerTokenWrite == "" {
+		*bearerTokenWrite = *bearerToken
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 
