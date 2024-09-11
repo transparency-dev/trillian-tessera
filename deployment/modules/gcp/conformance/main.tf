@@ -123,6 +123,12 @@ resource "google_cloud_run_v2_service" "default" {
 
   template {
     service_account = google_service_account.cloudrun_service_account.email
+    max_instance_request_concurrency = 700
+
+    scaling {
+      max_instance_count = 4
+    }
+
     containers {
       image = var.server_docker_image
       name  = "conformance"
@@ -138,6 +144,13 @@ resource "google_cloud_run_v2_service" "default" {
       ]
       ports {
         container_port = 8080
+      }
+
+      resources {
+        limits = {
+          cpu = "2"
+          memory = "512Mi"
+        }
       }
 
       startup_probe {
