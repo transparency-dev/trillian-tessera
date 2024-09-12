@@ -315,6 +315,8 @@ func (a *HammerAnalyser) updateStatsLoop(ctx context.Context) {
 func (a *HammerAnalyser) errorLoop(ctx context.Context) {
 	tick := time.NewTicker(time.Second)
 	pbCount := 0
+	lastErr := ""
+	lastErrCount := 0
 	for {
 		select {
 		case <-ctx.Done(): //context cancelled
@@ -324,12 +326,24 @@ func (a *HammerAnalyser) errorLoop(ctx context.Context) {
 				klog.Warningf("%d requests received pushback from log", pbCount)
 				pbCount = 0
 			}
+			if lastErrCount > 0 {
+				klog.Warningf("(%d x) %s", lastErrCount, lastErr)
+				lastErrCount = 0
+
+			}
 		case err := <-a.errChan:
 			if errors.Is(err, ErrRetry) {
 				pbCount++
 				continue
 			}
-			klog.Warning(err)
+			es := err.Error()
+			if es != lastErr && lastErrCount > 0 {
+				klog.Warningf("(%d x) %s", lastErrCount, lastErr)
+				lastErr = es
+				lastErrCount = 0
+				continue
+			}
+			lastErrCount++
 		}
 	}
 }
