@@ -18,6 +18,7 @@ package main
 import (
 	"context"
 	crand "crypto/rand"
+	"crypto/tls"
 	"errors"
 	"flag"
 	"fmt"
@@ -30,6 +31,8 @@ import (
 	movingaverage "github.com/RobinUS2/golang-moving-average"
 	"github.com/transparency-dev/trillian-tessera/client"
 	"golang.org/x/mod/sumdb/note"
+	"golang.org/x/net/http2"
+
 	"k8s.io/klog/v2"
 )
 
@@ -62,6 +65,8 @@ var (
 	bearerToken      = flag.String("bearer_token", "", "The bearer token for auth. For GCP this is the result of `gcloud auth print-access-token`")
 	bearerTokenWrite = flag.String("bearer_token_write", "", "The bearer token for auth to write. For GCP this is the result of `gcloud auth print-identity-token`. If unset will default to --bearer_token.")
 
+	forceHTTP2 = flag.Bool("force_http2", false, "Use HTTP/2 connections *only*")
+
 	hc = &http.Client{
 		Transport: &http.Transport{
 			MaxIdleConns:        256,
@@ -75,6 +80,12 @@ var (
 func main() {
 	klog.InitFlags(nil)
 	flag.Parse()
+
+	if *forceHTTP2 {
+		hc.Transport = &http2.Transport{
+			TLSClientConfig: &tls.Config{},
+		}
+	}
 
 	// If bearerTokenWrite is unset, default it to whatever bearerToken has (which may too be unset).
 	if *bearerTokenWrite == "" {
