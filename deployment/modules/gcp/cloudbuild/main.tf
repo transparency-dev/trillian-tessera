@@ -58,9 +58,9 @@ resource "google_cloudbuild_trigger" "docker" {
       wait_for = ["docker_build_conformance_gcp"]
     }
     step {
-      id     = "generate_keys"
-      name   = "golang"
-      script = <<EOT
+      id       = "generate_keys"
+      name     = "golang"
+      script   = <<EOT
         go run github.com/transparency-dev/serverless-log/cmd/generate_keys@80334bc9dc573e8f6c5b3694efad6358da50abd4 \
           --key_name=tessera/test/conformance \
           --out_priv=/workspace/key.sec \
@@ -77,7 +77,7 @@ resource "google_cloudbuild_trigger" "docker" {
       script = <<EOT
         export TESSERA_SIGNER=$(cat /workspace/key.sec)
         export TESSERA_VERIFIER=$(cat /workspace/key.pub)
-        terragrunt --terragrunt-non-interactive apply -auto-approve
+        terragrunt --terragrunt-non-interactive apply -auto-approve 2>&1
       EOT
       dir    = "deployment/live/gcp/conformance/ci"
       env = [
@@ -129,12 +129,9 @@ resource "google_cloudbuild_trigger" "docker" {
     step {
       id         = "terraform_destroy_conformance_ci"
       name       = "alpine/terragrunt"
-      entrypoint = "terragrunt"
-      args = [
-        "--terragrunt-non-interactive",
-        "destroy",
-        "-auto-approve",
-      ]
+      script     = <<EOT
+        terragrunt --terragrunt-non-interactive destroy -auto-approve 2>&1
+      EOT
       dir = "deployment/live/gcp/conformance/ci"
       env = [
         "TESSERA_SIGNER=unused",

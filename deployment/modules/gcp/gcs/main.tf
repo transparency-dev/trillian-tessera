@@ -32,10 +32,7 @@ resource "google_storage_bucket" "log_bucket" {
 resource "google_storage_bucket_iam_binding" "log_bucket_reader" {
   bucket = google_storage_bucket.log_bucket.name
   role   = "roles/storage.objectViewer"
-  members = concat(
-    var.log_writer_members,
-    var.bucket_readers
-  )
+  members = var.bucket_readers
 }
 
 resource "google_storage_bucket_iam_binding" "log_bucket_writer" {
