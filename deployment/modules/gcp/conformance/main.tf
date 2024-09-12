@@ -33,7 +33,8 @@ resource "google_project_service" "cloudrun_api" {
   disable_on_destroy = false
 }
 resource "google_project_service" "cloudkms_googleapis_com" {
-  service = "cloudkms.googleapis.com"
+  service            = "cloudkms.googleapis.com"
+  disable_on_destroy = false
 }
 
 /*

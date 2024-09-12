@@ -76,7 +76,7 @@ resource "google_cloudbuild_trigger" "docker" {
         "TF_INPUT=false",
         "TF_VAR_project_id=${var.project_id}"
       ]
-      wait_for = ["docker_push_conformance_gcp"]
+      wait_for = ["docker_push_conformance_gcp", "generate_keys"]
     }
     ## Grab some outputs from the terragrunt apply above (e.g. conformance server URL) and store
     ## them in files under /workspace. These are needed for later steps.
@@ -125,6 +125,27 @@ resource "google_cloudbuild_trigger" "docker" {
       go run ./hammer --log_public_key=$(cat /workspace/verifier.pub) --log_url=https://storage.googleapis.com/trillian-tessera-ci-conformance-bucket/ --write_log_url="$(cat /workspace/conformance_url)" -v=1 --show_ui=false --bearer_token="$(cat /workspace/cb_access)" --bearer_token_write="$(cat /workspace/cb_identity)" --logtostderr --num_writers=1100 --max_write_ops=1500 --leaf_min_size=1024 --leaf_write_goal=50000 --force_http2
       EOT
       wait_for = ["terraform_outputs", "generate_verifier", "access"]
+    }
+    ## Destroy the deployment/live/gcp/conformance/ci terragrunt config.
+    ## This will tear down the conformance infrastructure we brought up
+    ## above.
+    step {
+      id         = "terraform_destroy_conformance_ci"
+      name       = "alpine/terragrunt"
+      entrypoint = "terragrunt"
+      args = [
+        "--terragrunt-non-interactive",
+        "destroy",
+        "-auto-approve",
+      ]
+      dir = "deployment/live/gcp/conformance/ci"
+      env = [
+        "GOOGLE_PROJECT=${var.project_id}",
+        "TF_IN_AUTOMATION=1",
+        "TF_INPUT=false",
+        "TF_VAR_project_id=${var.project_id}"
+      ]
+      wait_for = ["hammer"]
     }
 
     options {
