@@ -46,7 +46,7 @@ resource "google_cloud_run_v2_service" "default" {
   template {
     service_account                  = var.cloudrun_service_account
     max_instance_request_concurrency = 700
-    timeout                          = "10s"
+    timeout                          = "5s"
 
     scaling {
       max_instance_count = 3
@@ -82,7 +82,7 @@ resource "google_cloud_run_v2_service" "default" {
         initial_delay_seconds = 1
         timeout_seconds       = 1
         period_seconds        = 10
-        failure_threshold     = 3
+        failure_threshold     = 6
         tcp_socket {
           port = 8080
         }
