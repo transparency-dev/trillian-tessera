@@ -18,13 +18,7 @@ variable "log_origin" {
   type        = string
 }
 
-variable "kms_key_version_id" {
-  description = "The resource ID for the (externally created) KMS key version to use for signing checkpoints"
-  type        = string
-}
-
 variable "service_account" {
   description = "Service account email to use for cloudbuild"
 }
-
 

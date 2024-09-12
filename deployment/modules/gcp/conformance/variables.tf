@@ -28,8 +28,13 @@ variable "log_origin" {
   type        = string
 }
 
-variable "kms_key_version_id" {
-  description = "The resource ID for the (externally created) KMS key version to use for signing checkpoints"
+variable "signer" {
+  description = "The note signer which should be used to sign checkpoints"
+  type        = string
+}
+
+variable "verifier" {
+  description = "The note verifier which should be used to verify checkpoints"
   type        = string
 }
 
