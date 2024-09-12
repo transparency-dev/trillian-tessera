@@ -1,6 +1,7 @@
 # Trillian Tessera
 
 [![Go Report Card](https://goreportcard.com/badge/github.com/transparency-dev/trillian-tessera)](https://goreportcard.com/report/github.com/transparency-dev/trillian-tessera)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/transparency-dev/trillian-tessera/badge)](https://scorecard.dev/viewer/?uri=github.com/transparency-dev/trillian-tessera)
 [![Slack Status](https://img.shields.io/badge/Slack-Chat-blue.svg)](https://transparency-dev.slack.com/)
 
 Trillian Tessera is a Go library for building
