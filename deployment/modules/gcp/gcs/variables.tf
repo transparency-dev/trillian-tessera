@@ -28,3 +28,8 @@ variable "log_writer_members" {
   description = "List of identities in member format allowed to write to the log"
   type        = list(any)
 }
+
+variable "ephemeral" {
+  description = "Set to true if this is a throwaway/temporary log instance. Will set attributes on created resources to allow them to be disabled/deleted more easily."
+  type = bool
+}

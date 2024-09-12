@@ -21,6 +21,7 @@ module "gcs" {
   project_id         = var.project_id
   bucket_readers     = var.bucket_readers
   log_writer_members = ["serviceAccount:${var.cloudrun_service_account}"]
+  ephemeral          = true
 }
 
 ##
