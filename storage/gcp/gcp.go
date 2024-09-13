@@ -191,7 +191,9 @@ func (s *Storage) init(ctx context.Context) error {
 	cpRaw, err := s.Get(ctx, layout.CheckpointPath)
 	if err != nil {
 		if errors.Is(err, gcs.ErrObjectNotExist) {
-			// No checkpoint exists, do a forced (possibly empty) integration to create one
+			// No checkpoint exists, do a forced (possibly empty) integration to create one in a safe
+			// way (calling updateCP directly here would not be safe as it's outside the transactional
+			// framework which prevents the tree from rolling backwards or otherwise forking).
 			cctx, c := context.WithTimeout(ctx, 10*time.Second)
 			defer c()
 			if _, err := s.sequencer.consumeEntries(cctx, DefaultIntegrationSizeLimit, s.integrate, true); err != nil {
