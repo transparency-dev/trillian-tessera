@@ -18,14 +18,6 @@ resource "google_project_service" "storage_googleapis_com" {
 
 ## Resources
 
-# Service accounts
-
-resource "google_service_account" "log_writer" {
-  account_id   = "${var.base_name}-writer"
-  display_name = "Transparency log writer service account"
-}
-
-
 # Buckets
 
 resource "google_storage_bucket" "log_bucket" {
@@ -39,17 +31,15 @@ resource "google_storage_bucket_iam_binding" "log_bucket_reader" {
   bucket = google_storage_bucket.log_bucket.name
   role   = "roles/storage.objectViewer"
   members = concat(
-    [ google_service_account.log_writer.member ],
+    var.log_writer_members,
     var.bucket_readers
   )
 }
 
 resource "google_storage_bucket_iam_binding" "log_bucket_writer" {
-  bucket = google_storage_bucket.log_bucket.name
-  role   = "roles/storage.legacyBucketWriter"
-  members = [
-    google_service_account.log_writer.member
-  ]
+  bucket  = google_storage_bucket.log_bucket.name
+  role    = "roles/storage.legacyBucketWriter"
+  members = var.log_writer_members
 }
 
 # Spanner
@@ -76,7 +66,5 @@ resource "google_spanner_database_iam_binding" "database" {
   database = google_spanner_database.log_db.name
   role     = "roles/spanner.databaseUser"
 
-  members = [
-    google_service_account.log_writer.member
-  ]
+  members = var.log_writer_members
 }
