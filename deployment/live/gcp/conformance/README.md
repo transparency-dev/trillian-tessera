@@ -7,8 +7,8 @@ you require, and update the terragrunt files here to match.
 
 ## Overview
 
-This config uses the [gcp/conformance](/deployment/gcp/conformance) module to define a
-conformance testing environment. At a high level, this environment consists of:
+This config uses the [gcp/conformance](/deployment/modules/gcp/conformance) module to
+define a conformance testing environment. At a high level, this environment consists of:
 - Spanner DB,
 - GCS Bucket,
 - CloudRun service running the [GCP-specific conformance binary](/cmd/conformance/gcp).
@@ -19,7 +19,7 @@ reading from, and writing to, the log.
 ## Automatic deployment
 
 For the most part, this terragrunt config is automatically used as part of conformance
-testing by the [CloudBuild](/deployment/live/cloudbuild) pipeline, so doesn't generally
+testing by the [CloudBuild](/deployment/live/gcp/cloudbuild) pipeline, so doesn't generally
 need to be manually applied.
 
 ## Manual deployment 
