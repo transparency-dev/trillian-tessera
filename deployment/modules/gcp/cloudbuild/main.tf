@@ -57,26 +57,36 @@ resource "google_cloudbuild_trigger" "docker" {
       ]
       wait_for = ["docker_build_conformance_gcp"]
     }
+    step {
+      id       = "generate_keys"
+      name     = "golang"
+      script   = <<EOT
+        go run github.com/transparency-dev/serverless-log/cmd/generate_keys@80334bc9dc573e8f6c5b3694efad6358da50abd4 \
+          --key_name=tessera/test/conformance \
+          --out_priv=/workspace/key.sec \
+          --out_pub=/workspace/key.pub
+        cat /workspace/key.pub
+      EOT
+    }
     ## Apply the deployment/live/gcp/conformance/ci terragrunt config.
     ## This will bring up the conformance infrastructure, including a service
     ## running the confirmance server docker image built above.
     step {
-      id         = "terraform_apply_conformance_ci"
-      name       = "alpine/terragrunt"
-      entrypoint = "terragrunt"
-      args = [
-        "--terragrunt-non-interactive",
-        "apply",
-        "-auto-approve",
-      ]
-      dir = "deployment/live/gcp/conformance/ci"
+      id     = "terraform_apply_conformance_ci"
+      name   = "alpine/terragrunt"
+      script = <<EOT
+        export TESSERA_SIGNER=$(cat /workspace/key.sec)
+        export TESSERA_VERIFIER=$(cat /workspace/key.pub)
+        terragrunt --terragrunt-non-interactive apply -auto-approve 2>&1
+      EOT
+      dir    = "deployment/live/gcp/conformance/ci"
       env = [
         "GOOGLE_PROJECT=${var.project_id}",
         "TF_IN_AUTOMATION=1",
         "TF_INPUT=false",
         "TF_VAR_project_id=${var.project_id}"
       ]
-      wait_for = ["docker_push_conformance_gcp"]
+      wait_for = ["docker_push_conformance_gcp", "generate_keys"]
     }
     ## Grab some outputs from the terragrunt apply above (e.g. conformance server URL) and store
     ## them in files under /workspace. These are needed for later steps.
@@ -85,23 +95,10 @@ resource "google_cloudbuild_trigger" "docker" {
       name     = "alpine/terragrunt"
       script   = <<EOT
         cd deployment/live/gcp/conformance/ci
+        export TESSERA_SIGNER=$(cat /workspace/key.sec)
+        export TESSERA_VERIFIER=$(cat /workspace/key.pub)
         terragrunt output --raw conformance_url > /workspace/conformance_url
       EOT
-      wait_for = ["terraform_apply_conformance_ci"]
-    }
-    ## Build a note verifier string which can be used for verifying checkpoint signatures on the
-    ## conformange logs.
-    step {
-      id   = "generate_verifier"
-      name = "golang"
-      args = [
-        "go",
-        "run",
-        "./cmd/conformance/gcp/kmsnote",
-        "--key_id=${var.kms_key_version_id}",
-        "--name=${var.log_origin}",
-        "--output=/workspace/verifier.pub"
-      ]
       wait_for = ["terraform_apply_conformance_ci"]
     }
     ## Since the conformance infrastructure is not publicly accessible, we need to use bearer tokens
@@ -122,9 +119,29 @@ resource "google_cloudbuild_trigger" "docker" {
       id   = "hammer"
       name = "golang"
       script = <<EOT
-      go run ./hammer --log_public_key=$(cat /workspace/verifier.pub) --log_url=https://storage.googleapis.com/trillian-tessera-ci-conformance-bucket/ --write_log_url="$(cat /workspace/conformance_url)" -v=1 --show_ui=false --bearer_token="$(cat /workspace/cb_access)" --bearer_token_write="$(cat /workspace/cb_identity)" --logtostderr --num_writers=1100 --max_write_ops=1500 --leaf_min_size=1024 --leaf_write_goal=50000 --force_http2
+      go run ./hammer --log_public_key=$(cat /workspace/key.pub) --log_url=https://storage.googleapis.com/trillian-tessera-ci-conformance-bucket/ --write_log_url="$(cat /workspace/conformance_url)" -v=1 --show_ui=false --bearer_token="$(cat /workspace/cb_access)" --bearer_token_write="$(cat /workspace/cb_identity)" --logtostderr --num_writers=1100 --max_write_ops=1500 --leaf_min_size=1024 --leaf_write_goal=50000 --force_http2
       EOT
-      wait_for = ["terraform_outputs", "generate_verifier", "access"]
+      wait_for = ["terraform_outputs", "generate_keys", "access"]
+    }
+    ## Destroy the deployment/live/gcp/conformance/ci terragrunt config.
+    ## This will tear down the conformance infrastructure we brought up
+    ## above.
+    step {
+      id         = "terraform_destroy_conformance_ci"
+      name       = "alpine/terragrunt"
+      script     = <<EOT
+        terragrunt --terragrunt-non-interactive destroy -auto-approve 2>&1
+      EOT
+      dir = "deployment/live/gcp/conformance/ci"
+      env = [
+        "TESSERA_SIGNER=unused",
+        "TESSERA_VERIFIER=unused",
+        "GOOGLE_PROJECT=${var.project_id}",
+        "TF_IN_AUTOMATION=1",
+        "TF_INPUT=false",
+        "TF_VAR_project_id=${var.project_id}"
+      ]
+      wait_for = ["hammer"]
     }
 
     options {

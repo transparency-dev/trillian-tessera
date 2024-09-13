@@ -25,7 +25,6 @@ import (
 	"os"
 	"time"
 
-	kms "cloud.google.com/go/kms/apiv1"
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/storage/gcp"
 	"golang.org/x/mod/sumdb/note"
@@ -35,12 +34,13 @@ import (
 )
 
 var (
-	bucket     = flag.String("bucket", "", "Bucket to use for storing log")
-	listen     = flag.String("listen", ":2024", "Address:port to listen on")
-	project    = flag.String("project", os.Getenv("GOOGLE_CLOUD_PROJECT"), "GCP Project, take from env if unset")
-	spanner    = flag.String("spanner", "", "Spanner resource URI ('projects/.../...')")
-	kmsKeyName = flag.String("kms_key", "", "GCP KMS key name for signing checkpoints")
-	origin     = flag.String("origin", "", "Log origin string")
+	bucket   = flag.String("bucket", "", "Bucket to use for storing log")
+	listen   = flag.String("listen", ":2024", "Address:port to listen on")
+	project  = flag.String("project", os.Getenv("GOOGLE_CLOUD_PROJECT"), "GCP Project, take from env if unset")
+	spanner  = flag.String("spanner", "", "Spanner resource URI ('projects/.../...')")
+	signer   = flag.String("signer", "", "Note signer to use to sign checkpoints")
+	verifier = flag.String("verifier", "", "Note verifier corresponding to --signer")
+	origin   = flag.String("origin", "", "Log origin string")
 )
 
 func main() {
@@ -52,17 +52,12 @@ func main() {
 		klog.Exit("Must supply --origin")
 	}
 
-	signer, verifier, kmsClose := signerFromFlags(ctx)
-	defer func() {
-		if err := kmsClose(); err != nil {
-			klog.Errorf("kmsClose(): %v", err)
-		}
-	}()
+	s, v := signerFromFlags()
 
 	// Create our Tessera storage backend:
 	gcpCfg := storageConfigFromFlags()
 	storage, err := gcp.New(ctx, gcpCfg,
-		tessera.WithCheckpointSignerVerifier(signer, verifier),
+		tessera.WithCheckpointSignerVerifier(s, v),
 		tessera.WithBatching(1024, time.Second),
 		tessera.WithPushback(10*4096),
 	)
@@ -125,25 +120,16 @@ func storageConfigFromFlags() gcp.Config {
 	}
 }
 
-// signerFromFlags creates and returns a new KMSSigner from the flags, along with a close func which
-// should be called when we're finished with the signer.
-func signerFromFlags(ctx context.Context) (note.Signer, note.Verifier, func() error) {
-	kmClient, err := kms.NewKeyManagementClient(ctx)
-	if err != nil {
-		klog.Fatalf("Failed to create KeyManagementClient: %v", err)
-	}
-	signer, err := NewKMSSigner(ctx, kmClient, *kmsKeyName, *origin)
+func signerFromFlags() (note.Signer, note.Verifier) {
+	s, err := note.NewSigner(*signer)
 	if err != nil {
 		klog.Exitf("Failed to create new signer: %v", err)
 	}
-	vRaw, err := VerifierKeyString(ctx, kmClient, *kmsKeyName, *origin)
+
+	v, err := note.NewVerifier(*verifier)
 	if err != nil {
-		klog.Exitf("Failed to create verifier string: %v", err)
-	}
-	verifier, err := note.NewVerifier(vRaw)
-	if err != nil {
-		klog.Exitf("Failed to create verifier from %q: %v", vRaw, err)
+		klog.Exitf("Failed to create new verifier: %v", err)
 	}
 
-	return signer, verifier, kmClient.Close
+	return s, v
 }

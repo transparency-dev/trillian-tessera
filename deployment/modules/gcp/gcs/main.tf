@@ -25,15 +25,14 @@ resource "google_storage_bucket" "log_bucket" {
   location                    = var.location
   storage_class               = "STANDARD"
   uniform_bucket_level_access = true
+
+  force_destroy               = var.ephemeral
 }
 
 resource "google_storage_bucket_iam_binding" "log_bucket_reader" {
   bucket = google_storage_bucket.log_bucket.name
   role   = "roles/storage.objectViewer"
-  members = concat(
-    var.log_writer_members,
-    var.bucket_readers
-  )
+  members = var.bucket_readers
 }
 
 resource "google_storage_bucket_iam_binding" "log_bucket_writer" {
@@ -49,6 +48,8 @@ resource "google_spanner_instance" "log_spanner" {
   config           = "regional-${var.location}"
   display_name     = var.base_name
   processing_units = 100
+
+  force_destroy    = var.ephemeral
 }
 
 resource "google_spanner_database" "log_db" {
@@ -59,6 +60,8 @@ resource "google_spanner_database" "log_db" {
     "CREATE TABLE Seq (id INT64 NOT NULL, seq INT64 NOT NULL, v BYTES(MAX),) PRIMARY KEY (id, seq)",
     "CREATE TABLE IntCoord (id INT64 NOT NULL, seq INT64 NOT NULL,) PRIMARY KEY (id)",
   ]
+
+  deletion_protection         = !var.ephemeral
 }
 
 resource "google_spanner_database_iam_binding" "database" {
