@@ -20,6 +20,11 @@ variable "env" {
 
 variable "bucket_readers" {
   description = "List of identities allowed to read the log bucket"
-  type = list
-  default = [ "allUsers" ]
+  type        = list(any)
+  default     = ["allUsers"]
+}
+
+variable "log_writer_members" {
+  description = "List of identities in member format allowed to write to the log"
+  type        = list(any)
 }

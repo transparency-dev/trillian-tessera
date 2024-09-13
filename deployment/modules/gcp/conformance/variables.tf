@@ -33,12 +33,17 @@ variable "kms_key_version_id" {
   type        = string
 }
 
+variable "cloudrun_service_account" {
+  description = "The service account email to use for the CloudRun instance"
+  type        = string
+}
+
 variable "conformance_users" {
   description = "The list of users allowed to invoke calls to the conformance instance."
-  type = list
+  type        = list(any)
 }
 
 variable "bucket_readers" {
   description = "The list of users allowed to read the conformance bucket contents"
-  type = list
+  type        = list(any)
 }

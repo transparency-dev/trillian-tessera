@@ -13,7 +13,3 @@ output "log_spanner_instance" {
   value       = google_spanner_instance.log_spanner
 }
 
-output "service_account_name" {
-  description = "Name of the service account with write permission for storage"
-  value       = google_service_account.log_writer.member
-}
