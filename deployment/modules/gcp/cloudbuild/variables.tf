@@ -23,4 +23,8 @@ variable "kms_key_version_id" {
   type        = string
 }
 
+variable "service_account" {
+  description = "Service account email to use for cloudbuild"
+}
+
 

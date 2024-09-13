@@ -21,7 +21,7 @@ locals {
 
 resource "google_cloudbuild_trigger" "docker" {
   name            = "build-docker-${var.env}"
-  service_account = google_service_account.cloudbuild_service_account.id
+  service_account = "projects/${var.project_id}/serviceAccounts/${var.service_account}"
   location        = var.region
 
   github {
@@ -36,7 +36,7 @@ resource "google_cloudbuild_trigger" "docker" {
     ## Build the GCP conformance server docker image.
     ## This will be used by the conformance terragrunt config step further down.
     step {
-      id = "docker_build_conformance_gcp"
+      id   = "docker_build_conformance_gcp"
       name = "gcr.io/cloud-builders/docker"
       args = [
         "build",
@@ -81,9 +81,9 @@ resource "google_cloudbuild_trigger" "docker" {
     ## Grab some outputs from the terragrunt apply above (e.g. conformance server URL) and store
     ## them in files under /workspace. These are needed for later steps.
     step {
-      id = "terraform_outputs"
-      name = "alpine/terragrunt"
-      script = <<EOT
+      id       = "terraform_outputs"
+      name     = "alpine/terragrunt"
+      script   = <<EOT
         cd deployment/live/gcp/conformance/ci
         terragrunt output --raw conformance_url > /workspace/conformance_url
       EOT
@@ -107,12 +107,12 @@ resource "google_cloudbuild_trigger" "docker" {
     ## Since the conformance infrastructure is not publicly accessible, we need to use bearer tokens
     ## for the hammer to access them.
     ## This step creates those, and stores them for later use.
-    step { 
-      id = "access"
-      name = "gcr.io/cloud-builders/gcloud"
-      script = <<EOT
+    step {
+      id       = "access"
+      name     = "gcr.io/cloud-builders/gcloud"
+      script   = <<EOT
       gcloud auth print-access-token > /workspace/cb_access
-      curl -H "Metadata-Flavor: Google" "http://metadata/computeMetadata/v1/instance/service-accounts/${google_service_account.cloudbuild_service_account.email}/identity?audience=$(cat /workspace/conformance_url)" > /workspace/cb_identity
+      curl -H "Metadata-Flavor: Google" "http://metadata/computeMetadata/v1/instance/service-accounts/${var.service_account}/identity?audience=$(cat /workspace/conformance_url)" > /workspace/cb_identity
       EOT
       wait_for = ["terraform_outputs"]
     }
@@ -128,15 +128,9 @@ resource "google_cloudbuild_trigger" "docker" {
     }
 
     options {
-      logging = "CLOUD_LOGGING_ONLY"
+      logging      = "CLOUD_LOGGING_ONLY"
       machine_type = "E2_HIGHCPU_8"
     }
   }
-}
-
-# roles managed externally.
-resource "google_service_account" "cloudbuild_service_account" {
-  account_id   = "cloudbuild-${var.env}-sa"
-  display_name = "Service Account for CloudBuild (${var.env})"
 }
 
