@@ -2,16 +2,24 @@
 
 ## Prerequisites
 
-You'll need to have already configured/created a KMS key which can safely be used by the
-conformance log.
+You'll need to have already configured/created whatever service accounts + IAM permissions
+you require, and update the terragrunt files here to match.
 
-> [Warning]
-> This key should not be used elsewhere or be in any way valuable!
+## Overview
+
+This config uses the [gcp/conformance](/deployment/modules/gcp/conformance) module to
+define a conformance testing environment. At a high level, this environment consists of:
+- Spanner DB,
+- GCS Bucket,
+- CloudRun service running the [GCP-specific conformance binary](/cmd/conformance/gcp).
+
+The config allows identities (e.g. service accounts) to be provided to allow access to
+reading from, and writing to, the log.
 
 ## Automatic deployment
 
-For the most part, this terragrunt config is automatically used as part conformance
-testing by the [CloudBuild](/deployment/live/cloudbuild) pipeline, so doesn't generally
+For the most part, this terragrunt config is automatically used as part of conformance
+testing by the [CloudBuild](/deployment/live/gcp/cloudbuild) pipeline, so doesn't generally
 need to be manually applied.
 
 ## Manual deployment 
@@ -25,7 +33,8 @@ gcloud auth application-default login
 Set the required environment variables:
 ```bash
 export GOOGLE_PROJECT={VALUE}
-export TESSERA_KMS_KEY_VERSION={VALUE} # This should be the resource name of the key version created above
+export TESSERA_SIGNER={VALUE} # This should be a note signer string
+export TESSERA_VERIFIER={VALUE} # This should be a note verifier string, correspoding to the provided signer.
 ```
 
 Optionally, customize the GCP region (defaults to "us-central1"),

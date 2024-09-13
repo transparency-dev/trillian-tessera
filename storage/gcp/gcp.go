@@ -71,6 +71,7 @@ type Storage struct {
 	bucket    string
 
 	newCP       tessera.NewCPFunc
+	parseCP     tessera.ParseCPFunc
 	entriesPath tessera.EntriesPathFunc
 
 	sequencer sequencer
@@ -93,7 +94,9 @@ type sequencer interface {
 	// If the call to consumeFunc returns no error, the entries should be considered to have been consumed.
 	// If any entries were successfully consumed, the implementation should also return true; this
 	// serves as a weak hint that there may be more entries to be consumed.
-	consumeEntries(ctx context.Context, limit uint64, f consumeFunc) (bool, error)
+	// If forceUpdate is true, then the consumeFunc should be called, with an empty slice of entries if
+	// necessary. This allows the log self-initialise in a transactionally safe manner.
+	consumeEntries(ctx context.Context, limit uint64, f consumeFunc, forceUpdate bool) (bool, error)
 }
 
 // consumeFunc is the signature of a function which can consume entries from the sequencer.
@@ -136,9 +139,14 @@ func New(ctx context.Context, cfg Config, opts ...func(*tessera.StorageOptions))
 		objStore:    gcsStorage,
 		sequencer:   seq,
 		newCP:       opt.NewCP,
+		parseCP:     opt.ParseCP,
 		entriesPath: opt.EntriesPath,
 	}
 	r.queue = storage.NewQueue(ctx, opt.BatchMaxAge, opt.BatchMaxSize, r.sequencer.assignEntries)
+
+	if err := r.init(ctx); err != nil {
+		return nil, fmt.Errorf("failed to initialise log storage: %v", err)
+	}
 
 	go func() {
 		t := time.NewTicker(1 * time.Second)
@@ -155,7 +163,7 @@ func New(ctx context.Context, cfg Config, opts ...func(*tessera.StorageOptions))
 				cctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 				defer cancel()
 
-				if _, err := r.sequencer.consumeEntries(cctx, DefaultIntegrationSizeLimit, r.integrate); err != nil {
+				if _, err := r.sequencer.consumeEntries(cctx, DefaultIntegrationSizeLimit, r.integrate, false); err != nil {
 					klog.Errorf("integrate: %v", err)
 				}
 			}()
@@ -176,6 +184,42 @@ func (s *Storage) Add(ctx context.Context, e *tessera.Entry) tessera.IndexFuture
 func (s *Storage) Get(ctx context.Context, path string) ([]byte, error) {
 	d, _, err := s.objStore.getObject(ctx, path)
 	return d, err
+}
+
+// init ensures that the storage represents a log in a valid state.
+func (s *Storage) init(ctx context.Context) error {
+	cpRaw, err := s.Get(ctx, layout.CheckpointPath)
+	if err != nil {
+		if errors.Is(err, gcs.ErrObjectNotExist) {
+			// No checkpoint exists, do a forced (possibly empty) integration to create one in a safe
+			// way (calling updateCP directly here would not be safe as it's outside the transactional
+			// framework which prevents the tree from rolling backwards or otherwise forking).
+			cctx, c := context.WithTimeout(ctx, 10*time.Second)
+			defer c()
+			if _, err := s.sequencer.consumeEntries(cctx, DefaultIntegrationSizeLimit, s.integrate, true); err != nil {
+				return fmt.Errorf("forced integrate: %v", err)
+			}
+			return nil
+		}
+		return fmt.Errorf("failed to read checkpoint: %v", err)
+	}
+	if _, err = s.parseCP(cpRaw); err != nil {
+		return fmt.Errorf("Found invalid existing checpoint file: %v\ncheckpoint contents:\n%v", err, string(cpRaw))
+	}
+
+	return nil
+}
+
+func (s *Storage) updateCP(ctx context.Context, newSize uint64, newRoot []byte) error {
+	cpRaw, err := s.newCP(newSize, newRoot)
+	if err != nil {
+		return fmt.Errorf("newCP: %v", err)
+	}
+	if err := s.objStore.setObject(ctx, layout.CheckpointPath, cpRaw, nil, ckptContType); err != nil {
+		return fmt.Errorf("writeCheckpoint: %v", err)
+	}
+	return nil
+
 }
 
 // setTile idempotently stores the provided tile at the location implied by the given level, index, and treeSize.
@@ -292,13 +336,7 @@ func (s *Storage) integrate(ctx context.Context, fromSeq uint64, entries []stora
 		errG.Go(func() error {
 			klog.Infof("New CP: %d, %x", newSize, newRoot)
 			if s.newCP != nil {
-				cpRaw, err := s.newCP(newSize, newRoot)
-				if err != nil {
-					return fmt.Errorf("newCP: %v", err)
-				}
-				if err := s.objStore.setObject(ctx, layout.CheckpointPath, cpRaw, nil, ckptContType); err != nil {
-					return fmt.Errorf("writeCheckpoint: %v", err)
-				}
+				return s.updateCP(ctx, newSize, newRoot)
 			}
 			return nil
 		})
@@ -313,6 +351,10 @@ func (s *Storage) integrate(ctx context.Context, fromSeq uint64, entries []stora
 //
 // The right-most bundle will be grown, if it's partial, and/or new bundles will be created as required.
 func (s *Storage) updateEntryBundles(ctx context.Context, fromSeq uint64, entries []storage.SequencedEntry) error {
+	if len(entries) == 0 {
+		return nil
+	}
+
 	numAdded := uint64(0)
 	bundleIndex, entriesInBundle := fromSeq/entryBundleSize, fromSeq%entryBundleSize
 	bundleWriter := &bytes.Buffer{}
@@ -525,7 +567,7 @@ func (s *spannerSequencer) assignEntries(ctx context.Context, entries []*tessera
 // removed from the Seq table.
 //
 // Returns true if some entries were consumed as a weak signal that there may be further entries waiting to be consumed.
-func (s *spannerSequencer) consumeEntries(ctx context.Context, limit uint64, f consumeFunc) (bool, error) {
+func (s *spannerSequencer) consumeEntries(ctx context.Context, limit uint64, f consumeFunc, forceUpdate bool) (bool, error) {
 	didWork := false
 	_, err := s.dbPool.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
 		// Figure out which is the starting index of sequenced entries to start consuming from.
@@ -574,7 +616,7 @@ func (s *spannerSequencer) consumeEntries(ctx context.Context, limit uint64, f c
 			seqsConsumed = append(seqsConsumed, seq)
 			orderCheck += int64(len(b))
 		}
-		if len(seqsConsumed) == 0 {
+		if len(seqsConsumed) == 0 && !forceUpdate {
 			klog.V(1).Info("Found no rows to sequence")
 			return nil
 		}
@@ -591,8 +633,10 @@ func (s *spannerSequencer) consumeEntries(ctx context.Context, limit uint64, f c
 		for _, c := range seqsConsumed {
 			m = append(m, spanner.Delete("Seq", spanner.Key{0, c}))
 		}
-		if err := txn.BufferWrite(m); err != nil {
-			return err
+		if len(m) > 0 {
+			if err := txn.BufferWrite(m); err != nil {
+				return err
+			}
 		}
 
 		didWork = true
