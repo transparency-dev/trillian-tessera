@@ -162,7 +162,7 @@ func (s *Storage) ReadTile(ctx context.Context, level, index, width uint64) ([]b
 	}
 
 	// Return nil when returning a partial tile on a full tile request.
-	if width == 256 && len(tile)/32 != int(width) {
+	if width == 256 && uint64(len(tile)/32) != width {
 		return nil, nil
 	}
 
