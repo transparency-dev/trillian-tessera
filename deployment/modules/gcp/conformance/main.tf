@@ -15,11 +15,12 @@ terraform {
 module "gcs" {
   source = "..//gcs"
 
-  base_name  = var.base_name
-  env        = var.env
-  location   = var.location
-  project_id = var.project_id
-  bucket_readers = var.bucket_readers
+  base_name          = var.base_name
+  env                = var.env
+  location           = var.location
+  project_id         = var.project_id
+  bucket_readers     = var.bucket_readers
+  log_writer_members = ["serviceAccount:${var.cloudrun_service_account}"]
 }
 
 ##
@@ -75,15 +76,6 @@ resource "google_kms_crypto_key_version" "log_signer" {
 */
 
 
-###
-### Set up Cloud Run service
-###
-### Roles managed externally.
-resource "google_service_account" "cloudrun_service_account" {
-  account_id   = "cloudrun-${var.env}-sa"
-  display_name = "Service Account for Cloud Run (${var.base_name})"
-}
-
 locals {
   spanner_db_full = "projects/${var.project_id}/instances/${module.gcs.log_spanner_instance.name}/databases/${module.gcs.log_spanner_db.name}"
 }
@@ -94,9 +86,9 @@ resource "google_cloud_run_v2_service" "default" {
   launch_stage = "GA"
 
   template {
-    service_account = google_service_account.cloudrun_service_account.email
+    service_account                  = var.cloudrun_service_account
     max_instance_request_concurrency = 700
-    timeout = "10s"
+    timeout                          = "10s"
 
     scaling {
       max_instance_count = 3
@@ -116,13 +108,13 @@ resource "google_cloud_run_v2_service" "default" {
         "--origin=${var.log_origin}",
       ]
       ports {
-        name = "h2c"
+        name           = "h2c"
         container_port = 8080
       }
 
       resources {
         limits = {
-          cpu = "2"
+          cpu    = "2"
           memory = "1024Mi"
         }
       }
