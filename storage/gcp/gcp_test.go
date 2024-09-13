@@ -184,7 +184,7 @@ func TestSpannerSequencerRoundTrip(t *testing.T) {
 		return nil
 	}
 
-	more, err := s.consumeEntries(ctx, 7, f)
+	more, err := s.consumeEntries(ctx, 7, f, false)
 	if err != nil {
 		t.Errorf("consumeEntries: %v", err)
 	}
