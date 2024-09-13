@@ -15,6 +15,7 @@
 package tessera
 
 import (
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"time"
@@ -84,6 +85,12 @@ func ResolveStorageOptions(opts ...func(*StorageOptions)) *StorageOptions {
 func WithCheckpointSignerVerifier(s note.Signer, v note.Verifier) func(*StorageOptions) {
 	return func(o *StorageOptions) {
 		o.NewCP = func(size uint64, hash []byte) ([]byte, error) {
+			// If we're signing a zero-sized tree, the tlog-checkpoint spec says (via RFC6962) that
+			// the root must be SHA256 of the empty string, so we'll enforce that here:
+			if size == 0 {
+				emptyRoot := sha256.Sum256([]byte{})
+				hash = emptyRoot[:]
+			}
 			cpRaw := f_log.Checkpoint{
 				Origin: s.Name(),
 				Size:   size,
