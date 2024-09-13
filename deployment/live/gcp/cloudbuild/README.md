@@ -1,6 +1,6 @@
 # Cloudbuild Triggers and Steps
 
-This directory contains a terragrunt files to configure our CloudBuild pipeline(s).
+This directory contains terragrunt files to configure our CloudBuild pipeline(s).
 See links in the [deployment dir](/deployment/README.md) to install necessary tools.
 
 The CloudBuild pipeline is triggered on commits to the `main` branch of the repo, and
