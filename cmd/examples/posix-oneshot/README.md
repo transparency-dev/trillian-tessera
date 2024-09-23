@@ -22,7 +22,7 @@ echo "bar" > /tmp/stuff/bar
 echo "baz" > /tmp/stuff/baz
 
 # Integrate all of these leaves into the tree
-go run ./cmd/examples/posix-oneshot --storage_dir=${LOG_DIR} --entries="/tmp/logleaves/*"
+go run ./cmd/examples/posix-oneshot --storage_dir=${LOG_DIR} --entries="/tmp/stuff/*"
 
 # Check that the checkpoint is of the correct size and the leaves are present
 cat ${LOG_DIR}/checkpoint
@@ -32,7 +32,7 @@ cat ${LOG_DIR}/tile/entries/000.p/*
 go run github.com/mhutchinson/woodpecker@main --custom_log_type=tiles --custom_log_url=file:///${LOG_DIR}/ --custom_log_origin=example.com/log/testdata --custom_log_vkey=${LOG_PUBLIC_KEY}
 
 # More entries can be added to the log using the following:
-go run ./cmd/examples/posix-oneshot --storage_dir=${LOG_DIR} --entries="/tmp/logleaves/*"
+go run ./cmd/examples/posix-oneshot --storage_dir=${LOG_DIR} --entries="/tmp/stuff/*"
 ```
 
 ## Using the log
