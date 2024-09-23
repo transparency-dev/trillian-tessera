@@ -50,7 +50,7 @@ func main() {
 
 	db := createDatabaseOrDie(ctx)
 	noteSigner := createSignerOrDie()
-	noteVerifier := createVerifierOrDie()
+	vkey, noteVerifier := createVerifierOrDie()
 
 	// Initialise the Tessera MySQL storage
 	storage, err := mysql.New(ctx, db, tessera.WithCheckpointSignerVerifier(noteSigner, noteVerifier))
@@ -78,6 +78,11 @@ func main() {
 		}
 	})
 
+	// TODO(mhutchinson): Change the listen flag to just a port, or fix up this address formatting
+	klog.Infof("Environment variables useful for accessing this log:\n"+
+		"export WRITE_URL=http://localhost%s/ \n"+
+		"export READ_URL=http://localhost%s/ \n"+
+		"export LOG_PUBLIC_KEY=%s", *listen, *listen, vkey)
 	// Serve HTTP requests until the process is terminated
 	if err := http.ListenAndServe(*listen, http.DefaultServeMux); err != nil {
 		klog.Exitf("ListenAndServe: %v", err)
@@ -109,7 +114,7 @@ func createSignerOrDie() note.Signer {
 	return noteSigner
 }
 
-func createVerifierOrDie() note.Verifier {
+func createVerifierOrDie() (string, note.Verifier) {
 	rawPublicKey, err := os.ReadFile(*publicKeyPath)
 	if err != nil {
 		klog.Exitf("Failed to read public key file %q: %v", *publicKeyPath, err)
@@ -118,7 +123,7 @@ func createVerifierOrDie() note.Verifier {
 	if err != nil {
 		klog.Exitf("Failed to create new verifier: %v", err)
 	}
-	return noteVerifier
+	return string(rawPublicKey), noteVerifier
 }
 
 // configureTilesReadAPI adds the API methods from https://c2sp.org/tlog-tiles to the mux,

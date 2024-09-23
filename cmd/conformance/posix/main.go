@@ -48,7 +48,7 @@ func main() {
 	ctx := context.Background()
 
 	// Gather the info needed for reading/writing checkpoints
-	v := getVerifierOrDie()
+	vkey, v := getVerifierOrDie()
 	s := getSignerOrDie()
 
 	// Create the Tessera POSIX storage, using the directory from the --storage_dir flag
@@ -79,6 +79,11 @@ func main() {
 	// This makes it easier to test this implementation from another machine.
 	http.Handle("GET /", http.FileServer(http.Dir(*storageDir)))
 
+	// TODO(mhutchinson): Change the listen flag to just a port, or fix up this address formatting
+	klog.Infof("Environment variables useful for accessing this log:\n"+
+		"export WRITE_URL=http://localhost%s/ \n"+
+		"export READ_URL=http://localhost%s/ \n"+
+		"export LOG_PUBLIC_KEY=%s", *listen, *listen, vkey)
 	// Run the HTTP server with the single handler and block until this is terminated
 	if err := http.ListenAndServe(*listen, http.DefaultServeMux); err != nil {
 		klog.Exitf("ListenAndServe: %v", err)
@@ -86,7 +91,7 @@ func main() {
 }
 
 // Read log public key from file or environment variable
-func getVerifierOrDie() note.Verifier {
+func getVerifierOrDie() (string, note.Verifier) {
 	var pubKey string
 	var err error
 	if len(*pubKeyFile) > 0 {
@@ -106,7 +111,7 @@ func getVerifierOrDie() note.Verifier {
 		klog.Exitf("Failed to instantiate Verifier: %q", err)
 	}
 
-	return v
+	return pubKey, v
 }
 
 // Read log private key from file or environment variable
