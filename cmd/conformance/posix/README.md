@@ -25,7 +25,7 @@ In this example, we're running 32 writers against the log to add 128 new leaves 
 ```shell
 go run ./hammer \
   --log_public_key=example.com/log/testdata+33d7b496+AeHTu4Q3hEIMHNqc6fASMsq3rKNx280NI+oO5xCFkkSx \
-  --write_log_url=http://localhost:2025 \
+  --log_url=http://localhost:2025 \
   --max_read_ops=0 \
   --num_writers=32 \
   --max_write_ops=64 \
