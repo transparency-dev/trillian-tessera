@@ -8,15 +8,15 @@ Each subdirectory contains an implementation of the same personality built on to
 Implementations are provided that use:
  - [A local filesystem](./posix/)
  - [MySQL](./mysql/)
- - [GCP](./gcp//)
+ - [GCP](./gcp/)
 
 Each of these personalities exposes an endpoint that accepts `POST` requests at a `/add` URL.
-The contents of any request body will be appended to the log, and the decimal index of the sequenced entry will be returned.
+The contents of any request body will be appended to the log, and the decimal index assigned to this newly _sequenced_ entry will be returned.
 
 ## Codelab
 
 Choose one of the implementations above and deploy it.
-In the shell you are going to run this codelab in, define the following environment variables (check the logging output from starting the log, as these may have been output):
+In the shell you are going to run this codelab in, define the following environment variables (check the logging output from the implementation you deployed, as these may have been output):
  - The write URL: `${WRITE_URL}`
  - The read URL: `${READ_URL}`
  - The log public key: `${LOG_PUBLIC_KEY}`
