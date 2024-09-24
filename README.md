@@ -50,6 +50,9 @@ migration to Tessera and adopting the patterns it encourages.
 
 ### Getting started
 
+The best place to start is the codelab provided in the [conformance](./cmd/conformance/) directory.
+This will walk you through setting up your first log, writing some entries to it via HTTP, and inspecting the contents.
+
 Take a look at the example personalities in the `/cmd/` directory:
   - [posix](./cmd/conformance/posix/): example of operating a log backed by a local filesystem
     - This example runs an HTTP web server that takes arbitrary data and adds it to a file-based log.
