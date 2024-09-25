@@ -85,7 +85,7 @@ MiB Swap:      0.0 total,      0.0 free,      0.0 used.     37.3 avail Mem
 1. Run `hammer` and get performance metrics
 
    ```sh
-   hammer:~/trillian-tessera$ go run ./hammer --log_public_key=Test-Betty+df84580a+AQQASqPUZoIHcJAF5mBOryctwFdTV1E0GRY4kEAtTzwB --log_url=http://10.128.0.3:2024 --max_read_ops=0 --num_writers=512 --max_write_ops=512
+   hammer:~/trillian-tessera$ go run ./hammer --log_public_key=transparency.dev/tessera/example+ae330e15+ASf4/L1zE859VqlfQgGzKy34l91Gl8W6wfwp+vKP62DW --log_url=http://10.128.0.3:2024 --max_read_ops=0 --num_writers=512 --max_write_ops=512
    ```
 
 ### GCP Free Tier VM Instance + Cloud SQL (MySQL)
@@ -168,7 +168,7 @@ The bottleneck comes from CPU usage of the `cmd/conformance/mysql` binary on the
 1. Run `hammer` and get performance metrics
 
    ```sh
-   hammer:~/trillian-tessera$ go run ./hammer --log_public_key=Test-Betty+df84580a+AQQASqPUZoIHcJAF5mBOryctwFdTV1E0GRY4kEAtTzwB --log_url=http://10.128.0.3:2024 --max_read_ops=0 --num_writers=512 --max_write_ops=512
+   hammer:~/trillian-tessera$ go run ./hammer --log_public_key=transparency.dev/tessera/example+ae330e15+ASf4/L1zE859VqlfQgGzKy34l91Gl8W6wfwp+vKP62DW --log_url=http://10.128.0.3:2024 --max_read_ops=0 --num_writers=512 --max_write_ops=512
    ```
 
 ## POSIX
