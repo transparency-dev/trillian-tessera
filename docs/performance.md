@@ -9,6 +9,8 @@ This document describes the performance of each Trillian Tessera storage impleme
 
 ### GCP Free Tier VM Instance
 
+**tl;dr:** Tessera (MySQL) can run on the free tier VM instance on GCP with around **300 write QPS**. The bottleneck comes from the lack of memory which is consumed by the dockerized MySQL instance.
+
 **e2-micro**
 
 - vCPU: 0.25-2 vCPU (1 shared core)
@@ -89,6 +91,8 @@ MiB Swap:      0.0 total,      0.0 free,      0.0 used.     37.3 avail Mem
    ```
 
 ### GCP Free Tier VM Instance + Cloud SQL (MySQL)
+
+**tl;dr:** Tessera (MySQL) can run on the free tier VM instance on GCP with around **2000 write QPS** when the MySQL database is run on Cloud SQL.
 
 **e2-micro**
 
