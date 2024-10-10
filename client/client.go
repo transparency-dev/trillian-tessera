@@ -145,7 +145,7 @@ func (pb *ProofBuilder) ConsistencyProof(ctx context.Context, smaller, larger ui
 
 // fetchNodes retrieves the specified proof nodes via pb's nodeCache.
 func (pb *ProofBuilder) fetchNodes(ctx context.Context, nodes proof.Nodes) ([][]byte, error) {
-	hashes := make([][]byte, 0)
+	hashes := make([][]byte, 0, len(nodes.IDs))
 	// TODO(al) parallelise this.
 	for _, id := range nodes.IDs {
 		h, err := pb.nodeCache.GetNode(ctx, id)
@@ -165,31 +165,32 @@ func (pb *ProofBuilder) fetchNodes(ctx context.Context, nodes proof.Nodes) ([][]
 // a log of size s.
 func FetchRangeNodes(ctx context.Context, s uint64, gt GetTileFunc) ([][]byte, error) {
 	nc := newNodeCache(gt, s)
-	nIDs := compact.RangeNodes(0, s, nil)
-	ret := make([][]byte, len(nIDs))
-	for i, n := range nIDs {
+	nIDs := make([]compact.NodeID, 0, compact.RangeSize(0, s))
+	nIDs = compact.RangeNodes(0, s, nIDs)
+	hashes := make([][]byte, 0, len(nIDs))
+	for _, n := range nIDs {
 		h, err := nc.GetNode(ctx, n)
 		if err != nil {
 			return nil, err
 		}
-		ret[i] = h
+		hashes = append(hashes, h)
 	}
-	return ret, nil
+	return hashes, nil
 }
 
 // FetchLeafHashes fetches N consecutive leaf hashes starting with the leaf at index first.
 func FetchLeafHashes(ctx context.Context, f Fetcher, first, N, logSize uint64) ([][]byte, error) {
 	nc := newNodeCache(newTileFetcher(f, logSize), logSize)
-	ret := make([][]byte, 0, N)
-	for i, seq := uint64(0), first; i < N; i, seq = i+1, seq+1 {
-		nID := compact.NodeID{Level: 0, Index: seq}
+	hashes := make([][]byte, 0, N)
+	for i, end := first, first+N; i < end; i++ {
+		nID := compact.NodeID{Level: 0, Index: i}
 		h, err := nc.GetNode(ctx, nID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to fetch node %v: %v", nID, err)
 		}
-		ret = append(ret, h)
+		hashes = append(hashes, h)
 	}
-	return ret, nil
+	return hashes, nil
 }
 
 // nodeCache hides the tiles abstraction away, and improves
