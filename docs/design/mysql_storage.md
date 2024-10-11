@@ -39,7 +39,6 @@ There can be an arbitrary number of frontends each receiving write traffic. Each
 API Handlers:
 
 1. Handle the /add request, and extract the data to be added
-1. (if deduplication is enabled) Check the HashIndex table, and if the data is already present then return the index at which this data already resides
 1. Add the data to a pool to be sequenced and block until this returns the index
 
 Sequence pool:
@@ -56,7 +55,6 @@ Sequence & integrate (DB integration starts here):
    1. No other processes will be competing with this work.
    1. That the next index to sequence is known (this is the same as the current checkpoint size)
 1. Update the required TiledLeaves rows
-1. (if deduplication is enabled) Update the HashIndex rows, one for each entry
 1. Perform an integration operation to update the Merkle tree, updating/adding Subtree rows as needed, and eventually updating the Checkpoint row
 1. Commit the transaction
 
