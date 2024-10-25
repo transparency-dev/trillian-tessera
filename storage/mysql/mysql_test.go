@@ -28,6 +28,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/transparency-dev/formats/log"
 	"github.com/transparency-dev/merkle/rfc6962"
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/api"
@@ -102,7 +103,7 @@ func TestMain(m *testing.M) {
 // `multiStatements=true` in the data source name allows multiple statements in one query.
 // This is not being used in the actual MySQL storage implementation.
 func initDatabaseSchema(ctx context.Context) {
-	dropTablesSQL := "DROP TABLE IF EXISTS `Checkpoint`, `Subtree`, `TiledLeaves`"
+	dropTablesSQL := "DROP TABLE IF EXISTS `SequencingMetadata`, `Checkpoint`, `Subtree`, `TiledLeaves`"
 
 	rawSchema, err := os.ReadFile("schema.sql")
 	if err != nil {
@@ -280,9 +281,25 @@ func TestTileRoundTrip(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			cpSize := uint64(0)
+
 			entryIndex, err := s.Add(ctx, tessera.NewEntry(test.entry))()
 			if err != nil {
 				t.Errorf("Add got err: %v", err)
+			}
+
+			for cpSize <= entryIndex {
+				time.Sleep(100 * time.Millisecond)
+
+				cpRaw, err := s.ReadCheckpoint(ctx)
+				if err != nil {
+					t.Errorf("ReadCheckpoint got err: %v", err)
+				}
+				cp, _, _, err := log.ParseCheckpoint(cpRaw, noteVerifier.Name(), noteVerifier)
+				if err != nil {
+					t.Errorf("log.ParseCheckpoint got err: %v", err)
+				}
+				cpSize = cp.Size
 			}
 
 			tileLevel, tileIndex, _, nodeIndex := layout.NodeCoordsToTileAddress(0, entryIndex)

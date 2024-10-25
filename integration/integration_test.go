@@ -146,18 +146,22 @@ func TestLiveLogIntegration(t *testing.T) {
 	}
 
 	// Step 3 - Validate checkpoint size increment.
-	checkpoint, _, _, err = client.FetchCheckpoint(ctx, logRead, noteVerifier, noteVerifier.Name())
-	if err != nil {
-		t.Errorf("client.FetchCheckpoint: %v", err)
+	var gotIncrease uint64
+	for gotIncrease != uint64(*testEntrySize) {
+		checkpoint, _, _, err = client.FetchCheckpoint(ctx, logRead, noteVerifier, noteVerifier.Name())
+		if err != nil {
+			t.Errorf("client.FetchCheckpoint: %v", err)
+		}
+		if checkpoint == nil {
+			t.Fatal("checkpoint not found")
+		}
+		t.Logf("polling checkpoint size: %d", checkpoint.Size)
+		gotIncrease = checkpoint.Size - checkpointInitSize
+
+		time.Sleep(100 * time.Millisecond)
 	}
-	if checkpoint == nil {
-		t.Fatal("checkpoint not found")
-	}
+
 	t.Logf("checkpoint final size: %d", checkpoint.Size)
-	gotIncrease := checkpoint.Size - checkpointInitSize
-	if gotIncrease != uint64(*testEntrySize) {
-		t.Errorf("checkpoint size increase got: %d, want: %d", gotIncrease, *testEntrySize)
-	}
 
 	// Step 4 - Loop through the entry data index map to verify leaves and inclusion proofs.
 	entryIndexMap.Range(func(k, v any) bool {
