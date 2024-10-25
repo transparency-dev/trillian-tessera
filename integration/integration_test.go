@@ -50,8 +50,10 @@ var (
 
 	noteVerifier note.Verifier
 
-	logReadBaseURL *url.URL
-	logRead        client.Fetcher
+	logReadBaseURL     *url.URL
+	logReadCP          client.CheckpointFetcherFunc
+	logReadTile        client.TileFetcherFunc
+	logReadEntryBundle client.EntryBundleFetcherFunc
 
 	hc = &http.Client{
 		Transport: &http.Transport{
@@ -82,6 +84,7 @@ func TestMain(m *testing.M) {
 		klog.Fatalf("failed to parse logURL: %v", err)
 	}
 
+	var logRead client.Fetcher
 	switch logReadBaseURL.Scheme {
 	case "http", "https":
 		logRead = httpRead
@@ -90,6 +93,9 @@ func TestMain(m *testing.M) {
 	default:
 		klog.Fatalf("unsupported url scheme: %s", logReadBaseURL.Scheme)
 	}
+	logReadCP = client.CheckpointFetcher(logRead)
+	logReadTile = client.TileFetcher(logRead)
+	logReadEntryBundle = client.EntryBundleFetcher(logRead)
 
 	os.Exit(m.Run())
 }
@@ -101,7 +107,7 @@ func TestLiveLogIntegration(t *testing.T) {
 
 	// Step 1 - Get checkpoint initial size for increment validation.
 	var checkpointInitSize uint64
-	checkpoint, _, _, err := client.FetchCheckpoint(ctx, logRead, noteVerifier, noteVerifier.Name())
+	checkpoint, _, _, err := client.FetchCheckpoint(ctx, logReadCP, noteVerifier, noteVerifier.Name())
 	if err != nil {
 		t.Errorf("client.FetchCheckpoint: %v", err)
 	}
@@ -128,7 +134,7 @@ func TestLiveLogIntegration(t *testing.T) {
 				t.Errorf("entryWriter.add: %v", err)
 			}
 			entryIndexMap.Store(i, index)
-			checkpoint, _, _, err := client.FetchCheckpoint(ctx, logRead, noteVerifier, noteVerifier.Name())
+			checkpoint, _, _, err := client.FetchCheckpoint(ctx, logReadCP, noteVerifier, noteVerifier.Name())
 			if err != nil {
 				t.Errorf("client.FetchCheckpoint: %v", err)
 			}
@@ -146,7 +152,7 @@ func TestLiveLogIntegration(t *testing.T) {
 	}
 
 	// Step 3 - Validate checkpoint size increment.
-	checkpoint, _, _, err = client.FetchCheckpoint(ctx, logRead, noteVerifier, noteVerifier.Name())
+	checkpoint, _, _, err = client.FetchCheckpoint(ctx, logReadCP, noteVerifier, noteVerifier.Name())
 	if err != nil {
 		t.Errorf("client.FetchCheckpoint: %v", err)
 	}
@@ -165,7 +171,7 @@ func TestLiveLogIntegration(t *testing.T) {
 		index := v.(uint64)
 
 		// Step 4.1 - Get entry bundles to read back what was written, check leaves are correct.
-		entryBundle, err := client.GetEntryBundle(ctx, logRead, index/256, checkpoint.Size)
+		entryBundle, err := client.GetEntryBundle(ctx, logReadEntryBundle, index/256, checkpoint.Size)
 		if err != nil {
 			t.Errorf("client.GetEntryBundle: %v", err)
 		}
@@ -176,7 +182,7 @@ func TestLiveLogIntegration(t *testing.T) {
 		}
 
 		// Step 4.2 - Test inclusion proofs.
-		pb, err := client.NewProofBuilder(ctx, *checkpoint, logRead)
+		pb, err := client.NewProofBuilder(ctx, *checkpoint, logReadTile)
 		if err != nil {
 			t.Errorf("client.NewProofBuilder: %v", err)
 		}
@@ -193,7 +199,7 @@ func TestLiveLogIntegration(t *testing.T) {
 	})
 
 	// Step 5 - Test consistency proofs.
-	if err := client.CheckConsistency(ctx, logRead, checkpoints); err != nil {
+	if err := client.CheckConsistency(ctx, logReadTile, checkpoints); err != nil {
 		t.Errorf("log consistency checks failed: %v", err)
 	}
 }
