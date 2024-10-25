@@ -178,17 +178,29 @@ func (s *Storage) Add(ctx context.Context, e *tessera.Entry) tessera.IndexFuture
 	return s.queue.Add(ctx, e)
 }
 
-// Get returns the requested object.
+func (s *Storage) ReadCheckpoint(ctx context.Context) ([]byte, error) {
+	return s.get(ctx, layout.CheckpointPath)
+}
+
+func (s *Storage) ReadTile(ctx context.Context, l, i, sz uint64) ([]byte, error) {
+	return s.get(ctx, layout.TilePath(l, i, sz))
+}
+
+func (s *Storage) ReadEntryBundle(ctx context.Context, i, sz uint64) ([]byte, error) {
+	return s.get(ctx, layout.EntriesPath(i, sz))
+}
+
+// get returns the requested object.
 //
 // This is indended to be used to proxy read requests through the personality for debug/testing purposes.
-func (s *Storage) Get(ctx context.Context, path string) ([]byte, error) {
+func (s *Storage) get(ctx context.Context, path string) ([]byte, error) {
 	d, _, err := s.objStore.getObject(ctx, path)
 	return d, err
 }
 
 // init ensures that the storage represents a log in a valid state.
 func (s *Storage) init(ctx context.Context) error {
-	cpRaw, err := s.Get(ctx, layout.CheckpointPath)
+	cpRaw, err := s.get(ctx, layout.CheckpointPath)
 	if err != nil {
 		if errors.Is(err, gcs.ErrObjectNotExist) {
 			// No checkpoint exists, do a forced (possibly empty) integration to create one in a safe
