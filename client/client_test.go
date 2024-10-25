@@ -21,12 +21,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/transparency-dev/formats/log"
 	"github.com/transparency-dev/merkle/compact"
 	"github.com/transparency-dev/trillian-tessera/api"
+	"github.com/transparency-dev/trillian-tessera/api/layout"
 	"golang.org/x/mod/sumdb/note"
 )
 
@@ -76,6 +76,10 @@ func testLogFetcher(_ context.Context, p string) ([]byte, error) {
 	return os.ReadFile(path)
 }
 
+func testLogTileFetcher(ctx context.Context, l, i, s uint64) ([]byte, error) {
+	return testLogFetcher(ctx, layout.TilePath(l, i, s))
+}
+
 // fetchCheckpointShim allows fetcher requests for checkpoints to be intercepted.
 type fetchCheckpointShim struct {
 	// Checkpoints holds raw checkpoints to be returned when the fetcher is asked to retrieve a checkpoint path.
@@ -86,17 +90,12 @@ type fetchCheckpointShim struct {
 // Fetcher intercepts requests for the checkpoint file, returning the zero-th
 // entry in the Checkpoints field. All other requests are passed through
 // to the delegate fetcher.
-func (f *fetchCheckpointShim) Fetcher(deleg Fetcher) Fetcher {
-	return func(ctx context.Context, path string) ([]byte, error) {
-		if strings.HasSuffix(path, "checkpoint") {
-			if len(f.Checkpoints) == 0 {
-				return nil, os.ErrNotExist
-			}
-			r := f.Checkpoints[0]
-			return r, nil
-		}
-		return deleg(ctx, path)
+func (f *fetchCheckpointShim) FetchCheckpoint(ctx context.Context) ([]byte, error) {
+	if len(f.Checkpoints) == 0 {
+		return nil, os.ErrNotExist
 	}
+	r := f.Checkpoints[0]
+	return r, nil
 }
 
 // Advance causes subsequent intercepted checkpoint requests to return
@@ -177,8 +176,7 @@ func TestCheckLogStateTracker(t *testing.T) {
 	} {
 		t.Run(test.desc, func(t *testing.T) {
 			shim := fetchCheckpointShim{Checkpoints: test.cpRaws}
-			f := shim.Fetcher(testLogFetcher)
-			lst, err := NewLogStateTracker(ctx, f, testRawCheckpoints[0], testLogVerifier, testOrigin, UnilateralConsensus(f))
+			lst, err := NewLogStateTracker(ctx, shim.FetchCheckpoint, testLogTileFetcher, testRawCheckpoints[0], testLogVerifier, testOrigin, UnilateralConsensus(shim.FetchCheckpoint))
 			if err != nil {
 				t.Fatalf("NewLogStateTracker: %v", err)
 			}
@@ -300,7 +298,7 @@ func TestCheckConsistency(t *testing.T) {
 		},
 	} {
 		t.Run(test.desc, func(t *testing.T) {
-			err := CheckConsistency(ctx, testLogFetcher, test.cp)
+			err := CheckConsistency(ctx, testLogTileFetcher, test.cp)
 			if gotErr := err != nil; gotErr != test.wantErr {
 				t.Fatalf("wantErr: %t, got %v", test.wantErr, err)
 			}
@@ -310,11 +308,12 @@ func TestCheckConsistency(t *testing.T) {
 
 func TestNodeCacheHandlesInvalidRequest(t *testing.T) {
 	ctx := context.Background()
-	wantBytes := []byte("one")
-	f := func(_ context.Context, _, _ uint64) (*api.HashTile, error) {
-		return &api.HashTile{
+	wantBytes := []byte("0123456789ABCDEF0123456789ABCDEF")
+	f := func(_ context.Context, _, _, _ uint64) ([]byte, error) {
+		h := &api.HashTile{
 			Nodes: [][]byte{wantBytes},
-		}, nil
+		}
+		return h.MarshalText()
 	}
 
 	// Large tree, but we're emulating skew since f, above, will return a tile which only knows about 1
@@ -340,7 +339,7 @@ func TestHandleZeroRoot(t *testing.T) {
 	if len(zeroCP.Hash) == 0 {
 		t.Fatal("BadTestData: checkpoint.0 has empty root hash")
 	}
-	if _, err := NewProofBuilder(context.Background(), zeroCP, testLogFetcher); err != nil {
+	if _, err := NewProofBuilder(context.Background(), zeroCP, testLogTileFetcher); err != nil {
 		t.Fatalf("NewProofBuilder: %v", err)
 	}
 }

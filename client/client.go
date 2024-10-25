@@ -48,6 +48,36 @@ var (
 // based implementation MUST return this error when it receives a 404 StatusCode.
 type Fetcher func(ctx context.Context, path string) ([]byte, error)
 
+// CheckpointFetcher is the signature of a function which can retrieve the latest
+// checkpoint from a log's data storage.
+type CheckpointFetcherFunc func(ctx context.Context) ([]byte, error)
+
+func CheckpointFetcher(f Fetcher) CheckpointFetcherFunc {
+	return func(ctx context.Context) ([]byte, error) {
+		return f(ctx, layout.CheckpointPath)
+	}
+}
+
+// TileFetcher is the signature of a function which can fetch the raw data
+// for a given tile.
+type TileFetcherFunc func(ctx context.Context, level, index, logSize uint64) ([]byte, error)
+
+func TileFetcher(f Fetcher) TileFetcherFunc {
+	return func(ctx context.Context, level, index, logSize uint64) ([]byte, error) {
+		return f(ctx, layout.TilePath(level, index, logSize))
+	}
+}
+
+// EntryBundleEntriesFetcher is the signature of a function which can fetch the raw data
+// for a given entry bundle.
+type EntryBundleFetcherFunc func(ctx context.Context, bundleIndex, logSize uint64) ([]byte, error)
+
+func EntryBundleFetcher(f Fetcher) EntryBundleFetcherFunc {
+	return func(ctx context.Context, bundleIndex, logSize uint64) ([]byte, error) {
+		return f(ctx, layout.EntriesPath(bundleIndex, logSize))
+	}
+}
+
 // ConsensusCheckpointFunc is a function which returns the largest checkpoint known which is
 // signed by logSigV and satisfies some consensus algorithm.
 //
@@ -55,7 +85,7 @@ type Fetcher func(ctx context.Context, path string) ([]byte, error)
 type ConsensusCheckpointFunc func(ctx context.Context, logSigV note.Verifier, origin string) (*log.Checkpoint, []byte, *note.Note, error)
 
 // UnilateralConsensus blindly trusts the source log, returning the checkpoint it provided.
-func UnilateralConsensus(f Fetcher) ConsensusCheckpointFunc {
+func UnilateralConsensus(f CheckpointFetcherFunc) ConsensusCheckpointFunc {
 	return func(ctx context.Context, logSigV note.Verifier, origin string) (*log.Checkpoint, []byte, *note.Note, error) {
 		return FetchCheckpoint(ctx, f, logSigV, origin)
 	}
@@ -63,8 +93,8 @@ func UnilateralConsensus(f Fetcher) ConsensusCheckpointFunc {
 
 // FetchCheckpoint retrieves and opens a checkpoint from the log.
 // Returns both the parsed structure and the raw serialised checkpoint.
-func FetchCheckpoint(ctx context.Context, f Fetcher, v note.Verifier, origin string) (*log.Checkpoint, []byte, *note.Note, error) {
-	cpRaw, err := f(ctx, layout.CheckpointPath)
+func FetchCheckpoint(ctx context.Context, f CheckpointFetcherFunc, v note.Verifier, origin string) (*log.Checkpoint, []byte, *note.Note, error) {
+	cpRaw, err := f(ctx)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -86,11 +116,10 @@ type ProofBuilder struct {
 // NewProofBuilder creates a new ProofBuilder object for a given tree size.
 // The returned ProofBuilder can be re-used for proofs related to a given tree size, but
 // it is not thread-safe and should not be accessed concurrently.
-func NewProofBuilder(ctx context.Context, cp log.Checkpoint, f Fetcher) (*ProofBuilder, error) {
-	tf := newTileFetcher(f, cp.Size)
+func NewProofBuilder(ctx context.Context, cp log.Checkpoint, f TileFetcherFunc) (*ProofBuilder, error) {
 	pb := &ProofBuilder{
 		cp:        cp,
-		nodeCache: newNodeCache(tf, cp.Size),
+		nodeCache: newNodeCache(f, cp.Size),
 	}
 	// Can't re-create the root of a zero size checkpoint other than by convention,
 	// so return early here in that case.
@@ -98,7 +127,7 @@ func NewProofBuilder(ctx context.Context, cp log.Checkpoint, f Fetcher) (*ProofB
 		return pb, nil
 	}
 
-	hashes, err := FetchRangeNodes(ctx, cp.Size, tf)
+	hashes, err := FetchRangeNodes(ctx, cp.Size, f)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch range nodes: %w", err)
 	}
@@ -163,10 +192,14 @@ func (pb *ProofBuilder) fetchNodes(ctx context.Context, nodes proof.Nodes) ([][]
 	return hashes, nil
 }
 
+// GetTileFunc is the signature of a function which knows how to fetch a
+// specific tile.
+type GetTileFunc func(ctx context.Context, level, index uint64) (*api.HashTile, error)
+
 // FetchRangeNodes returns the set of nodes representing the compact range covering
 // a log of size s.
-func FetchRangeNodes(ctx context.Context, s uint64, gt GetTileFunc) ([][]byte, error) {
-	nc := newNodeCache(gt, s)
+func FetchRangeNodes(ctx context.Context, s uint64, f TileFetcherFunc) ([][]byte, error) {
+	nc := newNodeCache(f, s)
 	nIDs := make([]compact.NodeID, 0, compact.RangeSize(0, s))
 	nIDs = compact.RangeNodes(0, s, nIDs)
 	hashes := make([][]byte, 0, len(nIDs))
@@ -181,8 +214,8 @@ func FetchRangeNodes(ctx context.Context, s uint64, gt GetTileFunc) ([][]byte, e
 }
 
 // FetchLeafHashes fetches N consecutive leaf hashes starting with the leaf at index first.
-func FetchLeafHashes(ctx context.Context, f Fetcher, first, N, logSize uint64) ([][]byte, error) {
-	nc := newNodeCache(newTileFetcher(f, logSize), logSize)
+func FetchLeafHashes(ctx context.Context, f TileFetcherFunc, first, N, logSize uint64) ([][]byte, error) {
+	nc := newNodeCache(f, logSize)
 	hashes := make([][]byte, 0, N)
 	for i, end := first, first+N; i < end; i++ {
 		nID := compact.NodeID{Level: 0, Index: i}
@@ -203,12 +236,8 @@ type nodeCache struct {
 	logSize   uint64
 	ephemeral map[compact.NodeID][]byte
 	tiles     map[tileKey]api.HashTile
-	getTile   GetTileFunc
+	getTile   TileFetcherFunc
 }
-
-// GetTileFunc is the signature of a function which knows how to fetch a
-// specific tile.
-type GetTileFunc func(ctx context.Context, level, index uint64) (*api.HashTile, error)
 
 // tileKey is used as a key in nodeCache's tile map.
 type tileKey struct {
@@ -217,7 +246,7 @@ type tileKey struct {
 }
 
 // newNodeCache creates a new nodeCache instance for a given log size.
-func newNodeCache(f GetTileFunc, logSize uint64) nodeCache {
+func newNodeCache(f TileFetcherFunc, logSize uint64) nodeCache {
 	return nodeCache{
 		logSize:   logSize,
 		ephemeral: make(map[compact.NodeID][]byte),
@@ -245,12 +274,16 @@ func (n *nodeCache) GetNode(ctx context.Context, id compact.NodeID) ([]byte, err
 	tKey := tileKey{tileLevel, tileIndex}
 	t, ok := n.tiles[tKey]
 	if !ok {
-		tile, err := n.getTile(ctx, tileLevel, tileIndex)
+		tileRaw, err := n.getTile(ctx, tileLevel, tileIndex, n.logSize)
 		if err != nil {
 			return nil, fmt.Errorf("failed to fetch tile: %w", err)
 		}
-		t = *tile
-		n.tiles[tKey] = *tile
+		var tile api.HashTile
+		if err := tile.UnmarshalText(tileRaw); err != nil {
+			return nil, fmt.Errorf("failed to parse tile: %w", err)
+		}
+		t = tile
+		n.tiles[tKey] = tile
 	}
 	// We've got the tile, now we need to look up (or calculate) the node inside of it
 	numLeaves := 1 << nodeLevel
@@ -269,31 +302,10 @@ func (n *nodeCache) GetNode(ctx context.Context, id compact.NodeID) ([]byte, err
 	return r.GetRootHash(nil)
 }
 
-// newTileFetcher returns a GetTileFunc based on the passed in Fetcher and log size.
-func newTileFetcher(f Fetcher, logSize uint64) GetTileFunc {
-	return func(ctx context.Context, level, index uint64) (*api.HashTile, error) {
-		p := layout.TilePath(level, index, logSize)
-		t, err := f(ctx, p)
-		if err != nil {
-			if !errors.Is(err, os.ErrNotExist) {
-				return nil, fmt.Errorf("failed to read tile at %q: %w", p, err)
-			}
-			return nil, err
-		}
-
-		var tile api.HashTile
-		if err := tile.UnmarshalText(t); err != nil {
-			return nil, fmt.Errorf("failed to parse tile: %w", err)
-		}
-		return &tile, nil
-	}
-}
-
 // GetEntryBundle fetches the entry bundle at the given _tile index_.
-func GetEntryBundle(ctx context.Context, f Fetcher, i, logSize uint64) (api.EntryBundle, error) {
+func GetEntryBundle(ctx context.Context, f EntryBundleFetcherFunc, i, logSize uint64) (api.EntryBundle, error) {
 	bundle := api.EntryBundle{}
-	p := layout.EntriesPath(i, logSize)
-	sRaw, err := f(ctx, p)
+	sRaw, err := f(ctx, i, logSize)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return bundle, fmt.Errorf("leaf bundle at index %d not found: %v", i, err)
@@ -310,7 +322,8 @@ func GetEntryBundle(ctx context.Context, f Fetcher, i, logSize uint64) (api.Entr
 // This tracker handles verification that updates to the tracked log state are
 // consistent with previously seen states.
 type LogStateTracker struct {
-	Fetcher Fetcher
+	CPFetcher   CheckpointFetcherFunc
+	TileFetcher TileFetcherFunc
 	// Origin is the expected first line of checkpoints from the log.
 	Origin              string
 	ConsensusCheckpoint ConsensusCheckpointFunc
@@ -331,10 +344,11 @@ type LogStateTracker struct {
 // NewLogStateTracker creates a newly initialised tracker.
 // If a serialised LogState representation is provided then this is used as the
 // initial tracked state, otherwise a log state is fetched from the target log.
-func NewLogStateTracker(ctx context.Context, f Fetcher, checkpointRaw []byte, nV note.Verifier, origin string, cc ConsensusCheckpointFunc) (LogStateTracker, error) {
+func NewLogStateTracker(ctx context.Context, cpF CheckpointFetcherFunc, tF TileFetcherFunc, checkpointRaw []byte, nV note.Verifier, origin string, cc ConsensusCheckpointFunc) (LogStateTracker, error) {
 	ret := LogStateTracker{
 		ConsensusCheckpoint: cc,
-		Fetcher:             f,
+		CPFetcher:           cpF,
+		TileFetcher:         tF,
 		LatestConsistent:    log.Checkpoint{},
 		CheckpointNote:      nil,
 		CpSigVerifier:       nV,
@@ -347,7 +361,7 @@ func NewLogStateTracker(ctx context.Context, f Fetcher, checkpointRaw []byte, nV
 			return ret, err
 		}
 		ret.LatestConsistent = *cp
-		ret.ProofBuilder, err = NewProofBuilder(ctx, ret.LatestConsistent, ret.Fetcher)
+		ret.ProofBuilder, err = NewProofBuilder(ctx, ret.LatestConsistent, ret.TileFetcher)
 		if err != nil {
 			return ret, fmt.Errorf("NewProofBuilder: %v", err)
 		}
@@ -390,7 +404,7 @@ func (lst *LogStateTracker) Update(ctx context.Context) ([]byte, [][]byte, []byt
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	builder, err := NewProofBuilder(ctx, *c, lst.Fetcher)
+	builder, err := NewProofBuilder(ctx, *c, lst.TileFetcher)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to create proof builder: %w", err)
 	}
@@ -421,7 +435,7 @@ func (lst *LogStateTracker) Update(ctx context.Context) ([]byte, [][]byte, []byt
 }
 
 // CheckConsistency is a wapper function which simplifies verifying consistency between two or more checkpoints.
-func CheckConsistency(ctx context.Context, f Fetcher, cp []log.Checkpoint) error {
+func CheckConsistency(ctx context.Context, f TileFetcherFunc, cp []log.Checkpoint) error {
 	if l := len(cp); l < 2 {
 		return fmt.Errorf("passed %d checkpoints, need at least 2", l)
 	}
