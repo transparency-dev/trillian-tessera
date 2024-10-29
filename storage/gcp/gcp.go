@@ -471,7 +471,7 @@ func (s *spannerSequencer) initDB(ctx context.Context) error {
 	) PRIMARY KEY (id);
 	*/
 
-	// Set default values for a newly inisialised schema - these rows being present are a precondition for
+	// Set default values for a newly initialised schema - these rows being present are a precondition for
 	// sequencing and integration to occur.
 	// Note that this will only succeed if no row exists, so there's no danger
 	// of "resetting" an existing log.
