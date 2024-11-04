@@ -12,7 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package api contains the tiles definitions from the tlog-tiles spec.
+// Package api contains the tiles definitions from the [tlog-tiles API].
+//
+// [tlog-tiles API]: https://c2sp.org/tlog-tiles
 package api
 
 import (
