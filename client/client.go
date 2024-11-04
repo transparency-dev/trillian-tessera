@@ -13,7 +13,9 @@
 // limitations under the License.
 
 // Package client provides client support for interacting with logs that
-// uses the tlog-tiles API.
+// uses the [tlog-tiles API].
+//
+// [tlog-tiles API]: https://c2sp.org/tlog-tiles
 package client
 
 import (

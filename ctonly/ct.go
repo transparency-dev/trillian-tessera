@@ -32,7 +32,7 @@
 // Package ctonly has support for CT Tiles API.
 //
 // This code should not be reused outside of CT.
-// Most of this code came from Filipo's Sunlight implementation of https://c2sp.org/ct-static-api.
+// Most of this code came from Filippo's Sunlight implementation of https://c2sp.org/ct-static-api.
 package ctonly
 
 import (
