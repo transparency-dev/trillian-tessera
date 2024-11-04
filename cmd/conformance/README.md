@@ -2,7 +2,7 @@
 
 This directory contains personalities that serve a dual purpose:
  - To provide a simple example of a personality that can be deployed with each backend
- - To function as conformance and performance harnesses for Tessera (using the [hammer](../../hammer/))
+ - To function as conformance and performance harnesses for Tessera (using the [hammer](../../internal/hammer/))
 
 Each subdirectory contains an implementation of the same personality built on top of Tessera.
 Implementations are provided that use:

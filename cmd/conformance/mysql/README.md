@@ -55,7 +55,7 @@ In this example, we're running 256 writers against the log to add 1024 new leave
 Note that the writes are sent to the HTTP server we brought up in the previous step, but reads are sent directly to the file system.
 
 ```shell
-go run ./hammer \
+go run ./internal/hammer \
   --log_public_key=transparency.dev/tessera/example+ae330e15+ASf4/L1zE859VqlfQgGzKy34l91Gl8W6wfwp+vKP62DW \
   --log_url=http://localhost:2024/ \
   --max_read_ops=0 \
