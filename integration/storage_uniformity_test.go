@@ -25,6 +25,9 @@ import (
 
 type StorageContract interface {
 	Add(ctx context.Context, entry *tessera.Entry) tessera.IndexFuture
+	ReadCheckpoint(ctx context.Context) ([]byte, error)
+	ReadTile(ctx context.Context, level, index, treeSize uint64) ([]byte, error)
+	ReadEntryBundle(ctx context.Context, index, treeSize uint64) ([]byte, error)
 }
 
 var (
