@@ -188,7 +188,7 @@ func (s *Storage) writeTile(ctx context.Context, tx *sql.Tx, level, index uint64
 // 3. Partial tile request with full/larger partial tile output: Return trimmed partial tile with correct tile width.
 // 4. Partial tile request with partial tile (same width) output: Return partial tile.
 // 5. Partial tile request with smaller partial tile output: Return error.
-func (s *Storage) ReadEntryBundle(ctx context.Context, index uint64) ([]byte, error) {
+func (s *Storage) ReadEntryBundle(ctx context.Context, index, treeSize uint64) ([]byte, error) {
 	row := s.db.QueryRowContext(ctx, selectTiledLeavesSQL, index)
 	if err := row.Err(); err != nil {
 		return nil, err

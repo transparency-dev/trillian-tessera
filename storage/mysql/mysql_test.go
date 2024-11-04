@@ -213,7 +213,7 @@ func TestReadMissingEntryBundle(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			entryBundle, err := s.ReadEntryBundle(ctx, test.index)
+			entryBundle, err := s.ReadEntryBundle(ctx, test.index, test.index)
 			if err != nil {
 				t.Errorf("got err: %v", err)
 			}
@@ -335,7 +335,7 @@ func TestEntryBundleRoundTrip(t *testing.T) {
 			if err != nil {
 				t.Errorf("Add got err: %v", err)
 			}
-			entryBundleRaw, err := s.ReadEntryBundle(ctx, entryIndex/256)
+			entryBundleRaw, err := s.ReadEntryBundle(ctx, entryIndex/256, entryIndex)
 			if err != nil {
 				t.Errorf("ReadEntryBundle got err: %v", err)
 			}
