@@ -27,7 +27,7 @@ import (
 	"github.com/transparency-dev/merkle/rfc6962"
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/api"
-	"github.com/transparency-dev/trillian-tessera/storage"
+	"github.com/transparency-dev/trillian-tessera/storage/internal"
 	"k8s.io/klog/v2"
 )
 
