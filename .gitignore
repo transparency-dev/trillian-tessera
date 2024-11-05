@@ -23,3 +23,8 @@ go.work.sum
 
 # Project IDX
 .idx/
+
+# Terraform and terragrunt files
+/deployment/.terraform
+/deployment/*.tfstate.backup
+/deployment/**/.terragrunt-cache
