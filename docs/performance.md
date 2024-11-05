@@ -25,25 +25,25 @@ This document describes the performance of each Trillian Tessera storage impleme
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
 │Read (8 workers): Current max: 0/s. Oversupply in last second: 0      │
-│Write (256 workers): Current max: 409/s. Oversupply in last second: 0 │
-│TreeSize: 240921 (Δ 307qps over 30s)                                  │
-│Time-in-queue: 86ms/566ms/2172ms (min/avg/max)                        │
-│Observed-time-to-integrate: 516ms/1056ms/2531ms (min/avg/max)         │
+│Write (400 workers): Current max: 527/s. Oversupply in last second: 0 │
+│TreeSize: 372394 (Δ 457qps over 30s)                                  │
+│Time-in-queue: 57ms/400ms/1225ms (min/avg/max)                        │
+│Observed-time-to-integrate: 895ms/1793ms/7094ms (min/avg/max)         │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
-The bottleneck is at the dockerized MySQL instance, which consumes around 50% of the memory.
+The bottleneck is at the dockerized MySQL instance, which consumes around 50% of the memory. `kswapd0` started consuming 100% swapping the memory when pushing through the limit.
 
 ```
-top - 20:07:16 up 9 min,  3 users,  load average: 0.55, 0.56, 0.29
-Tasks: 103 total,   1 running, 102 sleeping,   0 stopped,   0 zombie
-%Cpu(s):  3.5 us,  1.7 sy,  0.0 ni, 89.9 id,  2.9 wa,  0.0 hi,  2.0 si,  0.0 st 
-MiB Mem :    970.0 total,     74.5 free,    932.7 used,     65.2 buff/cache     
-MiB Swap:      0.0 total,      0.0 free,      0.0 used.     37.3 avail Mem 
+top - 18:15:31 up 18 min,  3 users,  load average: 0.12, 0.26, 0.13
+Tasks: 103 total,   1 running, 101 sleeping,   0 stopped,   1 zombie
+%Cpu(s):  2.7 us,  2.0 sy,  0.0 ni, 91.3 id,  0.8 wa,  0.0 hi,  3.0 si,  0.2 st 
+MiB Mem :    970.0 total,     71.8 free,    924.5 used,     87.1 buff/cache     
+MiB Swap:      0.0 total,      0.0 free,      0.0 used.     45.5 avail Mem 
 
     PID USER      PR  NI    VIRT    RES    SHR S  %CPU  %MEM     TIME+ COMMAND
-   1770 root      20   0 1231828  22808      0 S   8.6   2.3   0:18.35 conformance-mys
-   1140 999       20   0 1842244 493652      0 S   4.0  49.7   0:13.93 mysqld
+   3021 root      20   0 1231580  24544   3476 S  10.3   2.5   0:17.89 conformance-mys
+   2675 999       20   0 1842248 475440   3396 S   4.0  47.9   0:09.91 mysqld
 ```
 
 #### Steps
@@ -53,11 +53,11 @@ MiB Swap:      0.0 total,      0.0 free,      0.0 used.     37.3 avail Mem
 1. [Install Go](https://go.dev/doc/install)
    
    ```sh
-   instance:~$ wget https://go.dev/dl/go1.23.0.linux-amd64.tar.gz
-   instance:~$ sudo rm -rf /usr/local/go && sudo tar -C /usr/local -xzf go1.23.0.linux-amd64.tar.gz
+   instance:~$ wget https://go.dev/dl/go1.23.2.linux-amd64.tar.gz
+   instance:~$ sudo rm -rf /usr/local/go && sudo tar -C /usr/local -xzf go1.23.2.linux-amd64.tar.gz
    instance:~$ export PATH=$PATH:/usr/local/go/bin
    instance:~$ go version
-   go version go1.23.0 linux/amd64
+   go version go1.23.2 linux/amd64
    ```
 
 1. [Install Docker using the `apt` repository](https://docs.docker.com/engine/install/ubuntu/#install-using-the-repository)
@@ -68,7 +68,7 @@ MiB Swap:      0.0 total,      0.0 free,      0.0 used.     37.3 avail Mem
    instance:~$ sudo apt-get install git -y -q
    ...
    instance:~$ git version
-   git version 2.39.2
+   git version 2.39.5
    ```
 
 1. Clone the Trillian Tessera repository
@@ -113,15 +113,27 @@ MiB Swap:      0.0 total,      0.0 free,      0.0 used.     37.3 avail Mem
 
 ```
 ┌───────────────────────────────────────────────────────────────────────┐
-│Read (8 workers): Current max: 0/s. Oversupply in last second: 0       │
-│Write (512 workers): Current max: 2571/s. Oversupply in last second: 0 │
-│TreeSize: 2530480 (Δ 2047qps over 30s)                                 │
-│Time-in-queue: 41ms/120ms/288ms (min/avg/max)                          │
-│Observed-time-to-integrate: 568ms/636ms/782ms (min/avg/max)            │
+│Read (66 workers): Current max: 1/s. Oversupply in last second: 0      │
+│Write (541 workers): Current max: 4139/s. Oversupply in last second: 0 │
+│TreeSize: 1087381 (Δ 3121qps over 30s)                                 │
+│Time-in-queue: 71ms/339ms/1320ms (min/avg/max)                         │
+│Observed-time-to-integrate: 887ms/2834ms/8510ms (min/avg/max)          │
 └───────────────────────────────────────────────────────────────────────┘
 ```
 
 The bottleneck comes from CPU usage of the `cmd/conformance/mysql` binary on the free tier VM instance. The Cloud SQL (MySQL) CPU usage is lower than 10%.
+
+```
+top - 00:57:43 up  7:00,  2 users,  load average: 0.13, 0.15, 0.07
+Tasks:  91 total,   1 running,  90 sleeping,   0 stopped,   0 zombie
+%Cpu(s): 10.6 us,  3.4 sy,  0.0 ni, 81.8 id,  0.0 wa,  0.0 hi,  4.1 si,  0.2 st 
+MiB Mem :    970.0 total,    314.0 free,    529.5 used,    275.9 buff/cache     
+MiB Swap:      0.0 total,      0.0 free,      0.0 used.    440.5 avail Mem 
+
+    PID USER      PR  NI    VIRT    RES    SHR S  %CPU  %MEM     TIME+ COMMAND
+  10240 rogerng+  20   0 1299188  77288   5464 S  32.9   7.8   1:04.62 mysql
+    371 root      20   0  221788   3192      0 S   0.7   0.3   0:18.78 rsyslo
+```
 
 #### Steps
 
@@ -134,11 +146,11 @@ The bottleneck comes from CPU usage of the `cmd/conformance/mysql` binary on the
 1. [Install Go](https://go.dev/doc/install)
    
    ```sh
-   instance:~$ wget https://go.dev/dl/go1.23.0.linux-amd64.tar.gz
-   instance:~$ sudo rm -rf /usr/local/go && sudo tar -C /usr/local -xzf go1.23.0.linux-amd64.tar.gz
+   instance:~$ wget https://go.dev/dl/go1.23.2.linux-amd64.tar.gz
+   instance:~$ sudo rm -rf /usr/local/go && sudo tar -C /usr/local -xzf go1.23.2.linux-amd64.tar.gz
    instance:~$ export PATH=$PATH:/usr/local/go/bin
    instance:~$ go version
-   go version go1.23.0 linux/amd64
+   go version go1.23.2 linux/amd64
    ```
 
 1. Install Git
@@ -147,7 +159,7 @@ The bottleneck comes from CPU usage of the `cmd/conformance/mysql` binary on the
    instance:~$ sudo apt-get install git -y -q
    ...
    instance:~$ git version
-   git version 2.39.2
+   git version 2.39.5
    ```
 
 1. Clone the Trillian Tessera repository
@@ -157,7 +169,7 @@ The bottleneck comes from CPU usage of the `cmd/conformance/mysql` binary on the
    Cloning into 'trillian-tessera'...
    ```
 
-1. Run `cloud-sql-proxy`
+1. Run [`cloud-sql-proxy`](https://cloud.google.com/sql/docs/mysql/sql-proxy#install)
 
    ```sh
    instance:~$ ./cloud-sql-proxy --port 3306 transparency-dev-playground:us-central1:mysql-dev-instance-1

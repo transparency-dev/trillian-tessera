@@ -14,7 +14,16 @@
 
 -- MySQL version of the Trillian Tessera database schema.
 
--- "Checkpoint" table stores a single row that records the current state of the log. It is updated after every sequence and integration.
+-- "SequencingMetadata" table stores the next sequence index. It is updated after every sequencing.
+CREATE TABLE IF NOT EXISTS `SequencingMetadata` (
+  -- id is expected to be always 0 to maintain a maximum of a single row.
+  `id`             INT UNSIGNED NOT NULL,
+  -- next_sequence_index is the index of the next to-be-sequenced entry.
+  `next_sequence_index` BIGINT UNSIGNED NOT NULL,
+  PRIMARY KEY(`id`)
+);
+
+-- "Checkpoint" table stores a single row that records the current state of the log. It is updated after every integration.
 CREATE TABLE IF NOT EXISTS `Checkpoint` (
   -- id is expected to be always 0 to maintain a maximum of a single row.
   `id`    INT UNSIGNED NOT NULL,
