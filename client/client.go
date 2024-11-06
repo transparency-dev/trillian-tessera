@@ -27,6 +27,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path"
 	"sort"
 	"strings"
 
@@ -144,6 +145,23 @@ func (h HTTPFetcher) ReadTile(ctx context.Context, l, i, sz uint64) ([]byte, err
 
 func (h HTTPFetcher) ReadEntryBundle(ctx context.Context, i, sz uint64) ([]byte, error) {
 	return h.fetch(ctx, layout.EntriesPath(i, sz))
+}
+
+// FileFetcher knows how to fetch log artifacts from a filesystem rooted at Root.
+type FileFetcher struct {
+	Root string
+}
+
+func (f FileFetcher) ReadCheckpoint(_ context.Context) ([]byte, error) {
+	return os.ReadFile(path.Join(f.Root, layout.CheckpointPath))
+}
+
+func (f FileFetcher) ReadTile(_ context.Context, l, i, sz uint64) ([]byte, error) {
+	return os.ReadFile(path.Join(f.Root, layout.TilePath(l, i, sz)))
+}
+
+func (f FileFetcher) ReadEntryBundle(_ context.Context, i, sz uint64) ([]byte, error) {
+	return os.ReadFile(path.Join(f.Root, layout.EntriesPath(i, sz)))
 }
 
 // ConsensusCheckpointFunc is a function which returns the largest checkpoint known which is
