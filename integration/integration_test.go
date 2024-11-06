@@ -26,7 +26,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"path"
 	"strconv"
 	"strings"
 	"sync"
@@ -36,7 +35,6 @@ import (
 	"github.com/transparency-dev/formats/log"
 	"github.com/transparency-dev/merkle/proof"
 	"github.com/transparency-dev/merkle/rfc6962"
-	"github.com/transparency-dev/trillian-tessera/api/layout"
 	"github.com/transparency-dev/trillian-tessera/client"
 	"golang.org/x/mod/sumdb/note"
 	"golang.org/x/sync/errgroup"
@@ -96,7 +94,7 @@ func TestMain(m *testing.M) {
 		logReadTile = hf.ReadTile
 		logReadEntryBundle = hf.ReadEntryBundle
 	case "file":
-		ff := fileReader{dir: logReadBaseURL.Path}
+		ff := client.FileFetcher{Root: logReadBaseURL.Path}
 		logReadCP = ff.ReadCheckpoint
 		logReadTile = ff.ReadTile
 		logReadEntryBundle = ff.ReadEntryBundle
@@ -209,22 +207,6 @@ func TestLiveLogIntegration(t *testing.T) {
 	if err := client.CheckConsistency(ctx, logReadTile, checkpoints); err != nil {
 		t.Errorf("log consistency checks failed: %v", err)
 	}
-}
-
-type fileReader struct {
-	dir string
-}
-
-func (f *fileReader) ReadCheckpoint(_ context.Context) ([]byte, error) {
-	return os.ReadFile(path.Join(f.dir, layout.CheckpointPath))
-}
-
-func (f *fileReader) ReadTile(_ context.Context, l, i, sz uint64) ([]byte, error) {
-	return os.ReadFile(path.Join(f.dir, layout.TilePath(l, i, sz)))
-}
-
-func (f *fileReader) ReadEntryBundle(_ context.Context, i, sz uint64) ([]byte, error) {
-	return os.ReadFile(path.Join(f.dir, layout.EntriesPath(i, sz)))
 }
 
 type entryWriter struct {

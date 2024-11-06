@@ -100,13 +100,10 @@ func main() {
 	}
 
 	f, w := newLogClientsFromFlags()
-	cpFetcher := client.CheckpointFetcher(f.Fetch)
-	tileFetcher := client.TileFetcher(f.Fetch)
-	entryBundleFetcher := client.EntryBundleFetcher(f.Fetch)
 
 	var cpRaw []byte
-	cons := client.UnilateralConsensus(cpFetcher)
-	tracker, err := client.NewLogStateTracker(ctx, cpFetcher, tileFetcher, cpRaw, logSigV, logSigV.Name(), cons)
+	cons := client.UnilateralConsensus(f.ReadCheckpoint)
+	tracker, err := client.NewLogStateTracker(ctx, f.ReadCheckpoint, f.ReadTile, cpRaw, logSigV, logSigV.Name(), cons)
 	if err != nil {
 		klog.Exitf("Failed to create LogStateTracker: %v", err)
 	}
@@ -121,7 +118,7 @@ func main() {
 	go ha.errorLoop(ctx)
 
 	gen := newLeafGenerator(tracker.LatestConsistent.Size, *leafMinSize, *dupChance)
-	hammer := NewHammer(&tracker, entryBundleFetcher, w.Write, gen, ha.seqLeafChan, ha.errChan)
+	hammer := NewHammer(&tracker, f.ReadEntryBundle, w.Write, gen, ha.seqLeafChan, ha.errChan)
 
 	exitCode := 0
 	if *leafWriteGoal > 0 {
@@ -367,7 +364,7 @@ func (a *HammerAnalyser) errorLoop(ctx context.Context) {
 // dupChance provides the probability that a new leaf will be a duplicate of a previous entry.
 // Leaves will be unique if dupChance is 0, and if set to 1 then all values will be duplicates.
 // startSize should be set to the initial size of the log so that repeated runs of the
-// hammer can start seeding leaves to avoid duplicates with previous runs.
+// hammer can start seeding leaves to avoid duplicates with p:e revious runs.
 func newLeafGenerator(startSize uint64, minLeafSize int, dupChance float64) func() []byte {
 	genLeaf := func(n uint64) []byte {
 		// Make a slice with half the number of requested bytes since we'll
