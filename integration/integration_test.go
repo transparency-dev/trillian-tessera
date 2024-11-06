@@ -26,6 +26,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path"
 	"strconv"
 	"strings"
 	"sync"
@@ -35,6 +36,7 @@ import (
 	"github.com/transparency-dev/formats/log"
 	"github.com/transparency-dev/merkle/proof"
 	"github.com/transparency-dev/merkle/rfc6962"
+	"github.com/transparency-dev/trillian-tessera/api/layout"
 	"github.com/transparency-dev/trillian-tessera/client"
 	"golang.org/x/mod/sumdb/note"
 	"golang.org/x/sync/errgroup"
@@ -84,18 +86,23 @@ func TestMain(m *testing.M) {
 		klog.Fatalf("failed to parse logURL: %v", err)
 	}
 
-	var logRead client.Fetcher
 	switch logReadBaseURL.Scheme {
 	case "http", "https":
-		logRead = httpRead
+		hf, err := client.NewHTTPFetcher(logReadBaseURL, nil)
+		if err != nil {
+			klog.Fatalf("NewHTTPFetcher: %v", err)
+		}
+		logReadCP = hf.ReadCheckpoint
+		logReadTile = hf.ReadTile
+		logReadEntryBundle = hf.ReadEntryBundle
 	case "file":
-		logRead = fileRead
+		ff := fileReader{dir: logReadBaseURL.Path}
+		logReadCP = ff.ReadCheckpoint
+		logReadTile = ff.ReadTile
+		logReadEntryBundle = ff.ReadEntryBundle
 	default:
 		klog.Fatalf("unsupported url scheme: %s", logReadBaseURL.Scheme)
 	}
-	logReadCP = client.CheckpointFetcher(logRead)
-	logReadTile = client.TileFetcher(logRead)
-	logReadEntryBundle = client.EntryBundleFetcher(logRead)
 
 	os.Exit(m.Run())
 }
@@ -204,43 +211,20 @@ func TestLiveLogIntegration(t *testing.T) {
 	}
 }
 
-func httpRead(ctx context.Context, path string) ([]byte, error) {
-	u, err := url.JoinPath(*logURL, path)
-	if err != nil {
-		return nil, err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
-	if err != nil {
-		return nil, err
-	}
-	resp, err := hc.Do(req.WithContext(ctx))
-	if err != nil {
-		return nil, err
-	}
-	defer func() {
-		if err := resp.Body.Close(); err != nil {
-			klog.Errorf("resp.Body.Close(): %v", err)
-		}
-	}()
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read body: %v", err)
-	}
-
-	switch resp.StatusCode {
-	case http.StatusNotFound:
-		klog.Infof("Not found: %q", u)
-		return nil, os.ErrNotExist
-	case http.StatusOK:
-		break
-	default:
-		return nil, fmt.Errorf("unexpected http status %q", resp.Status)
-	}
-	return body, nil
+type fileReader struct {
+	dir string
 }
 
-func fileRead(_ context.Context, path string) ([]byte, error) {
-	return os.ReadFile(logReadBaseURL.JoinPath(path).Path)
+func (f *fileReader) ReadCheckpoint(_ context.Context) ([]byte, error) {
+	return os.ReadFile(path.Join(f.dir, layout.CheckpointPath))
+}
+
+func (f *fileReader) ReadTile(_ context.Context, l, i, sz uint64) ([]byte, error) {
+	return os.ReadFile(path.Join(f.dir, layout.TilePath(l, i, sz)))
+}
+
+func (f *fileReader) ReadEntryBundle(_ context.Context, i, sz uint64) ([]byte, error) {
+	return os.ReadFile(path.Join(f.dir, layout.EntriesPath(i, sz)))
 }
 
 type entryWriter struct {

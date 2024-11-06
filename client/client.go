@@ -37,6 +37,7 @@ import (
 	"github.com/transparency-dev/trillian-tessera/api"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
 	"golang.org/x/mod/sumdb/note"
+	"k8s.io/klog/v2"
 )
 
 var (
@@ -72,20 +73,16 @@ type EntryBundleFetcherFunc func(ctx context.Context, bundleIndex, logSize uint6
 //
 // rootURL should end in a trailing slash.
 // c may be nil, in which case http.DefaultClient will be used.
-func NewHTTPFetcher(rootURL string, c *http.Client) (*HTTPFetcher, error) {
-	if !strings.HasSuffix(rootURL, "/") {
-		rootURL += "/"
-	}
-	u, err := url.Parse(rootURL)
-	if err != nil {
-		return nil, fmt.Errorf("URL invalid: %v", err)
+func NewHTTPFetcher(rootURL *url.URL, c *http.Client) (*HTTPFetcher, error) {
+	if !strings.HasSuffix(rootURL.String(), "/") {
+		rootURL.Path += "/"
 	}
 	if c == nil {
 		c = http.DefaultClient
 	}
 	return &HTTPFetcher{
 		c:       c,
-		rootURL: u,
+		rootURL: rootURL,
 	}, nil
 }
 
@@ -121,6 +118,7 @@ func (h HTTPFetcher) fetch(ctx context.Context, p string) ([]byte, error) {
 	switch r.StatusCode {
 	case http.StatusOK:
 		// All good, continue below
+		break
 	case http.StatusNotFound:
 		// Need to return ErrNotExist here, by contract.
 		return nil, fmt.Errorf("get(%q): %v", u.String(), os.ErrNotExist)
@@ -128,7 +126,11 @@ func (h HTTPFetcher) fetch(ctx context.Context, p string) ([]byte, error) {
 		return nil, fmt.Errorf("get(%q): %v", u.String(), r.StatusCode)
 	}
 
-	defer r.Body.Close()
+	defer func() {
+		if err := r.Body.Close(); err != nil {
+			klog.Errorf("resp.Body.Close(): %v", err)
+		}
+	}()
 	return io.ReadAll(r.Body)
 }
 
