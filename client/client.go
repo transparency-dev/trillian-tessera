@@ -23,8 +23,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
+	"net/url"
 	"os"
 	"sort"
+	"strings"
 
 	"github.com/transparency-dev/formats/log"
 	"github.com/transparency-dev/merkle/compact"
@@ -39,43 +43,105 @@ var (
 	hasher = rfc6962.DefaultHasher
 )
 
-// Fetcher is the signature of a function which can retrieve arbitrary files from
-// a log's data storage, via whatever appropriate mechanism.
-// The path parameter is relative to the root of the log storage.
+// CheckpointFetcherFunc is the signature of a function which can retrieve the latest
+// checkpoint from a log's data storage.
 //
 // Note that the implementation of this MUST return (either directly or wrapped)
 // an os.ErrIsNotExit when the file referenced by path does not exist, e.g. a HTTP
 // based implementation MUST return this error when it receives a 404 StatusCode.
-type Fetcher func(ctx context.Context, path string) ([]byte, error)
-
-// CheckpointFetcher is the signature of a function which can retrieve the latest
-// checkpoint from a log's data storage.
 type CheckpointFetcherFunc func(ctx context.Context) ([]byte, error)
 
-func CheckpointFetcher(f Fetcher) CheckpointFetcherFunc {
-	return func(ctx context.Context) ([]byte, error) {
-		return f(ctx, layout.CheckpointPath)
-	}
-}
-
-// TileFetcher is the signature of a function which can fetch the raw data
+// TileFetcherFunc is the signature of a function which can fetch the raw data
 // for a given tile.
+//
+// Note that the implementation of this MUST return (either directly or wrapped)
+// an os.ErrIsNotExit when the file referenced by path does not exist, e.g. a HTTP
+// based implementation MUST return this error when it receives a 404 StatusCode.
 type TileFetcherFunc func(ctx context.Context, level, index, logSize uint64) ([]byte, error)
 
-func TileFetcher(f Fetcher) TileFetcherFunc {
-	return func(ctx context.Context, level, index, logSize uint64) ([]byte, error) {
-		return f(ctx, layout.TilePath(level, index, logSize))
-	}
-}
-
-// EntryBundleEntriesFetcher is the signature of a function which can fetch the raw data
+// EntryBundleFetcherFunc is the signature of a function which can fetch the raw data
 // for a given entry bundle.
+//
+// Note that the implementation of this MUST return (either directly or wrapped)
+// an os.ErrIsNotExit when the file referenced by path does not exist, e.g. a HTTP
+// based implementation MUST return this error when it receives a 404 StatusCode.
 type EntryBundleFetcherFunc func(ctx context.Context, bundleIndex, logSize uint64) ([]byte, error)
 
-func EntryBundleFetcher(f Fetcher) EntryBundleFetcherFunc {
-	return func(ctx context.Context, bundleIndex, logSize uint64) ([]byte, error) {
-		return f(ctx, layout.EntriesPath(bundleIndex, logSize))
+// NewHTTPFetcher creates a new HTTPFetcher for the log rooted at the given URL, using
+// the provided HTTP client.
+//
+// rootURL should end in a trailing slash.
+// c may be nil, in which case http.DefaultClient will be used.
+func NewHTTPFetcher(rootURL string, c *http.Client) (*HTTPFetcher, error) {
+	if !strings.HasSuffix(rootURL, "/") {
+		rootURL += "/"
 	}
+	u, err := url.Parse(rootURL)
+	if err != nil {
+		return nil, fmt.Errorf("URL invalid: %v", err)
+	}
+	if c == nil {
+		c = http.DefaultClient
+	}
+	return &HTTPFetcher{
+		c:       c,
+		rootURL: u,
+	}, nil
+}
+
+// HTTPFetcher knows how to fetch log artifacts from a log being served via HTTP.
+type HTTPFetcher struct {
+	c          *http.Client
+	rootURL    *url.URL
+	authHeader string
+}
+
+// SetAuthorizationHeader sets the value to be used with an Authorization: header
+// for every request made by this fetcher.
+func (h *HTTPFetcher) SetAuthorizationHeader(v string) {
+	h.authHeader = v
+}
+
+func (h HTTPFetcher) fetch(ctx context.Context, p string) ([]byte, error) {
+	u, err := h.rootURL.Parse(p)
+	if err != nil {
+		return nil, fmt.Errorf("invalid URL: %v", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("NewRequestWithContext(%q): %v", u.String(), err)
+	}
+	if h.authHeader != "" {
+		req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", h.authHeader))
+	}
+	r, err := h.c.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("get(%q): %v", u.String(), err)
+	}
+	switch r.StatusCode {
+	case http.StatusOK:
+		// All good, continue below
+	case http.StatusNotFound:
+		// Need to return ErrNotExist here, by contract.
+		return nil, fmt.Errorf("get(%q): %v", u.String(), os.ErrNotExist)
+	default:
+		return nil, fmt.Errorf("get(%q): %v", u.String(), r.StatusCode)
+	}
+
+	defer r.Body.Close()
+	return io.ReadAll(r.Body)
+}
+
+func (h HTTPFetcher) ReadCheckpoint(ctx context.Context) ([]byte, error) {
+	return h.fetch(ctx, layout.CheckpointPath)
+}
+
+func (h HTTPFetcher) ReadTile(ctx context.Context, l, i, sz uint64) ([]byte, error) {
+	return h.fetch(ctx, layout.TilePath(l, i, sz))
+}
+
+func (h HTTPFetcher) ReadEntryBundle(ctx context.Context, i, sz uint64) ([]byte, error) {
+	return h.fetch(ctx, layout.EntriesPath(i, sz))
 }
 
 // ConsensusCheckpointFunc is a function which returns the largest checkpoint known which is
