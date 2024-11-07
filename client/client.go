@@ -23,13 +23,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
-	"net/http"
-	"net/url"
 	"os"
-	"path"
 	"sort"
-	"strings"
 
 	"github.com/transparency-dev/formats/log"
 	"github.com/transparency-dev/merkle/compact"
@@ -38,7 +33,6 @@ import (
 	"github.com/transparency-dev/trillian-tessera/api"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
 	"golang.org/x/mod/sumdb/note"
-	"k8s.io/klog/v2"
 )
 
 var (
@@ -65,104 +59,9 @@ type TileFetcherFunc func(ctx context.Context, level, index, logSize uint64) ([]
 // for a given entry bundle.
 //
 // Note that the implementation of this MUST return (either directly or wrapped)
-// an os.ErrIsNotExit when the file referenced by path does not exist, e.g. a HTTP
+// an os.ErrIsNotExist when the file referenced by path does not exist, e.g. a HTTP
 // based implementation MUST return this error when it receives a 404 StatusCode.
 type EntryBundleFetcherFunc func(ctx context.Context, bundleIndex, logSize uint64) ([]byte, error)
-
-// NewHTTPFetcher creates a new HTTPFetcher for the log rooted at the given URL, using
-// the provided HTTP client.
-//
-// rootURL should end in a trailing slash.
-// c may be nil, in which case http.DefaultClient will be used.
-func NewHTTPFetcher(rootURL *url.URL, c *http.Client) (*HTTPFetcher, error) {
-	if !strings.HasSuffix(rootURL.String(), "/") {
-		rootURL.Path += "/"
-	}
-	if c == nil {
-		c = http.DefaultClient
-	}
-	return &HTTPFetcher{
-		c:       c,
-		rootURL: rootURL,
-	}, nil
-}
-
-// HTTPFetcher knows how to fetch log artifacts from a log being served via HTTP.
-type HTTPFetcher struct {
-	c          *http.Client
-	rootURL    *url.URL
-	authHeader string
-}
-
-// SetAuthorizationHeader sets the value to be used with an Authorization: header
-// for every request made by this fetcher.
-func (h *HTTPFetcher) SetAuthorizationHeader(v string) {
-	h.authHeader = v
-}
-
-func (h HTTPFetcher) fetch(ctx context.Context, p string) ([]byte, error) {
-	u, err := h.rootURL.Parse(p)
-	if err != nil {
-		return nil, fmt.Errorf("invalid URL: %v", err)
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
-	if err != nil {
-		return nil, fmt.Errorf("NewRequestWithContext(%q): %v", u.String(), err)
-	}
-	if h.authHeader != "" {
-		req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", h.authHeader))
-	}
-	r, err := h.c.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("get(%q): %v", u.String(), err)
-	}
-	switch r.StatusCode {
-	case http.StatusOK:
-		// All good, continue below
-		break
-	case http.StatusNotFound:
-		// Need to return ErrNotExist here, by contract.
-		return nil, fmt.Errorf("get(%q): %v", u.String(), os.ErrNotExist)
-	default:
-		return nil, fmt.Errorf("get(%q): %v", u.String(), r.StatusCode)
-	}
-
-	defer func() {
-		if err := r.Body.Close(); err != nil {
-			klog.Errorf("resp.Body.Close(): %v", err)
-		}
-	}()
-	return io.ReadAll(r.Body)
-}
-
-func (h HTTPFetcher) ReadCheckpoint(ctx context.Context) ([]byte, error) {
-	return h.fetch(ctx, layout.CheckpointPath)
-}
-
-func (h HTTPFetcher) ReadTile(ctx context.Context, l, i, sz uint64) ([]byte, error) {
-	return h.fetch(ctx, layout.TilePath(l, i, sz))
-}
-
-func (h HTTPFetcher) ReadEntryBundle(ctx context.Context, i, sz uint64) ([]byte, error) {
-	return h.fetch(ctx, layout.EntriesPath(i, sz))
-}
-
-// FileFetcher knows how to fetch log artifacts from a filesystem rooted at Root.
-type FileFetcher struct {
-	Root string
-}
-
-func (f FileFetcher) ReadCheckpoint(_ context.Context) ([]byte, error) {
-	return os.ReadFile(path.Join(f.Root, layout.CheckpointPath))
-}
-
-func (f FileFetcher) ReadTile(_ context.Context, l, i, sz uint64) ([]byte, error) {
-	return os.ReadFile(path.Join(f.Root, layout.TilePath(l, i, sz)))
-}
-
-func (f FileFetcher) ReadEntryBundle(_ context.Context, i, sz uint64) ([]byte, error) {
-	return os.ReadFile(path.Join(f.Root, layout.EntriesPath(i, sz)))
-}
 
 // ConsensusCheckpointFunc is a function which returns the largest checkpoint known which is
 // signed by logSigV and satisfies some consensus algorithm.
