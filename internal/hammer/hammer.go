@@ -102,8 +102,8 @@ func main() {
 	f, w := newLogClientsFromFlags()
 
 	var cpRaw []byte
-	cons := client.UnilateralConsensus(f.Fetch)
-	tracker, err := client.NewLogStateTracker(ctx, f.Fetch, cpRaw, logSigV, logSigV.Name(), cons)
+	cons := client.UnilateralConsensus(f.ReadCheckpoint)
+	tracker, err := client.NewLogStateTracker(ctx, f.ReadCheckpoint, f.ReadTile, cpRaw, logSigV, logSigV.Name(), cons)
 	if err != nil {
 		klog.Exitf("Failed to create LogStateTracker: %v", err)
 	}
@@ -118,7 +118,7 @@ func main() {
 	go ha.errorLoop(ctx)
 
 	gen := newLeafGenerator(tracker.LatestConsistent.Size, *leafMinSize, *dupChance)
-	hammer := NewHammer(&tracker, f.Fetch, w.Write, gen, ha.seqLeafChan, ha.errChan)
+	hammer := NewHammer(&tracker, f.ReadEntryBundle, w.Write, gen, ha.seqLeafChan, ha.errChan)
 
 	exitCode := 0
 	if *leafWriteGoal > 0 {
@@ -169,7 +169,7 @@ func main() {
 	os.Exit(exitCode)
 }
 
-func NewHammer(tracker *client.LogStateTracker, f client.Fetcher, w LeafWriter, gen func() []byte, seqLeafChan chan<- leafTime, errChan chan<- error) *Hammer {
+func NewHammer(tracker *client.LogStateTracker, f client.EntryBundleFetcherFunc, w LeafWriter, gen func() []byte, seqLeafChan chan<- leafTime, errChan chan<- error) *Hammer {
 	readThrottle := NewThrottle(*maxReadOpsPerSecond)
 	writeThrottle := NewThrottle(*maxWriteOpsPerSecond)
 

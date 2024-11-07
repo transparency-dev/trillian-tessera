@@ -34,7 +34,7 @@ type LeafWriter func(ctx context.Context, data []byte) (uint64, error)
 // NewLeafReader creates a LeafReader.
 // The next function provides a strategy for which leaves will be read.
 // Custom implementations can be passed, or use RandomNextLeaf or MonotonicallyIncreasingNextLeaf.
-func NewLeafReader(tracker *client.LogStateTracker, f client.Fetcher, next func(uint64) uint64, throttle <-chan bool, errChan chan<- error) *LeafReader {
+func NewLeafReader(tracker *client.LogStateTracker, f client.EntryBundleFetcherFunc, next func(uint64) uint64, throttle <-chan bool, errChan chan<- error) *LeafReader {
 	return &LeafReader{
 		tracker:  tracker,
 		f:        f,
@@ -48,7 +48,7 @@ func NewLeafReader(tracker *client.LogStateTracker, f client.Fetcher, next func(
 // This class is not thread safe.
 type LeafReader struct {
 	tracker  *client.LogStateTracker
-	f        client.Fetcher
+	f        client.EntryBundleFetcherFunc
 	next     func(uint64) uint64
 	throttle <-chan bool
 	errChan  chan<- error

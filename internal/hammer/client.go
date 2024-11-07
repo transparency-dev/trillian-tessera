@@ -22,7 +22,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -33,6 +32,12 @@ import (
 )
 
 var ErrRetry = errors.New("retry")
+
+type fetcher interface {
+	ReadCheckpoint(ctx context.Context) ([]byte, error)
+	ReadTile(ctx context.Context, l, i, sz uint64) ([]byte, error)
+	ReadEntryBundle(ctx context.Context, i, sz uint64) ([]byte, error)
+}
 
 // newLogClientsFromFlags returns a fetcher and a writer that will read
 // and write leaves to all logs in the `log_url` flag set.
@@ -58,7 +63,7 @@ func newLogClientsFromFlags() (*roundRobinFetcher, *roundRobinLeafWriter) {
 		return rootURL
 	}
 
-	fetchers := []client.Fetcher{}
+	fetchers := []fetcher{}
 	for _, s := range logURL {
 		fetchers = append(fetchers, newFetcher(rootUrlOrDie(s)))
 	}
@@ -74,62 +79,22 @@ func newLogClientsFromFlags() (*roundRobinFetcher, *roundRobinLeafWriter) {
 }
 
 // newFetcher creates a Fetcher for the log at the given root location.
-func newFetcher(root *url.URL) client.Fetcher {
-	get := getByScheme[root.Scheme]
-	if get == nil {
-		panic(fmt.Errorf("unsupported URL scheme %s", root.Scheme))
-	}
-
-	return func(ctx context.Context, p string) ([]byte, error) {
-		u, err := root.Parse(p)
+func newFetcher(root *url.URL) fetcher {
+	switch root.Scheme {
+	case "http", "https":
+		c, err := client.NewHTTPFetcher(root, nil)
 		if err != nil {
-			return nil, err
+			klog.Exitf("NewHTTPFetcher: %v", err)
 		}
-		return get(ctx, u)
-	}
-}
-
-var getByScheme = map[string]func(context.Context, *url.URL) ([]byte, error){
-	"http":  readHTTP,
-	"https": readHTTP,
-	"file": func(_ context.Context, u *url.URL) ([]byte, error) {
-		return os.ReadFile(u.Path)
-	},
-}
-
-func readHTTP(ctx context.Context, u *url.URL) ([]byte, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-	if *bearerToken != "" {
-		req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", *bearerToken))
-	}
-
-	resp, err := hc.Do(req.WithContext(ctx))
-	if err != nil {
-		return nil, err
-	}
-	defer func() {
-		if err := resp.Body.Close(); err != nil {
-			klog.Errorf("resp.Body.Close(): %v", err)
+		if *bearerToken != "" {
+			c.SetAuthorizationHeader(fmt.Sprintf("Bearer: %s", *bearerToken))
 		}
-	}()
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read body: %v", err)
+		return c
+	case "file":
+		return client.FileFetcher{Root: root.Path}
 	}
-
-	switch resp.StatusCode {
-	case http.StatusNotFound:
-		klog.Infof("Not found: %q", u.String())
-		return nil, os.ErrNotExist
-	case http.StatusOK:
-		break
-	default:
-		return nil, fmt.Errorf("unexpected http status %q", resp.Status)
-	}
-	return body, nil
+	klog.Exitf("Unknown scheme on log URL: %q", root.Scheme)
+	return nil
 }
 
 // roundRobinFetcher ensures that read requests are sent to all configured fetchers
@@ -137,15 +102,25 @@ func readHTTP(ctx context.Context, u *url.URL) ([]byte, error) {
 type roundRobinFetcher struct {
 	sync.Mutex
 	idx int
-	f   []client.Fetcher
+	f   []fetcher
 }
 
-func (rr *roundRobinFetcher) Fetch(ctx context.Context, path string) ([]byte, error) {
+func (rr *roundRobinFetcher) ReadCheckpoint(ctx context.Context) ([]byte, error) {
 	f := rr.next()
-	return f(ctx, path)
+	return f.ReadCheckpoint(ctx)
 }
 
-func (rr *roundRobinFetcher) next() client.Fetcher {
+func (rr *roundRobinFetcher) ReadTile(ctx context.Context, l, i, sz uint64) ([]byte, error) {
+	f := rr.next()
+	return f.ReadTile(ctx, l, i, sz)
+}
+
+func (rr *roundRobinFetcher) ReadEntryBundle(ctx context.Context, i, sz uint64) ([]byte, error) {
+	f := rr.next()
+	return f.ReadEntryBundle(ctx, i, sz)
+}
+
+func (rr *roundRobinFetcher) next() fetcher {
 	rr.Lock()
 	defer rr.Unlock()
 

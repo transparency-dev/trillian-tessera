@@ -21,6 +21,7 @@ import (
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/storage/gcp"
 	"github.com/transparency-dev/trillian-tessera/storage/mysql"
+	"github.com/transparency-dev/trillian-tessera/storage/posix"
 )
 
 type StorageContract interface {
@@ -33,4 +34,5 @@ type StorageContract interface {
 var (
 	_ StorageContract = &mysql.Storage{}
 	_ StorageContract = &gcp.Storage{}
+	_ StorageContract = &posix.Storage{}
 )
