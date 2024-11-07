@@ -28,6 +28,7 @@ import (
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/api"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
+	"github.com/transparency-dev/trillian-tessera/internal/options"
 	storage "github.com/transparency-dev/trillian-tessera/storage/internal"
 	"k8s.io/klog/v2"
 )
@@ -47,10 +48,10 @@ type Storage struct {
 	cpFile *os.File
 
 	curSize uint64
-	newCP   tessera.NewCPFunc
-	parseCP tessera.ParseCPFunc
+	newCP   options.NewCPFunc
+	parseCP options.ParseCPFunc
 
-	entriesPath tessera.EntriesPathFunc
+	entriesPath options.EntriesPathFunc
 }
 
 // NewTreeFunc is the signature of a function which receives information about newly integrated trees.
@@ -59,7 +60,7 @@ type NewTreeFunc func(size uint64, root []byte) error
 // New creates a new POSIX storage.
 // - path is a directory in which the log should be stored
 // - create must only be set when first creating the log, and will create the directory structure and an empty checkpoint
-func New(ctx context.Context, path string, create bool, opts ...func(*tessera.StorageOptions)) (*Storage, error) {
+func New(ctx context.Context, path string, create bool, opts ...func(*options.StorageOptions)) (*Storage, error) {
 	opt := storage.ResolveStorageOptions(opts...)
 
 	r := &Storage{

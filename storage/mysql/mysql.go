@@ -27,6 +27,7 @@ import (
 	"github.com/transparency-dev/merkle/rfc6962"
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/api"
+	options "github.com/transparency-dev/trillian-tessera/internal/options"
 	"github.com/transparency-dev/trillian-tessera/storage/internal"
 	"k8s.io/klog/v2"
 )
@@ -49,13 +50,13 @@ type Storage struct {
 	db    *sql.DB
 	queue *storage.Queue
 
-	newCheckpoint   tessera.NewCPFunc
-	parseCheckpoint tessera.ParseCPFunc
+	newCheckpoint   options.NewCPFunc
+	parseCheckpoint options.ParseCPFunc
 }
 
 // New creates a new instance of the MySQL-based Storage.
 // Note that `tessera.WithCheckpointSignerVerifier()` is mandatory in the `opts` argument.
-func New(ctx context.Context, db *sql.DB, opts ...func(*tessera.StorageOptions)) (*Storage, error) {
+func New(ctx context.Context, db *sql.DB, opts ...func(*options.StorageOptions)) (*Storage, error) {
 	opt := storage.ResolveStorageOptions(opts...)
 	s := &Storage{
 		db:              db,

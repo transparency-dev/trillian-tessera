@@ -20,6 +20,7 @@ import (
 
 	"github.com/transparency-dev/trillian-tessera/api/layout"
 	"github.com/transparency-dev/trillian-tessera/ctonly"
+	"github.com/transparency-dev/trillian-tessera/internal/options"
 )
 
 // Storage described the expected functions from Tessera storage implementations.
@@ -62,8 +63,8 @@ func convertCTEntry(e *ctonly.Entry) *Entry {
 }
 
 // WithCTLayout instructs the underlying storage to use a Static CT API compatible scheme for layout.
-func WithCTLayout() func(*StorageOptions) {
-	return func(opts *StorageOptions) {
+func WithCTLayout() func(*options.StorageOptions) {
+	return func(opts *options.StorageOptions) {
 		opts.EntriesPath = ctEntriesPath
 	}
 }

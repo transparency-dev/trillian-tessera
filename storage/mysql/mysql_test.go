@@ -32,6 +32,7 @@ import (
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/api"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
+	options "github.com/transparency-dev/trillian-tessera/internal/options"
 	"github.com/transparency-dev/trillian-tessera/storage/mysql"
 	"golang.org/x/mod/sumdb/note"
 	"k8s.io/klog/v2"
@@ -133,7 +134,7 @@ func TestNew(t *testing.T) {
 
 	for _, test := range []struct {
 		name    string
-		opts    []func(*tessera.StorageOptions)
+		opts    []func(*options.StorageOptions)
 		wantErr bool
 	}{
 		{
@@ -143,13 +144,13 @@ func TestNew(t *testing.T) {
 		},
 		{
 			name: "standard tessera.WithCheckpointSignerVerifier",
-			opts: []func(*tessera.StorageOptions){
+			opts: []func(*options.StorageOptions){
 				tessera.WithCheckpointSignerVerifier(noteSigner, noteVerifier),
 			},
 		},
 		{
 			name: "all tessera.StorageOption",
-			opts: []func(*tessera.StorageOptions){
+			opts: []func(*options.StorageOptions){
 				tessera.WithCheckpointSignerVerifier(noteSigner, noteVerifier),
 				tessera.WithBatching(1, 1*time.Second),
 				tessera.WithPushback(10),

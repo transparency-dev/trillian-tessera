@@ -17,8 +17,8 @@ package storage
 import (
 	"time"
 
-	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
+	"github.com/transparency-dev/trillian-tessera/internal/options"
 )
 
 const (
@@ -27,8 +27,8 @@ const (
 )
 
 // ResolveStorageOptions turns a variadic array of storage options into a StorageOptions instance.
-func ResolveStorageOptions(opts ...func(*tessera.StorageOptions)) *tessera.StorageOptions {
-	defaults := &tessera.StorageOptions{
+func ResolveStorageOptions(opts ...func(*options.StorageOptions)) *options.StorageOptions {
+	defaults := &options.StorageOptions{
 		BatchMaxSize: DefaultBatchMaxSize,
 		BatchMaxAge:  DefaultBatchMaxAge,
 		EntriesPath:  layout.EntriesPath,
