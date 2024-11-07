@@ -158,8 +158,8 @@ func configureTilesReadAPI(mux *http.ServeMux, storage *mysql.Storage) {
 			}
 			return
 		}
-
-		tile, err := storage.ReadTile(r.Context(), level, index, width)
+		impliedSize := (index*256 + width) << (level * 8)
+		tile, err := storage.ReadTile(r.Context(), level, index, impliedSize)
 		if err != nil {
 			klog.Errorf("/tile/{level}/{index...}: %v", err)
 			w.WriteHeader(http.StatusInternalServerError)
@@ -179,7 +179,7 @@ func configureTilesReadAPI(mux *http.ServeMux, storage *mysql.Storage) {
 	})
 
 	mux.HandleFunc("GET /tile/entries/{index...}", func(w http.ResponseWriter, r *http.Request) {
-		index, _, err := layout.ParseTileIndexWidth(r.PathValue("index"))
+		index, width, err := layout.ParseTileIndexWidth(r.PathValue("index"))
 		if err != nil {
 			w.WriteHeader(http.StatusBadRequest)
 			if _, werr := w.Write([]byte(fmt.Sprintf("Malformed URL: %s", err.Error()))); werr != nil {
@@ -188,7 +188,7 @@ func configureTilesReadAPI(mux *http.ServeMux, storage *mysql.Storage) {
 			return
 		}
 
-		entryBundle, err := storage.ReadEntryBundle(r.Context(), index)
+		entryBundle, err := storage.ReadEntryBundle(r.Context(), index, width)
 		if err != nil {
 			klog.Errorf("/tile/entries/{index...}: %v", err)
 			w.WriteHeader(http.StatusInternalServerError)

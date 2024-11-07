@@ -148,8 +148,8 @@ func (s *Storage) Add(ctx context.Context, e *tessera.Entry) tessera.IndexFuture
 	return s.queue.Add(ctx, e)
 }
 
-// GetEntryBundle retrieves the Nth entries bundle for a log of the given size.
-func (s *Storage) GetEntryBundle(ctx context.Context, index, logSize uint64) ([]byte, error) {
+// ReadEntryBundle retrieves the Nth entries bundle for a log of the given size.
+func (s *Storage) ReadEntryBundle(ctx context.Context, index, logSize uint64) ([]byte, error) {
 	return os.ReadFile(filepath.Join(s.path, s.entriesPath(index, logSize)))
 }
 
@@ -190,7 +190,7 @@ func (s *Storage) sequenceBatch(ctx context.Context, entries []*tessera.Entry) e
 	bundleIndex, entriesInBundle := seq/uint64(256), seq%uint64(256)
 	if entriesInBundle > 0 {
 		// If the latest bundle is partial, we need to read the data it contains in for our newer, larger, bundle.
-		part, err := s.GetEntryBundle(ctx, bundleIndex, s.curSize)
+		part, err := s.ReadEntryBundle(ctx, bundleIndex, s.curSize)
 		if err != nil {
 			return err
 		}
@@ -254,7 +254,7 @@ func (s *Storage) sequenceBatch(ctx context.Context, entries []*tessera.Entry) e
 // doIntegrate handles integrating new entries into the log, and updating the checkpoint.
 func (s *Storage) doIntegrate(ctx context.Context, fromSeq uint64, entries []storage.SequencedEntry) error {
 	tb := storage.NewTreeBuilder(func(ctx context.Context, tileIDs []storage.TileID, treeSize uint64) ([]*api.HashTile, error) {
-		n, err := s.getTiles(ctx, tileIDs, treeSize)
+		n, err := s.readTiles(ctx, tileIDs, treeSize)
 		if err != nil {
 			return nil, fmt.Errorf("getTiles: %w", err)
 		}
@@ -267,7 +267,7 @@ func (s *Storage) doIntegrate(ctx context.Context, fromSeq uint64, entries []sto
 		return fmt.Errorf("Integrate: %v", err)
 	}
 	for k, v := range tiles {
-		if err := s.StoreTile(ctx, uint64(k.Level), k.Index, newSize, v); err != nil {
+		if err := s.storeTile(ctx, uint64(k.Level), k.Index, newSize, v); err != nil {
 			return fmt.Errorf("failed to set tile(%v): %v", k, err)
 		}
 	}
@@ -278,7 +278,7 @@ func (s *Storage) doIntegrate(ctx context.Context, fromSeq uint64, entries []sto
 		if err != nil {
 			return fmt.Errorf("newCP: %v", err)
 		}
-		if err := WriteCheckpoint(s.path, cpRaw); err != nil {
+		if err := writeCheckpoint(s.path, cpRaw); err != nil {
 			return fmt.Errorf("failed to write new checkpoint: %v", err)
 		}
 	}
@@ -286,10 +286,10 @@ func (s *Storage) doIntegrate(ctx context.Context, fromSeq uint64, entries []sto
 	return nil
 }
 
-func (s *Storage) getTiles(ctx context.Context, tileIDs []storage.TileID, treeSize uint64) ([]*api.HashTile, error) {
+func (s *Storage) readTiles(ctx context.Context, tileIDs []storage.TileID, treeSize uint64) ([]*api.HashTile, error) {
 	r := make([]*api.HashTile, 0, len(tileIDs))
 	for _, id := range tileIDs {
-		t, err := s.GetTile(ctx, id.Level, id.Index, treeSize)
+		t, err := s.ReadTile(ctx, id.Level, id.Index, treeSize)
 		if err != nil {
 			return nil, err
 		}
@@ -298,10 +298,10 @@ func (s *Storage) getTiles(ctx context.Context, tileIDs []storage.TileID, treeSi
 	return r, nil
 }
 
-// GetTile returns the tile at the given tile-level and tile-index.
+// ReadTile returns the tile at the given tile-level and tile-index.
 // If no complete tile exists at that location, it will attempt to find a
 // partial tile for the given tree size at that location.
-func (s *Storage) GetTile(_ context.Context, level, index, logSize uint64) (*api.HashTile, error) {
+func (s *Storage) ReadTile(_ context.Context, level, index, logSize uint64) (*api.HashTile, error) {
 	p := filepath.Join(s.path, layout.TilePath(level, index, logSize))
 	t, err := os.ReadFile(p)
 	if err != nil {
@@ -319,11 +319,11 @@ func (s *Storage) GetTile(_ context.Context, level, index, logSize uint64) (*api
 	return &tile, nil
 }
 
-// StoreTile writes a tile out to disk.
+// storeTile writes a tile out to disk.
 // Fully populated tiles are stored at the path corresponding to the level &
 // index parameters, partially populated (i.e. right-hand edge) tiles are
 // stored with a .xx suffix where xx is the number of "tile leaves" in hex.
-func (s *Storage) StoreTile(_ context.Context, level, index, logSize uint64, tile *api.HashTile) error {
+func (s *Storage) storeTile(_ context.Context, level, index, logSize uint64, tile *api.HashTile) error {
 	tileSize := uint64(len(tile.Nodes))
 	klog.V(2).Infof("StoreTile: level %d index %x ts: %x", level, index, tileSize)
 	if tileSize == 0 || tileSize > 256 {
@@ -383,7 +383,7 @@ func (s *Storage) initialise(create bool) error {
 		if err != nil {
 			return fmt.Errorf("failed to sign empty checkpoint: %v", err)
 		}
-		if err := WriteCheckpoint(s.path, n); err != nil {
+		if err := writeCheckpoint(s.path, n); err != nil {
 			return fmt.Errorf("failed to write empty checkpoint: %v", err)
 		}
 	}
@@ -396,8 +396,8 @@ func (s *Storage) initialise(create bool) error {
 	return nil
 }
 
-// WriteCheckpoint stores a raw log checkpoint on disk.
-func WriteCheckpoint(path string, newCPRaw []byte) error {
+// writeCheckpoint stores a raw log checkpoint on disk.
+func writeCheckpoint(path string, newCPRaw []byte) error {
 	if err := createExclusive(filepath.Join(path, layout.CheckpointPath), newCPRaw); err != nil {
 		return fmt.Errorf("failed to create checkpoint file: %w", err)
 	}
