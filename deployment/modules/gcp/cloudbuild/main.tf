@@ -33,6 +33,24 @@ resource "google_cloudbuild_trigger" "docker" {
   }
 
   build {
+    ## Destroy any pre-existing deployment/live/gcp/conformance/ci environment.
+    ## This might happen if a previous cloud build failed for some reason.
+    step {
+      id         = "preclean_env"
+      name       = "alpine/terragrunt"
+      script     = <<EOT
+        terragrunt --terragrunt-non-interactive destroy -auto-approve 2>&1
+      EOT
+      dir = "deployment/live/gcp/conformance/ci"
+      env = [
+        "TESSERA_SIGNER=unused",
+        "TESSERA_VERIFIER=unused",
+        "GOOGLE_PROJECT=${var.project_id}",
+        "TF_IN_AUTOMATION=1",
+        "TF_INPUT=false",
+        "TF_VAR_project_id=${var.project_id}"
+      ]
+    }
     ## Build the GCP conformance server docker image.
     ## This will be used by the conformance terragrunt config step further down.
     step {
