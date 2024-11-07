@@ -43,7 +43,7 @@ func NewIntegrationAwaiter(ctx context.Context, readCheckpoint func(ctx context.
 // should be reused for all requests in the application code as there is some
 // overhead to each one; the core of an IntegrationAwaiter is a poll loop that
 // will fetch checkpoints whenever it has clients waiting.
-
+//
 // The expected call pattern is:
 //
 // i, cp, err := awaiter.Await(ctx, storage.Add(myLeaf))
