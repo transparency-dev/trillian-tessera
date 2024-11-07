@@ -86,7 +86,9 @@ func newFetcher(root *url.URL) fetcher {
 		if err != nil {
 			klog.Exitf("NewHTTPFetcher: %v", err)
 		}
-		c.SetAuthorizationHeader(*bearerToken)
+		if *bearerToken != "" {
+			c.SetAuthorizationHeader(fmt.Sprintf("Bearer: %s", *bearerToken))
+		}
 		return c
 	case "file":
 		return client.FileFetcher{Root: root.Path}
