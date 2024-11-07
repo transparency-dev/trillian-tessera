@@ -60,7 +60,7 @@ type NewTreeFunc func(size uint64, root []byte) error
 // - path is a directory in which the log should be stored
 // - create must only be set when first creating the log, and will create the directory structure and an empty checkpoint
 func New(ctx context.Context, path string, create bool, opts ...func(*tessera.StorageOptions)) (*Storage, error) {
-	opt := tessera.ResolveStorageOptions(opts...)
+	opt := storage.ResolveStorageOptions(opts...)
 
 	r := &Storage{
 		path:        path,

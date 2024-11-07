@@ -21,14 +21,8 @@ import (
 	"time"
 
 	f_log "github.com/transparency-dev/formats/log"
-	"github.com/transparency-dev/trillian-tessera/api/layout"
 	"golang.org/x/mod/sumdb/note"
 	"k8s.io/klog/v2"
-)
-
-const (
-	DefaultBatchMaxSize = 256
-	DefaultBatchMaxAge  = 250 * time.Millisecond
 )
 
 // ErrPushback is returned by underlying storage implementations when there are too many
@@ -64,19 +58,6 @@ type StorageOptions struct {
 	PushbackMaxOutstanding uint
 
 	EntriesPath EntriesPathFunc
-}
-
-// ResolveStorageOptions turns a variadic array of storage options into a StorageOptions instance.
-func ResolveStorageOptions(opts ...func(*StorageOptions)) *StorageOptions {
-	defaults := &StorageOptions{
-		BatchMaxSize: DefaultBatchMaxSize,
-		BatchMaxAge:  DefaultBatchMaxAge,
-		EntriesPath:  layout.EntriesPath,
-	}
-	for _, opt := range opts {
-		opt(defaults)
-	}
-	return defaults
 }
 
 // WithCheckpointSignerVerifier is an option for setting the note signer and verifier to use when creating and parsing checkpoints.

@@ -37,7 +37,9 @@ type Storage interface {
 // a) embodies some techniques which are not considered to be best practice (it does this to retain backawards-compatibility with RFC6962)
 // b) is not compatible with the https://c2sp.org/tlog-tiles API which we _very strongly_ encourage you to use instead.
 //
-// Returns the assigned index in the log, or an error.
+// Users of this MUST NOT call `Add` on the underlying storage directly.
+//
+// Returns a future, which resolves to the assigned index in the log, or an error.
 func NewCertificateTransparencySequencedWriter(s Storage) func(context.Context, *ctonly.Entry) IndexFuture {
 	return func(ctx context.Context, e *ctonly.Entry) IndexFuture {
 		return s.Add(ctx, convertCTEntry(e))
