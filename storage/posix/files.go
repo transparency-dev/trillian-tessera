@@ -28,7 +28,7 @@ import (
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/api"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
-	"github.com/transparency-dev/trillian-tessera/storage/internal"
+	storage "github.com/transparency-dev/trillian-tessera/storage/internal"
 	"k8s.io/klog/v2"
 )
 
@@ -148,9 +148,17 @@ func (s *Storage) Add(ctx context.Context, e *tessera.Entry) tessera.IndexFuture
 	return s.queue.Add(ctx, e)
 }
 
+func (s *Storage) ReadCheckpoint(_ context.Context) ([]byte, error) {
+	return os.ReadFile(filepath.Join(s.path, layout.CheckpointPath))
+}
+
 // ReadEntryBundle retrieves the Nth entries bundle for a log of the given size.
-func (s *Storage) ReadEntryBundle(ctx context.Context, index, logSize uint64) ([]byte, error) {
+func (s *Storage) ReadEntryBundle(_ context.Context, index, logSize uint64) ([]byte, error) {
 	return os.ReadFile(filepath.Join(s.path, s.entriesPath(index, logSize)))
+}
+
+func (s *Storage) ReadTile(_ context.Context, level, index, logSize uint64) ([]byte, error) {
+	return os.ReadFile(filepath.Join(s.path, layout.TilePath(level, index, logSize)))
 }
 
 // sequenceBatch writes the entries from the provided batch into the entry bundle files of the log.
@@ -289,7 +297,7 @@ func (s *Storage) doIntegrate(ctx context.Context, fromSeq uint64, entries []sto
 func (s *Storage) readTiles(ctx context.Context, tileIDs []storage.TileID, treeSize uint64) ([]*api.HashTile, error) {
 	r := make([]*api.HashTile, 0, len(tileIDs))
 	for _, id := range tileIDs {
-		t, err := s.ReadTile(ctx, id.Level, id.Index, treeSize)
+		t, err := s.readTile(ctx, id.Level, id.Index, treeSize)
 		if err != nil {
 			return nil, err
 		}
@@ -298,12 +306,11 @@ func (s *Storage) readTiles(ctx context.Context, tileIDs []storage.TileID, treeS
 	return r, nil
 }
 
-// ReadTile returns the tile at the given tile-level and tile-index.
+// readTile returns the parsed tile at the given tile-level and tile-index.
 // If no complete tile exists at that location, it will attempt to find a
 // partial tile for the given tree size at that location.
-func (s *Storage) ReadTile(_ context.Context, level, index, logSize uint64) (*api.HashTile, error) {
-	p := filepath.Join(s.path, layout.TilePath(level, index, logSize))
-	t, err := os.ReadFile(p)
+func (s *Storage) readTile(ctx context.Context, level, index, logSize uint64) (*api.HashTile, error) {
+	t, err := s.ReadTile(ctx, level, index, logSize)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			// We'll signal to higher levels that it wasn't found by retuning a nil for this tile.
