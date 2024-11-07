@@ -35,12 +35,20 @@ import (
 )
 
 var (
-	storageDir  = flag.String("storage_dir", "", "Root directory to store log data.")
-	initialise  = flag.Bool("initialise", false, "Set when creating a new log to initialise the structure.")
-	listen      = flag.String("listen", ":2025", "Address:port to listen on")
-	pubKeyFile  = flag.String("public_key", "", "Location of public key file. If unset, uses the contents of the LOG_PUBLIC_KEY environment variable.")
-	privKeyFile = flag.String("private_key", "", "Location of private key file. If unset, uses the contents of the LOG_PRIVATE_KEY environment variable.")
+	storageDir                = flag.String("storage_dir", "", "Root directory to store log data.")
+	initialise                = flag.Bool("initialise", false, "Set when creating a new log to initialise the structure.")
+	listen                    = flag.String("listen", ":2025", "Address:port to listen on")
+	pubKeyFile                = flag.String("public_key", "", "Location of public key file. If unset, uses the contents of the LOG_PUBLIC_KEY environment variable.")
+	privKeyFile               = flag.String("private_key", "", "Location of private key file. If unset, uses the contents of the LOG_PRIVATE_KEY environment variable.")
+	additionalPrivateKeyFiles = []string{}
 )
+
+func init() {
+	flag.Func("additional_private_key", "Location of addition private key, may be specified multiple times", func(s string) error {
+		additionalPrivateKeyFiles = append(additionalPrivateKeyFiles, s)
+		return nil
+	})
+}
 
 func main() {
 	klog.InitFlags(nil)
@@ -49,10 +57,10 @@ func main() {
 
 	// Gather the info needed for reading/writing checkpoints
 	vkey, v := getVerifierOrDie()
-	s := getSignerOrDie()
+	s, a := getSignersOrDie()
 
 	// Create the Tessera POSIX storage, using the directory from the --storage_dir flag
-	storage, err := posix.New(ctx, *storageDir, *initialise, tessera.WithCheckpointSignerVerifier(s, v), tessera.WithBatching(256, time.Second))
+	storage, err := posix.New(ctx, *storageDir, *initialise, tessera.WithCheckpointSignerVerifier(s, v, a...), tessera.WithBatching(256, time.Second))
 	if err != nil {
 		klog.Exitf("Failed to construct storage: %v", err)
 	}
@@ -112,6 +120,23 @@ func getVerifierOrDie() (string, note.Verifier) {
 	}
 
 	return pubKey, v
+}
+
+func getSignersOrDie() (note.Signer, []note.Signer) {
+	s := getSignerOrDie()
+	a := []note.Signer{}
+	for _, p := range additionalPrivateKeyFiles {
+		kr, err := getKeyFile(p)
+		if err != nil {
+			klog.Exitf("Unable to get additional private key from %q: %v", p, err)
+		}
+		k, err := note.NewSigner(kr)
+		if err != nil {
+			klog.Exitf("Failed to instantiate signer from %q: %v", p, err)
+		}
+		a = append(a, k)
+	}
+	return s, a
 }
 
 // Read log private key from file or environment variable

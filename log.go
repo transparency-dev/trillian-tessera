@@ -23,6 +23,7 @@ import (
 	f_log "github.com/transparency-dev/formats/log"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
 	"golang.org/x/mod/sumdb/note"
+	"k8s.io/klog/v2"
 )
 
 const (
@@ -80,9 +81,28 @@ func ResolveStorageOptions(opts ...func(*StorageOptions)) *StorageOptions {
 
 // WithCheckpointSignerVerifier is an option for setting the note signer and verifier to use when creating and parsing checkpoints.
 //
-// Checkpoints signed by this signer and verified by this verifier will be standard checkpoints as defined by https://c2sp.org/tlog-checkpoint.
-// The provided signer's name will be used as the Origin line on the checkpoint.
-func WithCheckpointSignerVerifier(s note.Signer, v note.Verifier) func(*StorageOptions) {
+// A primary signer and verifier must be provided:
+// - the primary signer is the "canonical" signing identity which should be used when creating new checkpoints.
+// - the primary verifier is the verifier for the "canonical" identity which signed the _latest_ checkpoint.
+// Note that while for the most-part this signer and verifier will relate to the same key, this would not be the case when rolling keys.
+//
+// Zero or more dditional signers may also be provided.
+// This enables cases like:
+//   - a rolling key rotation, where checkpoints are signed by both the old and new keys for some period of time,
+//   - using different signature schemes for different audiences, etc.
+//
+// When providing additional signers, their names MUST be identical to the primary signer name, and this name will be used
+// as the checkpoint Origin line.
+//
+// Checkpoints signed by these signer(s) and verified by the provided verifier will be standard checkpoints as defined by https://c2sp.org/tlog-checkpoint.
+func WithCheckpointSignerVerifier(s note.Signer, v note.Verifier, additionalSigners ...note.Signer) func(*StorageOptions) {
+	origin := s.Name()
+	for _, signer := range additionalSigners {
+		if origin != signer.Name() {
+			klog.Exitf("WithCheckpointSignerVerifier: additional signer name (%q) does not match primary signer name (%q)", signer.Name(), origin)
+		}
+
+	}
 	return func(o *StorageOptions) {
 		o.NewCP = func(size uint64, hash []byte) ([]byte, error) {
 			// If we're signing a zero-sized tree, the tlog-checkpoint spec says (via RFC6962) that
@@ -92,12 +112,12 @@ func WithCheckpointSignerVerifier(s note.Signer, v note.Verifier) func(*StorageO
 				hash = emptyRoot[:]
 			}
 			cpRaw := f_log.Checkpoint{
-				Origin: s.Name(),
+				Origin: origin,
 				Size:   size,
 				Hash:   hash,
 			}.Marshal()
 
-			n, err := note.Sign(&note.Note{Text: string(cpRaw)}, s)
+			n, err := note.Sign(&note.Note{Text: string(cpRaw)}, append([]note.Signer{s}, additionalSigners...)...)
 			if err != nil {
 				return nil, fmt.Errorf("note.Sign: %w", err)
 			}

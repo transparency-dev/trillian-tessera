@@ -10,7 +10,6 @@ locals {
   conformance_gcp_docker_image = "${local.location}-docker.pkg.dev/trillian-tessera/docker-${local.env}/conformance-gcp:latest"
   signer                       = get_env("TESSERA_SIGNER")
   verifier                     = get_env("TESSERA_VERIFIER")
-  log_origin                   = local.base_name
   # Service accounts are managed externally:
   conformance_users        = ["serviceAccount:cloudbuild-prod-sa@trillian-tessera.iam.gserviceaccount.com"]
   bucket_readers           = ["serviceAccount:cloudbuild-prod-sa@trillian-tessera.iam.gserviceaccount.com"]

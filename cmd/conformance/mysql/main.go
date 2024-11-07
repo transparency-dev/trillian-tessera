@@ -33,15 +33,23 @@ import (
 )
 
 var (
-	mysqlURI          = flag.String("mysql_uri", "user:password@tcp(db:3306)/tessera", "Connection string for a MySQL database")
-	dbConnMaxLifetime = flag.Duration("db_conn_max_lifetime", 3*time.Minute, "")
-	dbMaxOpenConns    = flag.Int("db_max_open_conns", 64, "")
-	dbMaxIdleConns    = flag.Int("db_max_idle_conns", 64, "")
-	initSchemaPath    = flag.String("init_schema_path", "", "Location of the schema file if database initialization is needed")
-	listen            = flag.String("listen", ":2024", "Address:port to listen on")
-	privateKeyPath    = flag.String("private_key_path", "", "Location of private key file")
-	publicKeyPath     = flag.String("public_key_path", "", "Location of public key file")
+	mysqlURI                  = flag.String("mysql_uri", "user:password@tcp(db:3306)/tessera", "Connection string for a MySQL database")
+	dbConnMaxLifetime         = flag.Duration("db_conn_max_lifetime", 3*time.Minute, "")
+	dbMaxOpenConns            = flag.Int("db_max_open_conns", 64, "")
+	dbMaxIdleConns            = flag.Int("db_max_idle_conns", 64, "")
+	initSchemaPath            = flag.String("init_schema_path", "", "Location of the schema file if database initialization is needed")
+	listen                    = flag.String("listen", ":2024", "Address:port to listen on")
+	privateKeyPath            = flag.String("private_key_path", "", "Location of private key file")
+	publicKeyPath             = flag.String("public_key_path", "", "Location of public key file")
+	additionalPrivateKeyPaths = []string{}
 )
+
+func init() {
+	flag.Func("additional_private_key_path", "Location of additional private key file, may be specified multiple times", func(s string) error {
+		additionalPrivateKeyPaths = append(additionalPrivateKeyPaths, s)
+		return nil
+	})
+}
 
 func main() {
 	klog.InitFlags(nil)
@@ -49,11 +57,11 @@ func main() {
 	ctx := context.Background()
 
 	db := createDatabaseOrDie(ctx)
-	noteSigner := createSignerOrDie()
+	noteSigner, additionalSigners := createSignersOrDie()
 	vkey, noteVerifier := createVerifierOrDie()
 
 	// Initialise the Tessera MySQL storage
-	storage, err := mysql.New(ctx, db, tessera.WithCheckpointSignerVerifier(noteSigner, noteVerifier))
+	storage, err := mysql.New(ctx, db, tessera.WithCheckpointSignerVerifier(noteSigner, noteVerifier, additionalSigners...))
 	if err != nil {
 		klog.Exitf("Failed to create new MySQL storage: %v", err)
 	}
@@ -102,10 +110,19 @@ func createDatabaseOrDie(ctx context.Context) *sql.DB {
 	return db
 }
 
-func createSignerOrDie() note.Signer {
-	rawPrivateKey, err := os.ReadFile(*privateKeyPath)
+func createSignersOrDie() (note.Signer, []note.Signer) {
+	s := createSignerOrDie(*privateKeyPath)
+	a := []note.Signer{}
+	for _, p := range additionalPrivateKeyPaths {
+		a = append(a, createSignerOrDie(p))
+	}
+	return s, a
+}
+
+func createSignerOrDie(s string) note.Signer {
+	rawPrivateKey, err := os.ReadFile(s)
 	if err != nil {
-		klog.Exitf("Failed to read private key file %q: %v", *privateKeyPath, err)
+		klog.Exitf("Failed to read private key file %q: %v", s, err)
 	}
 	noteSigner, err := note.NewSigner(string(rawPrivateKey))
 	if err != nil {

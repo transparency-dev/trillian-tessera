@@ -23,11 +23,6 @@ variable "server_docker_image" {
   type        = string
 }
 
-variable "log_origin" {
-  description = "The origin string for the conformance log"
-  type        = string
-}
-
 variable "signer" {
   description = "The note signer which should be used to sign checkpoints"
   type        = string

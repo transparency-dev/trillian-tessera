@@ -13,11 +13,6 @@ variable "env" {
   type        = string
 }
 
-variable "log_origin" {
-  description = "The origin string for the conformance log"
-  type        = string
-}
-
 variable "service_account" {
   description = "Service account email to use for cloudbuild"
 }
