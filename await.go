@@ -39,11 +39,12 @@ func NewIntegrationAwaiter(ctx context.Context, readCheckpoint func(ctx context.
 }
 
 // IntegrationAwaiter allows client threads to block until a leaf is both
-// sequenced and integrated. An IntegrationAwaiter should be reused for all
-// requests in the client code as there is some overhead to each one; the
-// core of an IntegrationAwaiter is a poll loop that will fetch checkpoints
-// whenever it has clients waiting. Reusing the same object will avoid a lot
-// of duplicate work. The expected call pattern is:
+// sequenced and integrated. A single long-lived IntegrationAwaiter instance
+// should be reused for all requests in the application code as there is some
+// overhead to each one; the core of an IntegrationAwaiter is a poll loop that
+// will fetch checkpoints whenever it has clients waiting.
+
+// The expected call pattern is:
 //
 // i, cp, err := awaiter.Await(ctx, storage.Add(myLeaf))
 //
@@ -123,7 +124,7 @@ func (a *IntegrationAwaiter) pollLoop(ctx context.Context, readCheckpoint func(c
 			a.releaseClientsErr(fmt.Errorf("invalid checkpoint: %q", rawCp))
 			continue
 		}
-		sizeStr := string(bytes.SplitN(rawCp, []byte{'\n'}, 4)[1])
+		sizeStr := string(parts[1])
 		size, err := strconv.ParseUint(sizeStr, 10, 64)
 		if err != nil {
 			a.releaseClientsErr(fmt.Errorf("failed to turn checkpoint size of %q into uint64: %v", sizeStr, err))
@@ -165,8 +166,9 @@ func (a *IntegrationAwaiter) releaseClientsErr(err error) {
 		w := e.Value.(waiter)
 		w.result <- cod
 		close(w.result)
-		a.waiters.Remove(e)
 	}
+	// Clear out the list now we've released everyone
+	a.waiters.Init()
 }
 
 func (a *IntegrationAwaiter) releaseClients(size uint64, cp []byte) {
@@ -174,9 +176,9 @@ func (a *IntegrationAwaiter) releaseClients(size uint64, cp []byte) {
 		cp: cp,
 	}
 	a.mu.Lock()
+	defer a.mu.Unlock()
 	a.size = size
 	a.checkpoint = cp
-	defer a.mu.Unlock()
 	for e := a.waiters.Front(); e != nil; e = e.Next() {
 		w := e.Value.(waiter)
 		if w.index < size {
