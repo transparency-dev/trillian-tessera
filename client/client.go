@@ -43,7 +43,7 @@ var (
 // checkpoint from a log's data storage.
 //
 // Note that the implementation of this MUST return (either directly or wrapped)
-// an os.ErrIsNotExit when the file referenced by path does not exist, e.g. a HTTP
+// an os.ErrIsNotExist when the file referenced by path does not exist, e.g. a HTTP
 // based implementation MUST return this error when it receives a 404 StatusCode.
 type CheckpointFetcherFunc func(ctx context.Context) ([]byte, error)
 
@@ -51,7 +51,7 @@ type CheckpointFetcherFunc func(ctx context.Context) ([]byte, error)
 // for a given tile.
 //
 // Note that the implementation of this MUST return (either directly or wrapped)
-// an os.ErrIsNotExit when the file referenced by path does not exist, e.g. a HTTP
+// an os.ErrIsNotExist when the file referenced by path does not exist, e.g. a HTTP
 // based implementation MUST return this error when it receives a 404 StatusCode.
 type TileFetcherFunc func(ctx context.Context, level, index, logSize uint64) ([]byte, error)
 
@@ -176,10 +176,6 @@ func (pb *ProofBuilder) fetchNodes(ctx context.Context, nodes proof.Nodes) ([][]
 	}
 	return hashes, nil
 }
-
-// GetTileFunc is the signature of a function which knows how to fetch a
-// specific tile.
-type GetTileFunc func(ctx context.Context, level, index uint64) (*api.HashTile, error)
 
 // FetchRangeNodes returns the set of nodes representing the compact range covering
 // a log of size s.
