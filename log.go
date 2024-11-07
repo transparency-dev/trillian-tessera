@@ -94,7 +94,7 @@ func ResolveStorageOptions(opts ...func(*StorageOptions)) *StorageOptions {
 // When providing additional signers, their names MUST be identical to the primary signer name, and this name will be used
 // as the checkpoint Origin line.
 //
-// Checkpoints signed by these signer(s) and verified by the provied verifier will be standard checkpoints as defined by https://c2sp.org/tlog-checkpoint.
+// Checkpoints signed by these signer(s) and verified by the provided verifier will be standard checkpoints as defined by https://c2sp.org/tlog-checkpoint.
 func WithCheckpointSignerVerifier(s note.Signer, v note.Verifier, additionalSigners ...note.Signer) func(*StorageOptions) {
 	origin := s.Name()
 	for _, signer := range additionalSigners {
