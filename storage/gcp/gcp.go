@@ -46,7 +46,8 @@ import (
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/api"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
-	"github.com/transparency-dev/trillian-tessera/storage/internal"
+	"github.com/transparency-dev/trillian-tessera/internal/options"
+	storage "github.com/transparency-dev/trillian-tessera/storage/internal"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/iterator"
@@ -70,9 +71,9 @@ type Storage struct {
 	projectID string
 	bucket    string
 
-	newCP       tessera.NewCPFunc
-	parseCP     tessera.ParseCPFunc
-	entriesPath tessera.EntriesPathFunc
+	newCP       options.NewCPFunc
+	parseCP     options.ParseCPFunc
+	entriesPath options.EntriesPathFunc
 
 	sequencer sequencer
 	objStore  objStore
@@ -113,8 +114,8 @@ type Config struct {
 }
 
 // New creates a new instance of the GCP based Storage.
-func New(ctx context.Context, cfg Config, opts ...func(*tessera.StorageOptions)) (*Storage, error) {
-	opt := tessera.ResolveStorageOptions(opts...)
+func New(ctx context.Context, cfg Config, opts ...func(*options.StorageOptions)) (*Storage, error) {
+	opt := storage.ResolveStorageOptions(opts...)
 	if opt.PushbackMaxOutstanding == 0 {
 		opt.PushbackMaxOutstanding = DefaultPushbackMaxOutstanding
 	}
