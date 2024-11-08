@@ -69,7 +69,7 @@ func (h HTTPFetcher) fetch(ctx context.Context, p string) ([]byte, error) {
 		return nil, fmt.Errorf("NewRequestWithContext(%q): %v", u.String(), err)
 	}
 	if h.authHeader != "" {
-		req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", h.authHeader))
+		req.Header.Add("Authorization", h.authHeader)
 	}
 	r, err := h.c.Do(req)
 	if err != nil {
