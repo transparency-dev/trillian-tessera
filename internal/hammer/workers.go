@@ -19,7 +19,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"math/rand"
+	"math/rand/v2"
 	"time"
 
 	"github.com/transparency-dev/trillian-tessera/client"
@@ -134,7 +134,7 @@ func (tc leafBundleCache) get(i uint64) ([]byte, error) {
 // RandomNextLeaf returns a function that fetches a random leaf available in the tree.
 func RandomNextLeaf() func(uint64) uint64 {
 	return func(size uint64) uint64 {
-		return uint64(rand.Int63n(int64(size)))
+		return rand.Uint64N(size)
 	}
 }
 
