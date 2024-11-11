@@ -17,7 +17,6 @@ package main
 
 import (
 	"context"
-	crand "crypto/rand"
 	"crypto/tls"
 	"errors"
 	"flag"
@@ -369,11 +368,15 @@ func (a *HammerAnalyser) errorLoop(ctx context.Context) {
 // startSize should be set to the initial size of the log so that repeated runs of the
 // hammer can start seeding leaves to avoid duplicates with previous runs.
 func newLeafGenerator(startSize uint64, minLeafSize int, dupChance float64) func() []byte {
+	// genLeaf MUST be determinstic given n
 	genLeaf := func(n uint64) []byte {
 		// Make a slice with half the number of requested bytes since we'll
 		// hex-encode them below which gets us back up to the full amount.
 		filler := make([]byte, minLeafSize/2)
-		_, _ = crand.Read(filler)
+		source := rand.New(rand.NewPCG(0, n))
+		for i := range filler {
+			filler[i] = byte(source.Int())
+		}
 		return []byte(fmt.Sprintf("%x %d", filler, n))
 	}
 
