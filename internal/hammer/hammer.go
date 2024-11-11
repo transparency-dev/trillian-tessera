@@ -17,15 +17,15 @@ package main
 
 import (
 	"context"
-	crand "crypto/rand"
 	"crypto/tls"
 	"errors"
 	"flag"
 	"fmt"
-	"math/rand"
+	"math/rand/v2"
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	movingaverage "github.com/RobinUS2/golang-moving-average"
@@ -361,33 +361,40 @@ func (a *HammerAnalyser) errorLoop(ctx context.Context) {
 
 // newLeafGenerator returns a function that generates values to append to a log.
 // The leaves are constructed to be at least minLeafSize bytes long.
+// The generator can be used by concurrent threads.
+//
 // dupChance provides the probability that a new leaf will be a duplicate of a previous entry.
 // Leaves will be unique if dupChance is 0, and if set to 1 then all values will be duplicates.
 // startSize should be set to the initial size of the log so that repeated runs of the
 // hammer can start seeding leaves to avoid duplicates with previous runs.
 func newLeafGenerator(startSize uint64, minLeafSize int, dupChance float64) func() []byte {
+	// genLeaf MUST be determinstic given n
 	genLeaf := func(n uint64) []byte {
 		// Make a slice with half the number of requested bytes since we'll
 		// hex-encode them below which gets us back up to the full amount.
 		filler := make([]byte, minLeafSize/2)
-		_, _ = crand.Read(filler)
+		source := rand.New(rand.NewPCG(0, n))
+		for i := range filler {
+			filler[i] = byte(source.Int())
+		}
 		return []byte(fmt.Sprintf("%x %d", filler, n))
 	}
 
-	nextLeaf := genLeaf(startSize)
+	sizeLocked := startSize
+	var mu sync.Mutex
 	return func() []byte {
-		if rand.Float64() <= dupChance {
-			// This one will actually be unique, but the next iteration will
-			// duplicate it. In future, this duplication could be randomly
-			// selected to include really old leaves too, to test long-term
-			// deduplication in the log (if it supports  that).
-			return nextLeaf
-		}
+		mu.Lock()
+		thisSize := sizeLocked
 
-		startSize++
-		r := nextLeaf
-		nextLeaf = genLeaf(startSize)
-		return r
+		if thisSize > 0 && rand.Float64() <= dupChance {
+			thisSize = rand.Uint64N(thisSize)
+		} else {
+			sizeLocked++
+		}
+		mu.Unlock()
+
+		// Do this outside of the protected block so that writers don't block on leaf generation (especially for larger leaves).
+		return genLeaf(thisSize)
 	}
 }
 

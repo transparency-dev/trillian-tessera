@@ -21,6 +21,24 @@ import (
 	"time"
 )
 
+func TestLeafGenerator(t *testing.T) {
+	// Always generate new values
+	gN := newLeafGenerator(0, 100, 0)
+	vs := make(map[string]bool)
+	for range 256 {
+		v := string(gN())
+		vs[v] = true
+	}
+
+	// Always generate duplicate
+	gD := newLeafGenerator(256, 100, 1.0)
+	for range 256 {
+		if !vs[string(gD())] {
+			t.Error("Expected duplicate")
+		}
+	}
+}
+
 func TestHammerAnalyser_Stats(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
