@@ -375,6 +375,8 @@ func newLeafGenerator(startSize uint64, minLeafSize int, dupChance float64) func
 		filler := make([]byte, minLeafSize/2)
 		source := rand.New(rand.NewPCG(0, n))
 		for i := range filler {
+			// This throws away a lot of the generated data. An exercise to a future
+			// coder is to fill in multiple bytes at a time.
 			filler[i] = byte(source.Int())
 		}
 		return []byte(fmt.Sprintf("%x %d", filler, n))
