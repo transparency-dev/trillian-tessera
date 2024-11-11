@@ -31,7 +31,7 @@ func TestLeafGenerator(t *testing.T) {
 	}
 
 	// Always generate duplicate
-	gD := newLeafGenerator(256, 100, 100)
+	gD := newLeafGenerator(256, 100, 1.0)
 	for range 256 {
 		if !vs[string(gD())] {
 			t.Error("Expected duplicate")
