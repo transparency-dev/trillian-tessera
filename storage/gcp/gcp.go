@@ -188,7 +188,7 @@ func (s *Storage) ReadTile(ctx context.Context, l, i, sz uint64) ([]byte, error)
 }
 
 func (s *Storage) ReadEntryBundle(ctx context.Context, i, sz uint64) ([]byte, error) {
-	return s.get(ctx, layout.EntriesPath(i, sz))
+	return s.get(ctx, s.entriesPath(i, sz))
 }
 
 // get returns the requested object.
