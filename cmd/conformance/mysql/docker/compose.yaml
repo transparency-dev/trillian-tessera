@@ -28,7 +28,6 @@ services:
       "--mysql_uri=tessera:tessera@tcp(tessera-conformance-mysql-db:3306)/tessera",
       "--init_schema_path=/schema.sql",
       "--private_key_path=/key",
-      "--public_key_path=/key.pub",
       "--alsologtostderr",
       "--v=1",
     ]

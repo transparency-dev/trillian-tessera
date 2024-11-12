@@ -166,7 +166,7 @@ The bottleneck comes from CPU usage of the `cmd/conformance/mysql` binary on the
 1. Run `cmd/conformance/mysql`
 
    ```sh
-   instance:~/trillian-tessera$ go run ./cmd/conformance/mysql --mysql_uri="root:root@tcp(127.0.0.1:3306)/test_tessera" --init_schema_path="./storage/mysql/schema.sql" --private_key_path="./cmd/conformance/mysql/docker/testdata/key" --public_key_path="./cmd/conformance/mysql/docker/testdata/key.pub" --db_max_open_conns=1024 --db_max_idle_conns=512
+   instance:~/trillian-tessera$ go run ./cmd/conformance/mysql --mysql_uri="root:root@tcp(127.0.0.1:3306)/test_tessera" --init_schema_path="./storage/mysql/schema.sql" --private_key_path="./cmd/conformance/mysql/docker/testdata/key" --db_max_open_conns=1024 --db_max_idle_conns=512
    ```
 
 1. Run `hammer` and get performance metrics
