@@ -66,10 +66,6 @@ const (
 
 // Storage is a GCP based storage implementation for Tessera.
 type Storage struct {
-	gcsClient *gcs.Client
-
-	bucket string
-
 	newCP       options.NewCPFunc
 	parseCP     options.ParseCPFunc
 	entriesPath options.EntriesPathFunc
@@ -104,8 +100,6 @@ type consumeFunc func(ctx context.Context, from uint64, entries []storage.Sequen
 
 // Config holds GCP project and resource configuration for a storage instance.
 type Config struct {
-	// ProjectID is the GCP project which hosts the storage bucket and Spanner database for the log.
-	ProjectID string
 	// Bucket is the name of the GCS bucket to use for storing log state.
 	Bucket string
 	// Spanner is the GCP resource URI of the spanner database instance to use.

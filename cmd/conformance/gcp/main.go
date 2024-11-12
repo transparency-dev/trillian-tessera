@@ -117,9 +117,8 @@ func storageConfigFromFlags() gcp.Config {
 		klog.Exit("--spanner must be set")
 	}
 	return gcp.Config{
-		ProjectID: *project,
-		Bucket:    *bucket,
-		Spanner:   *spanner,
+		Bucket:  *bucket,
+		Spanner: *spanner,
 	}
 }
 
