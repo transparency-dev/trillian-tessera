@@ -68,8 +68,7 @@ const (
 type Storage struct {
 	gcsClient *gcs.Client
 
-	projectID string
-	bucket    string
+	bucket string
 
 	newCP       options.NewCPFunc
 	parseCP     options.ParseCPFunc
@@ -124,20 +123,17 @@ func New(ctx context.Context, cfg Config, opts ...func(*options.StorageOptions))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create GCS client: %v", err)
 	}
-	gcsStorage, err := newGCSStorage(ctx, c, cfg.ProjectID, cfg.Bucket)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create GCS storage: %v", err)
-	}
+
 	seq, err := newSpannerSequencer(ctx, cfg.Spanner, uint64(opt.PushbackMaxOutstanding))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Spanner sequencer: %v", err)
 	}
 
 	r := &Storage{
-		gcsClient:   c,
-		projectID:   cfg.ProjectID,
-		bucket:      cfg.Bucket,
-		objStore:    gcsStorage,
+		objStore: &gcsStorage{
+			gcsClient: c,
+			bucket:    cfg.Bucket,
+		},
 		sequencer:   seq,
 		newCP:       opt.NewCP,
 		parseCP:     opt.ParseCP,
@@ -671,7 +667,7 @@ type gcsStorage struct {
 // newGCSStorage creates a new gcsStorage.
 //
 // The specified bucket must exist or an error will be returned.
-func newGCSStorage(ctx context.Context, c *gcs.Client, projectID string, bucket string) (*gcsStorage, error) {
+func newGCSStorage(c *gcs.Client, bucket string) (*gcsStorage, error) {
 	r := &gcsStorage{
 		gcsClient: c,
 		bucket:    bucket,
