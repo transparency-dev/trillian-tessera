@@ -39,12 +39,10 @@ var ErrPushback = errors.New("too many unintegrated entries")
 // some point in the future, and as such will block when called if the data isn't yet available.
 type IndexFuture func() (uint64, error)
 
-// WithCheckpointSignerVerifier is an option for setting the note signer and verifier to use when creating and parsing checkpoints.
+// WithCheckpointSigner is an option for setting the note signer and verifier to use when creating and parsing checkpoints.
 //
-// A primary signer and verifier must be provided:
+// A primary signer must be provided:
 // - the primary signer is the "canonical" signing identity which should be used when creating new checkpoints.
-// - the primary verifier is the verifier for the "canonical" identity which signed the _latest_ checkpoint.
-// Note that while for the most-part this signer and verifier will relate to the same key, this would not be the case when rolling keys.
 //
 // Zero or more dditional signers may also be provided.
 // This enables cases like:
@@ -54,12 +52,12 @@ type IndexFuture func() (uint64, error)
 // When providing additional signers, their names MUST be identical to the primary signer name, and this name will be used
 // as the checkpoint Origin line.
 //
-// Checkpoints signed by these signer(s) and verified by the provided verifier will be standard checkpoints as defined by https://c2sp.org/tlog-checkpoint.
-func WithCheckpointSignerVerifier(s note.Signer, v note.Verifier, additionalSigners ...note.Signer) func(*options.StorageOptions) {
+// Checkpoints signed by these signer(s) will be standard checkpoints as defined by https://c2sp.org/tlog-checkpoint.
+func WithCheckpointSigner(s note.Signer, additionalSigners ...note.Signer) func(*options.StorageOptions) {
 	origin := s.Name()
 	for _, signer := range additionalSigners {
 		if origin != signer.Name() {
-			klog.Exitf("WithCheckpointSignerVerifier: additional signer name (%q) does not match primary signer name (%q)", signer.Name(), origin)
+			klog.Exitf("WithCheckpointSigner: additional signer name (%q) does not match primary signer name (%q)", signer.Name(), origin)
 		}
 
 	}
@@ -82,14 +80,6 @@ func WithCheckpointSignerVerifier(s note.Signer, v note.Verifier, additionalSign
 				return nil, fmt.Errorf("note.Sign: %w", err)
 			}
 			return n, nil
-		}
-
-		o.ParseCP = func(raw []byte) (*f_log.Checkpoint, error) {
-			cp, _, _, err := f_log.ParseCheckpoint(raw, v.Name(), v)
-			if err != nil {
-				return nil, fmt.Errorf("f_log.ParseCheckpoint: %w", err)
-			}
-			return cp, nil
 		}
 	}
 }

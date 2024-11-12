@@ -40,7 +40,6 @@ var (
 	initSchemaPath            = flag.String("init_schema_path", "", "Location of the schema file if database initialization is needed")
 	listen                    = flag.String("listen", ":2024", "Address:port to listen on")
 	privateKeyPath            = flag.String("private_key_path", "", "Location of private key file")
-	publicKeyPath             = flag.String("public_key_path", "", "Location of public key file")
 	additionalPrivateKeyPaths = []string{}
 )
 
@@ -58,10 +57,9 @@ func main() {
 
 	db := createDatabaseOrDie(ctx)
 	noteSigner, additionalSigners := createSignersOrDie()
-	vkey, noteVerifier := createVerifierOrDie()
 
 	// Initialise the Tessera MySQL storage
-	storage, err := mysql.New(ctx, db, tessera.WithCheckpointSignerVerifier(noteSigner, noteVerifier, additionalSigners...))
+	storage, err := mysql.New(ctx, db, tessera.WithCheckpointSigner(noteSigner, additionalSigners...))
 	if err != nil {
 		klog.Exitf("Failed to create new MySQL storage: %v", err)
 	}
@@ -89,8 +87,7 @@ func main() {
 	// TODO(mhutchinson): Change the listen flag to just a port, or fix up this address formatting
 	klog.Infof("Environment variables useful for accessing this log:\n"+
 		"export WRITE_URL=http://localhost%s/ \n"+
-		"export READ_URL=http://localhost%s/ \n"+
-		"export LOG_PUBLIC_KEY=%s", *listen, *listen, vkey)
+		"export READ_URL=http://localhost%s/ \n", *listen, *listen)
 	// Serve HTTP requests until the process is terminated
 	if err := http.ListenAndServe(*listen, http.DefaultServeMux); err != nil {
 		klog.Exitf("ListenAndServe: %v", err)
@@ -129,18 +126,6 @@ func createSignerOrDie(s string) note.Signer {
 		klog.Exitf("Failed to create new signer: %v", err)
 	}
 	return noteSigner
-}
-
-func createVerifierOrDie() (string, note.Verifier) {
-	rawPublicKey, err := os.ReadFile(*publicKeyPath)
-	if err != nil {
-		klog.Exitf("Failed to read public key file %q: %v", *publicKeyPath, err)
-	}
-	noteVerifier, err := note.NewVerifier(string(rawPublicKey))
-	if err != nil {
-		klog.Exitf("Failed to create new verifier: %v", err)
-	}
-	return string(rawPublicKey), noteVerifier
 }
 
 // configureTilesReadAPI adds the API methods from https://c2sp.org/tlog-tiles to the mux,

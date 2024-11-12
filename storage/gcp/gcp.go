@@ -67,7 +67,6 @@ const (
 // Storage is a GCP based storage implementation for Tessera.
 type Storage struct {
 	newCP       options.NewCPFunc
-	parseCP     options.ParseCPFunc
 	entriesPath options.EntriesPathFunc
 
 	sequencer sequencer
@@ -130,7 +129,6 @@ func New(ctx context.Context, cfg Config, opts ...func(*options.StorageOptions))
 		},
 		sequencer:   seq,
 		newCP:       opt.NewCP,
-		parseCP:     opt.ParseCP,
 		entriesPath: opt.EntriesPath,
 	}
 	r.queue = storage.NewQueue(ctx, opt.BatchMaxAge, opt.BatchMaxSize, r.sequencer.assignEntries)
@@ -191,7 +189,7 @@ func (s *Storage) get(ctx context.Context, path string) ([]byte, error) {
 
 // init ensures that the storage represents a log in a valid state.
 func (s *Storage) init(ctx context.Context) error {
-	cpRaw, err := s.get(ctx, layout.CheckpointPath)
+	_, err := s.get(ctx, layout.CheckpointPath)
 	if err != nil {
 		if errors.Is(err, gcs.ErrObjectNotExist) {
 			// No checkpoint exists, do a forced (possibly empty) integration to create one in a safe
@@ -205,9 +203,6 @@ func (s *Storage) init(ctx context.Context) error {
 			return nil
 		}
 		return fmt.Errorf("failed to read checkpoint: %v", err)
-	}
-	if _, err = s.parseCP(cpRaw); err != nil {
-		return fmt.Errorf("Found invalid existing checpoint file: %v\ncheckpoint contents:\n%v", err, string(cpRaw))
 	}
 
 	return nil

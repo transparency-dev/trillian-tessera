@@ -41,7 +41,7 @@ docker run --name test-mysql -p 3306:3306 -e MYSQL_ROOT_PASSWORD=root -e MYSQL_D
 ### Starting
 
 ```sh
-go run ./cmd/conformance/mysql --mysql_uri="root:root@tcp(localhost:3306)/test_tessera" --init_schema_path="./storage/mysql/schema.sql" --private_key_path="./cmd/conformance/mysql/docker/testdata/key" --public_key_path="./cmd/conformance/mysql/docker/testdata/key.pub"
+go run ./cmd/conformance/mysql --mysql_uri="root:root@tcp(localhost:3306)/test_tessera" --init_schema_path="./storage/mysql/schema.sql" --private_key_path="./cmd/conformance/mysql/docker/testdata/key"
 ```
 
 ### Stopping

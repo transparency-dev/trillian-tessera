@@ -62,7 +62,7 @@ func TestAwait(t *testing.T) {
 			fIndex:  2,
 			fErr:    nil,
 			fDelay:  0,
-			cpBody:  []byte("origin\n3\nthisisdefinitelyahash\n"),
+			cpBody:  []byte("origin\n3\nqINS1GRFhWHwdkUeqLEoP4yEMkTBBzxBkGwGQlVlVcs=\n"),
 			cpErr:   nil,
 			wantErr: false,
 		},
@@ -90,7 +90,7 @@ func TestAwait(t *testing.T) {
 			fIndex:  2,
 			fErr:    nil,
 			fDelay:  0,
-			cpBody:  []byte("origin\n3\nthisisdefinitelyahash\n"),
+			cpBody:  []byte("origin\n3\nqINS1GRFhWHwdkUeqLEoP4yEMkTBBzxBkGwGQlVlVcs=\n"),
 			cpErr:   nil,
 			cpDelay: 40 * time.Millisecond,
 			wantErr: false,
@@ -211,7 +211,7 @@ func TestAwait_multiClient(t *testing.T) {
 				t.Errorf("function for %d failed: %v", i, err)
 			}
 			if i != index {
-				t.Errorf(fmt.Sprintf("got %d but expected %d", i, index))
+				t.Errorf("got %d but expected %d", i, index)
 			}
 			cp, _, _, err := log.ParseCheckpoint(cpRaw, "example.com/log/testdata", v)
 			if err != nil {

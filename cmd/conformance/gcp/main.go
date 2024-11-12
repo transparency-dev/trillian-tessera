@@ -53,12 +53,12 @@ func main() {
 	flag.Parse()
 	ctx := context.Background()
 
-	s, v, a := signerFromFlags()
+	s, _, a := signerFromFlags()
 
 	// Create our Tessera storage backend:
 	gcpCfg := storageConfigFromFlags()
 	storage, err := gcp.New(ctx, gcpCfg,
-		tessera.WithCheckpointSignerVerifier(s, v, a...),
+		tessera.WithCheckpointSigner(s, a...),
 		tessera.WithBatching(1024, time.Second),
 		tessera.WithPushback(10*4096),
 	)

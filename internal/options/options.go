@@ -31,8 +31,7 @@ type EntriesPathFunc func(n, logSize uint64) string
 
 // StorageOptions holds optional settings for all storage implementations.
 type StorageOptions struct {
-	NewCP   NewCPFunc
-	ParseCP ParseCPFunc
+	NewCP NewCPFunc
 
 	BatchMaxAge  time.Duration
 	BatchMaxSize uint
