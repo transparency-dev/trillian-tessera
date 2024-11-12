@@ -66,11 +66,6 @@ const (
 
 // Storage is a GCP based storage implementation for Tessera.
 type Storage struct {
-	gcsClient *gcs.Client
-
-	projectID string
-	bucket    string
-
 	newCP       options.NewCPFunc
 	parseCP     options.ParseCPFunc
 	entriesPath options.EntriesPathFunc
@@ -105,8 +100,6 @@ type consumeFunc func(ctx context.Context, from uint64, entries []storage.Sequen
 
 // Config holds GCP project and resource configuration for a storage instance.
 type Config struct {
-	// ProjectID is the GCP project which hosts the storage bucket and Spanner database for the log.
-	ProjectID string
 	// Bucket is the name of the GCS bucket to use for storing log state.
 	Bucket string
 	// Spanner is the GCP resource URI of the spanner database instance to use.
@@ -124,20 +117,17 @@ func New(ctx context.Context, cfg Config, opts ...func(*options.StorageOptions))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create GCS client: %v", err)
 	}
-	gcsStorage, err := newGCSStorage(ctx, c, cfg.ProjectID, cfg.Bucket)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create GCS storage: %v", err)
-	}
+
 	seq, err := newSpannerSequencer(ctx, cfg.Spanner, uint64(opt.PushbackMaxOutstanding))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Spanner sequencer: %v", err)
 	}
 
 	r := &Storage{
-		gcsClient:   c,
-		projectID:   cfg.ProjectID,
-		bucket:      cfg.Bucket,
-		objStore:    gcsStorage,
+		objStore: &gcsStorage{
+			gcsClient: c,
+			bucket:    cfg.Bucket,
+		},
 		sequencer:   seq,
 		newCP:       opt.NewCP,
 		parseCP:     opt.ParseCP,
@@ -666,18 +656,6 @@ func (s *spannerSequencer) consumeEntries(ctx context.Context, limit uint64, f c
 type gcsStorage struct {
 	bucket    string
 	gcsClient *gcs.Client
-}
-
-// newGCSStorage creates a new gcsStorage.
-//
-// The specified bucket must exist or an error will be returned.
-func newGCSStorage(ctx context.Context, c *gcs.Client, projectID string, bucket string) (*gcsStorage, error) {
-	r := &gcsStorage{
-		gcsClient: c,
-		bucket:    bucket,
-	}
-
-	return r, nil
 }
 
 // getObject returns the data and generation of the specified object, or an error.
