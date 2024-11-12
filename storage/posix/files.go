@@ -29,6 +29,7 @@ import (
 	"github.com/transparency-dev/trillian-tessera/api"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
 	"github.com/transparency-dev/trillian-tessera/internal/options"
+	"github.com/transparency-dev/trillian-tessera/internal/parse"
 	storage "github.com/transparency-dev/trillian-tessera/storage/internal"
 	"k8s.io/klog/v2"
 )
@@ -49,7 +50,6 @@ type Storage struct {
 
 	curSize uint64
 	newCP   options.NewCPFunc
-	parseCP options.ParseCPFunc
 
 	entriesPath options.EntriesPathFunc
 }
@@ -66,7 +66,6 @@ func New(ctx context.Context, path string, create bool, opts ...func(*options.St
 	r := &Storage{
 		path:        path,
 		newCP:       opt.NewCP,
-		parseCP:     opt.ParseCP,
 		entriesPath: opt.EntriesPath,
 	}
 	if err := r.initialise(create); err != nil {
@@ -77,16 +76,13 @@ func New(ctx context.Context, path string, create bool, opts ...func(*options.St
 	return r, nil
 }
 
-func (s *Storage) curTree() (uint64, []byte, error) {
-	cpRaw, err := readCheckpoint(s.path)
+func (s *Storage) curTree() (uint64, error) {
+	rawCp, err := readCheckpoint(s.path)
 	if err != nil {
-		return 0, nil, fmt.Errorf("failed to read log checkpoint: %q", err)
+		return 0, fmt.Errorf("failed to read log checkpoint: %q", err)
 	}
-	cp, err := s.parseCP(cpRaw)
-	if err != nil {
-		return 0, nil, fmt.Errorf("failed to parse Checkpoint: %q", err)
-	}
-	return cp.Size, cp.Hash, nil
+	_, size, err := parse.CheckpointUnsafe(rawCp)
+	return size, err
 }
 
 // lockCP places a POSIX advisory lock for the checkpoint.
@@ -183,7 +179,7 @@ func (s *Storage) sequenceBatch(ctx context.Context, entries []*tessera.Entry) e
 		s.Unlock()
 	}()
 
-	size, _, err := s.curTree()
+	size, err := s.curTree()
 	if err != nil {
 		return err
 	}
@@ -395,7 +391,7 @@ func (s *Storage) initialise(create bool) error {
 			return fmt.Errorf("failed to write empty checkpoint: %v", err)
 		}
 	}
-	curSize, _, err := s.curTree()
+	curSize, err := s.curTree()
 	if err != nil {
 		return fmt.Errorf("failed to load checkpoint for log: %v", err)
 	}

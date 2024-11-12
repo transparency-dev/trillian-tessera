@@ -56,11 +56,10 @@ func main() {
 	ctx := context.Background()
 
 	// Gather the info needed for reading/writing checkpoints
-	vkey, v := getVerifierOrDie()
 	s, a := getSignersOrDie()
 
 	// Create the Tessera POSIX storage, using the directory from the --storage_dir flag
-	storage, err := posix.New(ctx, *storageDir, *initialise, tessera.WithCheckpointSignerVerifier(s, v, a...), tessera.WithBatching(256, time.Second))
+	storage, err := posix.New(ctx, *storageDir, *initialise, tessera.WithCheckpointSigner(s, a...), tessera.WithBatching(256, time.Second))
 	if err != nil {
 		klog.Exitf("Failed to construct storage: %v", err)
 	}
@@ -90,8 +89,7 @@ func main() {
 	// TODO(mhutchinson): Change the listen flag to just a port, or fix up this address formatting
 	klog.Infof("Environment variables useful for accessing this log:\n"+
 		"export WRITE_URL=http://localhost%s/ \n"+
-		"export READ_URL=http://localhost%s/ \n"+
-		"export LOG_PUBLIC_KEY=%s", *listen, *listen, vkey)
+		"export READ_URL=http://localhost%s/ \n", *listen, *listen)
 	// Run the HTTP server with the single handler and block until this is terminated
 	if err := http.ListenAndServe(*listen, http.DefaultServeMux); err != nil {
 		klog.Exitf("ListenAndServe: %v", err)

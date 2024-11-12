@@ -15,15 +15,14 @@
 package tessera
 
 import (
-	"bytes"
 	"context"
 	"fmt"
-	"strconv"
 	"sync"
 	"time"
 
 	"container/list"
 
+	"github.com/transparency-dev/trillian-tessera/internal/parse"
 	"k8s.io/klog/v2"
 )
 
@@ -116,18 +115,9 @@ func (a *IntegrationAwaiter) pollLoop(ctx context.Context, readCheckpoint func(c
 			a.releaseClientsErr(fmt.Errorf("readCheckpoint: %v", err))
 			continue
 		}
-		// Parsing a checkpoint like this is only acceptable because we're in the same binary as the
-		// log implementation that generated it and thus we can safely assume it's a well formed and
-		// validly signed checkpoint. Anyone copying similar logic into client code will get hurt.
-		parts := bytes.SplitN(rawCp, []byte{'\n'}, 3)
-		if want, got := 3, len(parts); want != got {
-			a.releaseClientsErr(fmt.Errorf("invalid checkpoint: %q", rawCp))
-			continue
-		}
-		sizeStr := string(parts[1])
-		size, err := strconv.ParseUint(sizeStr, 10, 64)
+		_, size, err := parse.CheckpointUnsafe(rawCp)
 		if err != nil {
-			a.releaseClientsErr(fmt.Errorf("failed to turn checkpoint size of %q into uint64: %v", sizeStr, err))
+			a.releaseClientsErr(err)
 			continue
 		}
 		a.releaseClients(size, rawCp)

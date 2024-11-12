@@ -28,6 +28,7 @@ import (
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/api"
 	options "github.com/transparency-dev/trillian-tessera/internal/options"
+	"github.com/transparency-dev/trillian-tessera/internal/parse"
 	"github.com/transparency-dev/trillian-tessera/storage/internal"
 	"k8s.io/klog/v2"
 )
@@ -50,25 +51,23 @@ type Storage struct {
 	db    *sql.DB
 	queue *storage.Queue
 
-	newCheckpoint   options.NewCPFunc
-	parseCheckpoint options.ParseCPFunc
+	newCheckpoint options.NewCPFunc
 }
 
 // New creates a new instance of the MySQL-based Storage.
-// Note that `tessera.WithCheckpointSignerVerifier()` is mandatory in the `opts` argument.
+// Note that `tessera.WithCheckpointSigner()` is mandatory in the `opts` argument.
 func New(ctx context.Context, db *sql.DB, opts ...func(*options.StorageOptions)) (*Storage, error) {
 	opt := storage.ResolveStorageOptions(opts...)
 	s := &Storage{
-		db:              db,
-		newCheckpoint:   opt.NewCP,
-		parseCheckpoint: opt.ParseCP,
+		db:            db,
+		newCheckpoint: opt.NewCP,
 	}
 	if err := s.db.Ping(); err != nil {
 		klog.Errorf("Failed to ping database: %v", err)
 		return nil, err
 	}
-	if s.newCheckpoint == nil || s.parseCheckpoint == nil {
-		return nil, errors.New("tessera.WithCheckpointSignerVerifier must be provided in New()")
+	if s.newCheckpoint == nil {
+		return nil, errors.New("tessera.WithCheckpointSigner must be provided in New()")
 	}
 
 	s.queue = storage.NewQueue(ctx, opt.BatchMaxAge, opt.BatchMaxSize, s.sequenceBatch)
@@ -257,13 +256,13 @@ func (s *Storage) sequenceBatch(ctx context.Context, entries []*tessera.Entry) e
 	if err := row.Scan(&rawCheckpoint); err != nil {
 		return fmt.Errorf("failed to read checkpoint: %w", err)
 	}
-	checkpoint, err := s.parseCheckpoint(rawCheckpoint)
+	_, size, err := parse.CheckpointUnsafe(rawCheckpoint)
 	if err != nil {
-		return fmt.Errorf("failed to verify checkpoint: %w", err)
+		return fmt.Errorf("failed to parse checkpoint: %w", err)
 	}
 
 	// Integrate the new entries into the entry bundle (TiledLeaves table) and tile (Subtree table).
-	if err := s.integrate(ctx, tx, checkpoint.Size, entries); err != nil {
+	if err := s.integrate(ctx, tx, size, entries); err != nil {
 		return fmt.Errorf("failed to integrate: %w", err)
 	}
 

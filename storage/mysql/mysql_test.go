@@ -143,15 +143,15 @@ func TestNew(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name: "standard tessera.WithCheckpointSignerVerifier",
+			name: "standard tessera.WithCheckpointSigner",
 			opts: []func(*options.StorageOptions){
-				tessera.WithCheckpointSignerVerifier(noteSigner, noteVerifier),
+				tessera.WithCheckpointSigner(noteSigner),
 			},
 		},
 		{
 			name: "all tessera.StorageOption",
 			opts: []func(*options.StorageOptions){
-				tessera.WithCheckpointSignerVerifier(noteSigner, noteVerifier),
+				tessera.WithCheckpointSigner(noteSigner),
 				tessera.WithBatching(1, 1*time.Second),
 				tessera.WithPushback(10),
 			},
@@ -360,7 +360,7 @@ func TestEntryBundleRoundTrip(t *testing.T) {
 func newTestMySQLStorage(t *testing.T, ctx context.Context) *mysql.Storage {
 	t.Helper()
 
-	s, err := mysql.New(ctx, testDB, tessera.WithCheckpointSignerVerifier(noteSigner, noteVerifier))
+	s, err := mysql.New(ctx, testDB, tessera.WithCheckpointSigner(noteSigner))
 	if err != nil {
 		t.Errorf("Failed to create mysql.Storage: %v", err)
 	}
