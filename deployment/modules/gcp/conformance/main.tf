@@ -60,7 +60,6 @@ resource "google_cloud_run_v2_service" "default" {
         "--v=1",
         "--bucket=${module.gcs.log_bucket.id}",
         "--spanner=${local.spanner_db_full}",
-        "--project=${var.project_id}",
         "--listen=:8080",
         "--signer=${var.signer}",
         "--verifier=${var.verifier}",

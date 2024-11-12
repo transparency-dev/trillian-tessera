@@ -22,7 +22,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"time"
 
 	tessera "github.com/transparency-dev/trillian-tessera"
@@ -36,7 +35,6 @@ import (
 var (
 	bucket            = flag.String("bucket", "", "Bucket to use for storing log")
 	listen            = flag.String("listen", ":2024", "Address:port to listen on")
-	project           = flag.String("project", os.Getenv("GOOGLE_CLOUD_PROJECT"), "GCP Project, take from env if unset")
 	spanner           = flag.String("spanner", "", "Spanner resource URI ('projects/.../...')")
 	signer            = flag.String("signer", "", "Note signer to use to sign checkpoints")
 	verifier          = flag.String("verifier", "", "Note verifier corresponding to --signer")
@@ -107,9 +105,6 @@ func main() {
 // storageConfigFromFlags returns a gcp.Config struct populated with values
 // provided via flags.
 func storageConfigFromFlags() gcp.Config {
-	if *project == "" {
-		klog.Exit("--project flag or GOOGLE_CLOUD_PROJECT env must be set.")
-	}
 	if *bucket == "" {
 		klog.Exit("--bucket must be set")
 	}
