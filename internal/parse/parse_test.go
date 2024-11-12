@@ -78,6 +78,9 @@ func TestCheckpointUnsafe(t *testing.T) {
 func BenchmarkCheckpointUnsafe(b *testing.B) {
 	cpRaw := []byte("go.sum database tree\n31700353\nqINS1GRFhWHwdkUeqLEoP4yEMkTBBzxBkGwGQlVlVcs=\n\n— sum.golang.org Az3grnmrIUEDFqHzAElIQCPNoRFRAAdFo47fooyWKMHb89k11GJh5zHIfNCOBmwn/C3YI8oW9/C8DJ87F61QqspBYwM=")
 	for i := 0; i < b.N; i++ {
-		parse.CheckpointUnsafe(cpRaw)
+		_, _, err := parse.CheckpointUnsafe(cpRaw)
+		if err != nil {
+			b.Error(err)
+		}
 	}
 }

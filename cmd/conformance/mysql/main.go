@@ -40,7 +40,6 @@ var (
 	initSchemaPath            = flag.String("init_schema_path", "", "Location of the schema file if database initialization is needed")
 	listen                    = flag.String("listen", ":2024", "Address:port to listen on")
 	privateKeyPath            = flag.String("private_key_path", "", "Location of private key file")
-	publicKeyPath             = flag.String("public_key_path", "", "Location of public key file")
 	additionalPrivateKeyPaths = []string{}
 )
 
@@ -127,18 +126,6 @@ func createSignerOrDie(s string) note.Signer {
 		klog.Exitf("Failed to create new signer: %v", err)
 	}
 	return noteSigner
-}
-
-func createVerifierOrDie() (string, note.Verifier) {
-	rawPublicKey, err := os.ReadFile(*publicKeyPath)
-	if err != nil {
-		klog.Exitf("Failed to read public key file %q: %v", *publicKeyPath, err)
-	}
-	noteVerifier, err := note.NewVerifier(string(rawPublicKey))
-	if err != nil {
-		klog.Exitf("Failed to create new verifier: %v", err)
-	}
-	return string(rawPublicKey), noteVerifier
 }
 
 // configureTilesReadAPI adds the API methods from https://c2sp.org/tlog-tiles to the mux,
