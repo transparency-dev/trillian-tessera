@@ -211,7 +211,7 @@ func TestAwait_multiClient(t *testing.T) {
 				t.Errorf("function for %d failed: %v", i, err)
 			}
 			if i != index {
-				t.Errorf(fmt.Sprintf("got %d but expected %d", i, index))
+				t.Errorf("got %d but expected %d", i, index)
 			}
 			cp, _, _, err := log.ParseCheckpoint(cpRaw, "example.com/log/testdata", v)
 			if err != nil {
