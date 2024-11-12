@@ -664,18 +664,6 @@ type gcsStorage struct {
 	gcsClient *gcs.Client
 }
 
-// newGCSStorage creates a new gcsStorage.
-//
-// The specified bucket must exist or an error will be returned.
-func newGCSStorage(c *gcs.Client, bucket string) (*gcsStorage, error) {
-	r := &gcsStorage{
-		gcsClient: c,
-		bucket:    bucket,
-	}
-
-	return r, nil
-}
-
 // getObject returns the data and generation of the specified object, or an error.
 func (s *gcsStorage) getObject(ctx context.Context, obj string) ([]byte, int64, error) {
 	r, err := s.gcsClient.Bucket(s.bucket).Object(obj).NewReader(ctx)
