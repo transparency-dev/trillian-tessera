@@ -39,4 +39,6 @@ type StorageOptions struct {
 	PushbackMaxOutstanding uint
 
 	EntriesPath EntriesPathFunc
+
+	CheckpointInterval time.Duration
 }

@@ -111,3 +111,10 @@ func WithPushback(maxOutstanding uint) func(*options.StorageOptions) {
 		o.PushbackMaxOutstanding = maxOutstanding
 	}
 }
+
+// WithCheckpointInterval allows the frequency at which Tessera will attempt to publish new checkpoints to be configured.
+func WithCheckpointInterval(t time.Duration) func(*options.StorageOptions) {
+	return func(o *options.StorageOptions) {
+		o.CheckpointInterval = t
+	}
+}
