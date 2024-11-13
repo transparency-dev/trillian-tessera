@@ -37,6 +37,7 @@ import (
 const (
 	dirPerm  = 0o755
 	filePerm = 0o644
+	stateDir = ".state"
 )
 
 // Storage implements storage functions for a POSIX filesystem.
@@ -95,7 +96,7 @@ func (s *Storage) lockCP() error {
 	if s.cpFile != nil {
 		panic("not unlocked")
 	}
-	s.cpFile, err = os.OpenFile(filepath.Join(s.path, layout.CheckpointPath+".lock"), syscall.O_CREAT|syscall.O_RDWR|syscall.O_CLOEXEC, filePerm)
+	s.cpFile, err = os.OpenFile(filepath.Join(s.path, stateDir, layout.CheckpointPath+".lock"), syscall.O_CREAT|syscall.O_RDWR|syscall.O_CLOEXEC, filePerm)
 	if err != nil {
 		return err
 	}
@@ -402,7 +403,7 @@ func (s *Storage) initialise(create bool) error {
 
 // writeCheckpoint stores a raw log checkpoint on disk.
 func writeCheckpoint(path string, newCPRaw []byte) error {
-	if err := createExclusive(filepath.Join(path, layout.CheckpointPath), newCPRaw); err != nil {
+	if err := createExclusive(filepath.Join(path, stateDir, layout.CheckpointPath), newCPRaw); err != nil {
 		return fmt.Errorf("failed to create checkpoint file: %w", err)
 	}
 	return nil
@@ -410,7 +411,7 @@ func writeCheckpoint(path string, newCPRaw []byte) error {
 
 // readcheckpoint returns the latest stored checkpoint.
 func readCheckpoint(path string) ([]byte, error) {
-	return os.ReadFile(filepath.Join(path, layout.CheckpointPath))
+	return os.ReadFile(filepath.Join(path, stateDir, layout.CheckpointPath))
 }
 
 // createExclusive creates a file at the given path and name before writing the data in d to it.
