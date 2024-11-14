@@ -132,6 +132,9 @@ func ParseTileIndexWidth(index string) (uint64, uint64, error) {
 		if err != nil || n >= 1000 || len(indexPath) != 3 {
 			return 0, 0, fmt.Errorf("failed to parse tile index")
 		}
+		if c.N > (math.MaxUint64-n)/1000 {
+			return 0, 0, fmt.Errorf("failed to parse tile index")
+		}
 		i = i*1000 + n
 	}
 
