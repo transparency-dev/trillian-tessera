@@ -66,7 +66,7 @@ const (
 	DefaultIntegrationSizeLimit   = 5 * 4096
 )
 
-// Storage is a AWS based storage implementation for Tessera.
+// Storage is an AWS based storage implementation for Tessera.
 type Storage struct {
 	newCP       options.NewCPFunc
 	entriesPath options.EntriesPathFunc
@@ -80,7 +80,8 @@ type Storage struct {
 // objStore describes a type which can store and retrieve objects.
 type objStore interface {
 	getObject(ctx context.Context, obj string) ([]byte, error)
-	setObject(ctx context.Context, obj string, data []byte, ifNoneMatch bool, contType string) error
+	setObject(ctx context.Context, obj string, data []byte, contType string) error
+	setObjectIfNoneMatch(ctx context.Context, obj string, data []byte, contType string) error
 }
 
 // sequencer describes a type which knows how to sequence entries.
@@ -124,7 +125,7 @@ func New(ctx context.Context, cfg Config, opts ...func(*options.StorageOptions))
 	}
 	c := s3.NewFromConfig(sdkConfig)
 
-	seq, err := newMysqlSequencer(ctx, cfg.DSN, uint64(opt.PushbackMaxOutstanding), cfg.MaxOpenConns, cfg.MaxIdleConns)
+	seq, err := newMySQLSequencer(ctx, cfg.DSN, uint64(opt.PushbackMaxOutstanding), cfg.MaxOpenConns, cfg.MaxIdleConns)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create MySQL sequencer: %v", err)
 	}
@@ -221,7 +222,7 @@ func (s *Storage) updateCP(ctx context.Context, newSize uint64, newRoot []byte) 
 	if err != nil {
 		return fmt.Errorf("newCP: %v", err)
 	}
-	if err := s.objStore.setObject(ctx, layout.CheckpointPath, cpRaw, false, ckptContType); err != nil {
+	if err := s.objStore.setObject(ctx, layout.CheckpointPath, cpRaw, ckptContType); err != nil {
 		return fmt.Errorf("writeCheckpoint: %v", err)
 	}
 	return nil
@@ -239,7 +240,7 @@ func (s *Storage) setTile(ctx context.Context, level, index, logSize uint64, til
 	tPath := layout.TilePath(level, index, logSize)
 	klog.V(2).Infof("StoreTile: %s (%d entries)", tPath, len(tile.Nodes))
 
-	return s.objStore.setObject(ctx, tPath, data, true, logContType)
+	return s.objStore.setObjectIfNoneMatch(ctx, tPath, data, logContType)
 }
 
 // getTiles returns the tiles with the given tile-coords for the specified log size.
@@ -303,8 +304,8 @@ func (s *Storage) setEntryBundle(ctx context.Context, bundleIndex uint64, logSiz
 	// Note that setObject does an idempotent interpretation of IfNoneMatch - it only
 	// returns an error if the named object exists _and_ contains different data to what's
 	// passed in here.
-	if err := s.objStore.setObject(ctx, objName, bundleRaw, true, logContType); err != nil {
-		return fmt.Errorf("setObject(%q): %v", objName, err)
+	if err := s.objStore.setObjectIfNoneMatch(ctx, objName, bundleRaw, logContType); err != nil {
+		return fmt.Errorf("setObjectIfNoneMatch(%q): %v", objName, err)
 
 	}
 	return nil
@@ -420,16 +421,16 @@ func (s *Storage) updateEntryBundles(ctx context.Context, fromSeq uint64, entrie
 	return seqErr.Wait()
 }
 
-// mysqlSequencer uses MySQL to provide
+// mySQLSequencer uses MySQL to provide
 // a durable and thread/multi-process safe sequencer.
-type mysqlSequencer struct {
+type mySQLSequencer struct {
 	dbPool         *sql.DB
 	maxOutstanding uint64
 }
 
-// newMysqlSequencer returns a new mysqlSequencer struct which uses the provided
+// newMySQLSequencer returns a new mysqlSequencer struct which uses the provided
 // DSN for its MySQL connection.
-func newMysqlSequencer(ctx context.Context, dsn string, maxOutstanding uint64, maxOpenConns, maxIdleConns int) (*mysqlSequencer, error) {
+func newMySQLSequencer(ctx context.Context, dsn string, maxOutstanding uint64, maxOpenConns, maxIdleConns int) (*mySQLSequencer, error) {
 	dbPool, err := sql.Open("mysql", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to MySQL db(%q)): %v", dsn, err)
@@ -446,7 +447,7 @@ func newMysqlSequencer(ctx context.Context, dsn string, maxOutstanding uint64, m
 		return nil, fmt.Errorf("failed to ping MySQL db(%q): %v", dsn, err)
 	}
 
-	r := &mysqlSequencer{
+	r := &mySQLSequencer{
 		dbPool:         dbPool,
 		maxOutstanding: maxOutstanding,
 	}
@@ -472,7 +473,7 @@ func newMysqlSequencer(ctx context.Context, dsn string, maxOutstanding uint64, m
 //   - IntCoord
 //     This table coordinates integration of the batches of entries stored in
 //     Seq into the committed tree state.
-func (s *mysqlSequencer) initDB(ctx context.Context) error {
+func (s *mySQLSequencer) initDB(ctx context.Context) error {
 	if _, err := s.dbPool.ExecContext(ctx,
 		`CREATE TABLE IF NOT EXISTS SeqCoord(
 			id INT UNSIGNED NOT NULL,
@@ -519,7 +520,7 @@ func (s *mysqlSequencer) initDB(ctx context.Context) error {
 // Entries are allocated contiguous indices, in the order in which they appear in the entries parameter.
 // This is achieved by storing the passed-in entries in the Seq table in MySQL, keyed by the
 // index assigned to the first entry in the batch.
-func (s *mysqlSequencer) assignEntries(ctx context.Context, entries []*tessera.Entry) error {
+func (s *mySQLSequencer) assignEntries(ctx context.Context, entries []*tessera.Entry) error {
 	// First grab the treeSize in a non-locking read-only fashion (we don't want to block/collide with integration).
 	// We'll use this value to determine whether we need to apply back-pressure.
 	var treeSize uint64
@@ -598,7 +599,7 @@ func (s *mysqlSequencer) assignEntries(ctx context.Context, entries []*tessera.E
 // removed from the Seq table.
 //
 // Returns true if some entries were consumed as a weak signal that there may be further entries waiting to be consumed.
-func (s *mysqlSequencer) consumeEntries(ctx context.Context, limit uint64, f consumeFunc, forceUpdate bool) (bool, error) {
+func (s *mySQLSequencer) consumeEntries(ctx context.Context, limit uint64, f consumeFunc, forceUpdate bool) (bool, error) {
 	tx, err := s.dbPool.BeginTx(ctx, nil)
 	if err != nil {
 		return false, fmt.Errorf("failed to begin Tx: %v", err)
@@ -628,6 +629,7 @@ func (s *mysqlSequencer) consumeEntries(ctx context.Context, limit uint64, f con
 	}
 	defer rows.Close()
 
+	// This needs to be of type `any`, to be passed to ExecContext. Only uint64s will be stored.
 	seqsConsumed := []any{}
 	entries := make([]storage.SequencedEntry, 0, limit)
 	orderCheck := fromSeq
@@ -669,6 +671,7 @@ func (s *mysqlSequencer) consumeEntries(ctx context.Context, limit uint64, f con
 	}
 
 	if len(seqsConsumed) > 0 {
+		// TODO(phboneff): evaluate if seq BETWEEN ? AND ? is more efficient
 		q := "DELETE FROM Seq WHERE id=? AND seq IN ( " + placeholder(len(seqsConsumed)) + " )"
 		if _, err := tx.ExecContext(ctx, q, append([]any{0}, seqsConsumed...)...); err != nil {
 			return false, fmt.Errorf("update intcoord: %v", err)
@@ -714,13 +717,8 @@ func (s *s3Storage) getObject(ctx context.Context, obj string) ([]byte, error) {
 	return d, r.Body.Close()
 }
 
-// setObject stores the provided data in the specified object, optionally gated by a condition.
-//
-// ifNoneMatch can be used to specify the IfNoneMatch preconditions for the write, i.e write
-// iff no object exists under this key already. If an object already exists under the same key,
-// an error will be returned *unless*  the currently stored data is bit-for-bit identical to the
-// data to-be-written. This is intended to provide idempotentency for writes.
-func (s *s3Storage) setObject(ctx context.Context, objName string, data []byte, ifNoneMatch bool, contType string) error {
+// setObject stores the provided data in the specified object.
+func (s *s3Storage) setObject(ctx context.Context, objName string, data []byte, contType string) error {
 	put := &s3.PutObjectInput{
 		Bucket:      aws.String(s.bucket),
 		Key:         aws.String(objName),
@@ -728,9 +726,26 @@ func (s *s3Storage) setObject(ctx context.Context, objName string, data []byte, 
 		ContentType: aws.String(contType),
 	}
 
-	if ifNoneMatch {
+	if _, err := s.s3Client.PutObject(ctx, put); err != nil {
+		return fmt.Errorf("failed to write object %q to bucket %q: %w", objName, s.bucket, err)
+	}
+	return nil
+}
+
+// setObjectIfNoneMatch stores data in the specified object gated by a IfNoneMatch condition.
+//
+// ifNoneMatch can be used to specify the IfNoneMatch preconditions for the write, i.e write
+// iff no object exists under this key already. If an object already exists under the same key,
+// an error will be returned *unless*  the currently stored data is bit-for-bit identical to the
+// data to-be-written. This is intended to provide idempotentency for writes.
+func (s *s3Storage) setObjectIfNoneMatch(ctx context.Context, objName string, data []byte, contType string) error {
+	put := &s3.PutObjectInput{
+		Bucket:      aws.String(s.bucket),
+		Key:         aws.String(objName),
+		Body:        bytes.NewReader(data),
+		ContentType: aws.String(contType),
 		// "*" is the expected character for this condition
-		put.IfNoneMatch = aws.String("*")
+		IfNoneMatch: aws.String("*"),
 	}
 
 	if _, err := s.s3Client.PutObject(ctx, put); err != nil {
@@ -749,7 +764,7 @@ func (s *s3Storage) setObject(ctx context.Context, objName string, data []byte, 
 				return fmt.Errorf("precondition failed: resource content for %q differs from data to-be-written", objName)
 			}
 
-			klog.V(2).Infof("setObject: identical resource already exists for %q, continuing", objName)
+			klog.V(2).Infof("setObjectIfNoneMatch: identical resource already exists for %q, continuing", objName)
 			return nil
 		}
 
