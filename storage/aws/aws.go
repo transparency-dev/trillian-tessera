@@ -26,7 +26,7 @@
 //
 // A Spanner database provides a transactional mechanism to allow multiple
 // frontends to safely update the contents of the log.
-package gcp
+package aws
 
 import (
 	"bytes"
