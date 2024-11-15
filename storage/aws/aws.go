@@ -485,6 +485,8 @@ func (s *mySQLSequencer) initDB(ctx context.Context) error {
 		)`); err != nil {
 		return err
 	}
+	// TODO(phboneff): test this with very large leaves, consider downgrading to MEDIUMBLOB.
+	// Keep in mind that CT leaves can be large, as large as: https://crt.sh/?id=10751627.
 	if _, err := s.dbPool.ExecContext(ctx,
 		`CREATE TABLE IF NOT EXISTS Seq(
 			id INT UNSIGNED NOT NULL,
