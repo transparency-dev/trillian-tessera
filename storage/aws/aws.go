@@ -199,6 +199,7 @@ func (s *Storage) get(ctx context.Context, path string) ([]byte, error) {
 func (s *Storage) init(ctx context.Context) error {
 	_, err := s.get(ctx, layout.CheckpointPath)
 	if err != nil {
+		// Do not use errors.Is. Keep errors.As to compare by type and not by value.
 		var nske *types.NoSuchKey
 		if errors.As(err, &nske) {
 			// No checkpoint exists, do a forced (possibly empty) integration to create one in a safe
@@ -256,6 +257,7 @@ func (s *Storage) getTiles(ctx context.Context, tileIDs []storage.TileID, logSiz
 			objName := layout.TilePath(id.Level, id.Index, logSize)
 			data, err := s.objStore.getObject(ctx, objName)
 			if err != nil {
+				// Do not use errors.Is. Keep errors.As to compare by type and not by value.
 				var nske *types.NoSuchKey
 				if errors.As(err, &nske) {
 					// Depending on context, this may be ok.
@@ -286,6 +288,7 @@ func (s *Storage) getEntryBundle(ctx context.Context, bundleIndex uint64, logSiz
 	objName := s.entriesPath(bundleIndex, logSize)
 	data, err := s.objStore.getObject(ctx, objName)
 	if err != nil {
+		// Do not use errors.Is. Keep errors.As to compare by type and not by value.
 		var nske *types.NoSuchKey
 		if errors.As(err, &nske) {
 			// Return the generic NotExist error so that higher levels can differentiate
