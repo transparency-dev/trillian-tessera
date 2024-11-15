@@ -38,7 +38,6 @@ var (
 	storageDir  = flag.String("storage_dir", "", "Root directory to store log data.")
 	initialise  = flag.Bool("initialise", false, "Set when creating a new log to initialise the structure.")
 	entries     = flag.String("entries", "", "File path glob of entries to add to the log.")
-	pubKeyFile  = flag.String("public_key", "", "Location of public key file. If unset, uses the contents of the LOG_PUBLIC_KEY environment variable.")
 	privKeyFile = flag.String("private_key", "", "Location of private key file. If unset, uses the contents of the LOG_PRIVATE_KEY environment variable.")
 )
 
@@ -57,13 +56,12 @@ func main() {
 	ctx := context.Background()
 
 	// Gather the info needed for reading/writing checkpoints
-	v := getVerifierOrDie()
 	s := getSignerOrDie()
 
 	// Handle the case where no entries are to be added.
 	if len(*entries) == 0 {
 		if *initialise {
-			_, err := posix.New(ctx, *storageDir, *initialise, tessera.WithCheckpointSignerVerifier(s, v))
+			_, err := posix.New(ctx, *storageDir, *initialise, tessera.WithCheckpointSigner(s))
 			if err != nil {
 				klog.Exitf("Failed to initialise storage: %v", err)
 			}
@@ -79,7 +77,7 @@ func main() {
 	// The options provide the checkpoint signer & verifier, and batch options.
 	// In this case, we want to create a single batch containing all of the leaves being added in order to
 	// add all of these leaves without creating any intermediate checkpoints.
-	st, err := posix.New(ctx, *storageDir, *initialise, tessera.WithCheckpointSignerVerifier(s, v), tessera.WithBatching(uint(len(filesToAdd)), time.Second))
+	st, err := posix.New(ctx, *storageDir, *initialise, tessera.WithCheckpointSigner(s), tessera.WithBatching(uint(len(filesToAdd)), time.Second))
 	if err != nil {
 		klog.Exitf("Failed to construct storage: %v", err)
 	}
@@ -107,30 +105,6 @@ func main() {
 	}
 
 	// All futures have been resolved, which means the log is built and we can allow the process to terminate. Goodbye!
-}
-
-// Read log public key from file or environment variable
-func getVerifierOrDie() note.Verifier {
-	var pubKey string
-	var err error
-	if len(*pubKeyFile) > 0 {
-		pubKey, err = getKeyFile(*pubKeyFile)
-		if err != nil {
-			klog.Exitf("Unable to get public key: %q", err)
-		}
-	} else {
-		pubKey = os.Getenv("LOG_PUBLIC_KEY")
-		if len(pubKey) == 0 {
-			klog.Exit("Supply public key file path using --public_key or set LOG_PUBLIC_KEY environment variable")
-		}
-	}
-	// Check signatures
-	v, err := note.NewVerifier(pubKey)
-	if err != nil {
-		klog.Exitf("Failed to instantiate Verifier: %q", err)
-	}
-
-	return v
 }
 
 // Read log private key from file or environment variable

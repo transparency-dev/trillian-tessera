@@ -28,7 +28,9 @@ import (
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/api"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
-	"github.com/transparency-dev/trillian-tessera/storage"
+	"github.com/transparency-dev/trillian-tessera/internal/options"
+	"github.com/transparency-dev/trillian-tessera/internal/parse"
+	storage "github.com/transparency-dev/trillian-tessera/storage/internal"
 	"k8s.io/klog/v2"
 )
 
@@ -47,10 +49,9 @@ type Storage struct {
 	cpFile *os.File
 
 	curSize uint64
-	newCP   tessera.NewCPFunc
-	parseCP tessera.ParseCPFunc
+	newCP   options.NewCPFunc
 
-	entriesPath tessera.EntriesPathFunc
+	entriesPath options.EntriesPathFunc
 }
 
 // NewTreeFunc is the signature of a function which receives information about newly integrated trees.
@@ -59,13 +60,12 @@ type NewTreeFunc func(size uint64, root []byte) error
 // New creates a new POSIX storage.
 // - path is a directory in which the log should be stored
 // - create must only be set when first creating the log, and will create the directory structure and an empty checkpoint
-func New(ctx context.Context, path string, create bool, opts ...func(*tessera.StorageOptions)) (*Storage, error) {
-	opt := tessera.ResolveStorageOptions(opts...)
+func New(ctx context.Context, path string, create bool, opts ...func(*options.StorageOptions)) (*Storage, error) {
+	opt := storage.ResolveStorageOptions(opts...)
 
 	r := &Storage{
 		path:        path,
 		newCP:       opt.NewCP,
-		parseCP:     opt.ParseCP,
 		entriesPath: opt.EntriesPath,
 	}
 	if err := r.initialise(create); err != nil {
@@ -76,16 +76,13 @@ func New(ctx context.Context, path string, create bool, opts ...func(*tessera.St
 	return r, nil
 }
 
-func (s *Storage) curTree() (uint64, []byte, error) {
-	cpRaw, err := readCheckpoint(s.path)
+func (s *Storage) curTree() (uint64, error) {
+	rawCp, err := readCheckpoint(s.path)
 	if err != nil {
-		return 0, nil, fmt.Errorf("failed to read log checkpoint: %q", err)
+		return 0, fmt.Errorf("failed to read log checkpoint: %q", err)
 	}
-	cp, err := s.parseCP(cpRaw)
-	if err != nil {
-		return 0, nil, fmt.Errorf("failed to parse Checkpoint: %q", err)
-	}
-	return cp.Size, cp.Hash, nil
+	_, size, err := parse.CheckpointUnsafe(rawCp)
+	return size, err
 }
 
 // lockCP places a POSIX advisory lock for the checkpoint.
@@ -148,9 +145,17 @@ func (s *Storage) Add(ctx context.Context, e *tessera.Entry) tessera.IndexFuture
 	return s.queue.Add(ctx, e)
 }
 
-// GetEntryBundle retrieves the Nth entries bundle for a log of the given size.
-func (s *Storage) GetEntryBundle(ctx context.Context, index, logSize uint64) ([]byte, error) {
+func (s *Storage) ReadCheckpoint(_ context.Context) ([]byte, error) {
+	return os.ReadFile(filepath.Join(s.path, layout.CheckpointPath))
+}
+
+// ReadEntryBundle retrieves the Nth entries bundle for a log of the given size.
+func (s *Storage) ReadEntryBundle(_ context.Context, index, logSize uint64) ([]byte, error) {
 	return os.ReadFile(filepath.Join(s.path, s.entriesPath(index, logSize)))
+}
+
+func (s *Storage) ReadTile(_ context.Context, level, index, logSize uint64) ([]byte, error) {
+	return os.ReadFile(filepath.Join(s.path, layout.TilePath(level, index, logSize)))
 }
 
 // sequenceBatch writes the entries from the provided batch into the entry bundle files of the log.
@@ -174,7 +179,7 @@ func (s *Storage) sequenceBatch(ctx context.Context, entries []*tessera.Entry) e
 		s.Unlock()
 	}()
 
-	size, _, err := s.curTree()
+	size, err := s.curTree()
 	if err != nil {
 		return err
 	}
@@ -190,7 +195,7 @@ func (s *Storage) sequenceBatch(ctx context.Context, entries []*tessera.Entry) e
 	bundleIndex, entriesInBundle := seq/uint64(256), seq%uint64(256)
 	if entriesInBundle > 0 {
 		// If the latest bundle is partial, we need to read the data it contains in for our newer, larger, bundle.
-		part, err := s.GetEntryBundle(ctx, bundleIndex, s.curSize)
+		part, err := s.ReadEntryBundle(ctx, bundleIndex, s.curSize)
 		if err != nil {
 			return err
 		}
@@ -254,7 +259,7 @@ func (s *Storage) sequenceBatch(ctx context.Context, entries []*tessera.Entry) e
 // doIntegrate handles integrating new entries into the log, and updating the checkpoint.
 func (s *Storage) doIntegrate(ctx context.Context, fromSeq uint64, entries []storage.SequencedEntry) error {
 	tb := storage.NewTreeBuilder(func(ctx context.Context, tileIDs []storage.TileID, treeSize uint64) ([]*api.HashTile, error) {
-		n, err := s.getTiles(ctx, tileIDs, treeSize)
+		n, err := s.readTiles(ctx, tileIDs, treeSize)
 		if err != nil {
 			return nil, fmt.Errorf("getTiles: %w", err)
 		}
@@ -267,7 +272,7 @@ func (s *Storage) doIntegrate(ctx context.Context, fromSeq uint64, entries []sto
 		return fmt.Errorf("Integrate: %v", err)
 	}
 	for k, v := range tiles {
-		if err := s.StoreTile(ctx, uint64(k.Level), k.Index, newSize, v); err != nil {
+		if err := s.storeTile(ctx, uint64(k.Level), k.Index, newSize, v); err != nil {
 			return fmt.Errorf("failed to set tile(%v): %v", k, err)
 		}
 	}
@@ -278,7 +283,7 @@ func (s *Storage) doIntegrate(ctx context.Context, fromSeq uint64, entries []sto
 		if err != nil {
 			return fmt.Errorf("newCP: %v", err)
 		}
-		if err := WriteCheckpoint(s.path, cpRaw); err != nil {
+		if err := writeCheckpoint(s.path, cpRaw); err != nil {
 			return fmt.Errorf("failed to write new checkpoint: %v", err)
 		}
 	}
@@ -286,10 +291,10 @@ func (s *Storage) doIntegrate(ctx context.Context, fromSeq uint64, entries []sto
 	return nil
 }
 
-func (s *Storage) getTiles(ctx context.Context, tileIDs []storage.TileID, treeSize uint64) ([]*api.HashTile, error) {
+func (s *Storage) readTiles(ctx context.Context, tileIDs []storage.TileID, treeSize uint64) ([]*api.HashTile, error) {
 	r := make([]*api.HashTile, 0, len(tileIDs))
 	for _, id := range tileIDs {
-		t, err := s.GetTile(ctx, id.Level, id.Index, treeSize)
+		t, err := s.readTile(ctx, id.Level, id.Index, treeSize)
 		if err != nil {
 			return nil, err
 		}
@@ -298,12 +303,11 @@ func (s *Storage) getTiles(ctx context.Context, tileIDs []storage.TileID, treeSi
 	return r, nil
 }
 
-// GetTile returns the tile at the given tile-level and tile-index.
+// readTile returns the parsed tile at the given tile-level and tile-index.
 // If no complete tile exists at that location, it will attempt to find a
 // partial tile for the given tree size at that location.
-func (s *Storage) GetTile(_ context.Context, level, index, logSize uint64) (*api.HashTile, error) {
-	p := filepath.Join(s.path, layout.TilePath(level, index, logSize))
-	t, err := os.ReadFile(p)
+func (s *Storage) readTile(ctx context.Context, level, index, logSize uint64) (*api.HashTile, error) {
+	t, err := s.ReadTile(ctx, level, index, logSize)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			// We'll signal to higher levels that it wasn't found by retuning a nil for this tile.
@@ -319,11 +323,11 @@ func (s *Storage) GetTile(_ context.Context, level, index, logSize uint64) (*api
 	return &tile, nil
 }
 
-// StoreTile writes a tile out to disk.
+// storeTile writes a tile out to disk.
 // Fully populated tiles are stored at the path corresponding to the level &
 // index parameters, partially populated (i.e. right-hand edge) tiles are
 // stored with a .xx suffix where xx is the number of "tile leaves" in hex.
-func (s *Storage) StoreTile(_ context.Context, level, index, logSize uint64, tile *api.HashTile) error {
+func (s *Storage) storeTile(_ context.Context, level, index, logSize uint64, tile *api.HashTile) error {
 	tileSize := uint64(len(tile.Nodes))
 	klog.V(2).Infof("StoreTile: level %d index %x ts: %x", level, index, tileSize)
 	if tileSize == 0 || tileSize > 256 {
@@ -383,11 +387,11 @@ func (s *Storage) initialise(create bool) error {
 		if err != nil {
 			return fmt.Errorf("failed to sign empty checkpoint: %v", err)
 		}
-		if err := WriteCheckpoint(s.path, n); err != nil {
+		if err := writeCheckpoint(s.path, n); err != nil {
 			return fmt.Errorf("failed to write empty checkpoint: %v", err)
 		}
 	}
-	curSize, _, err := s.curTree()
+	curSize, err := s.curTree()
 	if err != nil {
 		return fmt.Errorf("failed to load checkpoint for log: %v", err)
 	}
@@ -396,8 +400,8 @@ func (s *Storage) initialise(create bool) error {
 	return nil
 }
 
-// WriteCheckpoint stores a raw log checkpoint on disk.
-func WriteCheckpoint(path string, newCPRaw []byte) error {
+// writeCheckpoint stores a raw log checkpoint on disk.
+func writeCheckpoint(path string, newCPRaw []byte) error {
 	if err := createExclusive(filepath.Join(path, layout.CheckpointPath), newCPRaw); err != nil {
 		return fmt.Errorf("failed to create checkpoint file: %w", err)
 	}

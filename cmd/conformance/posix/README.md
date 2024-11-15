@@ -23,7 +23,7 @@ In another terminal, run the hammer against the log.
 In this example, we're running 32 writers against the log to add 128 new leaves within 1 minute.
 
 ```shell
-go run ./hammer \
+go run ./internal/hammer \
   --log_public_key=example.com/log/testdata+33d7b496+AeHTu4Q3hEIMHNqc6fASMsq3rKNx280NI+oO5xCFkkSx \
   --log_url=http://localhost:2025 \
   --max_read_ops=0 \

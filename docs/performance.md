@@ -9,6 +9,8 @@ This document describes the performance of each Trillian Tessera storage impleme
 
 ### GCP Free Tier VM Instance
 
+**tl;dr:** Tessera (MySQL) can run on the free tier VM instance on GCP with around **300 write QPS**. The bottleneck comes from the lack of memory which is consumed by the dockerized MySQL instance.
+
 **e2-micro**
 
 - vCPU: 0.25-2 vCPU (1 shared core)
@@ -85,10 +87,12 @@ MiB Swap:      0.0 total,      0.0 free,      0.0 used.     37.3 avail Mem
 1. Run `hammer` and get performance metrics
 
    ```sh
-   hammer:~/trillian-tessera$ go run ./hammer --log_public_key=Test-Betty+df84580a+AQQASqPUZoIHcJAF5mBOryctwFdTV1E0GRY4kEAtTzwB --log_url=http://10.128.0.3:2024 --max_read_ops=0 --num_writers=512 --max_write_ops=512
+   hammer:~/trillian-tessera$ go run ./internal/hammer --log_public_key=transparency.dev/tessera/example+ae330e15+ASf4/L1zE859VqlfQgGzKy34l91Gl8W6wfwp+vKP62DW --log_url=http://10.128.0.3:2024 --max_read_ops=0 --num_writers=512 --max_write_ops=512
    ```
 
 ### GCP Free Tier VM Instance + Cloud SQL (MySQL)
+
+**tl;dr:** Tessera (MySQL) can run on the free tier VM instance on GCP with around **2000 write QPS** when the MySQL database is run on Cloud SQL.
 
 **e2-micro**
 
@@ -162,13 +166,13 @@ The bottleneck comes from CPU usage of the `cmd/conformance/mysql` binary on the
 1. Run `cmd/conformance/mysql`
 
    ```sh
-   instance:~/trillian-tessera$ go run ./cmd/conformance/mysql --mysql_uri="root:root@tcp(127.0.0.1:3306)/test_tessera" --init_schema_path="./storage/mysql/schema.sql" --private_key_path="./cmd/conformance/mysql/docker/testdata/key" --public_key_path="./cmd/conformance/mysql/docker/testdata/key.pub" --db_max_open_conns=1024 --db_max_idle_conns=512
+   instance:~/trillian-tessera$ go run ./cmd/conformance/mysql --mysql_uri="root:root@tcp(127.0.0.1:3306)/test_tessera" --init_schema_path="./storage/mysql/schema.sql" --private_key_path="./cmd/conformance/mysql/docker/testdata/key" --db_max_open_conns=1024 --db_max_idle_conns=512
    ```
 
 1. Run `hammer` and get performance metrics
 
    ```sh
-   hammer:~/trillian-tessera$ go run ./hammer --log_public_key=Test-Betty+df84580a+AQQASqPUZoIHcJAF5mBOryctwFdTV1E0GRY4kEAtTzwB --log_url=http://10.128.0.3:2024 --max_read_ops=0 --num_writers=512 --max_write_ops=512
+   hammer:~/trillian-tessera$ go run ./internal/hammer --log_public_key=transparency.dev/tessera/example+ae330e15+ASf4/L1zE859VqlfQgGzKy34l91Gl8W6wfwp+vKP62DW --log_url=http://10.128.0.3:2024 --max_read_ops=0 --num_writers=512 --max_write_ops=512
    ```
 
 ## POSIX
@@ -250,7 +254,7 @@ MiB Swap:      0.0 total,      0.0 free,      0.0 used.    403.2 avail Mem
 1. Run `hammer` and get performance metrics
 
    ```sh
-   hammer:~/trillian-tessera$ go run ./hammer --log_public_key=example.com/log/testdata+33d7b496+AeHTu4Q3hEIMHNqc6fASMsq3rKNx280NI+oO5xCFkkSx --log_url=http://localhost:2025 --max_read_ops=0 --num_writers=512 --max_write_ops=512
+   hammer:~/trillian-tessera$ go run ./internal/hammer --log_public_key=example.com/log/testdata+33d7b496+AeHTu4Q3hEIMHNqc6fASMsq3rKNx280NI+oO5xCFkkSx --log_url=http://localhost:2025 --max_read_ops=0 --num_writers=512 --max_write_ops=512
    ```
 
 ## GCP

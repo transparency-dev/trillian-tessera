@@ -14,7 +14,9 @@
 
 // Package layout contains routines for specifying the path layout of Tessera logs,
 // which is really to say that it provides functions to calculate paths used by the
-// tlog-tiles API: https://github.com/C2SP/C2SP/blob/main/tlog-tiles.md
+// [tlog-tiles API].
+//
+// [tlog-tiles API]: https://c2sp.org/tlog-tiles
 package layout
 
 import (

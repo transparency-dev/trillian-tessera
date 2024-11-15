@@ -19,8 +19,8 @@ For real load-testing applications, especially headless runs as part of a CI pip
 Example usage to test a deployment of `cmd/conformance/mysql`:
 
 ```shell
-go run ./hammer \
-  --log_public_key=Test-Betty+df84580a+AQQASqPUZoIHcJAF5mBOryctwFdTV1E0GRY4kEAtTzwB \
+go run ./internal/hammer \
+  --log_public_key=transparency.dev/tessera/example+ae330e15+ASf4/L1zE859VqlfQgGzKy34l91Gl8W6wfwp+vKP62DW \
   --log_url=http://localhost:2024 \
   --max_read_ops=1024 \
   --num_readers_random=128 \
@@ -34,8 +34,8 @@ If the target number of leaves is reached then it exits successfully.
 If the timeout of 1 minute is reached first, then it exits with an exit code of 1.
 
 ```shell
-go run ./hammer \
-  --log_public_key=Test-Betty+df84580a+AQQASqPUZoIHcJAF5mBOryctwFdTV1E0GRY4kEAtTzwB \
+go run ./internal/hammer \
+  --log_public_key=transparency.dev/tessera/example+ae330e15+ASf4/L1zE859VqlfQgGzKy34l91Gl8W6wfwp+vKP62DW \
   --log_url=http://localhost:2024 \
   --max_read_ops=0 \
   --num_writers=512 \

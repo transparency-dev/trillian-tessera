@@ -22,7 +22,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"time"
 
 	tessera "github.com/transparency-dev/trillian-tessera"
@@ -34,30 +33,32 @@ import (
 )
 
 var (
-	bucket   = flag.String("bucket", "", "Bucket to use for storing log")
-	listen   = flag.String("listen", ":2024", "Address:port to listen on")
-	project  = flag.String("project", os.Getenv("GOOGLE_CLOUD_PROJECT"), "GCP Project, take from env if unset")
-	spanner  = flag.String("spanner", "", "Spanner resource URI ('projects/.../...')")
-	signer   = flag.String("signer", "", "Note signer to use to sign checkpoints")
-	verifier = flag.String("verifier", "", "Note verifier corresponding to --signer")
-	origin   = flag.String("origin", "", "Log origin string")
+	bucket            = flag.String("bucket", "", "Bucket to use for storing log")
+	listen            = flag.String("listen", ":2024", "Address:port to listen on")
+	spanner           = flag.String("spanner", "", "Spanner resource URI ('projects/.../...')")
+	signer            = flag.String("signer", "", "Note signer to use to sign checkpoints")
+	verifier          = flag.String("verifier", "", "Note verifier corresponding to --signer")
+	additionalSigners = []string{}
 )
+
+func init() {
+	flag.Func("additional_signer", "Additional note signer for checkpoints, may be specified multiple times", func(s string) error {
+		additionalSigners = append(additionalSigners, s)
+		return nil
+	})
+}
 
 func main() {
 	klog.InitFlags(nil)
 	flag.Parse()
 	ctx := context.Background()
 
-	if *origin == "" {
-		klog.Exit("Must supply --origin")
-	}
-
-	s, v := signerFromFlags()
+	s, _, a := signerFromFlags()
 
 	// Create our Tessera storage backend:
 	gcpCfg := storageConfigFromFlags()
 	storage, err := gcp.New(ctx, gcpCfg,
-		tessera.WithCheckpointSignerVerifier(s, v),
+		tessera.WithCheckpointSigner(s, a...),
 		tessera.WithBatching(1024, time.Second),
 		tessera.WithPushback(10*4096),
 	)
@@ -104,9 +105,6 @@ func main() {
 // storageConfigFromFlags returns a gcp.Config struct populated with values
 // provided via flags.
 func storageConfigFromFlags() gcp.Config {
-	if *project == "" {
-		klog.Exit("--project flag or GOOGLE_CLOUD_PROJECT env must be set.")
-	}
 	if *bucket == "" {
 		klog.Exit("--bucket must be set")
 	}
@@ -114,13 +112,12 @@ func storageConfigFromFlags() gcp.Config {
 		klog.Exit("--spanner must be set")
 	}
 	return gcp.Config{
-		ProjectID: *project,
-		Bucket:    *bucket,
-		Spanner:   *spanner,
+		Bucket:  *bucket,
+		Spanner: *spanner,
 	}
 }
 
-func signerFromFlags() (note.Signer, note.Verifier) {
+func signerFromFlags() (note.Signer, note.Verifier, []note.Signer) {
 	s, err := note.NewSigner(*signer)
 	if err != nil {
 		klog.Exitf("Failed to create new signer: %v", err)
@@ -131,5 +128,14 @@ func signerFromFlags() (note.Signer, note.Verifier) {
 		klog.Exitf("Failed to create new verifier: %v", err)
 	}
 
-	return s, v
+	var a []note.Signer
+	for _, as := range additionalSigners {
+		s, err := note.NewSigner(as)
+		if err != nil {
+			klog.Exitf("Failed to create additional signer: %v", err)
+		}
+		a = append(a, s)
+	}
+
+	return s, v, a
 }

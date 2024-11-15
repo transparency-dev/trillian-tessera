@@ -17,15 +17,15 @@ package main
 
 import (
 	"context"
-	crand "crypto/rand"
 	"crypto/tls"
 	"errors"
 	"flag"
 	"fmt"
-	"math/rand"
+	"math/rand/v2"
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	movingaverage "github.com/RobinUS2/golang-moving-average"
@@ -102,8 +102,8 @@ func main() {
 	f, w := newLogClientsFromFlags()
 
 	var cpRaw []byte
-	cons := client.UnilateralConsensus(f.Fetch)
-	tracker, err := client.NewLogStateTracker(ctx, f.Fetch, cpRaw, logSigV, logSigV.Name(), cons)
+	cons := client.UnilateralConsensus(f.ReadCheckpoint)
+	tracker, err := client.NewLogStateTracker(ctx, f.ReadCheckpoint, f.ReadTile, cpRaw, logSigV, logSigV.Name(), cons)
 	if err != nil {
 		klog.Exitf("Failed to create LogStateTracker: %v", err)
 	}
@@ -118,7 +118,7 @@ func main() {
 	go ha.errorLoop(ctx)
 
 	gen := newLeafGenerator(tracker.LatestConsistent.Size, *leafMinSize, *dupChance)
-	hammer := NewHammer(&tracker, f.Fetch, w.Write, gen, ha.seqLeafChan, ha.errChan)
+	hammer := NewHammer(&tracker, f.ReadEntryBundle, w.Write, gen, ha.seqLeafChan, ha.errChan)
 
 	exitCode := 0
 	if *leafWriteGoal > 0 {
@@ -169,7 +169,7 @@ func main() {
 	os.Exit(exitCode)
 }
 
-func NewHammer(tracker *client.LogStateTracker, f client.Fetcher, w LeafWriter, gen func() []byte, seqLeafChan chan<- leafTime, errChan chan<- error) *Hammer {
+func NewHammer(tracker *client.LogStateTracker, f client.EntryBundleFetcherFunc, w LeafWriter, gen func() []byte, seqLeafChan chan<- leafTime, errChan chan<- error) *Hammer {
 	readThrottle := NewThrottle(*maxReadOpsPerSecond)
 	writeThrottle := NewThrottle(*maxWriteOpsPerSecond)
 
@@ -361,33 +361,42 @@ func (a *HammerAnalyser) errorLoop(ctx context.Context) {
 
 // newLeafGenerator returns a function that generates values to append to a log.
 // The leaves are constructed to be at least minLeafSize bytes long.
+// The generator can be used by concurrent threads.
+//
 // dupChance provides the probability that a new leaf will be a duplicate of a previous entry.
 // Leaves will be unique if dupChance is 0, and if set to 1 then all values will be duplicates.
 // startSize should be set to the initial size of the log so that repeated runs of the
 // hammer can start seeding leaves to avoid duplicates with previous runs.
 func newLeafGenerator(startSize uint64, minLeafSize int, dupChance float64) func() []byte {
+	// genLeaf MUST be determinstic given n
 	genLeaf := func(n uint64) []byte {
 		// Make a slice with half the number of requested bytes since we'll
 		// hex-encode them below which gets us back up to the full amount.
 		filler := make([]byte, minLeafSize/2)
-		_, _ = crand.Read(filler)
+		source := rand.New(rand.NewPCG(0, n))
+		for i := range filler {
+			// This throws away a lot of the generated data. An exercise to a future
+			// coder is to fill in multiple bytes at a time.
+			filler[i] = byte(source.Int())
+		}
 		return []byte(fmt.Sprintf("%x %d", filler, n))
 	}
 
-	nextLeaf := genLeaf(startSize)
+	sizeLocked := startSize
+	var mu sync.Mutex
 	return func() []byte {
-		if rand.Float64() <= dupChance {
-			// This one will actually be unique, but the next iteration will
-			// duplicate it. In future, this duplication could be randomly
-			// selected to include really old leaves too, to test long-term
-			// deduplication in the log (if it supports  that).
-			return nextLeaf
-		}
+		mu.Lock()
+		thisSize := sizeLocked
 
-		startSize++
-		r := nextLeaf
-		nextLeaf = genLeaf(startSize)
-		return r
+		if thisSize > 0 && rand.Float64() <= dupChance {
+			thisSize = rand.Uint64N(thisSize)
+		} else {
+			sizeLocked++
+		}
+		mu.Unlock()
+
+		// Do this outside of the protected block so that writers don't block on leaf generation (especially for larger leaves).
+		return genLeaf(thisSize)
 	}
 }
 

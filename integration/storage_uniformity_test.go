@@ -21,13 +21,18 @@ import (
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/storage/gcp"
 	"github.com/transparency-dev/trillian-tessera/storage/mysql"
+	"github.com/transparency-dev/trillian-tessera/storage/posix"
 )
 
 type StorageContract interface {
 	Add(ctx context.Context, entry *tessera.Entry) tessera.IndexFuture
+	ReadCheckpoint(ctx context.Context) ([]byte, error)
+	ReadTile(ctx context.Context, level, index, treeSize uint64) ([]byte, error)
+	ReadEntryBundle(ctx context.Context, index, treeSize uint64) ([]byte, error)
 }
 
 var (
 	_ StorageContract = &mysql.Storage{}
 	_ StorageContract = &gcp.Storage{}
+	_ StorageContract = &posix.Storage{}
 )

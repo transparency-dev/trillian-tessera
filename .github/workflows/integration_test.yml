@@ -11,11 +11,11 @@ jobs:
     
     steps:
       - name: Checkout code
-        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Start Docker services (tessera-conformance-mysql-db and tessera-conformance-mysql)
         run: docker compose -f ./cmd/conformance/mysql/docker/compose.yaml up --build --detach
       - name: Run integration test 
-        run: go test -v -race ./integration/... --run_integration_test=true --log_url="http://localhost:2024" --write_log_url="http://localhost:2024" --log_public_key="Test-Betty+df84580a+AQQASqPUZoIHcJAF5mBOryctwFdTV1E0GRY4kEAtTzwB"
+        run: go test -v -race ./integration/... --run_integration_test=true --log_url="http://localhost:2024" --write_log_url="http://localhost:2024" --log_public_key="transparency.dev/tessera/example+ae330e15+ASf4/L1zE859VqlfQgGzKy34l91Gl8W6wfwp+vKP62DW"
       - name: Stop Docker services (tessera-conformance-mysql-db and tessera-conformance-mysql)
         if: ${{ always() }}
         run: docker compose -f ./cmd/conformance/mysql/docker/compose.yaml down
@@ -25,7 +25,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Start Docker services (tessera-conformance-posix)
         run: docker compose -f ./cmd/conformance/posix/docker/compose.yaml up --build --detach
       - name: Run integration test 
