@@ -12,36 +12,39 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package gcp contains a GCP-based storage implementation for Tessera.
+// Package aws contains an AWS-based storage implementation for Tessera.
 //
 // TODO: decide whether to rename this package.
 //
-// This storage implementation uses GCS for long-term storage and serving of
-// entry bundles and log tiles, and Spanner for coordinating updates to GCS
+// This storage implementation uses S3 for long-term storage and serving of
+// entry bundles and log tiles, and MySQL for coordinating updates to AWS
 // when multiple instances of a personality binary are running.
 //
-// A single GCS bucket is used to hold entry bundles and log internal tiles.
+// A single S3 bucket is used to hold entry bundles and log internal tiles.
 // The object keys for the bucket are selected so as to conform to the
 // expected layout of a tile-based log.
 //
-// A Spanner database provides a transactional mechanism to allow multiple
+// A MySQL database provides a transactional mechanism to allow multiple
 // frontends to safely update the contents of the log.
 package aws
 
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/gob"
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
+	"strings"
 	"time"
 
-	"cloud.google.com/go/spanner"
-	"cloud.google.com/go/spanner/apiv1/spannerpb"
-	gcs "cloud.google.com/go/storage"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/aws/smithy-go"
 	"github.com/google/go-cmp/cmp"
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/api"
@@ -49,10 +52,9 @@ import (
 	"github.com/transparency-dev/trillian-tessera/internal/options"
 	storage "github.com/transparency-dev/trillian-tessera/storage/internal"
 	"golang.org/x/sync/errgroup"
-	"google.golang.org/api/googleapi"
-	"google.golang.org/api/iterator"
-	"google.golang.org/grpc/codes"
 	"k8s.io/klog/v2"
+
+	_ "github.com/go-sql-driver/mysql"
 )
 
 const (
@@ -64,7 +66,7 @@ const (
 	DefaultIntegrationSizeLimit   = 5 * 4096
 )
 
-// Storage is a GCP based storage implementation for Tessera.
+// Storage is a AWS based storage implementation for Tessera.
 type Storage struct {
 	newCP       options.NewCPFunc
 	entriesPath options.EntriesPathFunc
@@ -77,8 +79,8 @@ type Storage struct {
 
 // objStore describes a type which can store and retrieve objects.
 type objStore interface {
-	getObject(ctx context.Context, obj string) ([]byte, int64, error)
-	setObject(ctx context.Context, obj string, data []byte, cond *gcs.Conditions, contType string) error
+	getObject(ctx context.Context, obj string) ([]byte, error)
+	setObject(ctx context.Context, obj string, data []byte, ifNoneMatch bool, contType string) error
 }
 
 // sequencer describes a type which knows how to sequence entries.
@@ -97,35 +99,40 @@ type sequencer interface {
 // consumeFunc is the signature of a function which can consume entries from the sequencer.
 type consumeFunc func(ctx context.Context, from uint64, entries []storage.SequencedEntry) error
 
-// Config holds GCP project and resource configuration for a storage instance.
+// Config holds AWS project and resource configuration for a storage instance.
 type Config struct {
-	// Bucket is the name of the GCS bucket to use for storing log state.
+	// Bucket is the name of the S3 bucket to use for storing log state.
 	Bucket string
-	// Spanner is the GCP resource URI of the spanner database instance to use.
-	Spanner string
+	// DSN is the DSN of the MySQL instance to use.
+	DSN string
+	// Maximum connections to the MysSQL database
+	MaxOpenConns int
+	// Maximum idle database connections in the connection pool
+	MaxIdleConns int
 }
 
-// New creates a new instance of the GCP based Storage.
+// New creates a new instance of the AWS based Storage.
 func New(ctx context.Context, cfg Config, opts ...func(*options.StorageOptions)) (*Storage, error) {
 	opt := storage.ResolveStorageOptions(opts...)
 	if opt.PushbackMaxOutstanding == 0 {
 		opt.PushbackMaxOutstanding = DefaultPushbackMaxOutstanding
 	}
 
-	c, err := gcs.NewClient(ctx, gcs.WithJSONReads())
+	sdkConfig, err := config.LoadDefaultConfig(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create GCS client: %v", err)
+		return nil, fmt.Errorf("failed to load default AWS configuration: %v", err)
 	}
+	c := s3.NewFromConfig(sdkConfig)
 
-	seq, err := newSpannerSequencer(ctx, cfg.Spanner, uint64(opt.PushbackMaxOutstanding))
+	seq, err := newMysqlSequencer(ctx, cfg.DSN, uint64(opt.PushbackMaxOutstanding), cfg.MaxOpenConns, cfg.MaxIdleConns)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create Spanner sequencer: %v", err)
+		return nil, fmt.Errorf("failed to create MySQL sequencer: %v", err)
 	}
 
 	r := &Storage{
-		objStore: &gcsStorage{
-			gcsClient: c,
-			bucket:    cfg.Bucket,
+		objStore: &s3Storage{
+			s3Client: c,
+			bucket:   cfg.Bucket,
 		},
 		sequencer:   seq,
 		newCP:       opt.NewCP,
@@ -183,7 +190,7 @@ func (s *Storage) ReadEntryBundle(ctx context.Context, i, sz uint64) ([]byte, er
 //
 // This is indended to be used to proxy read requests through the personality for debug/testing purposes.
 func (s *Storage) get(ctx context.Context, path string) ([]byte, error) {
-	d, _, err := s.objStore.getObject(ctx, path)
+	d, err := s.objStore.getObject(ctx, path)
 	return d, err
 }
 
@@ -191,7 +198,8 @@ func (s *Storage) get(ctx context.Context, path string) ([]byte, error) {
 func (s *Storage) init(ctx context.Context) error {
 	_, err := s.get(ctx, layout.CheckpointPath)
 	if err != nil {
-		if errors.Is(err, gcs.ErrObjectNotExist) {
+		var nske *types.NoSuchKey
+		if errors.As(err, &nske) {
 			// No checkpoint exists, do a forced (possibly empty) integration to create one in a safe
 			// way (calling updateCP directly here would not be safe as it's outside the transactional
 			// framework which prevents the tree from rolling backwards or otherwise forking).
@@ -213,7 +221,7 @@ func (s *Storage) updateCP(ctx context.Context, newSize uint64, newRoot []byte) 
 	if err != nil {
 		return fmt.Errorf("newCP: %v", err)
 	}
-	if err := s.objStore.setObject(ctx, layout.CheckpointPath, cpRaw, nil, ckptContType); err != nil {
+	if err := s.objStore.setObject(ctx, layout.CheckpointPath, cpRaw, false, ckptContType); err != nil {
 		return fmt.Errorf("writeCheckpoint: %v", err)
 	}
 	return nil
@@ -231,7 +239,7 @@ func (s *Storage) setTile(ctx context.Context, level, index, logSize uint64, til
 	tPath := layout.TilePath(level, index, logSize)
 	klog.V(2).Infof("StoreTile: %s (%d entries)", tPath, len(tile.Nodes))
 
-	return s.objStore.setObject(ctx, tPath, data, &gcs.Conditions{DoesNotExist: true}, logContType)
+	return s.objStore.setObject(ctx, tPath, data, true, logContType)
 }
 
 // getTiles returns the tiles with the given tile-coords for the specified log size.
@@ -245,9 +253,10 @@ func (s *Storage) getTiles(ctx context.Context, tileIDs []storage.TileID, logSiz
 		id := id
 		errG.Go(func() error {
 			objName := layout.TilePath(id.Level, id.Index, logSize)
-			data, _, err := s.objStore.getObject(ctx, objName)
+			data, err := s.objStore.getObject(ctx, objName)
 			if err != nil {
-				if errors.Is(err, gcs.ErrObjectNotExist) {
+				var nske *types.NoSuchKey
+				if errors.As(err, &nske) {
 					// Depending on context, this may be ok.
 					// We'll signal to higher levels that it wasn't found by retuning a nil for this tile.
 					return nil
@@ -274,9 +283,10 @@ func (s *Storage) getTiles(ctx context.Context, tileIDs []storage.TileID, logSiz
 // Returns a wrapped os.ErrNotExist if the bundle does not exist.
 func (s *Storage) getEntryBundle(ctx context.Context, bundleIndex uint64, logSize uint64) ([]byte, error) {
 	objName := s.entriesPath(bundleIndex, logSize)
-	data, _, err := s.objStore.getObject(ctx, objName)
+	data, err := s.objStore.getObject(ctx, objName)
 	if err != nil {
-		if errors.Is(err, gcs.ErrObjectNotExist) {
+		var nske *types.NoSuchKey
+		if errors.As(err, &nske) {
 			// Return the generic NotExist error so that higher levels can differentiate
 			// between this and other errors.
 			return nil, fmt.Errorf("%v: %w", objName, os.ErrNotExist)
@@ -290,10 +300,10 @@ func (s *Storage) getEntryBundle(ctx context.Context, bundleIndex uint64, logSiz
 // setEntryBundle idempotently stores the serialised entry bundle at the location implied by the bundleIndex and treeSize.
 func (s *Storage) setEntryBundle(ctx context.Context, bundleIndex uint64, logSize uint64, bundleRaw []byte) error {
 	objName := s.entriesPath(bundleIndex, logSize)
-	// Note that setObject does an idempotent interpretation of DoesNotExist - it only
+	// Note that setObject does an idempotent interpretation of IfNoneMatch - it only
 	// returns an error if the named object exists _and_ contains different data to what's
 	// passed in here.
-	if err := s.objStore.setObject(ctx, objName, bundleRaw, &gcs.Conditions{DoesNotExist: true}, logContType); err != nil {
+	if err := s.objStore.setObject(ctx, objName, bundleRaw, true, logContType); err != nil {
 		return fmt.Errorf("setObject(%q): %v", objName, err)
 
 	}
@@ -410,24 +420,37 @@ func (s *Storage) updateEntryBundles(ctx context.Context, fromSeq uint64, entrie
 	return seqErr.Wait()
 }
 
-// spannerSequencer uses Cloud Spanner to provide
+// mysqlSequencer uses MySQL to provide
 // a durable and thread/multi-process safe sequencer.
-type spannerSequencer struct {
-	dbPool         *spanner.Client
+type mysqlSequencer struct {
+	dbPool         *sql.DB
 	maxOutstanding uint64
 }
 
-// new SpannerSequencer returns a new spannerSequencer struct which uses the provided
-// spanner resource name for its spanner connection.
-func newSpannerSequencer(ctx context.Context, spannerDB string, maxOutstanding uint64) (*spannerSequencer, error) {
-	dbPool, err := spanner.NewClient(ctx, spannerDB)
+// newMysqlSequencer returns a new mysqlSequencer struct which uses the provided
+// DSN for its MySQL connection.
+func newMysqlSequencer(ctx context.Context, dsn string, maxOutstanding uint64, maxOpenConns, maxIdleConns int) (*mysqlSequencer, error) {
+	dbPool, err := sql.Open("mysql", dsn)
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to Spanner: %v", err)
+		return nil, fmt.Errorf("failed to connect to MySQL db(%q)): %v", dsn, err)
 	}
-	r := &spannerSequencer{
+
+	if maxOpenConns > 0 {
+		dbPool.SetMaxOpenConns(maxOpenConns)
+	}
+	if maxIdleConns >= 0 {
+		dbPool.SetMaxIdleConns(maxIdleConns)
+	}
+
+	if err := dbPool.Ping(); err != nil {
+		return nil, fmt.Errorf("failed to ping MySQL db(%q): %v", dsn, err)
+	}
+
+	r := &mysqlSequencer{
 		dbPool:         dbPool,
 		maxOutstanding: maxOutstanding,
 	}
+
 	if err := r.initDB(ctx); err != nil {
 		return nil, fmt.Errorf("failed to initDB: %v", err)
 	}
@@ -435,6 +458,8 @@ func newSpannerSequencer(ctx context.Context, spannerDB string, maxOutstanding u
 }
 
 // initDB ensures that the coordination DB is initialised correctly.
+//
+// It creates tables if they don't exist already, and inserts zero values.
 //
 // The database schema consists of 3 tables:
 //   - SeqCoord
@@ -447,36 +472,43 @@ func newSpannerSequencer(ctx context.Context, spannerDB string, maxOutstanding u
 //   - IntCoord
 //     This table coordinates integration of the batches of entries stored in
 //     Seq into the committed tree state.
-//
-// The database and schema should be created externally, e.g. by terraform.
-func (s *spannerSequencer) initDB(ctx context.Context) error {
-
-	/* Schema for reference:
-	CREATE TABLE SeqCoord (
-	 id INT64 NOT NULL,
-	 next INT64 NOT NULL,
-	) PRIMARY KEY (id);
-
-	CREATE TABLE Seq (
-		id INT64 NOT NULL,
-		seq INT64 NOT NULL,
-		v BYTES(MAX),
-	) PRIMARY KEY (id, seq);
-
-	CREATE TABLE IntCoord (
-		id INT64 NOT NULL,
-		seq INT64 NOT NULL,
-	) PRIMARY KEY (id);
-	*/
+func (s *mysqlSequencer) initDB(ctx context.Context) error {
+	if _, err := s.dbPool.ExecContext(ctx,
+		`CREATE TABLE IF NOT EXISTS SeqCoord(
+			id INT UNSIGNED NOT NULL,
+			next BIGINT UNSIGNED NOT NULL,
+			PRIMARY KEY (id)
+		)`); err != nil {
+		return err
+	}
+	if _, err := s.dbPool.ExecContext(ctx,
+		`CREATE TABLE IF NOT EXISTS Seq(
+			id INT UNSIGNED NOT NULL,
+			seq BIGINT UNSIGNED NOT NULL,
+			v LONGBLOB,
+			PRIMARY KEY (id, seq)
+		)`); err != nil {
+		return err
+	}
+	if _, err := s.dbPool.ExecContext(ctx,
+		`CREATE TABLE IF NOT EXISTS IntCoord(
+			id INT UNSIGNED NOT NULL,
+			seq BIGINT UNSIGNED NOT NULL,
+			PRIMARY KEY (id)
+		)`); err != nil {
+		return err
+	}
 
 	// Set default values for a newly initialised schema - these rows being present are a precondition for
 	// sequencing and integration to occur.
 	// Note that this will only succeed if no row exists, so there's no danger
 	// of "resetting" an existing log.
-	if _, err := s.dbPool.Apply(ctx, []*spanner.Mutation{spanner.Insert("SeqCoord", []string{"id", "next"}, []interface{}{0, 0})}); err != nil && spanner.ErrCode(err) != codes.AlreadyExists {
+	if _, err := s.dbPool.ExecContext(ctx,
+		`INSERT IGNORE INTO SeqCoord (id, next) VALUES (0, 0)`); err != nil {
 		return err
 	}
-	if _, err := s.dbPool.Apply(ctx, []*spanner.Mutation{spanner.Insert("IntCoord", []string{"id", "seq"}, []interface{}{0, 0})}); err != nil && spanner.ErrCode(err) != codes.AlreadyExists {
+	if _, err := s.dbPool.ExecContext(ctx,
+		`INSERT IGNORE INTO IntCoord (id, seq) VALUES (0, 0)`); err != nil {
 		return err
 	}
 	return nil
@@ -485,76 +517,77 @@ func (s *spannerSequencer) initDB(ctx context.Context) error {
 // assignEntries durably assigns each of the passed-in entries an index in the log.
 //
 // Entries are allocated contiguous indices, in the order in which they appear in the entries parameter.
-// This is achieved by storing the passed-in entries in the Seq table in Spanner, keyed by the
+// This is achieved by storing the passed-in entries in the Seq table in MySQL, keyed by the
 // index assigned to the first entry in the batch.
-func (s *spannerSequencer) assignEntries(ctx context.Context, entries []*tessera.Entry) error {
+func (s *mysqlSequencer) assignEntries(ctx context.Context, entries []*tessera.Entry) error {
 	// First grab the treeSize in a non-locking read-only fashion (we don't want to block/collide with integration).
 	// We'll use this value to determine whether we need to apply back-pressure.
-	var treeSize int64
-	if row, err := s.dbPool.Single().ReadRow(ctx, "IntCoord", spanner.Key{0}, []string{"seq"}); err != nil {
-		return err
-	} else {
-		if err := row.Column(0, &treeSize); err != nil {
-			return fmt.Errorf("failed to read integration coordination info: %v", err)
-		}
+	var treeSize uint64
+	row := s.dbPool.QueryRowContext(ctx, "SELECT seq FROM IntCoord WHERE id = ?", 0)
+	if err := row.Scan(&treeSize); err == sql.ErrNoRows {
+		return nil
+	} else if err != nil {
+		return fmt.Errorf("failed to read integration coordination info: %v", err)
 	}
 
-	var next int64 // Unfortunately, Spanner doesn't support uint64 so we'll have to cast around a bit.
-
-	_, err := s.dbPool.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
-		// First we need to grab the next available sequence number from the SeqCoord table.
-		row, err := txn.ReadRowWithOptions(ctx, "SeqCoord", spanner.Key{0}, []string{"id", "next"}, &spanner.ReadOptions{LockHint: spannerpb.ReadRequest_LOCK_HINT_EXCLUSIVE})
-		if err != nil {
-			return fmt.Errorf("failed to read SeqCoord: %v", err)
-		}
-		var id int64
-		if err := row.Columns(&id, &next); err != nil {
-			return fmt.Errorf("failed to parse id column: %v", err)
-		}
-
-		// Check whether there are too many outstanding entries and we should apply
-		// back-pressure.
-		if outstanding := next - treeSize; outstanding > int64(s.maxOutstanding) {
-			return tessera.ErrPushback
-		}
-
-		next := uint64(next) // Shadow next with a uint64 version of the same value to save on casts.
-		sequencedEntries := make([]storage.SequencedEntry, len(entries))
-		// Assign provisional sequence numbers to entries.
-		// We need to do this here in order to support serialisations which include the log position.
-		for i, e := range entries {
-			sequencedEntries[i] = storage.SequencedEntry{
-				BundleData: e.MarshalBundleData(next + uint64(i)),
-				LeafHash:   e.LeafHash(),
+	// Now move on with sequencing in a single transaction
+	tx, err := s.dbPool.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to begin Tx: %v", err)
+	}
+	defer func() {
+		if tx != nil {
+			if err := tx.Rollback(); err != nil {
+				klog.Errorf("failed to rollback Tx: %v", err)
 			}
 		}
+	}()
 
-		// Flatten the entries into a single slice of bytes which we can store in the Seq.v column.
-		b := &bytes.Buffer{}
-		e := gob.NewEncoder(b)
-		if err := e.Encode(sequencedEntries); err != nil {
-			return fmt.Errorf("failed to serialise batch: %v", err)
-		}
-		data := b.Bytes()
-		num := len(entries)
-
-		// TODO(al): think about whether aligning bundles to tile boundaries would be a good idea or not.
-		m := []*spanner.Mutation{
-			// Insert our newly sequenced batch of entries into Seq,
-			spanner.Insert("Seq", []string{"id", "seq", "v"}, []interface{}{0, int64(next), data}),
-			// and update the next-available sequence number row in SeqCoord.
-			spanner.Update("SeqCoord", []string{"id", "next"}, []interface{}{0, int64(next) + int64(num)}),
-		}
-		if err := txn.BufferWrite(m); err != nil {
-			return fmt.Errorf("failed to apply TX: %v", err)
-		}
-
-		return nil
-	})
-
-	if err != nil {
-		return fmt.Errorf("failed to flush batch: %w", err)
+	// First we need to grab the next available sequence number from the SeqCoord table.
+	var next, id uint64
+	r := tx.QueryRowContext(ctx, "SELECT id, next FROM SeqCoord WHERE id = ? FOR UPDATE", 0)
+	if err := r.Scan(&id, &next); err != nil {
+		return fmt.Errorf("failed to read seqcoord: %v", err)
 	}
+
+	// Check whether there are too many outstanding entries and we should apply
+	// back-pressure.
+	if outstanding := next - treeSize; outstanding > s.maxOutstanding {
+		return tessera.ErrPushback
+	}
+
+	sequencedEntries := make([]storage.SequencedEntry, len(entries))
+	// Assign provisional sequence numbers to entries.
+	// We need to do this here in order to support serialisations which include the log position.
+	for i, e := range entries {
+		sequencedEntries[i] = storage.SequencedEntry{
+			BundleData: e.MarshalBundleData(next + uint64(i)),
+			LeafHash:   e.LeafHash(),
+		}
+	}
+
+	// Flatten the entries into a single slice of bytes which we can store in the Seq.v column.
+	b := &bytes.Buffer{}
+	e := gob.NewEncoder(b)
+	if err := e.Encode(sequencedEntries); err != nil {
+		return fmt.Errorf("failed to serialise batch: %v", err)
+	}
+	data := b.Bytes()
+	num := uint64(len(entries))
+
+	// Insert our newly sequenced batch of entries into Seq,
+	if _, err := tx.ExecContext(ctx, "INSERT INTO Seq(id, seq, v) VALUES(?, ?, ?)", 0, next, data); err != nil {
+		return fmt.Errorf("insert into seq: %v", err)
+	}
+	// and update the next-available sequence number row in SeqCoord.
+	if _, err := tx.ExecContext(ctx, "UPDATE SeqCoord SET next = ? WHERE ID = ?", next+num, 0); err != nil {
+		return fmt.Errorf("update seqcoord: %v", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit Tx: %v", err)
+	}
+	tx = nil
 
 	return nil
 }
@@ -565,140 +598,151 @@ func (s *spannerSequencer) assignEntries(ctx context.Context, entries []*tessera
 // removed from the Seq table.
 //
 // Returns true if some entries were consumed as a weak signal that there may be further entries waiting to be consumed.
-func (s *spannerSequencer) consumeEntries(ctx context.Context, limit uint64, f consumeFunc, forceUpdate bool) (bool, error) {
-	didWork := false
-	_, err := s.dbPool.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
-		// Figure out which is the starting index of sequenced entries to start consuming from.
-		row, err := txn.ReadRowWithOptions(ctx, "IntCoord", spanner.Key{0}, []string{"seq"}, &spanner.ReadOptions{LockHint: spannerpb.ReadRequest_LOCK_HINT_EXCLUSIVE})
-		if err != nil {
-			return err
-		}
-		var fromSeq int64 // Spanner doesn't support uint64
-		if err := row.Column(0, &fromSeq); err != nil {
-			return fmt.Errorf("failed to read integration coordination info: %v", err)
-		}
-		klog.V(1).Infof("Consuming from %d", fromSeq)
-
-		// Now read the sequenced starting at the index we got above.
-		rows := txn.ReadWithOptions(ctx, "Seq",
-			spanner.KeyRange{Start: spanner.Key{0, fromSeq}, End: spanner.Key{0, fromSeq + int64(limit)}},
-			[]string{"seq", "v"},
-			&spanner.ReadOptions{LockHint: spannerpb.ReadRequest_LOCK_HINT_EXCLUSIVE})
-		defer rows.Stop()
-
-		seqsConsumed := []int64{}
-		entries := make([]storage.SequencedEntry, 0, limit)
-		orderCheck := fromSeq
-		for {
-			row, err := rows.Next()
-			if row == nil || err == iterator.Done {
-				break
-			}
-
-			var vGob []byte
-			var seq int64 // spanner doesn't have uint64
-			if err := row.Columns(&seq, &vGob); err != nil {
-				return fmt.Errorf("failed to scan seq row: %v", err)
-			}
-
-			if orderCheck != seq {
-				return fmt.Errorf("integrity fail - expected seq %d, but found %d", orderCheck, seq)
-			}
-
-			g := gob.NewDecoder(bytes.NewReader(vGob))
-			b := []storage.SequencedEntry{}
-			if err := g.Decode(&b); err != nil {
-				return fmt.Errorf("failed to deserialise v: %v", err)
-			}
-			entries = append(entries, b...)
-			seqsConsumed = append(seqsConsumed, seq)
-			orderCheck += int64(len(b))
-		}
-		if len(seqsConsumed) == 0 && !forceUpdate {
-			klog.V(1).Info("Found no rows to sequence")
-			return nil
-		}
-
-		// Call consumeFunc with the entries we've found
-		if err := f(ctx, uint64(fromSeq), entries); err != nil {
-			return err
-		}
-
-		// consumeFunc was successful, so we can update our coordination row, and delete the row(s) for
-		// the then consumed entries.
-		m := make([]*spanner.Mutation, 0)
-		m = append(m, spanner.Update("IntCoord", []string{"id", "seq"}, []interface{}{0, int64(orderCheck)}))
-		for _, c := range seqsConsumed {
-			m = append(m, spanner.Delete("Seq", spanner.Key{0, c}))
-		}
-		if len(m) > 0 {
-			if err := txn.BufferWrite(m); err != nil {
-				return err
-			}
-		}
-
-		didWork = true
-		return nil
-	})
+func (s *mysqlSequencer) consumeEntries(ctx context.Context, limit uint64, f consumeFunc, forceUpdate bool) (bool, error) {
+	tx, err := s.dbPool.BeginTx(ctx, nil)
 	if err != nil {
+		return false, fmt.Errorf("failed to begin Tx: %v", err)
+	}
+	defer func() {
+		if tx != nil {
+			if err := tx.Rollback(); err != nil {
+				klog.Errorf("failed to rollback Tx: %v", err)
+			}
+		}
+	}()
+
+	// Figure out which is the starting index of sequenced entries to start consuming from.
+	row := tx.QueryRowContext(ctx, "SELECT seq FROM IntCoord WHERE id = ? FOR UPDATE", 0)
+	var fromSeq uint64
+	if err := row.Scan(&fromSeq); err == sql.ErrNoRows {
+		return false, nil
+	} else if err != nil {
+		return false, fmt.Errorf("failed to read IntCoord: %v", err)
+	}
+	klog.V(1).Infof("Consuming from %d", fromSeq)
+
+	// Now read the sequenced starting at the index we got above.
+	rows, err := tx.QueryContext(ctx, "SELECT seq, v FROM Seq WHERE id = ? AND seq >= ? ORDER BY seq LIMIT ? FOR UPDATE", 0, fromSeq, limit)
+	if err != nil {
+		return false, fmt.Errorf("failed to read Seq: %v", err)
+	}
+	defer rows.Close()
+
+	seqsConsumed := []any{}
+	entries := make([]storage.SequencedEntry, 0, limit)
+	orderCheck := fromSeq
+	for rows.Next() {
+
+		var vGob []byte
+		var seq uint64
+		if err := rows.Scan(&seq, &vGob); err != nil {
+			return false, fmt.Errorf("failed to scan Seq row: %v", err)
+		}
+
+		if orderCheck != seq {
+			return false, fmt.Errorf("integrity fail - expected seq %d, but found %d", orderCheck, seq)
+		}
+
+		g := gob.NewDecoder(bytes.NewReader(vGob))
+		b := []storage.SequencedEntry{}
+		if err := g.Decode(&b); err != nil {
+			return false, fmt.Errorf("failed to deserialise v from Seq: %v", err)
+		}
+		entries = append(entries, b...)
+		seqsConsumed = append(seqsConsumed, seq)
+		orderCheck += uint64(len(b))
+	}
+	if len(seqsConsumed) == 0 && !forceUpdate {
+		klog.V(1).Info("Found no rows to sequence")
+		return false, nil
+	}
+
+	// Call consumeFunc with the entries we've found
+	if err := f(ctx, uint64(fromSeq), entries); err != nil {
 		return false, err
 	}
 
-	return didWork, nil
-}
-
-// gcsStorage knows how to store and retrieve objects from GCS.
-type gcsStorage struct {
-	bucket    string
-	gcsClient *gcs.Client
-}
-
-// getObject returns the data and generation of the specified object, or an error.
-func (s *gcsStorage) getObject(ctx context.Context, obj string) ([]byte, int64, error) {
-	r, err := s.gcsClient.Bucket(s.bucket).Object(obj).NewReader(ctx)
-	if err != nil {
-		return nil, -1, fmt.Errorf("getObject: failed to create reader for object %q in bucket %q: %w", obj, s.bucket, err)
+	// consumeFunc was successful, so we can update our coordination row, and delete the row(s) for
+	// the then consumed entries.
+	if _, err := tx.ExecContext(ctx, "UPDATE IntCoord SET seq=? WHERE id=?", orderCheck, 0); err != nil {
+		return false, fmt.Errorf("update intcoord: %v", err)
 	}
 
-	d, err := io.ReadAll(r)
-	if err != nil {
-		return nil, -1, fmt.Errorf("failed to read %q: %v", obj, err)
+	if len(seqsConsumed) > 0 {
+		q := "DELETE FROM Seq WHERE id=? AND seq IN ( " + placeholder(len(seqsConsumed)) + " )"
+		if _, err := tx.ExecContext(ctx, q, append([]any{0}, seqsConsumed...)...); err != nil {
+			return false, fmt.Errorf("update intcoord: %v", err)
+		}
 	}
-	return d, r.Attrs.Generation, r.Close()
+
+	if err := tx.Commit(); err != nil {
+		return false, fmt.Errorf("failed to commit Tx: %v", err)
+	}
+	tx = nil
+
+	return true, nil
+}
+
+func placeholder(n int) string {
+	places := make([]string, n)
+	for i := 0; i < n; i++ {
+		places[i] = "?"
+	}
+	return strings.Join(places, ",")
+}
+
+// s3Storage knows how to store and retrieve objects from S3.
+type s3Storage struct {
+	bucket   string
+	s3Client *s3.Client
+}
+
+// getObject returns the data of the specified object, or an error.
+func (s *s3Storage) getObject(ctx context.Context, obj string) ([]byte, error) {
+	r, err := s.s3Client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(s.bucket),
+		Key:    aws.String(obj),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("getObject: failed to create reader for object %q in bucket %q: %w", obj, s.bucket, err)
+	}
+
+	d, err := io.ReadAll(r.Body)
+	if err != nil {
+		return nil, fmt.Errorf("getObject: failed to read %q: %v", obj, err)
+	}
+	return d, r.Body.Close()
 }
 
 // setObject stores the provided data in the specified object, optionally gated by a condition.
 //
-// cond can be used to specify preconditions for the write (e.g. write iff not exists, write iff
-// current generation is X, etc.), or nil can be passed if no preconditions are desired.
-//
-// Note that when preconditions are specified and are not met, an error will be returned *unless*
-// the currently stored data is bit-for-bit identical to the data to-be-written.
-// This is intended to provide idempotentency for writes.
-func (s *gcsStorage) setObject(ctx context.Context, objName string, data []byte, cond *gcs.Conditions, contType string) error {
-	bkt := s.gcsClient.Bucket(s.bucket)
-	obj := bkt.Object(objName)
-
-	var w *gcs.Writer
-	if cond == nil {
-		w = obj.NewWriter(ctx)
-
-	} else {
-		w = obj.If(*cond).NewWriter(ctx)
-	}
-	w.ObjectAttrs.ContentType = contType
-	if _, err := w.Write(data); err != nil {
-		return fmt.Errorf("failed to write object %q to bucket %q: %w", objName, s.bucket, err)
+// ifNoneMatch can be used to specify the IfNoneMatch preconditions for the write, i.e write
+// iff no object exists under this key already. If an object already exists under the same key,
+// an error will be returned *unless*  the currently stored data is bit-for-bit identical to the
+// data to-be-written. This is intended to provide idempotentency for writes.
+func (s *s3Storage) setObject(ctx context.Context, objName string, data []byte, ifNoneMatch bool, contType string) error {
+	put := &s3.PutObjectInput{
+		Bucket:      aws.String(s.bucket),
+		Key:         aws.String(objName),
+		Body:        bytes.NewReader(data),
+		ContentType: aws.String(contType),
 	}
 
-	if err := w.Close(); err != nil {
+	if ifNoneMatch {
+		// "*" is the expected character for this condition
+		put.IfNoneMatch = aws.String("*")
+	}
+
+	if _, err := s.s3Client.PutObject(ctx, put); err != nil {
+
 		// If we run into a precondition failure error, check that the object
 		// which exists contains the same content that we want to write.
 		// If so, we can consider this write to be idempotently successful.
-		if ee, ok := err.(*googleapi.Error); ok && ee.Code == http.StatusPreconditionFailed {
-			existing, existingGen, err := s.getObject(ctx, objName)
+		var apiErr smithy.APIError
+		if errors.As(err, &apiErr) && apiErr.ErrorCode() == "PreconditionFailed" {
+			existing, err := s.getObject(ctx, objName)
 			if err != nil {
-				return fmt.Errorf("failed to fetch existing content for %q (@%d): %v", objName, existingGen, err)
+				return fmt.Errorf("failed to fetch existing content for %q: %v", objName, err)
 			}
 			if !bytes.Equal(existing, data) {
 				klog.Errorf("Resource %q non-idempotent write:\n%s", objName, cmp.Diff(existing, data))
@@ -709,7 +753,7 @@ func (s *gcsStorage) setObject(ctx context.Context, objName string, data []byte,
 			return nil
 		}
 
-		return fmt.Errorf("failed to close write on %q: %v", objName, err)
+		return fmt.Errorf("failed to write object %q to bucket %q: %w", objName, s.bucket, err)
 	}
 	return nil
 }
