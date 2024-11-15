@@ -32,6 +32,7 @@ import (
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/api"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
+	options "github.com/transparency-dev/trillian-tessera/internal/options"
 	"github.com/transparency-dev/trillian-tessera/storage/mysql"
 	"golang.org/x/mod/sumdb/note"
 	"k8s.io/klog/v2"
@@ -47,8 +48,8 @@ var (
 )
 
 const (
-	testPrivateKey = "PRIVATE+KEY+Test-Betty+df84580a+Afge8kCzBXU7jb3cV2Q363oNXCufJ6u9mjOY1BGRY9E2"
-	testPublicKey  = "Test-Betty+df84580a+AQQASqPUZoIHcJAF5mBOryctwFdTV1E0GRY4kEAtTzwB"
+	testPrivateKey = "PRIVATE+KEY+transparency.dev/tessera/example+ae330e15+AXEwZQ2L6Ga3NX70ITObzyfEIketMr2o9Kc+ed/rt/QR"
+	testPublicKey  = "transparency.dev/tessera/example+ae330e15+ASf4/L1zE859VqlfQgGzKy34l91Gl8W6wfwp+vKP62DW"
 )
 
 // TestMain checks whether the test MySQL database is available and starts the tests including database schema initialization.
@@ -133,7 +134,7 @@ func TestNew(t *testing.T) {
 
 	for _, test := range []struct {
 		name    string
-		opts    []func(*tessera.StorageOptions)
+		opts    []func(*options.StorageOptions)
 		wantErr bool
 	}{
 		{
@@ -142,15 +143,15 @@ func TestNew(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name: "standard tessera.WithCheckpointSignerVerifier",
-			opts: []func(*tessera.StorageOptions){
-				tessera.WithCheckpointSignerVerifier(noteSigner, noteVerifier),
+			name: "standard tessera.WithCheckpointSigner",
+			opts: []func(*options.StorageOptions){
+				tessera.WithCheckpointSigner(noteSigner),
 			},
 		},
 		{
 			name: "all tessera.StorageOption",
-			opts: []func(*tessera.StorageOptions){
-				tessera.WithCheckpointSignerVerifier(noteSigner, noteVerifier),
+			opts: []func(*options.StorageOptions){
+				tessera.WithCheckpointSigner(noteSigner),
 				tessera.WithBatching(1, 1*time.Second),
 				tessera.WithPushback(10),
 			},
@@ -213,7 +214,7 @@ func TestReadMissingEntryBundle(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			entryBundle, err := s.ReadEntryBundle(ctx, test.index)
+			entryBundle, err := s.ReadEntryBundle(ctx, test.index, test.index)
 			if err != nil {
 				t.Errorf("got err: %v", err)
 			}
@@ -335,7 +336,7 @@ func TestEntryBundleRoundTrip(t *testing.T) {
 			if err != nil {
 				t.Errorf("Add got err: %v", err)
 			}
-			entryBundleRaw, err := s.ReadEntryBundle(ctx, entryIndex/256)
+			entryBundleRaw, err := s.ReadEntryBundle(ctx, entryIndex/256, entryIndex)
 			if err != nil {
 				t.Errorf("ReadEntryBundle got err: %v", err)
 			}
@@ -359,7 +360,7 @@ func TestEntryBundleRoundTrip(t *testing.T) {
 func newTestMySQLStorage(t *testing.T, ctx context.Context) *mysql.Storage {
 	t.Helper()
 
-	s, err := mysql.New(ctx, testDB, tessera.WithCheckpointSignerVerifier(noteSigner, noteVerifier))
+	s, err := mysql.New(ctx, testDB, tessera.WithCheckpointSigner(noteSigner))
 	if err != nil {
 		t.Errorf("Failed to create mysql.Storage: %v", err)
 	}

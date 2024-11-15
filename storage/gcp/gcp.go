@@ -46,7 +46,8 @@ import (
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/api"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
-	"github.com/transparency-dev/trillian-tessera/storage"
+	"github.com/transparency-dev/trillian-tessera/internal/options"
+	storage "github.com/transparency-dev/trillian-tessera/storage/internal"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/iterator"
@@ -65,14 +66,8 @@ const (
 
 // Storage is a GCP based storage implementation for Tessera.
 type Storage struct {
-	gcsClient *gcs.Client
-
-	projectID string
-	bucket    string
-
-	newCP       tessera.NewCPFunc
-	parseCP     tessera.ParseCPFunc
-	entriesPath tessera.EntriesPathFunc
+	newCP       options.NewCPFunc
+	entriesPath options.EntriesPathFunc
 
 	sequencer sequencer
 	objStore  objStore
@@ -104,8 +99,6 @@ type consumeFunc func(ctx context.Context, from uint64, entries []storage.Sequen
 
 // Config holds GCP project and resource configuration for a storage instance.
 type Config struct {
-	// ProjectID is the GCP project which hosts the storage bucket and Spanner database for the log.
-	ProjectID string
 	// Bucket is the name of the GCS bucket to use for storing log state.
 	Bucket string
 	// Spanner is the GCP resource URI of the spanner database instance to use.
@@ -113,8 +106,8 @@ type Config struct {
 }
 
 // New creates a new instance of the GCP based Storage.
-func New(ctx context.Context, cfg Config, opts ...func(*tessera.StorageOptions)) (*Storage, error) {
-	opt := tessera.ResolveStorageOptions(opts...)
+func New(ctx context.Context, cfg Config, opts ...func(*options.StorageOptions)) (*Storage, error) {
+	opt := storage.ResolveStorageOptions(opts...)
 	if opt.PushbackMaxOutstanding == 0 {
 		opt.PushbackMaxOutstanding = DefaultPushbackMaxOutstanding
 	}
@@ -123,23 +116,19 @@ func New(ctx context.Context, cfg Config, opts ...func(*tessera.StorageOptions))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create GCS client: %v", err)
 	}
-	gcsStorage, err := newGCSStorage(ctx, c, cfg.ProjectID, cfg.Bucket)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create GCS storage: %v", err)
-	}
+
 	seq, err := newSpannerSequencer(ctx, cfg.Spanner, uint64(opt.PushbackMaxOutstanding))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Spanner sequencer: %v", err)
 	}
 
 	r := &Storage{
-		gcsClient:   c,
-		projectID:   cfg.ProjectID,
-		bucket:      cfg.Bucket,
-		objStore:    gcsStorage,
+		objStore: &gcsStorage{
+			gcsClient: c,
+			bucket:    cfg.Bucket,
+		},
 		sequencer:   seq,
 		newCP:       opt.NewCP,
-		parseCP:     opt.ParseCP,
 		entriesPath: opt.EntriesPath,
 	}
 	r.queue = storage.NewQueue(ctx, opt.BatchMaxAge, opt.BatchMaxSize, r.sequencer.assignEntries)
@@ -178,17 +167,29 @@ func (s *Storage) Add(ctx context.Context, e *tessera.Entry) tessera.IndexFuture
 	return s.queue.Add(ctx, e)
 }
 
-// Get returns the requested object.
+func (s *Storage) ReadCheckpoint(ctx context.Context) ([]byte, error) {
+	return s.get(ctx, layout.CheckpointPath)
+}
+
+func (s *Storage) ReadTile(ctx context.Context, l, i, sz uint64) ([]byte, error) {
+	return s.get(ctx, layout.TilePath(l, i, sz))
+}
+
+func (s *Storage) ReadEntryBundle(ctx context.Context, i, sz uint64) ([]byte, error) {
+	return s.get(ctx, s.entriesPath(i, sz))
+}
+
+// get returns the requested object.
 //
 // This is indended to be used to proxy read requests through the personality for debug/testing purposes.
-func (s *Storage) Get(ctx context.Context, path string) ([]byte, error) {
+func (s *Storage) get(ctx context.Context, path string) ([]byte, error) {
 	d, _, err := s.objStore.getObject(ctx, path)
 	return d, err
 }
 
 // init ensures that the storage represents a log in a valid state.
 func (s *Storage) init(ctx context.Context) error {
-	cpRaw, err := s.Get(ctx, layout.CheckpointPath)
+	_, err := s.get(ctx, layout.CheckpointPath)
 	if err != nil {
 		if errors.Is(err, gcs.ErrObjectNotExist) {
 			// No checkpoint exists, do a forced (possibly empty) integration to create one in a safe
@@ -202,9 +203,6 @@ func (s *Storage) init(ctx context.Context) error {
 			return nil
 		}
 		return fmt.Errorf("failed to read checkpoint: %v", err)
-	}
-	if _, err = s.parseCP(cpRaw); err != nil {
-		return fmt.Errorf("Found invalid existing checpoint file: %v\ncheckpoint contents:\n%v", err, string(cpRaw))
 	}
 
 	return nil
@@ -471,7 +469,7 @@ func (s *spannerSequencer) initDB(ctx context.Context) error {
 	) PRIMARY KEY (id);
 	*/
 
-	// Set default values for a newly inisialised schema - these rows being present are a precondition for
+	// Set default values for a newly initialised schema - these rows being present are a precondition for
 	// sequencing and integration to occur.
 	// Note that this will only succeed if no row exists, so there's no danger
 	// of "resetting" an existing log.
@@ -653,18 +651,6 @@ func (s *spannerSequencer) consumeEntries(ctx context.Context, limit uint64, f c
 type gcsStorage struct {
 	bucket    string
 	gcsClient *gcs.Client
-}
-
-// newGCSStorage creates a new gcsStorage.
-//
-// The specified bucket must exist or an error will be returned.
-func newGCSStorage(ctx context.Context, c *gcs.Client, projectID string, bucket string) (*gcsStorage, error) {
-	r := &gcsStorage{
-		gcsClient: c,
-		bucket:    bucket,
-	}
-
-	return r, nil
 }
 
 // getObject returns the data and generation of the specified object, or an error.

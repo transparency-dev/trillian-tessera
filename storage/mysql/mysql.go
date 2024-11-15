@@ -27,7 +27,9 @@ import (
 	"github.com/transparency-dev/merkle/rfc6962"
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/api"
-	"github.com/transparency-dev/trillian-tessera/storage"
+	options "github.com/transparency-dev/trillian-tessera/internal/options"
+	"github.com/transparency-dev/trillian-tessera/internal/parse"
+	"github.com/transparency-dev/trillian-tessera/storage/internal"
 	"k8s.io/klog/v2"
 )
 
@@ -49,25 +51,23 @@ type Storage struct {
 	db    *sql.DB
 	queue *storage.Queue
 
-	newCheckpoint   tessera.NewCPFunc
-	parseCheckpoint tessera.ParseCPFunc
+	newCheckpoint options.NewCPFunc
 }
 
 // New creates a new instance of the MySQL-based Storage.
-// Note that `tessera.WithCheckpointSignerVerifier()` is mandatory in the `opts` argument.
-func New(ctx context.Context, db *sql.DB, opts ...func(*tessera.StorageOptions)) (*Storage, error) {
-	opt := tessera.ResolveStorageOptions(opts...)
+// Note that `tessera.WithCheckpointSigner()` is mandatory in the `opts` argument.
+func New(ctx context.Context, db *sql.DB, opts ...func(*options.StorageOptions)) (*Storage, error) {
+	opt := storage.ResolveStorageOptions(opts...)
 	s := &Storage{
-		db:              db,
-		newCheckpoint:   opt.NewCP,
-		parseCheckpoint: opt.ParseCP,
+		db:            db,
+		newCheckpoint: opt.NewCP,
 	}
 	if err := s.db.Ping(); err != nil {
 		klog.Errorf("Failed to ping database: %v", err)
 		return nil, err
 	}
-	if s.newCheckpoint == nil || s.parseCheckpoint == nil {
-		return nil, errors.New("tessera.WithCheckpointSignerVerifier must be provided in New()")
+	if s.newCheckpoint == nil {
+		return nil, errors.New("tessera.WithCheckpointSigner must be provided in New()")
 	}
 
 	s.queue = storage.NewQueue(ctx, opt.BatchMaxAge, opt.BatchMaxSize, s.sequenceBatch)
@@ -188,7 +188,7 @@ func (s *Storage) writeTile(ctx context.Context, tx *sql.Tx, level, index uint64
 // 3. Partial tile request with full/larger partial tile output: Return trimmed partial tile with correct tile width.
 // 4. Partial tile request with partial tile (same width) output: Return partial tile.
 // 5. Partial tile request with smaller partial tile output: Return error.
-func (s *Storage) ReadEntryBundle(ctx context.Context, index uint64) ([]byte, error) {
+func (s *Storage) ReadEntryBundle(ctx context.Context, index, treeSize uint64) ([]byte, error) {
 	row := s.db.QueryRowContext(ctx, selectTiledLeavesSQL, index)
 	if err := row.Err(); err != nil {
 		return nil, err
@@ -256,13 +256,13 @@ func (s *Storage) sequenceBatch(ctx context.Context, entries []*tessera.Entry) e
 	if err := row.Scan(&rawCheckpoint); err != nil {
 		return fmt.Errorf("failed to read checkpoint: %w", err)
 	}
-	checkpoint, err := s.parseCheckpoint(rawCheckpoint)
+	_, size, err := parse.CheckpointUnsafe(rawCheckpoint)
 	if err != nil {
-		return fmt.Errorf("failed to verify checkpoint: %w", err)
+		return fmt.Errorf("failed to parse checkpoint: %w", err)
 	}
 
 	// Integrate the new entries into the entry bundle (TiledLeaves table) and tile (Subtree table).
-	if err := s.integrate(ctx, tx, checkpoint.Size, entries); err != nil {
+	if err := s.integrate(ctx, tx, size, entries); err != nil {
 		return fmt.Errorf("failed to integrate: %w", err)
 	}
 

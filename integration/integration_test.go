@@ -50,8 +50,10 @@ var (
 
 	noteVerifier note.Verifier
 
-	logReadBaseURL *url.URL
-	logRead        client.Fetcher
+	logReadBaseURL     *url.URL
+	logReadCP          client.CheckpointFetcherFunc
+	logReadTile        client.TileFetcherFunc
+	logReadEntryBundle client.EntryBundleFetcherFunc
 
 	hc = &http.Client{
 		Transport: &http.Transport{
@@ -84,9 +86,18 @@ func TestMain(m *testing.M) {
 
 	switch logReadBaseURL.Scheme {
 	case "http", "https":
-		logRead = httpRead
+		hf, err := client.NewHTTPFetcher(logReadBaseURL, nil)
+		if err != nil {
+			klog.Fatalf("NewHTTPFetcher: %v", err)
+		}
+		logReadCP = hf.ReadCheckpoint
+		logReadTile = hf.ReadTile
+		logReadEntryBundle = hf.ReadEntryBundle
 	case "file":
-		logRead = fileRead
+		ff := client.FileFetcher{Root: logReadBaseURL.Path}
+		logReadCP = ff.ReadCheckpoint
+		logReadTile = ff.ReadTile
+		logReadEntryBundle = ff.ReadEntryBundle
 	default:
 		klog.Fatalf("unsupported url scheme: %s", logReadBaseURL.Scheme)
 	}
@@ -101,7 +112,7 @@ func TestLiveLogIntegration(t *testing.T) {
 
 	// Step 1 - Get checkpoint initial size for increment validation.
 	var checkpointInitSize uint64
-	checkpoint, _, _, err := client.FetchCheckpoint(ctx, logRead, noteVerifier, noteVerifier.Name())
+	checkpoint, _, _, err := client.FetchCheckpoint(ctx, logReadCP, noteVerifier, noteVerifier.Name())
 	if err != nil {
 		t.Errorf("client.FetchCheckpoint: %v", err)
 	}
@@ -128,7 +139,7 @@ func TestLiveLogIntegration(t *testing.T) {
 				t.Errorf("entryWriter.add: %v", err)
 			}
 			entryIndexMap.Store(i, index)
-			checkpoint, _, _, err := client.FetchCheckpoint(ctx, logRead, noteVerifier, noteVerifier.Name())
+			checkpoint, _, _, err := client.FetchCheckpoint(ctx, logReadCP, noteVerifier, noteVerifier.Name())
 			if err != nil {
 				t.Errorf("client.FetchCheckpoint: %v", err)
 			}
@@ -146,7 +157,7 @@ func TestLiveLogIntegration(t *testing.T) {
 	}
 
 	// Step 3 - Validate checkpoint size increment.
-	checkpoint, _, _, err = client.FetchCheckpoint(ctx, logRead, noteVerifier, noteVerifier.Name())
+	checkpoint, _, _, err = client.FetchCheckpoint(ctx, logReadCP, noteVerifier, noteVerifier.Name())
 	if err != nil {
 		t.Errorf("client.FetchCheckpoint: %v", err)
 	}
@@ -165,7 +176,7 @@ func TestLiveLogIntegration(t *testing.T) {
 		index := v.(uint64)
 
 		// Step 4.1 - Get entry bundles to read back what was written, check leaves are correct.
-		entryBundle, err := client.GetEntryBundle(ctx, logRead, index/256, checkpoint.Size)
+		entryBundle, err := client.GetEntryBundle(ctx, logReadEntryBundle, index/256, checkpoint.Size)
 		if err != nil {
 			t.Errorf("client.GetEntryBundle: %v", err)
 		}
@@ -176,7 +187,7 @@ func TestLiveLogIntegration(t *testing.T) {
 		}
 
 		// Step 4.2 - Test inclusion proofs.
-		pb, err := client.NewProofBuilder(ctx, *checkpoint, logRead)
+		pb, err := client.NewProofBuilder(ctx, *checkpoint, logReadTile)
 		if err != nil {
 			t.Errorf("client.NewProofBuilder: %v", err)
 		}
@@ -193,48 +204,9 @@ func TestLiveLogIntegration(t *testing.T) {
 	})
 
 	// Step 5 - Test consistency proofs.
-	if err := client.CheckConsistency(ctx, logRead, checkpoints); err != nil {
+	if err := client.CheckConsistency(ctx, logReadTile, checkpoints); err != nil {
 		t.Errorf("log consistency checks failed: %v", err)
 	}
-}
-
-func httpRead(ctx context.Context, path string) ([]byte, error) {
-	u, err := url.JoinPath(*logURL, path)
-	if err != nil {
-		return nil, err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
-	if err != nil {
-		return nil, err
-	}
-	resp, err := hc.Do(req.WithContext(ctx))
-	if err != nil {
-		return nil, err
-	}
-	defer func() {
-		if err := resp.Body.Close(); err != nil {
-			klog.Errorf("resp.Body.Close(): %v", err)
-		}
-	}()
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read body: %v", err)
-	}
-
-	switch resp.StatusCode {
-	case http.StatusNotFound:
-		klog.Infof("Not found: %q", u)
-		return nil, os.ErrNotExist
-	case http.StatusOK:
-		break
-	default:
-		return nil, fmt.Errorf("unexpected http status %q", resp.Status)
-	}
-	return body, nil
-}
-
-func fileRead(_ context.Context, path string) ([]byte, error) {
-	return os.ReadFile(logReadBaseURL.JoinPath(path).Path)
 }
 
 type entryWriter struct {

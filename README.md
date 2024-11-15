@@ -4,20 +4,23 @@
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/transparency-dev/trillian-tessera/badge)](https://scorecard.dev/viewer/?uri=github.com/transparency-dev/trillian-tessera)
 [![Slack Status](https://img.shields.io/badge/Slack-Chat-blue.svg)](https://transparency-dev.slack.com/)
 
-Trillian Tessera is a Go library for building
-[tile-based transparency logs (tlogs)](https://github.com/C2SP/C2SP/blob/main/tlog-tiles.md).
-It is the logical successor to the approach Trillian v1 takes in building and operating logs.
+Trillian Tessera is a Go library for building [tile-based transparency logs (tlogs)](https://c2sp.org/tlog-tiles).
+It is the logical successor to the approach [Trillian v1][] takes in building and operating logs.
 
 The implementation and its APIs bake-in
 [current best-practices based on the lessons learned](https://transparency.dev/articles/tile-based-logs/)
 over the past decade of building and operating transparency logs in production environments and at scale.
 
-Tessera goals:
+Tessera was introduced at the Transparency.Dev summit in October 2024.
+Watch [Introducing Trillian Tessera](https://www.youtube.com/watch?v=9j_8FbQ9qSc) for all the details,
+but here's a summary of the high level goals:
 
 *   [tlog-tiles API][] and storage
 *   Support for both cloud and on-premises infrastructure
-    *   GCP and AWS support will be provided initially
-    *   Cloud agnostic MySQL and POSIX filesystem support
+    *   [GCP](./storage/gcp/)
+    *   AWS (#24)
+    *   [MySQL](./storage/mysql/)
+    *   [POSIX](./storage/posix/)
 *   Make it easy to build and deploy new transparency logs on supported infrastructure
     *   Library instead of microservice architecture
     *   No additional services to manage
@@ -31,10 +34,14 @@ Tessera goals:
 *   Enable building of arbitrary log personalities, including support for the peculiarities of a
     [Static CT API][] compliant log.
 
+The main non-goal is to support transparency logs using anything other than the [tlog-tiles API][].
+While it is possible to deploy a custom personality in front of Tessera that adapts the tlog-tiles API
+into any other API, this strategy will lose a lot of the read scaling that Tessera is designed for.
+
 ### Status
 
-Tessera is currently under active development, and is not yet ready for general use. However, early
-feedback is welcome.
+Tessera is under active development, with the [alpha](https://github.com/orgs/transparency-dev/projects/2/views/3) milestone coming soon. 
+Users of GCP, MySQL, and POSIX are welcome to try the relevant [Getting Started](#getting-started) guide.
 
 ### Roadmap
 
@@ -42,11 +49,12 @@ Alpha expected by Q4 2024, and production ready in the first half of 2025.
 
 #### What’s happening to Trillian v1?
 
-[Trillian v1](https://github.com/google/trillian) is still in use in production environments by
+[Trillian v1][] is still in use in production environments by
 multiple organisations in multiple ecosystems, and is likely to remain so for the mid-term. 
 
 New ecosystems, or existing ecosystems looking to evolve, should strongly consider planning a
-migration to Tessera and adopting the patterns it encourages. 
+migration to Tessera and adopting the patterns it encourages.
+Note that to achieve the full benefits of Tessera, logs must use the [tlog-tiles API][].
 
 ### Getting started
 
@@ -86,3 +94,4 @@ transparency ecosystems over the years.
 
 [tlog-tiles API]: https://c2sp.org/tlog-tiles
 [Static CT API]: https://c2sp.org/static-ct-api
+[Trillian v1]: https://github.com/google/trillian

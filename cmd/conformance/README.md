@@ -2,7 +2,7 @@
 
 This directory contains personalities that serve a dual purpose:
  - To provide a simple example of a personality that can be deployed with each backend
- - To function as conformance and performance harnesses for Tessera (using the [hammer](../../hammer/))
+ - To function as conformance and performance harnesses for Tessera (using the [hammer](../../internal/hammer/))
 
 Each subdirectory contains an implementation of the same personality built on top of Tessera.
 Implementations are provided that use:
@@ -25,14 +25,16 @@ The commands below add entries to the log, and then show a few approaches to ins
 
 ```shell
 # Add 3 entries in parallel, and wait for all requests to complete
-curl -d 'foo' -H "Content-Type: application/data" -X POST ${WRITE_URL}/add &
-curl -d 'bar' -H "Content-Type: application/data" -X POST ${WRITE_URL}/add &
-curl -d 'baz' -H "Content-Type: application/data" -X POST ${WRITE_URL}/add &
+curl -d 'one!' -H "Content-Type: application/data" -X POST ${WRITE_URL}add &
+curl -d 'two!' -H "Content-Type: application/data" -X POST ${WRITE_URL}add &
+curl -d 'three!' -H "Content-Type: application/data" -X POST ${WRITE_URL}add &
 wait
 
-# Check that the checkpoint is of the correct size and the leaves are present
-curl ${READ_URL}/checkpoint
-curl -output - ${READ_URL}/tile/entries/000.p/3
+# Check that the checkpoint is of the correct size
+curl -s ${READ_URL}checkpoint
+
+# Look at the leaves. Piping into xxd to reveal the leaf sizes.
+curl -s ${READ_URL}tile/entries/000.p/3 | xxd
 ```
 
 The tiles format is plain-text, but it's better to inspect the log via tooling made for this purpose:
@@ -46,4 +48,8 @@ go run github.com/mhutchinson/woodpecker@main \
 
 Use arrow keys left and right to go backwards and forwards through the entries in the log.
 Use `q` to quit.
+
+Here's a demo of the codelab being followed:
+
+![Codelab demo](./demo.gif)
 

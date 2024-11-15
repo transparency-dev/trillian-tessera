@@ -33,15 +33,22 @@ import (
 )
 
 var (
-	mysqlURI          = flag.String("mysql_uri", "user:password@tcp(db:3306)/tessera", "Connection string for a MySQL database")
-	dbConnMaxLifetime = flag.Duration("db_conn_max_lifetime", 3*time.Minute, "")
-	dbMaxOpenConns    = flag.Int("db_max_open_conns", 64, "")
-	dbMaxIdleConns    = flag.Int("db_max_idle_conns", 64, "")
-	initSchemaPath    = flag.String("init_schema_path", "", "Location of the schema file if database initialization is needed")
-	listen            = flag.String("listen", ":2024", "Address:port to listen on")
-	privateKeyPath    = flag.String("private_key_path", "", "Location of private key file")
-	publicKeyPath     = flag.String("public_key_path", "", "Location of public key file")
+	mysqlURI                  = flag.String("mysql_uri", "user:password@tcp(db:3306)/tessera", "Connection string for a MySQL database")
+	dbConnMaxLifetime         = flag.Duration("db_conn_max_lifetime", 3*time.Minute, "")
+	dbMaxOpenConns            = flag.Int("db_max_open_conns", 64, "")
+	dbMaxIdleConns            = flag.Int("db_max_idle_conns", 64, "")
+	initSchemaPath            = flag.String("init_schema_path", "", "Location of the schema file if database initialization is needed")
+	listen                    = flag.String("listen", ":2024", "Address:port to listen on")
+	privateKeyPath            = flag.String("private_key_path", "", "Location of private key file")
+	additionalPrivateKeyPaths = []string{}
 )
+
+func init() {
+	flag.Func("additional_private_key_path", "Location of additional private key file, may be specified multiple times", func(s string) error {
+		additionalPrivateKeyPaths = append(additionalPrivateKeyPaths, s)
+		return nil
+	})
+}
 
 func main() {
 	klog.InitFlags(nil)
@@ -49,11 +56,10 @@ func main() {
 	ctx := context.Background()
 
 	db := createDatabaseOrDie(ctx)
-	noteSigner := createSignerOrDie()
-	vkey, noteVerifier := createVerifierOrDie()
+	noteSigner, additionalSigners := createSignersOrDie()
 
 	// Initialise the Tessera MySQL storage
-	storage, err := mysql.New(ctx, db, tessera.WithCheckpointSignerVerifier(noteSigner, noteVerifier))
+	storage, err := mysql.New(ctx, db, tessera.WithCheckpointSigner(noteSigner, additionalSigners...))
 	if err != nil {
 		klog.Exitf("Failed to create new MySQL storage: %v", err)
 	}
@@ -81,8 +87,7 @@ func main() {
 	// TODO(mhutchinson): Change the listen flag to just a port, or fix up this address formatting
 	klog.Infof("Environment variables useful for accessing this log:\n"+
 		"export WRITE_URL=http://localhost%s/ \n"+
-		"export READ_URL=http://localhost%s/ \n"+
-		"export LOG_PUBLIC_KEY=%s", *listen, *listen, vkey)
+		"export READ_URL=http://localhost%s/ \n", *listen, *listen)
 	// Serve HTTP requests until the process is terminated
 	if err := http.ListenAndServe(*listen, http.DefaultServeMux); err != nil {
 		klog.Exitf("ListenAndServe: %v", err)
@@ -102,28 +107,25 @@ func createDatabaseOrDie(ctx context.Context) *sql.DB {
 	return db
 }
 
-func createSignerOrDie() note.Signer {
-	rawPrivateKey, err := os.ReadFile(*privateKeyPath)
+func createSignersOrDie() (note.Signer, []note.Signer) {
+	s := createSignerOrDie(*privateKeyPath)
+	a := []note.Signer{}
+	for _, p := range additionalPrivateKeyPaths {
+		a = append(a, createSignerOrDie(p))
+	}
+	return s, a
+}
+
+func createSignerOrDie(s string) note.Signer {
+	rawPrivateKey, err := os.ReadFile(s)
 	if err != nil {
-		klog.Exitf("Failed to read private key file %q: %v", *privateKeyPath, err)
+		klog.Exitf("Failed to read private key file %q: %v", s, err)
 	}
 	noteSigner, err := note.NewSigner(string(rawPrivateKey))
 	if err != nil {
 		klog.Exitf("Failed to create new signer: %v", err)
 	}
 	return noteSigner
-}
-
-func createVerifierOrDie() (string, note.Verifier) {
-	rawPublicKey, err := os.ReadFile(*publicKeyPath)
-	if err != nil {
-		klog.Exitf("Failed to read public key file %q: %v", *publicKeyPath, err)
-	}
-	noteVerifier, err := note.NewVerifier(string(rawPublicKey))
-	if err != nil {
-		klog.Exitf("Failed to create new verifier: %v", err)
-	}
-	return string(rawPublicKey), noteVerifier
 }
 
 // configureTilesReadAPI adds the API methods from https://c2sp.org/tlog-tiles to the mux,
@@ -158,8 +160,8 @@ func configureTilesReadAPI(mux *http.ServeMux, storage *mysql.Storage) {
 			}
 			return
 		}
-
-		tile, err := storage.ReadTile(r.Context(), level, index, width)
+		impliedSize := (index*256 + width) << (level * 8)
+		tile, err := storage.ReadTile(r.Context(), level, index, impliedSize)
 		if err != nil {
 			klog.Errorf("/tile/{level}/{index...}: %v", err)
 			w.WriteHeader(http.StatusInternalServerError)
@@ -179,7 +181,7 @@ func configureTilesReadAPI(mux *http.ServeMux, storage *mysql.Storage) {
 	})
 
 	mux.HandleFunc("GET /tile/entries/{index...}", func(w http.ResponseWriter, r *http.Request) {
-		index, _, err := layout.ParseTileIndexWidth(r.PathValue("index"))
+		index, width, err := layout.ParseTileIndexWidth(r.PathValue("index"))
 		if err != nil {
 			w.WriteHeader(http.StatusBadRequest)
 			if _, werr := w.Write([]byte(fmt.Sprintf("Malformed URL: %s", err.Error()))); werr != nil {
@@ -188,7 +190,7 @@ func configureTilesReadAPI(mux *http.ServeMux, storage *mysql.Storage) {
 			return
 		}
 
-		entryBundle, err := storage.ReadEntryBundle(r.Context(), index)
+		entryBundle, err := storage.ReadEntryBundle(r.Context(), index, width)
 		if err != nil {
 			klog.Errorf("/tile/entries/{index...}: %v", err)
 			w.WriteHeader(http.StatusInternalServerError)
