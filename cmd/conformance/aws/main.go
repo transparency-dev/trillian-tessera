@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// gcp is a simple personality allowing to run conformance/compliance/performance tests and showing how to use the Tessera GCP storage implmentation.
+// aws is a simple personality allowing to run conformance/compliance/performance tests and showing how to use the Tessera AWS storage implmentation.
 package main
 
 import (
@@ -25,7 +25,7 @@ import (
 	"time"
 
 	tessera "github.com/transparency-dev/trillian-tessera"
-	"github.com/transparency-dev/trillian-tessera/storage/gcp"
+	"github.com/transparency-dev/trillian-tessera/storage/aws"
 	"golang.org/x/mod/sumdb/note"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
@@ -35,9 +35,14 @@ import (
 var (
 	bucket            = flag.String("bucket", "", "Bucket to use for storing log")
 	listen            = flag.String("listen", ":2024", "Address:port to listen on")
-	spanner           = flag.String("spanner", "", "Spanner resource URI ('projects/.../...')")
+	dbName            = flag.String("db_name", "", "AuroraDB name")
+	dbHost            = flag.String("db_host", "", "AuroraDB host")
+	dbPort            = flag.Int("db_port", 3306, "AuroraDB port")
+	dbUser            = flag.String("db_user", "", "AuroraDB user")
+	dbPassword        = flag.String("db_password", "", "AuroraDB user")
+	dbMaxConns        = flag.Int("db_max_conns", 0, "Maximum connections to the database, defaults to 0, i.e unlimited")
+	dbMaxIdle         = flag.Int("db_max_idle_conns", 2, "Maximum idle database connections in the connection pool, defaults to 2")
 	signer            = flag.String("signer", "", "Note signer to use to sign checkpoints")
-	verifier          = flag.String("verifier", "", "Note verifier corresponding to --signer")
 	additionalSigners = []string{}
 )
 
@@ -53,17 +58,17 @@ func main() {
 	flag.Parse()
 	ctx := context.Background()
 
-	s, _, a := signerFromFlags()
+	s, a := signerFromFlags()
 
 	// Create our Tessera storage backend:
-	gcpCfg := storageConfigFromFlags()
-	storage, err := gcp.New(ctx, gcpCfg,
+	awsCfg := storageConfigFromFlags()
+	storage, err := aws.New(ctx, awsCfg,
 		tessera.WithCheckpointSigner(s, a...),
 		tessera.WithBatching(1024, time.Second),
 		tessera.WithPushback(10*4096),
 	)
 	if err != nil {
-		klog.Exitf("Failed to create new GCP storage: %v", err)
+		klog.Exitf("Failed to create new AWS storage: %v", err)
 	}
 
 	// Expose a HTTP handler for the conformance test writes.
@@ -102,30 +107,46 @@ func main() {
 	}
 }
 
-// storageConfigFromFlags returns a gcp.Config struct populated with values
+// storageConfigFromFlags returns an aws.Config struct populated with values
 // provided via flags.
-func storageConfigFromFlags() gcp.Config {
+func storageConfigFromFlags() aws.Config {
 	if *bucket == "" {
 		klog.Exit("--bucket must be set")
 	}
-	if *spanner == "" {
-		klog.Exit("--spanner must be set")
+	if *dbName == "" {
+		klog.Exit("--db_name must be set")
 	}
-	return gcp.Config{
-		Bucket:  *bucket,
-		Spanner: *spanner,
+	if *dbHost == "" {
+		klog.Exit("--db_host must be set")
+	}
+	if *dbPort == 0 {
+		klog.Exit("--db_port must be set")
+	}
+	if *dbUser == "" {
+		klog.Exit("--db_user must be set")
+	}
+	// Empty passord isn't an option with AuroraDB MySQL.
+	if *dbPassword == "" {
+		klog.Exit("--db_password must be set")
+	}
+
+	var dbEndpoint string = fmt.Sprintf("%s:%d", *dbHost, *dbPort)
+
+	dsn := fmt.Sprintf("%s:%s@tcp(%s)/%s?allowCleartextPasswords=true",
+		*dbUser, *dbPassword, dbEndpoint, *dbName,
+	)
+	return aws.Config{
+		Bucket:       *bucket,
+		DSN:          dsn,
+		MaxOpenConns: *dbMaxConns,
+		MaxIdleConns: *dbMaxIdle,
 	}
 }
 
-func signerFromFlags() (note.Signer, note.Verifier, []note.Signer) {
+func signerFromFlags() (note.Signer, []note.Signer) {
 	s, err := note.NewSigner(*signer)
 	if err != nil {
 		klog.Exitf("Failed to create new signer: %v", err)
-	}
-
-	v, err := note.NewVerifier(*verifier)
-	if err != nil {
-		klog.Exitf("Failed to create new verifier: %v", err)
 	}
 
 	var a []note.Signer
@@ -137,5 +158,5 @@ func signerFromFlags() (note.Signer, note.Verifier, []note.Signer) {
 		a = append(a, s)
 	}
 
-	return s, v, a
+	return s, a
 }
