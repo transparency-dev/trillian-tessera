@@ -340,6 +340,11 @@ func TestParseTileLevelIndexWidth(t *testing.T) {
 			pathIndex: "x001/002.p/256",
 			wantErr:   true,
 		},
+		{
+			pathLevel: "63",
+			pathIndex: "x999/x999/x999/x999/x999/x999/999.p/255",
+			wantErr:   true,
+		},
 	} {
 		desc := fmt.Sprintf("pathLevel: %q, pathIndex: %q", test.pathLevel, test.pathIndex)
 		t.Run(desc, func(t *testing.T) {
