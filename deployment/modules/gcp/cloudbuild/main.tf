@@ -94,7 +94,6 @@ resource "google_cloudbuild_trigger" "docker" {
       name   = "alpine/terragrunt"
       script = <<EOT
         export TESSERA_SIGNER=$(cat /workspace/key.sec)
-        export TESSERA_VERIFIER=$(cat /workspace/key.pub)
         terragrunt --terragrunt-non-interactive apply -auto-approve 2>&1
       EOT
       dir    = "deployment/live/gcp/conformance/ci"
