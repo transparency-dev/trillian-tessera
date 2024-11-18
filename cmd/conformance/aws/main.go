@@ -130,7 +130,7 @@ func storageConfigFromFlags() aws.Config {
 		klog.Exit("--db_password must be set")
 	}
 
-	var dbEndpoint string = fmt.Sprintf("%s:%d", *dbHost, *dbPort)
+	dbEndpoint := fmt.Sprintf("%s:%d", *dbHost, *dbPort)
 
 	dsn := fmt.Sprintf("%s:%s@tcp(%s)/%s?allowCleartextPasswords=true",
 		*dbUser, *dbPassword, dbEndpoint, *dbName,
