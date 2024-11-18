@@ -12,60 +12,113 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package gcp
+// This the tests for a MySQL+S3 AWS Tessera implementation.  It requires a
+// MySQL database to successfully run the MySQL tests, otherwise they are
+// skipped.  Run tests with `-parallel=1` to avoid concurent tests on the same
+// database, and specifically runs of `mustDropTables`.
+//
+// Sample command to start a local MySQL database using Docker:
+// $ docker run --name test-mysql -p 3306:3306 -e MYSQL_ROOT_PASSWORD=root -e MYSQL_DATABASE=test_tessera -d mysql
+package aws
 
 import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"errors"
+	"flag"
 	"fmt"
 	"os"
 	"reflect"
 	"sync"
 	"testing"
 
-	"cloud.google.com/go/spanner/spannertest"
-	"cloud.google.com/go/spanner/spansql"
 	gcs "cloud.google.com/go/storage"
+	"github.com/aws/smithy-go"
 	"github.com/google/go-cmp/cmp"
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/api"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
-	"github.com/transparency-dev/trillian-tessera/storage/internal"
+	storage "github.com/transparency-dev/trillian-tessera/storage/internal"
+	"k8s.io/klog"
 )
 
-func newSpannerDB(t *testing.T) func() {
-	t.Helper()
-	srv, err := spannertest.NewServer("localhost:0")
-	if err != nil {
-		t.Fatalf("Failed to set up test spanner: %v", err)
-	}
-	os.Setenv("SPANNER_EMULATOR_HOST", srv.Addr)
-	dml, err := spansql.ParseDDL("", `
-			CREATE TABLE SeqCoord (id INT64 NOT NULL, next INT64 NOT NULL,) PRIMARY KEY (id); 
-			CREATE TABLE Seq (id INT64 NOT NULL, seq INT64 NOT NULL, v BYTES(MAX),) PRIMARY KEY (id, seq); 
-			CREATE TABLE IntCoord (id INT64 NOT NULL, seq INT64 NOT NULL,) PRIMARY KEY (id); 
-	`)
-	if err != nil {
-		t.Fatalf("Invalid DDL: %v", err)
-	}
-	if err := srv.UpdateDDL(dml); err != nil {
-		t.Fatalf("Failed to create schema in test spanner: %v", err)
-	}
+var (
+	mySQLURI            = flag.String("mysql_uri", "root:root@tcp(localhost:3306)/test_tessera", "Connection string for a MySQL database")
+	isMySQLTestOptional = flag.Bool("is_mysql_test_optional", true, "Boolean value to control whether the MySQL test is optional")
+)
 
-	return srv.Close
-
+// TestMain parses flags.
+func TestMain(m *testing.M) {
+	klog.InitFlags(nil)
+	flag.Parse()
+	os.Exit(m.Run())
 }
 
-func TestSpannerSequencerAssignEntries(t *testing.T) {
-	ctx := context.Background()
-	close := newSpannerDB(t)
-	defer close()
+// canSkipMySQLTest checks if the test MySQL db is available and if not, if the test can be skipped.
+//
+// Use this method before every MySQL test, and if it return true, exist the test.
+//
+// If is_mysql_test_optional is set to true and MySQL database cannot be opened or pinged,
+// the test will fail immediately. Otherwise, the test will be skipped if the test is optional
+// and the database is not available.
+func canSkipMySQLTest(t *testing.T, ctx context.Context) bool {
+	t.Helper()
 
-	seq, err := newSpannerSequencer(ctx, "projects/p/instances/i/databases/d", 1000)
+	db, err := sql.Open("mysql", *mySQLURI)
 	if err != nil {
-		t.Fatalf("newSpannerSequencer: %v", err)
+		if *isMySQLTestOptional {
+			return true
+		}
+		t.Fatalf("failed to open MySQL test db: %v", err)
+	}
+	defer func() {
+		if err := db.Close(); err != nil {
+			t.Fatalf("failed to close MySQL database: %v", err)
+		}
+	}()
+	if err := db.PingContext(ctx); err != nil {
+		if *isMySQLTestOptional {
+			return true
+		}
+		t.Fatalf("failed to ping MySQL test db: %v", err)
+	}
+	return false
+}
+
+// mustDropTables drops the `Seq`, `SeqCoord` and `IntCoord` tables.
+// Call this function before every MySQL test.
+func mustDropTables(t *testing.T, ctx context.Context) {
+	t.Helper()
+
+	db, err := sql.Open("mysql", *mySQLURI)
+	if err != nil {
+		t.Fatalf("failed to connect to db: %v", *mySQLURI)
+	}
+	defer func() {
+		if err := db.Close(); err != nil {
+			t.Fatalf("failed to close db: %v", err)
+		}
+	}()
+
+	if _, err := db.ExecContext(ctx, "DROP TABLE IF EXISTS `Seq`, `SeqCoord`, `IntCoord`"); err != nil {
+		t.Fatalf("failed to drop all tables: %v", err)
+	}
+}
+
+func TestMySQLSequencerAssignEntries(t *testing.T) {
+	ctx := context.Background()
+	if canSkipMySQLTest(t, ctx) {
+		klog.Warningf("MySQL not available, skipping %s", t.Name())
+		return
+	}
+	// Clean tables in case there's already something in there.
+	mustDropTables(t, ctx)
+
+	seq, err := newMySQLSequencer(ctx, *mySQLURI, 1000, 0, 0)
+	if err != nil {
+		t.Fatalf("newMySQLSequencer: %v", err)
 	}
 
 	want := uint64(0)
@@ -86,8 +139,14 @@ func TestSpannerSequencerAssignEntries(t *testing.T) {
 	}
 }
 
-func TestSpannerSequencerPushback(t *testing.T) {
+func TestMySQLSequencerPushback(t *testing.T) {
 	ctx := context.Background()
+	if canSkipMySQLTest(t, ctx) {
+		klog.Warningf("MySQL not available, skipping %s", t.Name())
+		return
+	}
+	// Clean tables in case there's already something in there.
+	mustDropTables(t, ctx)
 
 	for _, test := range []struct {
 		name           string
@@ -113,12 +172,11 @@ func TestSpannerSequencerPushback(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			close := newSpannerDB(t)
-			defer close()
+			mustDropTables(t, ctx)
 
-			seq, err := newSpannerSequencer(ctx, "projects/p/instances/i/databases/d", test.threshold)
+			seq, err := newMySQLSequencer(ctx, *mySQLURI, test.threshold, 0, 0)
 			if err != nil {
-				t.Fatalf("newSpannerSequencer: %v", err)
+				t.Fatalf("newMySQLSequencer: %v", err)
 			}
 			// Set up the test scenario with the configured number of initial outstanding entries
 			entries := []*tessera.Entry{}
@@ -141,14 +199,18 @@ func TestSpannerSequencerPushback(t *testing.T) {
 	}
 }
 
-func TestSpannerSequencerRoundTrip(t *testing.T) {
+func TestMySQLSequencerRoundTrip(t *testing.T) {
 	ctx := context.Background()
-	close := newSpannerDB(t)
-	defer close()
+	if canSkipMySQLTest(t, ctx) {
+		klog.Warningf("MySQL not available, skipping %s", t.Name())
+		return
+	}
+	// Clean tables in case there's already something in there.
+	mustDropTables(t, ctx)
 
-	s, err := newSpannerSequencer(ctx, "projects/p/instances/i/databases/d", 1000)
+	s, err := newMySQLSequencer(ctx, *mySQLURI, 1000, 0, 0)
 	if err != nil {
-		t.Fatalf("newSpannerSequencer: %v", err)
+		t.Fatalf("newMySQLSequencer: %v", err)
 	}
 
 	seq := 0
@@ -315,30 +377,33 @@ func newMemObjStore() *memObjStore {
 	}
 }
 
-func (m *memObjStore) getObject(_ context.Context, obj string) ([]byte, int64, error) {
+func (m *memObjStore) getObject(_ context.Context, obj string) ([]byte, error) {
 	m.RLock()
 	defer m.RUnlock()
 
 	d, ok := m.mem[obj]
 	if !ok {
-		return nil, -1, fmt.Errorf("obj %q not found: %w", obj, gcs.ErrObjectNotExist)
+		return nil, fmt.Errorf("obj %q not found: %w", obj, gcs.ErrObjectNotExist)
 	}
-	return d, 1, nil
+	return d, nil
 }
 
 // TODO(phboneff): add content type tests
-func (m *memObjStore) setObject(_ context.Context, obj string, data []byte, cond *gcs.Conditions, _ string) error {
+func (m *memObjStore) setObject(_ context.Context, obj string, data []byte, _ string) error {
+	m.Lock()
+	defer m.Unlock()
+	m.mem[obj] = data
+	return nil
+}
+
+// TODO(phboneff): add content type tests
+func (m *memObjStore) setObjectIfNoneMatch(_ context.Context, obj string, data []byte, _ string) error {
 	m.Lock()
 	defer m.Unlock()
 
 	d, ok := m.mem[obj]
-	if cond != nil {
-		if ok && cond.DoesNotExist {
-			if !bytes.Equal(d, data) {
-				return errors.New("precondition failed and data not identical")
-			}
-			return nil
-		}
+	if ok && !bytes.Equal(d, data) {
+		return &smithy.GenericAPIError{Code: "PreconditionFailed"}
 	}
 	m.mem[obj] = data
 	return nil
