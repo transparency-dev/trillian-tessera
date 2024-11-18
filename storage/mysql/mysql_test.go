@@ -42,9 +42,8 @@ var (
 	mysqlURI            = flag.String("mysql_uri", "root:root@tcp(localhost:3306)/test_tessera", "Connection string for a MySQL database")
 	isMySQLTestOptional = flag.Bool("is_mysql_test_optional", true, "Boolean value to control whether the MySQL test is optional")
 
-	testDB       *sql.DB
-	noteSigner   note.Signer
-	noteVerifier note.Verifier
+	testDB     *sql.DB
+	noteSigner note.Signer
 )
 
 const (
@@ -89,10 +88,6 @@ func TestMain(m *testing.M) {
 	noteSigner, err = note.NewSigner(testPrivateKey)
 	if err != nil {
 		klog.Fatalf("Failed to create new signer: %v", err)
-	}
-	noteVerifier, err = note.NewVerifier(testPublicKey)
-	if err != nil {
-		klog.Fatalf("Failed to create new verifier: %v", err)
 	}
 
 	os.Exit(m.Run())
