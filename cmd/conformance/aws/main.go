@@ -131,10 +131,10 @@ func storageConfigFromFlags() aws.Config {
 	}
 
 	dbEndpoint := fmt.Sprintf("%s:%d", *dbHost, *dbPort)
-
 	dsn := fmt.Sprintf("%s:%s@tcp(%s)/%s?allowCleartextPasswords=true",
 		*dbUser, *dbPassword, dbEndpoint, *dbName,
 	)
+
 	return aws.Config{
 		Bucket:       *bucket,
 		DSN:          dsn,
