@@ -113,7 +113,6 @@ resource "google_cloudbuild_trigger" "docker" {
       script   = <<EOT
         cd deployment/live/gcp/conformance/ci
         export TESSERA_SIGNER=$(cat /workspace/key.sec)
-        export TESSERA_VERIFIER=$(cat /workspace/key.pub)
         terragrunt output --raw conformance_url > /workspace/conformance_url
       EOT
       wait_for = ["terraform_apply_conformance_ci"]
@@ -166,7 +165,6 @@ resource "google_cloudbuild_trigger" "docker" {
       dir = "deployment/live/gcp/conformance/ci"
       env = [
         "TESSERA_SIGNER=unused",
-        "TESSERA_VERIFIER=unused",
         "GOOGLE_PROJECT=${var.project_id}",
         "TF_IN_AUTOMATION=1",
         "TF_INPUT=false",
