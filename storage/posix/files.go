@@ -23,6 +23,7 @@ import (
 	"path/filepath"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/transparency-dev/merkle/rfc6962"
 	tessera "github.com/transparency-dev/trillian-tessera"
@@ -74,11 +75,24 @@ func New(ctx context.Context, path string, create bool, opts ...func(*options.St
 	}
 	r.queue = storage.NewQueue(ctx, opt.BatchMaxAge, opt.BatchMaxSize, r.sequenceBatch)
 
+	go func(ctx context.Context, i time.Duration) {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(i):
+				if err := r.publishCheckpoint(i); err != nil {
+					klog.Warningf("publishCheckpoint: %v", err)
+				}
+			}
+		}
+	}(ctx, opt.CheckpointInterval)
+
 	return r, nil
 }
 
 func (s *Storage) curTree() (uint64, error) {
-	rawCp, err := readCheckpoint(s.path)
+	rawCp, err := s.readCheckpoint()
 	if err != nil {
 		return 0, fmt.Errorf("failed to read log checkpoint: %q", err)
 	}
@@ -92,13 +106,33 @@ func (s *Storage) curTree() (uint64, error) {
 // operation on this file (even if it's a different FD) from this PID, or overwriting
 // of the file by *any* process breaks the lock.)
 func (s *Storage) lockCP() error {
-	var err error
-	if s.cpFile != nil {
-		panic("not unlocked")
-	}
-	s.cpFile, err = os.OpenFile(filepath.Join(s.path, stateDir, layout.CheckpointPath+".lock"), syscall.O_CREAT|syscall.O_RDWR|syscall.O_CLOEXEC, filePerm)
+	f, err := lockFile(filepath.Join(s.path, stateDir, layout.CheckpointPath+".lock"))
 	if err != nil {
 		return err
+	}
+	s.cpFile = f
+	return nil
+}
+
+// unlockCP unlocks the `checkpoint.lock` file.
+func (s *Storage) unlockCP() error {
+	if s.cpFile == nil {
+		panic(errors.New("not locked"))
+	}
+	if err := unlockFile(s.cpFile); err != nil {
+		return err
+	}
+	s.cpFile = nil
+	return nil
+}
+
+// lockFile creates/opens the file at the specified path, and flocks it.
+// Once locked, the caller can use the returned file handle to perform whatever
+// operations are necessary, before calling unlockFile with the handle.
+func lockFile(p string) (*os.File, error) {
+	f, err := os.OpenFile(p, syscall.O_CREAT|syscall.O_RDWR|syscall.O_CLOEXEC, filePerm)
+	if err != nil {
+		return nil, err
 	}
 
 	flockT := syscall.Flock_t{
@@ -107,23 +141,18 @@ func (s *Storage) lockCP() error {
 		Start:  0,
 		Len:    0,
 	}
+	// Keep trying until we manage to get an answer without being interrupted.
 	for {
-		if err := syscall.FcntlFlock(s.cpFile.Fd(), syscall.F_SETLKW, &flockT); err != syscall.EINTR {
-			return err
+		if err := syscall.FcntlFlock(f.Fd(), syscall.F_SETLKW, &flockT); err != syscall.EINTR {
+			return f, err
 		}
 	}
 }
 
-// unlockCP unlocks the `checkpoint.lock` file.
-func (s *Storage) unlockCP() error {
-	if s.cpFile == nil {
-		panic(errors.New("not locked"))
-	}
-	if err := s.cpFile.Close(); err != nil {
-		return err
-	}
-	s.cpFile = nil
-	return nil
+// unlockFile simply closes the locked file.
+// This is enough to release the flock taken in lockFile previously.
+func unlockFile(f *os.File) error {
+	return f.Close()
 }
 
 // Add takes an entry and queues it for inclusion in the log.
@@ -284,7 +313,7 @@ func (s *Storage) doIntegrate(ctx context.Context, fromSeq uint64, entries []sto
 		if err != nil {
 			return fmt.Errorf("newCP: %v", err)
 		}
-		if err := writeCheckpoint(s.path, cpRaw); err != nil {
+		if err := s.writeCheckpoint(cpRaw); err != nil {
 			return fmt.Errorf("failed to write new checkpoint: %v", err)
 		}
 	}
@@ -381,14 +410,14 @@ func (s *Storage) initialise(create bool) error {
 	if create {
 		// Create the directory structure and write out an empty checkpoint
 		klog.Infof("Initializing directory for POSIX log at %q (this should only happen ONCE per log!)", s.path)
-		if err := os.MkdirAll(s.path, dirPerm); err != nil {
+		if err := os.MkdirAll(filepath.Join(s.path, stateDir), dirPerm); err != nil {
 			return fmt.Errorf("failed to create log directory: %q", err)
 		}
 		n, err := s.newCP(0, rfc6962.DefaultHasher.EmptyRoot())
 		if err != nil {
 			return fmt.Errorf("failed to sign empty checkpoint: %v", err)
 		}
-		if err := writeCheckpoint(s.path, n); err != nil {
+		if err := s.writeCheckpoint(n); err != nil {
 			return fmt.Errorf("failed to write empty checkpoint: %v", err)
 		}
 	}
@@ -402,16 +431,52 @@ func (s *Storage) initialise(create bool) error {
 }
 
 // writeCheckpoint stores a raw log checkpoint on disk.
-func writeCheckpoint(path string, newCPRaw []byte) error {
-	if err := createExclusive(filepath.Join(path, stateDir, layout.CheckpointPath), newCPRaw); err != nil {
-		return fmt.Errorf("failed to create checkpoint file: %w", err)
+func (s *Storage) writeCheckpoint(newCPRaw []byte) error {
+	if err := createExclusive(filepath.Join(s.path, stateDir, layout.CheckpointPath), newCPRaw); err != nil {
+		return fmt.Errorf("failed to create private checkpoint file: %w", err)
 	}
 	return nil
 }
 
-// readcheckpoint returns the latest stored checkpoint.
-func readCheckpoint(path string) ([]byte, error) {
-	return os.ReadFile(filepath.Join(path, stateDir, layout.CheckpointPath))
+// readcheckpoint returns the latest stored private checkpoint.
+func (s *Storage) readCheckpoint() ([]byte, error) {
+	return os.ReadFile(filepath.Join(s.path, stateDir, layout.CheckpointPath))
+}
+
+// publishCheckpoint makes the most recently checkpoint from the stateDir available at the
+// (public) tlog-tiles specified Checkpoint location.
+func (s *Storage) publishCheckpoint(minStaleness time.Duration) error {
+	// Lock the destination "published" checkpoint location:
+	cpF, err := lockFile(filepath.Join(s.path, layout.CheckpointPath))
+	if err != nil {
+		return fmt.Errorf("lockFile(%s): %v", layout.CheckpointPath, err)
+	}
+	defer func() {
+		if err := cpF.Close(); err != nil {
+			klog.Warningf("close(%s): %v", layout.CheckpointPath, err)
+		}
+	}()
+
+	info, err := cpF.Stat()
+	if err != nil {
+		return fmt.Errorf("stat(%s): %v", layout.CheckpointPath, err)
+	}
+	if d := time.Since(info.ModTime()); d < minStaleness {
+		klog.V(1).Infof("publishCheckpoint: skipping publish because previous checkpoint published %v ago, less than %v", d, minStaleness)
+		return nil
+	}
+	cpRaw, err := os.ReadFile(filepath.Join(s.path, stateDir, layout.CheckpointPath))
+	if err != nil {
+		return fmt.Errorf("read state checkpoint: %v", err)
+	}
+	// This write can fail, e.g. if the storage is full, but this is not fatal:
+	// - the source of truth is the checkpoint in the state directory
+	// - we'll try again after another publish interval.
+	if _, err := cpF.Write(cpRaw); err != nil {
+		return fmt.Errorf("write(%s): %v", layout.CheckpointPath, err)
+	}
+	klog.Infof("Published latest checkpoint")
+	return nil
 }
 
 // createExclusive creates a file at the given path and name before writing the data in d to it.
