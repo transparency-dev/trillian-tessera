@@ -58,6 +58,7 @@ func main() {
 	gcpCfg := storageConfigFromFlags()
 	storage, err := gcp.New(ctx, gcpCfg,
 		tessera.WithCheckpointSigner(s, a...),
+		tessera.WithCheckpointInterval(10*time.Second),
 		tessera.WithBatching(1024, time.Second),
 		tessera.WithPushback(10*4096),
 	)
