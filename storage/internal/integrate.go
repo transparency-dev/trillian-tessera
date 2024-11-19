@@ -19,7 +19,6 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
-	"sync"
 
 	"github.com/transparency-dev/merkle/compact"
 	"github.com/transparency-dev/merkle/rfc6962"
@@ -29,28 +28,41 @@ import (
 	"k8s.io/klog/v2"
 )
 
+// SequencedEntry represents a log entry which has already been sequenced.
+type SequencedEntry struct {
+	// BundleData is the entry's data serialised into the correct format for appending to an entry bundle.
+	BundleData []byte
+	// LeafHash is the entry's Merkle leaf hash.
+	LeafHash []byte
+}
+
+func Integrate(ctx context.Context, getTiles func(ctx context.Context, tileIDs []TileID, treeSize uint64) ([]*api.HashTile, error), fromSize uint64, entries []SequencedEntry) (newSize uint64, rootHash []byte, tiles map[TileID]*api.HashTile, err error) {
+	tb := newTreeBuilder(getTiles)
+	return tb.integrate(ctx, fromSize, entries)
+}
+
 // getPopulatedTileFunc is the signature of a function which can return a fully populated tile for the given tile coords.
 type getPopulatedTileFunc func(ctx context.Context, tileID TileID, treeSize uint64) (*populatedTile, error)
 
-// TreeBuilder constructs Merkle trees.
+// treeBuilder constructs Merkle trees.
 //
 // This struct it indended to be used by storage implementations during the integration of entries into the log.
-// TreeBuilder caches data from tiles to speed things up, but has no mechanism for evicting from its internal cache,
+// treeBuilder caches data from tiles to speed things up, but has no mechanism for evicting from its internal cache,
 // so while it _may_ be possible to use the same instance across a number of integration runs (e.g. if the same job
 // is responsible for integrating entries for a number of contiguous trees), the lifetime should be bounded so as not
 // to leak memory.
-type TreeBuilder struct {
+type treeBuilder struct {
 	readCache *tileReadCache
 	rf        *compact.RangeFactory
 }
 
-// NewTreeBuilder creates a new instance of TreeBuilder.
+// newTreeBuilder creates a new instance of treeBuilder.
 //
 // The getTiles param must know how to fetch the specified tiles from storage. It must return tiles in the same order as the
 // provided tileIDs, substituing nil for any tiles which were not found.
-func NewTreeBuilder(getTiles func(ctx context.Context, tileIDs []TileID, treeSize uint64) ([]*api.HashTile, error)) *TreeBuilder {
+func newTreeBuilder(getTiles func(ctx context.Context, tileIDs []TileID, treeSize uint64) ([]*api.HashTile, error)) *treeBuilder {
 	readCache := newTileReadCache(getTiles)
-	r := &TreeBuilder{
+	r := &treeBuilder{
 		readCache: &readCache,
 		rf:        &compact.RangeFactory{Hash: rfc6962.DefaultHasher.HashChildren},
 	}
@@ -59,7 +71,7 @@ func NewTreeBuilder(getTiles func(ctx context.Context, tileIDs []TileID, treeSiz
 }
 
 // newRange creates a new compact.Range for the specified treeSize, fetching tiles as necessary.
-func (t *TreeBuilder) newRange(ctx context.Context, treeSize uint64) (*compact.Range, error) {
+func (t *treeBuilder) newRange(ctx context.Context, treeSize uint64) (*compact.Range, error) {
 	rangeNodes := compact.RangeNodes(0, treeSize, nil)
 	toFetch := make(map[TileID]struct{})
 	for _, id := range rangeNodes {
@@ -86,15 +98,7 @@ func (t *TreeBuilder) newRange(ctx context.Context, treeSize uint64) (*compact.R
 	return t.rf.NewRange(0, treeSize, hashes)
 }
 
-// SequencedEntry represents a log entry which has already been sequenced.
-type SequencedEntry struct {
-	// BundleData is the entry's data serialised into the correct format for appending to an entry bundle.
-	BundleData []byte
-	// LeafHash is the entry's Merkle leaf hash.
-	LeafHash []byte
-}
-
-func (t *TreeBuilder) Integrate(ctx context.Context, fromSize uint64, entries []SequencedEntry) (newSize uint64, rootHash []byte, tiles map[TileID]*api.HashTile, err error) {
+func (t *treeBuilder) integrate(ctx context.Context, fromSize uint64, entries []SequencedEntry) (newSize uint64, rootHash []byte, tiles map[TileID]*api.HashTile, err error) {
 	baseRange, err := t.newRange(ctx, fromSize)
 	if err != nil {
 		return 0, nil, nil, fmt.Errorf("failed to create range covering existing log: %w", err)
@@ -155,8 +159,6 @@ func (t *TreeBuilder) Integrate(ctx context.Context, fromSize uint64, entries []
 
 // tileReadCache is a structure which provides a very simple thread-safe read-through cache based on a map of tiles.
 type tileReadCache struct {
-	sync.RWMutex
-
 	entries  map[string]*populatedTile
 	getTiles func(ctx context.Context, tileIDs []TileID, treeSize uint64) ([]*api.HashTile, error)
 }
@@ -170,8 +172,6 @@ func newTileReadCache(getTiles func(ctx context.Context, tileIDs []TileID, treeS
 
 // Get returns a previously set tile and true, or, if no such tile is in the cache, attempt to fetch it.
 func (r *tileReadCache) Get(ctx context.Context, tileID TileID, treeSize uint64) (*populatedTile, error) {
-	r.Lock()
-	defer r.Unlock()
 	k := layout.TilePath(uint64(tileID.Level), tileID.Index, treeSize)
 	e, ok := r.entries[k]
 	if !ok {
@@ -193,8 +193,6 @@ func (r *tileReadCache) Get(ctx context.Context, tileID TileID, treeSize uint64)
 //
 // Returns an error if any of the tiles couldn't be fetched.
 func (r *tileReadCache) Prewarm(ctx context.Context, tileIDs []TileID, treeSize uint64) error {
-	r.Lock()
-	defer r.Unlock()
 	t, err := r.getTiles(ctx, tileIDs, treeSize)
 	if err != nil {
 		return err
@@ -301,8 +299,6 @@ func (tc *tileWriteCache) Tiles() map[TileID]*api.HashTile {
 // populatedTile represents a "fully populated" tile, i.e. it has all non-ephemeral internal nodes
 // implied by the leaves.
 type populatedTile struct {
-	sync.RWMutex
-
 	inner  map[compact.NodeID][]byte
 	leaves [][]byte
 }
@@ -329,9 +325,6 @@ func newPopulatedTile(h *api.HashTile) (*populatedTile, error) {
 // Set allows setting of individual leaf/inner nodes.
 // It's intended to be used as a visitor for compact.Range.
 func (f *populatedTile) Set(id compact.NodeID, hash []byte) {
-	f.Lock()
-	defer f.Unlock()
-
 	if id.Level == 0 {
 		if id.Index > 255 {
 			panic(fmt.Sprintf("Weird node ID: %v", id))
@@ -347,9 +340,6 @@ func (f *populatedTile) Set(id compact.NodeID, hash []byte) {
 
 // Get allows access to individual leaf/inner nodes.
 func (f *populatedTile) Get(id compact.NodeID) []byte {
-	f.RLock()
-	defer f.RUnlock()
-
 	if id.Level == 0 {
 		if l := uint64(len(f.leaves)); id.Index >= l {
 			return nil

@@ -258,15 +258,15 @@ func (s *Storage) sequenceBatch(ctx context.Context, entries []*tessera.Entry) e
 
 // doIntegrate handles integrating new entries into the log, and updating the checkpoint.
 func (s *Storage) doIntegrate(ctx context.Context, fromSeq uint64, entries []storage.SequencedEntry) error {
-	tb := storage.NewTreeBuilder(func(ctx context.Context, tileIDs []storage.TileID, treeSize uint64) ([]*api.HashTile, error) {
+	getTiles := func(ctx context.Context, tileIDs []storage.TileID, treeSize uint64) ([]*api.HashTile, error) {
 		n, err := s.readTiles(ctx, tileIDs, treeSize)
 		if err != nil {
 			return nil, fmt.Errorf("getTiles: %w", err)
 		}
 		return n, nil
-	})
+	}
 
-	newSize, newRoot, tiles, err := tb.Integrate(ctx, fromSeq, entries)
+	newSize, newRoot, tiles, err := storage.Integrate(ctx, getTiles, fromSeq, entries)
 	if err != nil {
 		klog.Errorf("Integrate: %v", err)
 		return fmt.Errorf("Integrate: %v", err)

@@ -33,7 +33,7 @@ import (
 func TestNewRangeFetchesTiles(t *testing.T) {
 	ctx := context.Background()
 	m := newMemTileStore[api.HashTile]()
-	tb := NewTreeBuilder(m.getTiles)
+	tb := newTreeBuilder(m.getTiles)
 
 	treeSize := uint64(0x102030)
 	wantIDs := []TileID{
@@ -122,7 +122,6 @@ func TestTileVisit(t *testing.T) {
 func TestIntegrate(t *testing.T) {
 	ctx := context.Background()
 	m := newMemTileStore[api.HashTile]()
-	tb := NewTreeBuilder(m.getTiles)
 
 	cr := (&compact.RangeFactory{Hash: rfc6962.DefaultHasher.HashChildren}).NewEmptyRange(0)
 
@@ -148,7 +147,7 @@ func TestIntegrate(t *testing.T) {
 		if err != nil {
 			t.Fatalf("[%d] compactRange: %v", chunk, err)
 		}
-		gotSize, gotRoot, gotTiles, err := tb.Integrate(ctx, oldSeq, c)
+		gotSize, gotRoot, gotTiles, err := Integrate(ctx, m.getTiles, oldSeq, c)
 		if err != nil {
 			t.Fatalf("[%d] Integrate: %v", chunk, err)
 		}
@@ -164,7 +163,37 @@ func TestIntegrate(t *testing.T) {
 			}
 		}
 	}
+}
 
+func BenchmarkIntegrate(b *testing.B) {
+	ctx := context.Background()
+	m := newMemTileStore[api.HashTile]()
+
+	chunkSize := 200
+	numChunks := 256
+	seq := uint64(0)
+	for chunk := 0; chunk < numChunks; chunk++ {
+		oldSeq := seq
+		c := make([]SequencedEntry, chunkSize)
+		for i := range c {
+			leaf := []byte{byte(seq)}
+			entry := tessera.NewEntry(leaf)
+			c[i] = SequencedEntry{
+				BundleData: entry.MarshalBundleData(seq),
+				LeafHash:   entry.LeafHash(),
+			}
+			seq++
+		}
+		_, _, gotTiles, err := Integrate(ctx, m.getTiles, oldSeq, c)
+		if err != nil {
+			b.Fatalf("[%d] Integrate: %v", chunk, err)
+		}
+		for k, tile := range gotTiles {
+			if err := m.setTile(ctx, k, seq, tile); err != nil {
+				b.Fatalf("setTile: %v", err)
+			}
+		}
+	}
 }
 
 // zerotile creates a new api.HashTile of the provided size, whose leaves are all a single zero byte.
