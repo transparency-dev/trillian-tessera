@@ -37,7 +37,6 @@ var (
 	listen            = flag.String("listen", ":2024", "Address:port to listen on")
 	spanner           = flag.String("spanner", "", "Spanner resource URI ('projects/.../...')")
 	signer            = flag.String("signer", "", "Note signer to use to sign checkpoints")
-	verifier          = flag.String("verifier", "", "Note verifier corresponding to --signer")
 	additionalSigners = []string{}
 )
 
@@ -53,7 +52,7 @@ func main() {
 	flag.Parse()
 	ctx := context.Background()
 
-	s, _, a := signerFromFlags()
+	s, a := signerFromFlags()
 
 	// Create our Tessera storage backend:
 	gcpCfg := storageConfigFromFlags()
@@ -117,15 +116,10 @@ func storageConfigFromFlags() gcp.Config {
 	}
 }
 
-func signerFromFlags() (note.Signer, note.Verifier, []note.Signer) {
+func signerFromFlags() (note.Signer, []note.Signer) {
 	s, err := note.NewSigner(*signer)
 	if err != nil {
 		klog.Exitf("Failed to create new signer: %v", err)
-	}
-
-	v, err := note.NewVerifier(*verifier)
-	if err != nil {
-		klog.Exitf("Failed to create new verifier: %v", err)
 	}
 
 	var a []note.Signer
@@ -137,5 +131,5 @@ func signerFromFlags() (note.Signer, note.Verifier, []note.Signer) {
 		a = append(a, s)
 	}
 
-	return s, v, a
+	return s, a
 }

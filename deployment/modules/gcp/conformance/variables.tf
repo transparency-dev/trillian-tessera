@@ -28,11 +28,6 @@ variable "signer" {
   type        = string
 }
 
-variable "verifier" {
-  description = "The note verifier which should be used to verify checkpoints"
-  type        = string
-}
-
 variable "cloudrun_service_account" {
   description = "The service account email to use for the CloudRun instance"
   type        = string
