@@ -391,20 +391,20 @@ func (s *Storage) updateEntryBundles(ctx context.Context, fromSeq uint64, entrie
 		numAdded++
 		if entriesInBundle == entryBundleSize {
 			//  This bundle is full, so we need to write it out...
-			klog.V(1).Infof("Bundle idx %d staged to be written to GCS is full, attempting write", bundleIndex)
+			klog.V(1).Infof("In-memory bundle idx %d is full, attempting write to GCS", bundleIndex)
 			goSetEntryBundle(ctx, bundleIndex, fromSeq, bundleWriter.Bytes())
 			// ... and prepare the next entry bundle for any remaining entries in the batch
 			bundleIndex++
 			entriesInBundle = 0
 			// Don't use Reset/Truncate here - the backing []bytes is still being used by goSetEntryBundle above.
 			bundleWriter = &bytes.Buffer{}
-			klog.V(1).Infof("Starting to stage bundle idx %d to be written to GCS", bundleIndex)
+			klog.V(1).Infof("Starting to fill in-memory bundle idx %d", bundleIndex)
 		}
 	}
 	// If we have a partial bundle remaining once we've added all the entries from the batch,
 	// this needs writing out too.
 	if entriesInBundle > 0 {
-		klog.V(1).Infof("Attempting to write staged partial bundle idx %d.%d to GCS", bundleIndex, entriesInBundle)
+		klog.V(1).Infof("Attempting to write in-memory partial bundle idx %d.%d to GCS", bundleIndex, entriesInBundle)
 		goSetEntryBundle(ctx, bundleIndex, fromSeq, bundleWriter.Bytes())
 	}
 	return seqErr.Wait()
