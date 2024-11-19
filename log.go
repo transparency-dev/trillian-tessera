@@ -84,11 +84,21 @@ func WithCheckpointSigner(s note.Signer, additionalSigners ...note.Signer) func(
 	}
 }
 
-// WithBatching enables batching of write requests.
+// WithBatching configures the batching behaviour of leaves being sequenced.
+// A batch will be allowed to grow in memory until either:
+//   - the number of entries in the batch reach maxSize
+//   - the first entry in the batch has reached maxAge
+//
+// At this point the batch will be sent to the sequencer.
+//
+// Configuring these parameters allows the personality to tune to get the desired
+// balance of sequencing latency with cost. In general, larger batches allow for
+// lower cost of operation, where more frequent batches reduce the amount of time
+// required for entries to be included in the log.
 func WithBatching(maxSize uint, maxAge time.Duration) func(*options.StorageOptions) {
 	return func(o *options.StorageOptions) {
-		o.BatchMaxAge = maxAge
 		o.BatchMaxSize = maxSize
+		o.BatchMaxAge = maxAge
 	}
 }
 
