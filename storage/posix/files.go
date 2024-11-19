@@ -53,6 +53,8 @@ type Storage struct {
 	curSize uint64
 	newCP   options.NewCPFunc
 
+	cpUpdated chan struct{}
+
 	entriesPath options.EntriesPathFunc
 }
 
@@ -69,6 +71,7 @@ func New(ctx context.Context, path string, create bool, opts ...func(*options.St
 		path:        path,
 		newCP:       opt.NewCP,
 		entriesPath: opt.EntriesPath,
+		cpUpdated:   make(chan struct{}),
 	}
 	if err := r.initialise(create); err != nil {
 		return nil, err
@@ -80,10 +83,11 @@ func New(ctx context.Context, path string, create bool, opts ...func(*options.St
 			select {
 			case <-ctx.Done():
 				return
+			case <-r.cpUpdated:
 			case <-time.After(i):
-				if err := r.publishCheckpoint(i); err != nil {
-					klog.Warningf("publishCheckpoint: %v", err)
-				}
+			}
+			if err := r.publishCheckpoint(i); err != nil {
+				klog.Warningf("publishCheckpoint: %v", err)
 			}
 		}
 	}(ctx, opt.CheckpointInterval)
@@ -418,7 +422,10 @@ func (s *Storage) initialise(create bool) error {
 			return fmt.Errorf("failed to sign empty checkpoint: %v", err)
 		}
 		if err := s.writeCheckpoint(n); err != nil {
-			return fmt.Errorf("failed to write empty checkpoint: %v", err)
+			return fmt.Errorf("failed to write tree-state checkpoint: %v", err)
+		}
+		if err := s.publishCheckpoint(0); err != nil {
+			return fmt.Errorf("failed to publish checkpoint: %v", err)
 		}
 	}
 	curSize, err := s.curTree()
@@ -434,6 +441,12 @@ func (s *Storage) initialise(create bool) error {
 func (s *Storage) writeCheckpoint(newCPRaw []byte) error {
 	if err := createExclusive(filepath.Join(s.path, stateDir, layout.CheckpointPath), newCPRaw); err != nil {
 		return fmt.Errorf("failed to create private checkpoint file: %w", err)
+	}
+	// Notify that we know for sure there's a new checkpoint, but don't block if there's already
+	// an outstanding notification in the channel.
+	select {
+	case s.cpUpdated <- struct{}{}:
+	default:
 	}
 	return nil
 }
