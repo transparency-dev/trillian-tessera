@@ -41,7 +41,7 @@ import (
 	"github.com/transparency-dev/trillian-tessera/api"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
 	storage "github.com/transparency-dev/trillian-tessera/storage/internal"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 )
 
 var (
@@ -49,16 +49,16 @@ var (
 	isMySQLTestOptional = flag.Bool("is_mysql_test_optional", true, "Boolean value to control whether the MySQL test is optional")
 )
 
-// TestMain parses flags.
+// TestMain inits flags and runs tests.
 func TestMain(m *testing.M) {
 	klog.InitFlags(nil)
-	flag.Parse()
+	// m.Run() will parse flags
 	os.Exit(m.Run())
 }
 
-// canSkipMySQLTest checks if the test MySQL db is available and if not, if the test can be skipped.
+// canSkipMySQLTest checks if the test MySQL db is available and, if not, if the test can be skipped.
 //
-// Use this method before every MySQL test, and if it return true, exist the test.
+// Use this method before every MySQL test, and if it returns true, skip the test.
 //
 // If is_mysql_test_optional is set to true and MySQL database cannot be opened or pinged,
 // the test will fail immediately. Otherwise, the test will be skipped if the test is optional
@@ -111,7 +111,7 @@ func TestMySQLSequencerAssignEntries(t *testing.T) {
 	ctx := context.Background()
 	if canSkipMySQLTest(t, ctx) {
 		klog.Warningf("MySQL not available, skipping %s", t.Name())
-		return
+		t.Skip("MySQL not available, skipping test")
 	}
 	// Clean tables in case there's already something in there.
 	mustDropTables(t, ctx)
@@ -143,7 +143,7 @@ func TestMySQLSequencerPushback(t *testing.T) {
 	ctx := context.Background()
 	if canSkipMySQLTest(t, ctx) {
 		klog.Warningf("MySQL not available, skipping %s", t.Name())
-		return
+		t.Skip("MySQL not available, skipping test")
 	}
 	// Clean tables in case there's already something in there.
 	mustDropTables(t, ctx)
@@ -203,7 +203,7 @@ func TestMySQLSequencerRoundTrip(t *testing.T) {
 	ctx := context.Background()
 	if canSkipMySQLTest(t, ctx) {
 		klog.Warningf("MySQL not available, skipping %s", t.Name())
-		return
+		t.Skip("MySQL not available, skipping test")
 	}
 	// Clean tables in case there's already something in there.
 	mustDropTables(t, ctx)
