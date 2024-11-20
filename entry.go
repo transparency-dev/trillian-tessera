@@ -63,42 +63,19 @@ func (e *Entry) MarshalBundleData(index uint64) []byte {
 }
 
 // NewEntry creates a new Entry object with leaf data.
-func NewEntry(data []byte, opts ...EntryOpt) *Entry {
+func NewEntry(data []byte) *Entry {
 	e := &Entry{}
 	e.internal.Data = data
-	for _, opt := range opts {
-		opt(e)
-	}
-	if e.internal.Identity == nil {
-		h := sha256.Sum256(e.internal.Data)
-		e.internal.Identity = h[:]
-	}
-	if e.internal.LeafHash == nil {
-		e.internal.LeafHash = rfc6962.DefaultHasher.HashLeaf(e.internal.Data)
-	}
-	if e.marshalForBundle == nil {
-		// By default we will marshal ourselves into a bundle using the mechanism described
-		// by https://c2sp.org/tlog-tiles:
-		e.marshalForBundle = func(_ uint64) []byte {
-			r := make([]byte, 0, 2+len(e.internal.Data))
-			r = binary.BigEndian.AppendUint16(r, uint16(len(e.internal.Data)))
-			r = append(r, e.internal.Data...)
-			return r
-		}
+	h := sha256.Sum256(e.internal.Data)
+	e.internal.Identity = h[:]
+	e.internal.LeafHash = rfc6962.DefaultHasher.HashLeaf(e.internal.Data)
+	// By default we will marshal ourselves into a bundle using the mechanism described
+	// by https://c2sp.org/tlog-tiles:
+	e.marshalForBundle = func(_ uint64) []byte {
+		r := make([]byte, 0, 2+len(e.internal.Data))
+		r = binary.BigEndian.AppendUint16(r, uint16(len(e.internal.Data)))
+		r = append(r, e.internal.Data...)
+		return r
 	}
 	return e
-}
-
-// EntryOpt is the signature of options for creating new Entry instances.
-type EntryOpt func(e *Entry)
-
-// WithIdentity is an option to create Entries with an explicit identity.
-//
-// The provided identity may be used to deduplicate entries as they're being
-// added to the log, if such behaviour is supported and enabled on the
-// storage implementation.
-func WithIdentity(identity []byte) EntryOpt {
-	return func(e *Entry) {
-		e.internal.Identity = identity
-	}
 }
