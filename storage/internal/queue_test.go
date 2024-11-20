@@ -78,7 +78,7 @@ func TestQueue(t *testing.T) {
 			wantEntries := make([]*tessera.Entry, test.numItems)
 			for i := uint64(0); i < test.numItems; i++ {
 				d := []byte(fmt.Sprintf("item %d", i))
-				wantEntries[i] = tessera.NewEntry(d, tessera.WithIdentity(d))
+				wantEntries[i] = tessera.NewEntry(d)
 				adds[i] = q.Add(ctx, wantEntries[i])
 			}
 
