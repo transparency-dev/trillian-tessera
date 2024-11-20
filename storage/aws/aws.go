@@ -316,13 +316,13 @@ func (s *Storage) setEntryBundle(ctx context.Context, bundleIndex uint64, logSiz
 
 // integrate incorporates the provided entries into the log starting at fromSeq.
 func (s *Storage) integrate(ctx context.Context, fromSeq uint64, entries []storage.SequencedEntry) error {
-	tb := storage.NewTreeBuilder(func(ctx context.Context, tileIDs []storage.TileID, treeSize uint64) ([]*api.HashTile, error) {
+	getTiles := func(ctx context.Context, tileIDs []storage.TileID, treeSize uint64) ([]*api.HashTile, error) {
 		n, err := s.getTiles(ctx, tileIDs, treeSize)
 		if err != nil {
 			return nil, fmt.Errorf("getTiles: %w", err)
 		}
 		return n, nil
-	})
+	}
 
 	errG := errgroup.Group{}
 
@@ -334,7 +334,7 @@ func (s *Storage) integrate(ctx context.Context, fromSeq uint64, entries []stora
 	})
 
 	errG.Go(func() error {
-		newSize, newRoot, tiles, err := tb.Integrate(ctx, fromSeq, entries)
+		newSize, newRoot, tiles, err := storage.Integrate(ctx, getTiles, fromSeq, entries)
 		if err != nil {
 			return fmt.Errorf("Integrate: %v", err)
 		}
