@@ -28,3 +28,6 @@ go.work.sum
 /deployment/.terraform
 /deployment/*.tfstate.backup
 /deployment/**/.terragrunt-cache
+
+# lockfiles
+/testdata/log/checkpoint.lock
