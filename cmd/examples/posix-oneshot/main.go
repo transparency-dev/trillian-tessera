@@ -82,6 +82,10 @@ func main() {
 		klog.Exitf("Failed to construct storage: %v", err)
 	}
 
+	// We don't want to exit until our entries have been integrated into the tree, so we'll use Tessera's
+	// IntegrationAwaiter to help with that.
+	await := tessera.NewIntegrationAwaiter(ctx, st.ReadCheckpoint, time.Second)
+
 	// Add each of the leaves in order, and store the futures in a slice
 	// that we will check once all leaves are sent to storage.
 	indexFutures := make([]entryInfo, 0, len(filesToAdd))
@@ -97,7 +101,7 @@ func main() {
 
 	// Check each of the futures to ensure that the leaves are sequenced.
 	for _, entry := range indexFutures {
-		seq, err := entry.f()
+		seq, _, err := await.Await(ctx, entry.f)
 		if err != nil {
 			klog.Exitf("failed to sequence %q: %q", entry.name, err)
 		}
