@@ -139,14 +139,21 @@ func TestLiveLogIntegration(t *testing.T) {
 				t.Errorf("entryWriter.add: %v", err)
 			}
 			entryIndexMap.Store(i, index)
-			checkpoint, _, _, err := client.FetchCheckpoint(ctx, logReadCP, noteVerifier, noteVerifier.Name())
-			if err != nil {
-				t.Errorf("client.FetchCheckpoint: %v", err)
-			}
-			if checkpoint == nil {
-				// This was a t.Fatalf but that terminates the goroutine, stopping the error being returned on the next line
-				t.Errorf("checkpoint not found at index: %d, test entry size: %d", index, i)
-				return fmt.Errorf("failed to get checkpoint after writing entry %d (assigned sequence %d)", i, index)
+
+			// Wait for the entry to be integrated
+			for size := uint64(0); size < index; {
+				time.Sleep(500 * time.Millisecond)
+
+				checkpoint, _, _, err := client.FetchCheckpoint(ctx, logReadCP, noteVerifier, noteVerifier.Name())
+				if err != nil {
+					t.Errorf("client.FetchCheckpoint: %v", err)
+				}
+				if checkpoint == nil {
+					// This was a t.Fatalf but that terminates the goroutine, stopping the error being returned on the next line
+					t.Errorf("checkpoint not found at index: %d, test entry size: %d", index, i)
+					return fmt.Errorf("failed to get checkpoint after writing entry %d (assigned sequence %d)", i, index)
+				}
+				size = checkpoint.Size
 			}
 			checkpoints[i+1] = *checkpoint
 			return err
