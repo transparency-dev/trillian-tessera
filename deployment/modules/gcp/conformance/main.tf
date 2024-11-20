@@ -62,7 +62,6 @@ resource "google_cloud_run_v2_service" "default" {
         "--spanner=${local.spanner_db_full}",
         "--listen=:8080",
         "--signer=${var.signer}",
-        "--verifier=${var.verifier}",
       ]
       ports {
         name           = "h2c"
