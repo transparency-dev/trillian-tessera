@@ -24,6 +24,7 @@ import (
 	"reflect"
 	"sync"
 	"testing"
+	"time"
 
 	"cloud.google.com/go/spanner/spannertest"
 	"cloud.google.com/go/spanner/spansql"
@@ -32,7 +33,7 @@ import (
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/api"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
-	"github.com/transparency-dev/trillian-tessera/storage/internal"
+	storage "github.com/transparency-dev/trillian-tessera/storage/internal"
 )
 
 func newSpannerDB(t *testing.T) func() {
@@ -45,7 +46,7 @@ func newSpannerDB(t *testing.T) func() {
 	dml, err := spansql.ParseDDL("", `
 			CREATE TABLE SeqCoord (id INT64 NOT NULL, next INT64 NOT NULL,) PRIMARY KEY (id); 
 			CREATE TABLE Seq (id INT64 NOT NULL, seq INT64 NOT NULL, v BYTES(MAX),) PRIMARY KEY (id, seq); 
-			CREATE TABLE IntCoord (id INT64 NOT NULL, seq INT64 NOT NULL,) PRIMARY KEY (id); 
+			CREATE TABLE IntCoord (id INT64 NOT NULL, seq INT64 NOT NULL, rootHash BYTES(32) NOT NULL,) PRIMARY KEY (id); 
 	`)
 	if err != nil {
 		t.Fatalf("Invalid DDL: %v", err)
@@ -170,18 +171,18 @@ func TestSpannerSequencerRoundTrip(t *testing.T) {
 	}
 
 	seenIdx := uint64(0)
-	f := func(_ context.Context, fromSeq uint64, entries []storage.SequencedEntry) error {
+	f := func(_ context.Context, fromSeq uint64, entries []storage.SequencedEntry) ([]byte, error) {
 		if fromSeq != seenIdx {
-			return fmt.Errorf("f called with fromSeq %d, want %d", fromSeq, seenIdx)
+			return nil, fmt.Errorf("f called with fromSeq %d, want %d", fromSeq, seenIdx)
 		}
 		for i, e := range entries {
 
 			if got, want := e, wantEntries[i]; !reflect.DeepEqual(got, want) {
-				return fmt.Errorf("entry %d+%d != %d", fromSeq, i, seenIdx)
+				return nil, fmt.Errorf("entry %d+%d != %d", fromSeq, i, seenIdx)
 			}
 			seenIdx++
 		}
-		return nil
+		return []byte(fmt.Sprintf("root<%d>", seenIdx)), nil
 	}
 
 	more, err := s.consumeEntries(ctx, 7, f, false)
@@ -304,9 +305,75 @@ func TestBundleRoundtrip(t *testing.T) {
 	}
 }
 
+func TestPublishCheckpoint(t *testing.T) {
+	ctx := context.Background()
+
+	close := newSpannerDB(t)
+	defer close()
+
+	s, err := newSpannerSequencer(ctx, "projects/p/instances/i/databases/d", 1000)
+	if err != nil {
+		t.Fatalf("newSpannerSequencer: %v", err)
+	}
+
+	for _, test := range []struct {
+		name            string
+		cpModifiedAt    time.Time
+		publishInterval time.Duration
+		wantUpdate      bool
+	}{
+		{
+			name:            "works ok",
+			cpModifiedAt:    time.Now().Add(-15 * time.Second),
+			publishInterval: 10 * time.Second,
+			wantUpdate:      true,
+		}, {
+			name:            "too soon, skip update",
+			cpModifiedAt:    time.Now().Add(-5 * time.Second),
+			publishInterval: 10 * time.Second,
+			wantUpdate:      false,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			m := newMemObjStore()
+			storage := &Storage{
+				objStore:    m,
+				sequencer:   s,
+				entriesPath: layout.EntriesPath,
+				newCP:       func(size uint64, hash []byte) ([]byte, error) { return []byte(fmt.Sprintf("%d/%x,", size, hash)), nil },
+			}
+			// Call init so we've got a zero-sized checkpoint to work with.
+			if err := storage.init(ctx); err != nil {
+				t.Fatalf("storage.init: %v", err)
+			}
+			cpOld := []byte("bananas")
+			if err := m.setObject(ctx, layout.CheckpointPath, cpOld, nil, ""); err != nil {
+				t.Fatalf("setObject(bananas): %v", err)
+			}
+			m.lMod = test.cpModifiedAt
+			if err := storage.publishCheckpoint(ctx, test.publishInterval); err != nil {
+				t.Fatalf("publishCheckpoint: %v", err)
+			}
+			cpNew, _, err := m.getObject(ctx, layout.CheckpointPath)
+			cpUpdated := !bytes.Equal(cpOld, cpNew)
+			if err != nil {
+				if !errors.Is(err, gcs.ErrObjectNotExist) {
+					t.Fatalf("getObject: %v", err)
+				}
+				cpUpdated = false
+			}
+			if test.wantUpdate != cpUpdated {
+				t.Fatalf("got cpUpdated=%t, want %t", cpUpdated, test.wantUpdate)
+			}
+		})
+	}
+
+}
+
 type memObjStore struct {
 	sync.RWMutex
-	mem map[string][]byte
+	mem  map[string][]byte
+	lMod time.Time
 }
 
 func newMemObjStore() *memObjStore {
@@ -342,4 +409,8 @@ func (m *memObjStore) setObject(_ context.Context, obj string, data []byte, cond
 	}
 	m.mem[obj] = data
 	return nil
+}
+
+func (m *memObjStore) lastModified(_ context.Context, obj string) (time.Time, error) {
+	return m.lMod, nil
 }

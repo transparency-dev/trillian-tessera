@@ -22,16 +22,18 @@ import (
 )
 
 const (
-	DefaultBatchMaxSize = 256
-	DefaultBatchMaxAge  = 250 * time.Millisecond
+	DefaultBatchMaxSize       = 256
+	DefaultBatchMaxAge        = 250 * time.Millisecond
+	DefaultCheckpointInterval = 10 * time.Second
 )
 
 // ResolveStorageOptions turns a variadic array of storage options into a StorageOptions instance.
 func ResolveStorageOptions(opts ...func(*options.StorageOptions)) *options.StorageOptions {
 	defaults := &options.StorageOptions{
-		BatchMaxSize: DefaultBatchMaxSize,
-		BatchMaxAge:  DefaultBatchMaxAge,
-		EntriesPath:  layout.EntriesPath,
+		BatchMaxSize:       DefaultBatchMaxSize,
+		BatchMaxAge:        DefaultBatchMaxAge,
+		EntriesPath:        layout.EntriesPath,
+		CheckpointInterval: DefaultCheckpointInterval,
 	}
 	for _, opt := range opts {
 		opt(defaults)

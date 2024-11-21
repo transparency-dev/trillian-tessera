@@ -111,3 +111,21 @@ func WithPushback(maxOutstanding uint) func(*options.StorageOptions) {
 		o.PushbackMaxOutstanding = maxOutstanding
 	}
 }
+
+// WithCheckpointInterval configures the frequency at which Tessera will attempt to create & publish
+// a new checkpoint.
+//
+// Well behaved clients of the log will only "see" newly sequenced entries once a new checkpoint is published,
+// so it's important to consider the value being set.
+//
+// Regularly publishing new checkpoints:
+//   - helps show that the log is "live", even if no entries are being added.
+//   - enables clients of the log to reason about how frequently they need to have their
+//     view of the log refreshed, which in turn helps reduce work/load across the ecosystem.
+//
+// Note that this option probably only makes sense for long-lived applications (e.g. HTTP servers).
+func WithCheckpointInterval(interval time.Duration) func(*options.StorageOptions) {
+	return func(o *options.StorageOptions) {
+		o.CheckpointInterval = interval
+	}
+}

@@ -41,6 +41,14 @@ var (
 	privKeyFile = flag.String("private_key", "", "Location of private key file. If unset, uses the contents of the LOG_PRIVATE_KEY environment variable.")
 )
 
+const (
+	// checkpointInterval is used as the value to pass to the WithCheckpointInterval option below.
+	// Since this is a short-lived command-line tool, we set this to a relatively low value so that
+	// the tool can publish the new checkpoint and exit relatively quickly after integrating the entries
+	// into the tree.
+	checkpointInterval = 500 * time.Millisecond
+)
+
 // entryInfo binds the actual bytes to be added as a leaf with a
 // user-recognisable name for the source of those bytes.
 // The name is only used below in order to inform the user of the
@@ -77,7 +85,13 @@ func main() {
 	// The options provide the checkpoint signer & verifier, and batch options.
 	// In this case, we want to create a single batch containing all of the leaves being added in order to
 	// add all of these leaves without creating any intermediate checkpoints.
-	st, err := posix.New(ctx, *storageDir, *initialise, tessera.WithCheckpointSigner(s), tessera.WithBatching(uint(len(filesToAdd)), time.Second))
+	st, err := posix.New(
+		ctx,
+		*storageDir,
+		*initialise,
+		tessera.WithCheckpointSigner(s),
+		tessera.WithCheckpointInterval(checkpointInterval),
+		tessera.WithBatching(uint(len(filesToAdd)), time.Second))
 	if err != nil {
 		klog.Exitf("Failed to construct storage: %v", err)
 	}
