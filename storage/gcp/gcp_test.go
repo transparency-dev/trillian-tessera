@@ -346,13 +346,16 @@ func TestPublishCheckpoint(t *testing.T) {
 			if err := storage.init(ctx); err != nil {
 				t.Fatalf("storage.init: %v", err)
 			}
-			m.delete(layout.CheckpointPath)
+			cpOld := []byte("bananas")
+			if err := m.setObject(ctx, layout.CheckpointPath, cpOld, nil, ""); err != nil {
+				t.Fatalf("setObject(bananas): %v", err)
+			}
 			m.lMod = test.cpModifiedAt
 			if err := storage.publishCheckpoint(ctx, test.publishInterval); err != nil {
 				t.Fatalf("publishCheckpoint: %v", err)
 			}
-			_, _, err := m.getObject(ctx, layout.CheckpointPath)
-			cpUpdated := true
+			cpNew, _, err := m.getObject(ctx, layout.CheckpointPath)
+			cpUpdated := !bytes.Equal(cpOld, cpNew)
 			if err != nil {
 				if !errors.Is(err, gcs.ErrObjectNotExist) {
 					t.Fatalf("getObject: %v", err)
@@ -406,12 +409,6 @@ func (m *memObjStore) setObject(_ context.Context, obj string, data []byte, cond
 	}
 	m.mem[obj] = data
 	return nil
-}
-
-func (m *memObjStore) delete(obj string) {
-	m.Lock()
-	defer m.Unlock()
-	delete(m.mem, obj)
 }
 
 func (m *memObjStore) lastModified(_ context.Context, obj string) (time.Time, error) {
