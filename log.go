@@ -112,9 +112,15 @@ func WithPushback(maxOutstanding uint) func(*options.StorageOptions) {
 	}
 }
 
-// WithCheckpointInterval allows the frequency at which Tessera will attempt to publish new checkpoints to be configured.
-func WithCheckpointInterval(t time.Duration) func(*options.StorageOptions) {
+// WithCheckpointInterval allows the frequency at which Tessera will attempt to create & publish
+// a new checkpoint to be configured.
+//
+// Regularly publishing new checkpoints:
+//   - helps show that the log is "live", even if no entries are being added.
+//   - enables clients of the log to reason about how frequently they need to have their
+//     view of the log refreshed, which in turn helps reduce work/load across the ecosystem.
+func WithCheckpointInterval(interval time.Duration) func(*options.StorageOptions) {
 	return func(o *options.StorageOptions) {
-		o.CheckpointInterval = t
+		o.CheckpointInterval = interval
 	}
 }
