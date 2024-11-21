@@ -16,6 +16,7 @@ package posix
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -30,7 +31,6 @@ import (
 	"github.com/transparency-dev/trillian-tessera/api"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
 	"github.com/transparency-dev/trillian-tessera/internal/options"
-	"github.com/transparency-dev/trillian-tessera/internal/parse"
 	storage "github.com/transparency-dev/trillian-tessera/storage/internal"
 	"k8s.io/klog/v2"
 )
@@ -93,15 +93,6 @@ func New(ctx context.Context, path string, create bool, opts ...func(*options.St
 	}(ctx, opt.CheckpointInterval)
 
 	return r, nil
-}
-
-func (s *Storage) curTree() (uint64, error) {
-	rawCp, err := s.readCheckpoint()
-	if err != nil {
-		return 0, fmt.Errorf("failed to read log checkpoint: %q", err)
-	}
-	_, size, err := parse.CheckpointUnsafe(rawCp)
-	return size, err
 }
 
 // lockCP places a POSIX advisory lock for the checkpoint.
@@ -213,7 +204,7 @@ func (s *Storage) sequenceBatch(ctx context.Context, entries []*tessera.Entry) e
 		s.Unlock()
 	}()
 
-	size, err := s.curTree()
+	size, _, err := s.readTreeState()
 	if err != nil {
 		return err
 	}
@@ -312,14 +303,8 @@ func (s *Storage) doIntegrate(ctx context.Context, fromSeq uint64, entries []sto
 	}
 
 	klog.Infof("New CP: %d, %x", newSize, newRoot)
-	if s.newCP != nil {
-		cpRaw, err := s.newCP(newSize, newRoot)
-		if err != nil {
-			return fmt.Errorf("newCP: %v", err)
-		}
-		if err := s.writeCheckpoint(cpRaw); err != nil {
-			return fmt.Errorf("failed to write new checkpoint: %v", err)
-		}
+	if err := s.writeTreeState(newSize, newRoot); err != nil {
+		return fmt.Errorf("failed to write new checkpoint: %v", err)
 	}
 
 	return nil
@@ -417,18 +402,14 @@ func (s *Storage) initialise(create bool) error {
 		if err := os.MkdirAll(filepath.Join(s.path, stateDir), dirPerm); err != nil {
 			return fmt.Errorf("failed to create log directory: %q", err)
 		}
-		n, err := s.newCP(0, rfc6962.DefaultHasher.EmptyRoot())
-		if err != nil {
-			return fmt.Errorf("failed to sign empty checkpoint: %v", err)
-		}
-		if err := s.writeCheckpoint(n); err != nil {
+		if err := s.writeTreeState(0, rfc6962.DefaultHasher.EmptyRoot()); err != nil {
 			return fmt.Errorf("failed to write tree-state checkpoint: %v", err)
 		}
 		if err := s.publishCheckpoint(0); err != nil {
 			return fmt.Errorf("failed to publish checkpoint: %v", err)
 		}
 	}
-	curSize, err := s.curTree()
+	curSize, _, err := s.readTreeState()
 	if err != nil {
 		return fmt.Errorf("failed to load checkpoint for log: %v", err)
 	}
@@ -437,10 +418,20 @@ func (s *Storage) initialise(create bool) error {
 	return nil
 }
 
-// writeCheckpoint stores a raw log checkpoint on disk.
-func (s *Storage) writeCheckpoint(newCPRaw []byte) error {
-	if err := createExclusive(filepath.Join(s.path, stateDir, layout.CheckpointPath), newCPRaw); err != nil {
-		return fmt.Errorf("failed to create private checkpoint file: %w", err)
+type treeState struct {
+	Size uint64 `json:"size"`
+	Root []byte `json:"root"`
+}
+
+// writeTreeState stores the current tree size and root hash on disk.
+func (s *Storage) writeTreeState(size uint64, root []byte) error {
+	raw, err := json.Marshal(treeState{Size: size, Root: root})
+	if err != nil {
+		return fmt.Errorf("Marshal: %v", err)
+	}
+
+	if err := createExclusive(filepath.Join(s.path, stateDir, "treeState"), raw); err != nil {
+		return fmt.Errorf("failed to create private tree state file: %w", err)
 	}
 	// Notify that we know for sure there's a new checkpoint, but don't block if there's already
 	// an outstanding notification in the channel.
@@ -451,9 +442,18 @@ func (s *Storage) writeCheckpoint(newCPRaw []byte) error {
 	return nil
 }
 
-// readcheckpoint returns the latest stored private checkpoint.
-func (s *Storage) readCheckpoint() ([]byte, error) {
-	return os.ReadFile(filepath.Join(s.path, stateDir, layout.CheckpointPath))
+// readTreeState reads and returns the currently stored tree state.
+func (s *Storage) readTreeState() (uint64, []byte, error) {
+	p := filepath.Join(s.path, stateDir, "treeState")
+	raw, err := os.ReadFile(p)
+	if err != nil {
+		return 0, nil, fmt.Errorf("ReadFile(%q): %v", p, err)
+	}
+	ts := &treeState{}
+	if err := json.Unmarshal(raw, ts); err != nil {
+		return 0, nil, fmt.Errorf("Unmarshal: %v", err)
+	}
+	return ts.Size, ts.Root, nil
 }
 
 // publishCheckpoint makes the most recently checkpoint from the stateDir available at the
@@ -478,17 +478,20 @@ func (s *Storage) publishCheckpoint(minStaleness time.Duration) error {
 		klog.V(1).Infof("publishCheckpoint: skipping publish because previous checkpoint published %v ago, less than %v", d, minStaleness)
 		return nil
 	}
-	cpRaw, err := os.ReadFile(filepath.Join(s.path, stateDir, layout.CheckpointPath))
+	size, root, err := s.readTreeState()
 	if err != nil {
-		return fmt.Errorf("read state checkpoint: %v", err)
+		return fmt.Errorf("readTreeState: %v", err)
 	}
-	// This write can fail, e.g. if the storage is full, but this is not fatal:
-	// - the source of truth is the checkpoint in the state directory
-	// - we'll try again after another publish interval.
-	if _, err := cpF.Write(cpRaw); err != nil {
-		return fmt.Errorf("write(%s): %v", layout.CheckpointPath, err)
+	cpRaw, err := s.newCP(size, root)
+	if err != nil {
+		return fmt.Errorf("newCP: %v", err)
+	}
+
+	if err := createExclusive(filepath.Join(s.path, layout.CheckpointPath), cpRaw); err != nil {
+		return fmt.Errorf("createExclusive(%s): %v", layout.CheckpointPath, err)
 	}
 	klog.Infof("Published latest checkpoint")
+
 	return nil
 }
 
