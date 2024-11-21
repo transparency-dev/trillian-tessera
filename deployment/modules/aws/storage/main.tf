@@ -36,12 +36,15 @@ resource "aws_rds_cluster" "log_rds" {
   engine_version          = "8.0.mysql_aurora.3.05.2"
   database_name           = "tessera"
   master_username         = "root"
+  # TODO(phboneff): move to either random strings / Secret Manager / IAM
   master_password         = "password"
   skip_final_snapshot     = true
   backup_retention_period = 0
 }
 
 resource "aws_rds_cluster_instance" "cluster_instances" {
+  # TODO(phboneff): make some of these variables and/or
+  # tweak some of these.
   count              = 1
   identifier         = "${local.name}-writer-${count.index}"
   cluster_identifier = aws_rds_cluster.log_rds.id
