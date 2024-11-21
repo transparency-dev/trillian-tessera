@@ -77,7 +77,13 @@ func main() {
 	// The options provide the checkpoint signer & verifier, and batch options.
 	// In this case, we want to create a single batch containing all of the leaves being added in order to
 	// add all of these leaves without creating any intermediate checkpoints.
-	st, err := posix.New(ctx, *storageDir, *initialise, tessera.WithCheckpointSigner(s), tessera.WithBatching(uint(len(filesToAdd)), time.Second))
+	st, err := posix.New(
+		ctx,
+		*storageDir,
+		*initialise,
+		tessera.WithCheckpointSigner(s),
+		tessera.WithCheckpointInterval(500*time.Millisecond),
+		tessera.WithBatching(uint(len(filesToAdd)), time.Second))
 	if err != nil {
 		klog.Exitf("Failed to construct storage: %v", err)
 	}
