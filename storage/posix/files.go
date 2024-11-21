@@ -97,7 +97,7 @@ func New(ctx context.Context, path string, create bool, opts ...func(*options.St
 
 // lockFile creates/opens a lock file at the specified path, and flocks it.
 // Once locked, the caller perform whatever operations are necessary, before
-// calling unlockFile with the handle.
+// calling the returned function to unlock it.
 //
 // Note that a) this is advisory, and b) should use an non-API specified file
 // (e.g. <something>.lock>) to avoid inherent brittleness of the `fcntrl` API
