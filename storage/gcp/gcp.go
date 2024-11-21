@@ -173,12 +173,14 @@ func New(ctx context.Context, cfg Config, opts ...func(*options.StorageOptions))
 	}()
 
 	go func(ctx context.Context, i time.Duration) {
+		t := time.NewTicker(i)
+		defer t.Stop()
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case <-r.cpUpdated:
-			case <-time.After(i):
+			case <-t.C:
 			}
 			if err := r.publishCheckpoint(ctx, i); err != nil {
 				klog.Warningf("publishCheckpoint: %v", err)

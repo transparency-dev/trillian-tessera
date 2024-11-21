@@ -77,12 +77,14 @@ func New(ctx context.Context, path string, create bool, opts ...func(*options.St
 	r.queue = storage.NewQueue(ctx, opt.BatchMaxAge, opt.BatchMaxSize, r.sequenceBatch)
 
 	go func(ctx context.Context, i time.Duration) {
+		t := time.NewTicker(i)
+		defer t.Stop()
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case <-r.cpUpdated:
-			case <-time.After(i):
+			case <-t.C:
 			}
 			if err := r.publishCheckpoint(i); err != nil {
 				klog.Warningf("publishCheckpoint: %v", err)
