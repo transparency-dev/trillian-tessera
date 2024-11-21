@@ -15,7 +15,7 @@ In contrast with some of other other storage backends, sequencing and integratio
 the tree is synchronous.
 
 The implementation uses a `.state/` directory to coordinate operation.
-This directory does _not_ need to be visible to log clients, but it does not contain sensistive
+This directory does _not_ need to be visible to log clients, but it does not contain sensitive
 data and so it isn't a problem if it is made visible.
 
 ## Life of a leaf
@@ -23,7 +23,7 @@ data and so it isn't a problem if it is made visible.
 In the description below, when we talk about writing to files - either appending or creating new ones,
 the _actual_ process used always follows the following pattern:
 1. Create a temporary file on the same filesystem as the target location
-1. If we're appening data, copy the contents of the prefix location into the temporary file
+1. If we're appending data, copy the contents of the prefix location into the temporary file
 1. Write any new/additional data into the temporary file
 1. Close the temporary file
 1. Rename the temporary file into the target location.
