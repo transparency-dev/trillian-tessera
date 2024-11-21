@@ -48,8 +48,6 @@ type Storage struct {
 	path  string
 	queue *storage.Queue
 
-	cpFile *os.File
-
 	curSize uint64
 	newCP   options.NewCPFunc
 
@@ -95,36 +93,15 @@ func New(ctx context.Context, path string, create bool, opts ...func(*options.St
 	return r, nil
 }
 
-// lockCP places a POSIX advisory lock for the checkpoint.
-// Note that a) this is advisory, and b) we use an adjacent file to the checkpoint
-// (`checkpoint.lock`) to avoid inherent brittleness of the `fcntrl` API (*any* `Close`
-// operation on this file (even if it's a different FD) from this PID, or overwriting
-// of the file by *any* process breaks the lock.)
-func (s *Storage) lockCP() error {
-	f, err := lockFile(filepath.Join(s.path, stateDir, layout.CheckpointPath+".lock"))
-	if err != nil {
-		return err
-	}
-	s.cpFile = f
-	return nil
-}
-
-// unlockCP unlocks the `checkpoint.lock` file.
-func (s *Storage) unlockCP() error {
-	if s.cpFile == nil {
-		panic(errors.New("not locked"))
-	}
-	if err := unlockFile(s.cpFile); err != nil {
-		return err
-	}
-	s.cpFile = nil
-	return nil
-}
-
-// lockFile creates/opens the file at the specified path, and flocks it.
-// Once locked, the caller can use the returned file handle to perform whatever
-// operations are necessary, before calling unlockFile with the handle.
-func lockFile(p string) (*os.File, error) {
+// lockFile creates/opens a lock file at the specified path, and flocks it.
+// Once locked, the caller perform whatever operations are necessary, before
+// calling unlockFile with the handle.
+//
+// Note that a) this is advisory, and b) should use an non-API specified file
+// (e.g. <something>.lock>) to avoid inherent brittleness of the `fcntrl` API
+// (*any* `Close` operation on this file (even if it's a different FD) from
+// this PID, or overwriting of the file by *any* process breaks the lock.)
+func lockFile(p string) (func() error, error) {
 	f, err := os.OpenFile(p, syscall.O_CREAT|syscall.O_RDWR|syscall.O_CLOEXEC, filePerm)
 	if err != nil {
 		return nil, err
@@ -139,15 +116,9 @@ func lockFile(p string) (*os.File, error) {
 	// Keep trying until we manage to get an answer without being interrupted.
 	for {
 		if err := syscall.FcntlFlock(f.Fd(), syscall.F_SETLKW, &flockT); err != syscall.EINTR {
-			return f, err
+			return f.Close, err
 		}
 	}
-}
-
-// unlockFile simply closes the locked file.
-// This is enough to release the flock taken in lockFile previously.
-func unlockFile(f *os.File) error {
-	return f.Close()
 }
 
 // Add takes an entry and queues it for inclusion in the log.
@@ -192,13 +163,14 @@ func (s *Storage) ReadTile(_ context.Context, level, index, logSize uint64) ([]b
 func (s *Storage) sequenceBatch(ctx context.Context, entries []*tessera.Entry) error {
 	// Double locking:
 	// - The mutex `Lock()` ensures that multiple concurrent calls to this function within a task are serialised.
-	// - The POSIX `LockCP()` ensures that distinct tasks are serialised.
+	// - The POSIX `lockForTreeUpdate()` ensures that distinct tasks are serialised.
 	s.Lock()
-	if err := s.lockCP(); err != nil {
+	unlock, err := lockFile(filepath.Join(s.path, stateDir, "treeState.lock"))
+	if err != nil {
 		panic(err)
 	}
 	defer func() {
-		if err := s.unlockCP(); err != nil {
+		if err := unlock(); err != nil {
 			panic(err)
 		}
 		s.Unlock()
@@ -456,27 +428,32 @@ func (s *Storage) readTreeState() (uint64, []byte, error) {
 	return ts.Size, ts.Root, nil
 }
 
-// publishCheckpoint makes the most recently checkpoint from the stateDir available at the
-// (public) tlog-tiles specified Checkpoint location.
+// publishCheckpoint checks whether the currently published checkpoint (if any) is more than
+// minStaleness old, and, if so, creates and published a fresh checkpoint from the current
+// stored tree state.
 func (s *Storage) publishCheckpoint(minStaleness time.Duration) error {
 	// Lock the destination "published" checkpoint location:
-	cpF, err := lockFile(filepath.Join(s.path, layout.CheckpointPath))
+	lockPath := filepath.Join(s.path, stateDir, "publish.lock")
+	unlock, err := lockFile(lockPath)
 	if err != nil {
-		return fmt.Errorf("lockFile(%s): %v", layout.CheckpointPath, err)
+		return fmt.Errorf("lockFile(%s): %v", lockPath, err)
 	}
 	defer func() {
-		if err := cpF.Close(); err != nil {
-			klog.Warningf("close(%s): %v", layout.CheckpointPath, err)
+		if err := unlock(); err != nil {
+			klog.Warningf("unlock(%s): %v", lockPath, err)
 		}
 	}()
 
-	info, err := cpF.Stat()
-	if err != nil {
+	info, err := os.Stat(filepath.Join(s.path, layout.CheckpointPath))
+	if errors.Is(err, os.ErrNotExist) {
+		klog.V(1).Infof("No checkpoint exists, publishing")
+	} else if err != nil {
 		return fmt.Errorf("stat(%s): %v", layout.CheckpointPath, err)
-	}
-	if d := time.Since(info.ModTime()); d < minStaleness {
-		klog.V(1).Infof("publishCheckpoint: skipping publish because previous checkpoint published %v ago, less than %v", d, minStaleness)
-		return nil
+	} else {
+		if d := time.Since(info.ModTime()); d < minStaleness {
+			klog.V(1).Infof("publishCheckpoint: skipping publish because previous checkpoint published %v ago, less than %v", d, minStaleness)
+			return nil
+		}
 	}
 	size, root, err := s.readTreeState()
 	if err != nil {

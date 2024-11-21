@@ -140,7 +140,7 @@ func TestLiveLogIntegration(t *testing.T) {
 			}
 			entryIndexMap.Store(i, index)
 
-			// Wait for the entry to be integrated
+			// Wait for the entry to be integrated, or the test to time out.
 			for size := uint64(0); size < index; {
 				time.Sleep(500 * time.Millisecond)
 
