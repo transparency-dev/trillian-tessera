@@ -95,36 +95,3 @@ func TestQueue(t *testing.T) {
 		})
 	}
 }
-
-func TestDedup(t *testing.T) {
-	ctx := context.Background()
-	idx := uint64(0)
-
-	q := storage.NewQueue(ctx, time.Second, 10 /*maxSize*/, func(ctx context.Context, entries []*tessera.Entry) error {
-		for _, e := range entries {
-			_ = e.MarshalBundleData(idx)
-			idx++
-		}
-		return nil
-	})
-
-	numEntries := 10
-	adds := []tessera.IndexFuture{}
-	for i := 0; i < numEntries; i++ {
-		adds = append(adds, q.Add(ctx, tessera.NewEntry([]byte("Have I seen this before?"))))
-	}
-
-	firstN, err := adds[0]()
-	if err != nil {
-		t.Fatalf("Add: %v", err)
-	}
-	for i := 1; i < len(adds); i++ {
-		N, err := adds[i]()
-		if err != nil {
-			t.Errorf("[%d] got %v", i, err)
-		}
-		if N != firstN {
-			t.Errorf("[%d] got seq %d, want %d", i, N, firstN)
-		}
-	}
-}

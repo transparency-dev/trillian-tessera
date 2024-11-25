@@ -39,9 +39,6 @@ import (
 type Queue struct {
 	buf   *buffer.Buffer
 	flush FlushFunc
-
-	inFlightMu sync.Mutex
-	inFlight   map[string]*queueItem
 }
 
 // FlushFunc is the signature of a function which will receive the slice of queued entries.
@@ -58,8 +55,7 @@ type FlushFunc func(ctx context.Context, entries []*tessera.Entry) error
 // for maxAge, or the size of the queue reaches maxSize.
 func NewQueue(ctx context.Context, maxAge time.Duration, maxSize uint, f FlushFunc) *Queue {
 	q := &Queue{
-		flush:    f,
-		inFlight: make(map[string]*queueItem, maxSize),
+		flush: f,
 	}
 
 	// The underlying queue implementation blocks additions during a flush.
@@ -97,32 +93,14 @@ func NewQueue(ctx context.Context, maxAge time.Duration, maxSize uint, f FlushFu
 	return q
 }
 
-// squashDupes keeps track of all in-flight requests, enabling dupe squashing for entries currently in the queue.
-// Returns an entry struct, and a bool which is true if the provided entry is a dupe and should NOT be added to the queue.
-func (q *Queue) squashDupes(e *tessera.Entry) (*queueItem, bool) {
-	q.inFlightMu.Lock()
-	defer q.inFlightMu.Unlock()
-
-	k := string(e.Identity())
-	entry, isKnown := q.inFlight[k]
-	if !isKnown {
-		entry = newEntry(e)
-		q.inFlight[k] = entry
-	}
-	return entry, isKnown
-}
-
 // Add places e into the queue, and returns a func which may be called to retrieve the assigned index.
 func (q *Queue) Add(ctx context.Context, e *tessera.Entry) tessera.IndexFuture {
-	entry, isDupe := q.squashDupes(e)
-	if isDupe {
-		// This entry is already in the queue, so no need to add it again.
-		return entry.f
+	qi := newEntry(e)
+
+	if err := q.buf.Push(qi); err != nil {
+		qi.notify(err)
 	}
-	if err := q.buf.Push(entry); err != nil {
-		entry.notify(err)
-	}
-	return entry.f
+	return qi.f
 }
 
 // doFlush handles the queue flush, and sending notifications of assigned log indices.
@@ -134,14 +112,9 @@ func (q *Queue) doFlush(ctx context.Context, entries []*queueItem) {
 
 	err := q.flush(ctx, entriesData)
 
-	// Send assigned indices to all the waiting Add() requests, including dupes.
-	q.inFlightMu.Lock()
-	defer q.inFlightMu.Unlock()
-
+	// Send assigned indices to all the waiting Add() requests
 	for _, e := range entries {
 		e.notify(err)
-		k := string(e.entry.Identity())
-		delete(q.inFlight, k)
 	}
 }
 
