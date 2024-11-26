@@ -39,7 +39,7 @@ resource "google_cloudbuild_trigger" "docker" {
       id         = "preclean_env"
       name       = "alpine/terragrunt"
       script     = <<EOT
-        terragrunt --terragrunt-non-interactive destroy -auto-approve 2>&1
+        terragrunt --terragrunt-non-interactive --terragrunt-no-color destroy -auto-approve -no-color 2>&1
       EOT
       dir = "deployment/live/gcp/conformance/ci"
       env = [
@@ -94,7 +94,7 @@ resource "google_cloudbuild_trigger" "docker" {
       name   = "alpine/terragrunt"
       script = <<EOT
         export TESSERA_SIGNER=$(cat /workspace/key.sec)
-        terragrunt --terragrunt-non-interactive apply -auto-approve 2>&1
+        terragrunt --terragrunt-non-interactive --terragrunt-no-color apply -auto-approve -no-color 2>&1
       EOT
       dir    = "deployment/live/gcp/conformance/ci"
       env = [
@@ -160,7 +160,7 @@ resource "google_cloudbuild_trigger" "docker" {
       id         = "terraform_destroy_conformance_ci"
       name       = "alpine/terragrunt"
       script     = <<EOT
-        terragrunt --terragrunt-non-interactive destroy -auto-approve 2>&1
+        terragrunt --terragrunt-non-interactive --terragrunt-no-color destroy -auto-approve -no-color 2>&1
       EOT
       dir = "deployment/live/gcp/conformance/ci"
       env = [
