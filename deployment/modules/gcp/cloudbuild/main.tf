@@ -88,7 +88,7 @@ resource "google_cloudbuild_trigger" "docker" {
     }
     ## Apply the deployment/live/gcp/conformance/ci terragrunt config.
     ## This will bring up the conformance infrastructure, including a service
-    ## running the confirmance server docker image built above.
+    ## running the conformance server docker image built above.
     step {
       id     = "terraform_apply_conformance_ci"
       name   = "alpine/terragrunt"
