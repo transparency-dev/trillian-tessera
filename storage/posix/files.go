@@ -44,7 +44,7 @@ const (
 // Storage implements storage functions for a POSIX filesystem.
 // It leverages the POSIX atomic operations.
 type Storage struct {
-	sync.Mutex
+	mu    sync.Mutex
 	path  string
 	queue *storage.Queue
 
@@ -166,7 +166,7 @@ func (s *Storage) sequenceBatch(ctx context.Context, entries []*tessera.Entry) e
 	// Double locking:
 	// - The mutex `Lock()` ensures that multiple concurrent calls to this function within a task are serialised.
 	// - The POSIX `lockForTreeUpdate()` ensures that distinct tasks are serialised.
-	s.Lock()
+	s.mu.Lock()
 	unlock, err := lockFile(filepath.Join(s.path, stateDir, "treeState.lock"))
 	if err != nil {
 		panic(err)
@@ -175,7 +175,7 @@ func (s *Storage) sequenceBatch(ctx context.Context, entries []*tessera.Entry) e
 		if err := unlock(); err != nil {
 			panic(err)
 		}
-		s.Unlock()
+		s.mu.Unlock()
 	}()
 
 	size, _, err := s.readTreeState()
