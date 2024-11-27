@@ -86,7 +86,7 @@ Once this process has been completed, a new entry will:
 
 > [!IMPORTANT]
 > There is currently no easy way to determine that integration has completed.
-> Provided that you ~always have a personality instance running, this isn't an issue.
+> This isn't an issue if the personality process is continually running.
 > For personalities that have reasons to require periods of downtime, #341 tracks adding an API to allow for clean shutdown.
 
 ## Usage
