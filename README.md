@@ -87,7 +87,7 @@ Once this process has been completed, a new entry will:
 > [!IMPORTANT]
 > There is currently no easy way to determine that integration has completed.
 > This isn't an issue if the personality process is continually running.
-> For personalities that require periods of downtime, #341 tracks adding an API to allow for clean shutdown.
+> For personalities that require periods of downtime, [#341](https://github.com/transparency-dev/trillian-tessera/issues/341) tracks adding an API to allow for clean shutdown.
 
 ## Usage
 
