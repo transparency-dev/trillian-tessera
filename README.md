@@ -171,9 +171,10 @@ Take a look at the functions in the `trillian-tessera` root package named `With*
 The final part of configuring this storage object is to set up and mix-ins that you want to use.
 These mix-ins are optional libraries you can use to provide common log behaviours without writing it yourself.
 The currently supported mix-ins are:
- * Deduplication (TODO(mhutchinson): link these when they are written):
-   * In-memory (cheap, but very limited deduplication behaviour)
+ * Deduplication 
+   * [In-memory](https://pkg.go.dev/github.com/transparency-dev/trillian-tessera#InMemoryDedupe) (cheap, but very limited deduplication behaviour)
    * Persistent (expensive, but can strongly ensure the log contains no duplicates)
+     * TODO(mhutchinson): link to these implementations when they are written
  * [Synchronous Integration](https://pkg.go.dev/github.com/transparency-dev/trillian-tessera#IntegrationAwaiter)
 
 See [Mix-ins](#mix-ins) after reading the rest of this section for more details.
