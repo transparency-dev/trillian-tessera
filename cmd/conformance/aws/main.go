@@ -70,7 +70,7 @@ func main() {
 	if err != nil {
 		klog.Exitf("Failed to create new AWS storage: %v", err)
 	}
-	dedupe := tessera.NewInMemoryDedupe(storage.Add, 256)
+	dedupedStorage := tessera.NewInMemoryDedupe(storage.Add, 256)
 
 	// Expose a HTTP handler for the conformance test writes.
 	// This should accept arbitrary bytes POSTed to /add, and return an ascii
@@ -82,7 +82,7 @@ func main() {
 			return
 		}
 
-		idx, err := dedupe.Add(r.Context(), tessera.NewEntry(b))()
+		idx, err := dedupedStorage.Add(r.Context(), tessera.NewEntry(b))()
 		if err != nil {
 			if errors.Is(err, tessera.ErrPushback) {
 				w.Header().Add("Retry-After", "1")
