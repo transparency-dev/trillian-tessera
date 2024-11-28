@@ -126,12 +126,12 @@ When writing your Tessera personality, the biggest decision you need to make fir
 
 Each of these implementations has a very similar API, but they have different characteristics.
 The easiest implementations to operate and to scale are the cloud implementations: GCP and AWS.
-One of these is the recommended choice for the majority of users.
+These are the recommended choice for the majority of users.
 
 If you aren't using a cloud provider, then your options are MySQL and POSIX.
 POSIX is the more niche choice, intended to be lightweight and for logs that are infrequently updated.
 If you already serve static files as part of your business this could be a good fit.
-If you are more used to operating user-facing code backed by a RDBMS, then MySQL will be a natural fit.
+If you are more used to operating user-facing applications backed by a RDBMS, then MySQL will be a natural fit.
 
 #### Setup
 
@@ -171,8 +171,8 @@ Each of these `New` calls are variadic functions, which is to say they take any 
 The optional arguments that can be passed in allow Tessera behaviour to be tuned.
 Take a look at the functions in the `trillian-tessera` root package named `With*`, e.g. [`WithBatching`](https://pkg.go.dev/github.com/transparency-dev/trillian-tessera#WithBatching) to see the available options are how they should be used.
 
-The final part of configuring this storage object is to set up and mix-ins that you want to use.
-These mix-ins are optional libraries you can use to provide common log behaviours without writing it yourself.
+The final part of configuring this storage object is to set up the mix-ins that you want to use.
+Mix-ins are optional libraries you can use to provide common log behaviours without writing it yourself.
 The currently supported mix-ins are:
  * Deduplication 
    * [In-memory](https://pkg.go.dev/github.com/transparency-dev/trillian-tessera#InMemoryDedupe) (cheap, but very limited deduplication behaviour)
