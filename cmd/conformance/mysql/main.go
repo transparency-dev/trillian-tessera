@@ -59,7 +59,10 @@ func main() {
 	noteSigner, additionalSigners := createSignersOrDie()
 
 	// Initialise the Tessera MySQL storage
-	storage, err := mysql.New(ctx, db, tessera.WithCheckpointSigner(noteSigner, additionalSigners...))
+	storage, err := mysql.New(ctx, db,
+		tessera.WithCheckpointSigner(noteSigner, additionalSigners...),
+		tessera.WithCheckpointInterval(3*time.Second),
+	)
 	if err != nil {
 		klog.Exitf("Failed to create new MySQL storage: %v", err)
 	}
