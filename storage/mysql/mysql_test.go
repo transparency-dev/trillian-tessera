@@ -35,6 +35,7 @@ import (
 	options "github.com/transparency-dev/trillian-tessera/internal/options"
 	"github.com/transparency-dev/trillian-tessera/storage/mysql"
 	"golang.org/x/mod/sumdb/note"
+	"golang.org/x/sync/errgroup"
 	"k8s.io/klog/v2"
 )
 
@@ -243,12 +244,15 @@ func TestParallelAdd(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			eG := errgroup.Group{}
 			for i := 0; i < 1024; i++ {
-				go func() {
-					if _, err := s.Add(ctx, tessera.NewEntry(test.entry))(); err != nil {
-						t.Errorf("got err: %v", err)
-					}
-				}()
+				eG.Go(func() error {
+					_, err := s.Add(ctx, tessera.NewEntry(test.entry))()
+					return err
+				})
+			}
+			if err := eG.Wait(); err != nil {
+				t.Errorf("got err: %v", err)
 			}
 		})
 	}
