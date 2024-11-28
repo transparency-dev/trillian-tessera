@@ -98,7 +98,7 @@ func TestMain(m *testing.M) {
 // `multiStatements=true` in the data source name allows multiple statements in one query.
 // This is not being used in the actual MySQL storage implementation.
 func initDatabaseSchema(ctx context.Context) {
-	dropTablesSQL := "DROP TABLE IF EXISTS `Checkpoint`, `Subtree`, `TiledLeaves`"
+	dropTablesSQL := "DROP TABLE IF EXISTS `Checkpoint`, `Subtree`, `TiledLeaves`, `TreeState`"
 
 	rawSchema, err := os.ReadFile("schema.sql")
 	if err != nil {
