@@ -101,6 +101,14 @@ func New(ctx context.Context, db *sql.DB, opts ...func(*options.StorageOptions))
 	return s, nil
 }
 
+// maybeInitTree will insert an initial "empty tree" row into the
+// TreeState table iff no row already exists.
+//
+// This method doesn't also publish this new empty tree as a Checkpoint,
+// rather, such a checkpoint will be published asynchronously by the
+// same mechanism used to publish future checkpoints. Although in _this_
+// case it would be expected to happen in very short order given that it's
+// likely that no row currently exists in the Checkpoints table either.
 func (s *Storage) maybeInitTree(ctx context.Context) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
