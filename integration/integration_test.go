@@ -134,7 +134,7 @@ func TestLiveLogIntegration(t *testing.T) {
 	errG := errgroup.Group{}
 	for i := range *testEntrySize {
 		errG.Go(func() error {
-			index, err := entryWriter.add(ctx, []byte(fmt.Sprint(i)))
+			index, err := entryWriter.add(ctx, []byte(fmt.Sprintf("%d", i)))
 			if err != nil {
 				return fmt.Errorf("entryWriter.add(%d): %v", i, err)
 			}
@@ -185,7 +185,7 @@ func TestLiveLogIntegration(t *testing.T) {
 			t.Errorf("client.GetEntryBundle: %v", err)
 		}
 
-		got, want := entryBundle.Entries[index%256], []byte(fmt.Sprint(data))
+		got, want := entryBundle.Entries[index%256], []byte(fmt.Sprintf("%d", data))
 		if !bytes.Equal(got, want) {
 			t.Errorf("Entry bundle (index: %d) got %v want %v", index, got, want)
 		}
