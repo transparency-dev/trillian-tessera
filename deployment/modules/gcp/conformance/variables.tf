@@ -29,16 +29,16 @@ variable "signer" {
 }
 
 variable "cloudrun_service_account" {
-  description = "The service account email to use for the CloudRun instance"
+  description = "The service account email to use for the CloudRun instance. If unset, uses the project default service account."
   type        = string
 }
 
 variable "conformance_users" {
-  description = "The list of users allowed to invoke calls to the conformance instance."
+  description = "The list of users allowed to invoke HTTP calls to the conformance Cloud Run instance. If unset, only the project default service account will be able to send requests."
   type        = list(any)
 }
 
 variable "bucket_readers" {
-  description = "The list of users allowed to read the conformance bucket contents"
+  description = "The list of users allowed to read the conformance t-log resources from GCS. If unset, only the project default service account will be able to read the t-log contents."
   type        = list(any)
 }
