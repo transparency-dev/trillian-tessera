@@ -33,12 +33,12 @@ variable "cloudrun_service_account" {
   type        = string
 }
 
-variable "conformance_users" {
+variable "conformance_writers" {
   description = "The list of users allowed to invoke HTTP calls to the conformance Cloud Run instance. If unset, only the project default service account will be able to send requests."
   type        = list(any)
 }
 
-variable "bucket_readers" {
+variable "conformance_readers" {
   description = "The list of users allowed to read the conformance t-log resources from GCS. If unset, only the project default service account will be able to read the t-log contents."
   type        = list(any)
 }

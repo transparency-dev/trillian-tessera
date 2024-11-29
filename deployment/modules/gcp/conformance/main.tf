@@ -9,6 +9,16 @@ terraform {
   }
 }
 
+data "google_compute_default_service_account" "default" {
+}
+
+locals {
+  readers = length(var.conformance_readers) < 0 ? var.conformance_readers : ["serviceAccount:${data.google_compute_default_service_account.default.email}"]
+  writers = length(var.conformance_writers) > 0 ? var.conformance_writers : ["serviceAccount:${data.google_compute_default_service_account.default.email}"]
+  cloudrun_service_account = length(var.cloudrun_service_account) > 0 ? var.cloudrun_service_account : data.google_compute_default_service_account.default.email
+}
+
+
 ## Call the Tessera GCP module
 ##
 ## This will configure all the storage infrastructure required to run a Tessera log on GCP.
@@ -19,8 +29,8 @@ module "gcs" {
   env                = var.env
   location           = var.location
   project_id         = var.project_id
-  bucket_readers     = var.bucket_readers
-  log_writer_members = ["serviceAccount:${var.cloudrun_service_account}"]
+  bucket_readers     = local.readers
+  log_writer_members = ["serviceAccount:${local.cloudrun_service_account}"]
   ephemeral          = true
 }
 
@@ -44,7 +54,7 @@ resource "google_cloud_run_v2_service" "default" {
   launch_stage = "GA"
 
   template {
-    service_account                  = var.cloudrun_service_account
+    service_account                  = local.cloudrun_service_account
     max_instance_request_concurrency = 700
     timeout                          = "5s"
 
@@ -100,7 +110,7 @@ resource "google_cloud_run_v2_service_iam_binding" "cloudrun_invoker" {
   location = google_cloud_run_v2_service.default.location
   name     = google_cloud_run_v2_service.default.name
   role     = "roles/run.invoker"
-  members  = var.conformance_users
+  members  = local.writers
 }
 
 

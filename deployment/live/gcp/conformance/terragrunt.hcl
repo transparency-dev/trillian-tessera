@@ -11,9 +11,9 @@ locals {
   signer                       = get_env("TESSERA_SIGNER")
   verifier                     = get_env("TESSERA_VERIFIER")
   # Service accounts are managed externally:
-  conformance_users        = ["serviceAccount:cloudbuild-prod-sa@trillian-tessera.iam.gserviceaccount.com"]
-  bucket_readers           = ["serviceAccount:cloudbuild-prod-sa@trillian-tessera.iam.gserviceaccount.com"]
-  cloudrun_service_account = "cloudrun-${local.env}-sa@trillian-tessera.iam.gserviceaccount.com"
+  conformance_writers          = ["serviceAccount:cloudbuild-prod-sa@trillian-tessera.iam.gserviceaccount.com"]
+  conformance_readers          = ["serviceAccount:cloudbuild-prod-sa@trillian-tessera.iam.gserviceaccount.com"]
+  cloudrun_service_account     = "cloudrun-${local.env}-sa@trillian-tessera.iam.gserviceaccount.com"
 }
 
 remote_state {
