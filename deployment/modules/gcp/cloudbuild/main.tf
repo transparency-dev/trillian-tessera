@@ -36,15 +36,17 @@ resource "google_cloudbuild_trigger" "docker" {
     ## Destroy any pre-existing deployment/live/gcp/conformance/ci environment.
     ## This might happen if a previous cloud build failed for some reason.
     step {
-      id         = "preclean_env"
-      name       = "alpine/terragrunt"
-      script     = <<EOT
+      id     = "preclean_env"
+      name   = "alpine/terragrunt"
+      script = <<EOT
         terragrunt --terragrunt-non-interactive --terragrunt-no-color destroy -auto-approve -no-color 2>&1
       EOT
-      dir = "deployment/live/gcp/conformance/ci"
+      dir    = "deployment/live/gcp/conformance/ci"
       env = [
         "TESSERA_SIGNER=unused",
-        "TESSERA_VERIFIER=unused",
+        "TESSERA_CLOUD_RUN_SERVICE_ACCOUNT=cloudrun-ci-sa@trillian-tessera.iam.gserviceaccount.com",
+        "TESSERA_READER=cloudbuild-prod-sa@trillian-tessera.iam.gserviceaccount.com",
+        "TESSERA_WRITER=cloudbuild-prod-sa@trillian-tessera.iam.gserviceaccount.com",
         "GOOGLE_PROJECT=${var.project_id}",
         "TF_IN_AUTOMATION=1",
         "TF_INPUT=false",
@@ -76,9 +78,9 @@ resource "google_cloudbuild_trigger" "docker" {
       wait_for = ["docker_build_conformance_gcp"]
     }
     step {
-      id       = "generate_keys"
-      name     = "golang"
-      script   = <<EOT
+      id     = "generate_keys"
+      name   = "golang"
+      script = <<EOT
         go run github.com/transparency-dev/serverless-log/cmd/generate_keys@80334bc9dc573e8f6c5b3694efad6358da50abd4 \
           --key_name=tessera/test/conformance \
           --out_priv=/workspace/key.sec \
@@ -99,6 +101,9 @@ resource "google_cloudbuild_trigger" "docker" {
       dir    = "deployment/live/gcp/conformance/ci"
       env = [
         "GOOGLE_PROJECT=${var.project_id}",
+        "TESSERA_CLOUD_RUN_SERVICE_ACCOUNT=cloudrun-ci-sa@trillian-tessera.iam.gserviceaccount.com",
+        "TESSERA_READER=cloudbuild-prod-sa@trillian-tessera.iam.gserviceaccount.com",
+        "TESSERA_WRITER=cloudbuild-prod-sa@trillian-tessera.iam.gserviceaccount.com",
         "TF_IN_AUTOMATION=1",
         "TF_INPUT=false",
         "TF_VAR_project_id=${var.project_id}"
@@ -132,9 +137,9 @@ resource "google_cloudbuild_trigger" "docker" {
     ## Run the hammer against the conformance server.
     ## We're using it in "target throughput" mode.
     step {
-      id   = "hammer"
-      name = "golang"
-      script = <<EOT
+      id       = "hammer"
+      name     = "golang"
+      script   = <<EOT
         apt update && apt install -y retry
         retry -t 5 -d 15 --until=success go run ./internal/hammer \
             --log_public_key=$(cat /workspace/key.pub) \
@@ -157,14 +162,17 @@ resource "google_cloudbuild_trigger" "docker" {
     ## This will tear down the conformance infrastructure we brought up
     ## above.
     step {
-      id         = "terraform_destroy_conformance_ci"
-      name       = "alpine/terragrunt"
-      script     = <<EOT
+      id     = "terraform_destroy_conformance_ci"
+      name   = "alpine/terragrunt"
+      script = <<EOT
         terragrunt --terragrunt-non-interactive --terragrunt-no-color destroy -auto-approve -no-color 2>&1
       EOT
-      dir = "deployment/live/gcp/conformance/ci"
+      dir    = "deployment/live/gcp/conformance/ci"
       env = [
         "TESSERA_SIGNER=unused",
+        "TESSERA_READER=cloudbuild-prod-sa@trillian-tessera.iam.gserviceaccount.com",
+        "TESSERA_WRITER=cloudbuild-prod-sa@trillian-tessera.iam.gserviceaccount.com",
+        "TESSERA_CLOUD_RUN_SERVICE_ACCOUNT=cloudrun-ci-sa@trillian-tessera.iam.gserviceaccount.com",
         "GOOGLE_PROJECT=${var.project_id}",
         "TF_IN_AUTOMATION=1",
         "TF_INPUT=false",
