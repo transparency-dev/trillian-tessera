@@ -4,10 +4,10 @@ terraform {
 
 locals {
   env                          = path_relative_to_include()
-  project_id                   = get_env("GOOGLE_PROJECT", "trillian-tessera")
+  project_id                   = get_env("GOOGLE_PROJECT")
   location                     = get_env("GOOGLE_REGION", "us-central1")
   base_name                    = get_env("TESSERA_BASE_NAME", "${local.env}-conformance")
-  conformance_gcp_docker_image = "${local.location}-docker.pkg.dev/trillian-tessera/docker-${local.env}/conformance-gcp:latest"
+  server_docker_image          = get_env("TESSERA_CLOUD_RUN_DOCKER_IMAGE")
   signer                       = get_env("TESSERA_SIGNER")
   tessera_reader               = get_env("TESSERA_READER", "")
   tessera_writer               = get_env("TESSERA_WRITER", "")
