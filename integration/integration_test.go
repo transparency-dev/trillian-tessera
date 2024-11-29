@@ -136,7 +136,7 @@ func TestLiveLogIntegration(t *testing.T) {
 		errG.Go(func() error {
 			index, err := entryWriter.add(ctx, []byte(fmt.Sprint(i)))
 			if err != nil {
-				t.Errorf("entryWriter.add: %v", err)
+				return fmt.Errorf("entryWriter.add(%d): %v", i, err)
 			}
 			entryIndexMap.Store(i, index)
 
@@ -146,11 +146,9 @@ func TestLiveLogIntegration(t *testing.T) {
 
 				checkpoint, _, _, err := client.FetchCheckpoint(ctx, logReadCP, noteVerifier, noteVerifier.Name())
 				if err != nil {
-					t.Errorf("client.FetchCheckpoint: %v", err)
+					return fmt.Errorf("client.FetchCheckpoint: %v", err)
 				}
 				if checkpoint == nil {
-					// This was a t.Fatalf but that terminates the goroutine, stopping the error being returned on the next line
-					t.Errorf("checkpoint not found at index: %d, test entry size: %d", index, i)
 					return fmt.Errorf("failed to get checkpoint after writing entry %d (assigned sequence %d)", i, index)
 				}
 				size = checkpoint.Size
@@ -163,7 +161,6 @@ func TestLiveLogIntegration(t *testing.T) {
 		t.Fatalf("addEntry: %v", err)
 	}
 
-	// Step 3 - Validate checkpoint size increment.
 	checkpoint, _, _, err = client.FetchCheckpoint(ctx, logReadCP, noteVerifier, noteVerifier.Name())
 	if err != nil {
 		t.Errorf("client.FetchCheckpoint: %v", err)
@@ -173,11 +170,11 @@ func TestLiveLogIntegration(t *testing.T) {
 	}
 	t.Logf("checkpoint final size: %d", checkpoint.Size)
 	gotIncrease := checkpoint.Size - checkpointInitSize
-	if gotIncrease != uint64(*testEntrySize) {
-		t.Errorf("checkpoint size increase got: %d, want: %d", gotIncrease, *testEntrySize)
+	if gotIncrease < uint64(*testEntrySize) {
+		t.Logf("checkpoint size increase (%d) is < %d, entries may have been deduplicated.", gotIncrease, *testEntrySize)
 	}
 
-	// Step 4 - Loop through the entry data index map to verify leaves and inclusion proofs.
+	// Step 3 - Loop through the entry data index map to verify leaves and inclusion proofs.
 	entryIndexMap.Range(func(k, v any) bool {
 		data := k.(int)
 		index := v.(uint64)
@@ -210,7 +207,7 @@ func TestLiveLogIntegration(t *testing.T) {
 		return true
 	})
 
-	// Step 5 - Test consistency proofs.
+	// Step 4 - Test consistency proofs.
 	if err := client.CheckConsistency(ctx, logReadTile, checkpoints); err != nil {
 		t.Errorf("log consistency checks failed: %v", err)
 	}
