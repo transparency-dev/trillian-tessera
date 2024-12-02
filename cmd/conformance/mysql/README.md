@@ -1,6 +1,6 @@
 # Conformance MySQL log
 
-This binary runs an HTTP web server that accepts POST HTTP requests to a `/add` endpoint.
+This binary runs an HTTP web server that accepts POST HTTP requests to an `/add` endpoint.
 This endpoint takes arbitrary data and adds it to a MySQL based Tessera log.
 
 > [!WARNING]
@@ -62,7 +62,7 @@ go run ./cmd/conformance/mysql --mysql_uri="root:root@tcp(localhost:3306)/test_t
 
 ### Manually
 
-Head over to the [codelab](../#codelab) to manually add entries to the log, and read them.
+Head over to the [codelab](../#codelab) to manually add entries to the log, and inspect the log.
 
 ### Using the hammer
 

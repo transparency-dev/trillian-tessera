@@ -1,5 +1,5 @@
 # conformance-posix
-This binary runs an HTTP web server that accepts POST HTTP requests to a `/add` endpoint.
+This binary runs an HTTP web server that accepts POST HTTP requests to an `/add` endpoint.
 This endpoint takes arbitrary data and adds it to a file-based log.
 
 ## Bring up a log
@@ -26,7 +26,7 @@ go run ./cmd/conformance/posix \
 
 ## Add entries to the log
 ### Manually
-Head over to the [codelab](../#codelab) to manually add entries to the log, and read them.
+Head over to the [codelab](../#codelab) to manually add entries to the log, and inspect the log.
 
 ### Using the hammer
 In another terminal, run the [hammer](./internal/hammer) against the log.
