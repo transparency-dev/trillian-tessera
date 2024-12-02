@@ -14,12 +14,15 @@ See [MySQL storage design documentation](/docs/design/mysql_storage.md).
 
 ### Constructing the Storage Object
 
+Here is an example code snippet to initialise the MySQL storage in Trillian Tessera.
+
 ```go
 import (
     "context"
 
     tessera "github.com/transparency-dev/trillian-tessera"
     "github.com/transparency-dev/trillian-tessera/storage/mysql"
+    "k8s.io/klog/v2"
 )
 
 func main() {
