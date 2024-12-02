@@ -21,6 +21,7 @@ need to be manually applied.
 
 You'll need the following tools installed:
 
+- ['golang'](https://go.dev/doc/install)
 - [`docker`](https://docs.docker.com/engine/install/)
 - [`gcloud`](https://cloud.google.com/sdk/docs/install)
 - One of:
@@ -30,7 +31,12 @@ You'll need the following tools installed:
 
 #### Google Cloud tooling
 
-Ensure you've got already created a project you want to use, and have configured your local `gcloud`
+[!CAUTION]
+This example creates real Google Cloud resources running in your project. They will almost certainly
+cost you real money if left running.  For the purposes of this demo it is strongly recommended that 
+you create a new project so that you can easily clean up at the end.
+
+Once you've got a Google Cloud project you want to use, and have configured your local `gcloud`
 tool use use it, and authenticated as a principle with sufficient ACLs for the project:
 
 ```bash
@@ -47,7 +53,8 @@ export GOOGLE_PROJECT=$(gcloud config get project)
 
 # This should be a note signer string.
 # You can use the generate_keys tool to create a new signer & verifier pair:
-#   go run github.com/transparency-dev/serverless-log/cmd/generate_keys@HEAD --key_name="TestTessera" 
+#   go run github.com/transparency-dev/serverless-log/cmd/generate_keys@HEAD --key_name="TestTessera" --print
+#   set {VALUE} to the entire first line of output, e.g. TESSERA_SIGNER='PRIVATE+KEY+TestTessera+....'
 export TESSERA_SIGNER={VALUE}
 
 # This is the name of the artifact registry docker repo to create/use.
@@ -126,3 +133,13 @@ Finally, apply the config using `terragrunt`:
 
 This should create all necessary infrastructure, and spin up a Cloud Run instance with the
 docker image you created above.
+
+### Clean up
+
+[!IMPORTANT]
+You need to run this step on your project if you want to ensure you don't get charged into perpetuity 
+for the resources we've setup.
+
+```bash
+gcloud projects delete ${GOOGLE_PROJECT}
+```
