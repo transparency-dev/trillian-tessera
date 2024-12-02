@@ -4,7 +4,7 @@ This directory contains the implementation of a storage backend for Trillian Tes
 
 ## Design
 
-See [MySQL storage design documentation](/docs/design/mysql_storage.md).
+See [MySQL storage design documentation](/storage/mysql/DESIGN.md).
 
 ### Requirements
 
