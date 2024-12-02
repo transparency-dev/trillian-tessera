@@ -3,7 +3,7 @@
 This codelab helps you bring a test Trillian Tessera stack on AWS,
 and to use it running a test personality server on an EC2 VM.
 The Tessera test stack will be comprised of an Aurora RDS MySQL database
-and a private S3 bubket. This codelab will also guide you to connect both
+and a private S3 bucket. This codelab will also guide you to connect both
 the RDS instance and the S3 bucket to your VM.
  
 ## Prerequisites
@@ -52,7 +52,7 @@ with a running EC2 Amazon Linux VM, and the following software installed:
     
     aws s3 ls --profile AdministratorAccess-<REDACTED>
     ```
- 1. Set these environment variables according to the you chose when configuring
+ 1. Set these environment variables according to the ones you chose when configuring
     your AWS profile:
     ```
     export AWS_REGION=us-east-1
@@ -62,7 +62,7 @@ with a running EC2 Amazon Linux VM, and the following software installed:
     ```
     git clone https://github.com/transparency-dev/trillian-tessera
     ```
- 1. Init terragrunt:
+ 1. From the root of the trillian-tessera repo, init terragrunt:
     ```
     terragrunt init --terragrunt-working-dir=deployment/live/aws/codelab/
     ```
@@ -70,9 +70,10 @@ with a running EC2 Amazon Linux VM, and the following software installed:
     ```
     terragrunt apply --terragrunt-working-dir=deployment/live/aws/codelab/
     ```
-    This brings up the Terraform infrastructure (S3 bucket + dynanoDB table
-    for locking) and the Trillian Tessera stack: an RDS Aurora instance,
-    a private S3 bucket, and connects this bucket to the default VPC.
+    This brings up the Terraform infrastructure (S3 bucket + DynamoDB table
+    for terraform state locking only) and the Trillian Tessera stack: an RDS
+    Aurora instance, a private S3 bucket, and connects this bucket to the
+    default VPC.
  1. Save the RDS instance URI and S3 bucket name for later:
     ```
     export LOG_RDS_DB=$(terragrunt output --terragrunt-working-dir=deployment/live/aws/codelab/ --raw log_rds_db)
@@ -86,7 +87,7 @@ with a running EC2 Amazon Linux VM, and the following software installed:
     ```
     mkdir -p /home/ec2-user/tessera-keys
     go run github.com/transparency-dev/serverless-log/cmd/generate_keys@80334bc9dc573e8f6c5b3694efad6358da50abd4 \
-              --key_name=$LOG_NAME/test/conformance \
+              --key_name=$LOG_NAME \
               --out_priv=/home/ec2-user/tessera-keys/$LOG_NAME.sec \
               --out_pub=/home/ec2-user/tessera-keys/$LOG_NAME.pub
     ```
@@ -103,5 +104,5 @@ with a running EC2 Amazon Linux VM, and the following software installed:
     Log entries can be read directly from S3 without going through the server,
     at `READ_URL=https://$LOG_BUCKET.s3.$AWS_REGION.amazonaws.com/`
  1. Head over to the [remainder of this codelab](https://github.com/transparency-dev/trillian-tessera/tree/main/cmd/conformance#codelab)
-    add leaves to the log.
+    to add leaves to the log.
  
