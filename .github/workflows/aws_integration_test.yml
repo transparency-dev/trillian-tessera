@@ -2,9 +2,12 @@ name: AWS Conformance Test
 
 on:
   push:
-    # TODO(phboneff): change this to main when I submit
-    branches:
-      - integration
+    # TODO(phboneff): change this to main when I submit, leave like this for
+    # now to allow testing with the PR
+    pull_request:
+      converted_to_draft
+    #branches:
+    #  - main
 
 # This prevents two workflows to run at the same time.
 # This workflows calls terragrunt, which does not allow concurent runs.
@@ -20,11 +23,10 @@ env:
   TF_VERSION: "1.10.0"
   TG_VERSION: "0.67.0"
   TG_DIR: "deployment/live/aws/conformance/ci/"
-  # TODO(phboneff): change these values when I submit
-  TESSERA_PREFIX_NAME: phboneff-dev
-  ECR_REGISTRY: 869935063533.dkr.ecr.us-east-1.amazonaws.com
-  ECR_REPOSITORY_CONFORMANCE: transparency-dev/phbtest-trillian-tessera:latest
-  ECR_REPOSITORY_HAMMER: transparency-dev/phbtest-hammer:latest
+  TESSERA_PREFIX_NAME: trillian-tessera
+  ECR_REGISTRY: 864981736166.dkr.ecr.us-east-1.amazonaws.com
+  ECR_REPOSITORY_CONFORMANCE: trillian-tessera/conformance:latest
+  ECR_REPOSITORY_HAMMER: trillian-tessera/hammer:latest
   AWS_REGION: us-east-1
 
 jobs:
