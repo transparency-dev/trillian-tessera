@@ -20,8 +20,7 @@ Note that all the commands are executed at the root directory of this repository
 
 #### Prerequisites
 
-Install the following software:
- - [Docker Compose](https://docs.docker.com/compose/install/)
+Install [Docker Compose](https://docs.docker.com/compose/install/).
 
 #### Start the log
 
