@@ -1,15 +1,3 @@
-terraform {
-  backend "s3" {}
-  required_providers {
-    aws = {
-      source = "hashicorp/aws"
-      version = "5.76.0"
-    }
-  }
-}
-
-data "aws_caller_identity" "current" {}
-
 locals {
   name = "${var.prefix_name}-${var.base_name}"
 }
@@ -39,7 +27,7 @@ resource "aws_rds_cluster" "log_rds" {
   # TODO(phboneff): move to either random strings / Secret Manager / IAM
   master_password         = "password"
   skip_final_snapshot     = true
-  backup_retention_period = 0
+  backup_retention_period = 1
 }
 
 resource "aws_rds_cluster_instance" "cluster_instances" {
