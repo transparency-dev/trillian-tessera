@@ -4,7 +4,8 @@ This codelab helps you bring a test Trillian Tessera stack on AWS,
 and to use it running a test personality server on an EC2 VM.
 The Tessera test stack will be comprised of an Aurora RDS MySQL database
 and a private S3 bucket. This codelab will also guide you to connect both
-the RDS instance and the S3 bucket to your VM.
+the RDS instance and the S3 bucket to your VM. Please, note that Aurora
+is not covered by free tier accounts.
  
 ## Prerequisites
 For the remainder of this codelab, you'll need to have an AWS account,
@@ -104,5 +105,6 @@ with a running EC2 Amazon Linux VM, and the following software installed:
     Log entries can be read directly from S3 without going through the server,
     at `READ_URL=https://$LOG_BUCKET.s3.$AWS_REGION.amazonaws.com/`
  1. Head over to the [remainder of this codelab](https://github.com/transparency-dev/trillian-tessera/tree/main/cmd/conformance#codelab)
-    to add leaves to the log.
+    to add leaves to the log. Do not forget to bring both your VM and the tessera stack down
+    (`terragrunt destroy`) if you don't intend to use this any further and don't want to incur costs.
  
