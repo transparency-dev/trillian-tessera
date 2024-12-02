@@ -16,6 +16,13 @@ The contents of any request body will be appended to the log, and the decimal in
 
 ## Codelab
 
+This codelab will help you add a few entries to a log, and to read log contents.
+First, you need to run a Trillian Tessera personality on the infrastructure of your choice:
+ - [A local filesystem](./posix#bring-up-the-log)
+ - [MySQL](./mysql)
+ - [GCP](./gcp) 
+ - [AWS](./aws) 
+
 Choose one of the implementations above and deploy it.
 In the shell you are going to run this codelab in, define the following environment variables (check the logging output from the implementation you deployed, as these may have been output):
  - The write URL: `${WRITE_URL}`
