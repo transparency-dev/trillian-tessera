@@ -1,20 +1,28 @@
-# How to Run a Tessera Log (MySQL)
+# Conformance MySQL log
+
+This binary runs an HTTP web server that accepts POST HTTP requests to an `/add` endpoint.
+This endpoint takes arbitrary data and adds it to a MySQL based Tessera log.
 
 > [!WARNING]
 > - This is an example and is not fit for production use, but demonstrates a way of using the Tessera Log with MySQL storage backend.
 > - This example is built on the [tlog tiles API](https://c2sp.org/tlog-tiles) for read endpoints and exposes a /add endpoint that allows any POSTed data to be added to the log.
 
-The tessera log with the MySQL storage implementation can be started with either Docker Compose or manual `go run`.
+## Bring up a log
+
+This will help you bring up a MySQL database to store a Tessera log, and start a personality
+binary that can add entries to it.
+
+You can run this personality using Docker Compose or manually with `go run`.
 
 Note that all the commands are executed at the root directory of this repository.
 
-## Docker Compose
+### Docker Compose
 
-### Prerequisites
+#### Prerequisites
 
-- [Docker Compose](https://docs.docker.com/compose/install/)
+Install [Docker Compose](https://docs.docker.com/compose/install/).
 
-### Starting
+#### Start the log
 
 ```sh
 docker compose -f ./cmd/conformance/mysql/docker/compose.yaml up
@@ -22,33 +30,43 @@ docker compose -f ./cmd/conformance/mysql/docker/compose.yaml up
 
 Add `-d` if you want to run the log in detached mode.
 
-### Stopping
+#### Stop the log
 
 ```sh
 docker compose -f ./cmd/conformance/mysql/docker/compose.yaml down
 ```
 
-## Manual 
+### Manual 
 
-### Prerequisites
+#### Prerequisites
 
-Assume you have the MySQL database ready. An alternative way is to run a MySQL database via [Docker](https://docs.docker.com/engine/install/).
+You need to have a MySQL database configured to run on port `3306`, accepting
+password auth for `root` with the password set to `root`, and a DB instance
+called `test_tessera`.
+
+You can start one using [Docker](https://docs.docker.com/engine/install/).
 
 ```sh
 docker run --name test-mysql -p 3306:3306 -e MYSQL_ROOT_PASSWORD=root -e MYSQL_DATABASE=test_tessera -d mysql:8.4
 ```
 
-### Starting
+#### Start the log
 
 ```sh
 go run ./cmd/conformance/mysql --mysql_uri="root:root@tcp(localhost:3306)/test_tessera" --init_schema_path="./storage/mysql/schema.sql" --private_key_path="./cmd/conformance/mysql/docker/testdata/key"
 ```
 
-### Stopping
+#### Stop the log
 
 <kbd>Ctrl</kbd> <kbd>C</kbd>
 
-## Using the log
+## Add entries to the log
+
+### Manually
+
+Head over to the [codelab](../#codelab) to manually add entries to the log, and inspect the log.
+
+### Using the hammer
 
 In this example, we're running 256 writers against the log to add 1024 new leaves within 1 minute.
 

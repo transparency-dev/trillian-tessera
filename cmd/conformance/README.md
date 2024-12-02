@@ -6,7 +6,7 @@ This directory contains personalities that serve a dual purpose:
 
 Each subdirectory contains an implementation of the same personality built on top of Tessera.
 Implementations are provided that use:
- - [A local filesystem](./posix/)
+ - [A local POSIX-compliant filesystem](./posix/)
  - [MySQL](./mysql/)
  - [GCP](./gcp/)
  - [AWS](deployment/live/aws/codelab/)
@@ -15,6 +15,13 @@ Each of these personalities exposes an endpoint that accepts `POST` requests at 
 The contents of any request body will be appended to the log, and the decimal index assigned to this newly _sequenced_ entry will be returned.
 
 ## Codelab
+
+This codelab will help you add a few entries to a log, and inspect its contents.
+First, you need to bring up personality (a server built with Tessera which manages the log) on the infrastructure of your choice:
+ - [A local POSIX-compliant filesystem](./posix#bring-up-a-log)
+ - [MySQL](./mysql#bring-up-a-log)
+ - [GCP](./gcp) 
+ - [AWS](./aws) 
 
 Choose one of the implementations above and deploy it.
 In the shell you are going to run this codelab in, define the following environment variables (check the logging output from the implementation you deployed, as these may have been output):

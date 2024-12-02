@@ -1,17 +1,22 @@
 # conformance-posix
-
-This command runs an HTTP web server that accepts POST HTTP requests to a `/add` endpoint.
+This binary runs an HTTP web server that accepts POST HTTP requests to an `/add` endpoint.
 This endpoint takes arbitrary data and adds it to a file-based log.
 
-## Using in the hammer
+## Bring up a log
+This will create a directory in your filesystem to store a log, and start a personality binary
+that can add entries to this log.
 
-First bring up a new log in one terminal:
+First, define a few environment vaiables:
+
 ```shell
 export LOG_PRIVATE_KEY="PRIVATE+KEY+example.com/log/testdata+33d7b496+AeymY/SZAX0jZcJ8enZ5FY1Dz+wTML2yWSkK+9DSF3eg"
 export LOG_PUBLIC_KEY="example.com/log/testdata+33d7b496+AeHTu4Q3hEIMHNqc6fASMsq3rKNx280NI+oO5xCFkkSx"
-export LOG_DIR=/tmp/mylog2
+export LOG_DIR=/tmp/mylog
+```
 
-# Initialize a new log
+Then, start the personality:
+
+```shell
 go run ./cmd/conformance/posix \
   --storage_dir=${LOG_DIR} \
   --initialise \
@@ -19,7 +24,12 @@ go run ./cmd/conformance/posix \
   --v=2
 ```
 
-In another terminal, run the hammer against the log.
+## Add entries to the log
+### Manually
+Head over to the [codelab](../#codelab) to manually add entries to the log, and inspect the log.
+
+### Using the hammer
+In another terminal, run the [hammer](./internal/hammer) against the log.
 In this example, we're running 32 writers against the log to add 128 new leaves within 1 minute.
 
 ```shell
@@ -38,6 +48,9 @@ Optionally, inspect the log on the filesystem using the woodpecker tool to see t
 Note that this reads only from the files on disk, so none of the commands above need to be running for this to work.
 
 ```shell
-go run github.com/mhutchinson/woodpecker@main --custom_log_type=tiles --custom_log_url=file:///${LOG_DIR}/ --custom_log_origin=example.com/log/testdata --custom_log_vkey=${LOG_PUBLIC_KEY}
+go run github.com/mhutchinson/woodpecker@main \
+  --custom_log_type=tiles \
+  --custom_log_url=file:///${LOG_DIR}/ \
+  --custom_log_origin=example.com/log/testdata \
+  --custom_log_vkey=${LOG_PUBLIC_KEY}
 ```
-
