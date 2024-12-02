@@ -56,14 +56,14 @@ func TestDedupe(t *testing.T) {
 					return thisIdx, nil
 				}
 			}
-			d := tessera.NewInMemoryDedupe(delegate, 256)
+			dedupeAdd := tessera.InMemoryDedupe(delegate, 256)
 
 			// Add foo, bar, baz to prime the cache to make things interesting
-			d.Add(ctx, tessera.NewEntry([]byte("foo")))
-			d.Add(ctx, tessera.NewEntry([]byte("bar")))
-			d.Add(ctx, tessera.NewEntry([]byte("baz")))
+			dedupeAdd(ctx, tessera.NewEntry([]byte("foo")))
+			dedupeAdd(ctx, tessera.NewEntry([]byte("bar")))
+			dedupeAdd(ctx, tessera.NewEntry([]byte("baz")))
 
-			idx, err := d.Add(ctx, tessera.NewEntry([]byte(tC.newValue)))()
+			idx, err := dedupeAdd(ctx, tessera.NewEntry([]byte(tC.newValue)))()
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -86,13 +86,13 @@ func BenchmarkDedupe(b *testing.B) {
 				return thisIdx, nil
 			}
 		}
-		d := tessera.NewInMemoryDedupe(delegate, 256)
+		dedupeAdd := tessera.InMemoryDedupe(delegate, 256)
 		wg := &sync.WaitGroup{}
 		// Loop to create a bunch of leaves in parallel to test lock contention
 		for leafIndex := range 1024 {
 			wg.Add(1)
 			go func(index int) {
-				_, err := d.Add(ctx, tessera.NewEntry([]byte(fmt.Sprintf("leaf with value %d", index%32))))()
+				_, err := dedupeAdd(ctx, tessera.NewEntry([]byte(fmt.Sprintf("leaf with value %d", index%32))))()
 				if err != nil {
 					b.Error(err)
 				}

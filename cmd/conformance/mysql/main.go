@@ -63,7 +63,7 @@ func main() {
 	if err != nil {
 		klog.Exitf("Failed to create new MySQL storage: %v", err)
 	}
-	dedupedStorage := tessera.NewInMemoryDedupe(storage.Add, 256)
+	dedupeAdd := tessera.InMemoryDedupe(storage.Add, 256)
 
 	// Set up the handlers for the tlog-tiles GET methods, and a custom handler for HTTP POSTs to /add
 	configureTilesReadAPI(http.DefaultServeMux, storage)
@@ -73,7 +73,7 @@ func main() {
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
-		idx, err := dedupedStorage.Add(r.Context(), tessera.NewEntry(b))()
+		idx, err := dedupeAdd(r.Context(), tessera.NewEntry(b))()
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			_, _ = w.Write([]byte(err.Error()))

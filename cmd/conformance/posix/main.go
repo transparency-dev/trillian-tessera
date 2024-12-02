@@ -62,7 +62,7 @@ func main() {
 	if err != nil {
 		klog.Exitf("Failed to construct storage: %v", err)
 	}
-	dedupedStorage := tessera.NewInMemoryDedupe(storage.Add, 256)
+	dedupeAdd := tessera.InMemoryDedupe(storage.Add, 256)
 
 	// Define a handler for /add that accepts POST requests and adds the POST body to the log
 	http.HandleFunc("POST /add", func(w http.ResponseWriter, r *http.Request) {
@@ -71,7 +71,7 @@ func main() {
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
-		idx, err := dedupedStorage.Add(r.Context(), tessera.NewEntry(b))()
+		idx, err := dedupeAdd(r.Context(), tessera.NewEntry(b))()
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			_, _ = w.Write([]byte(err.Error()))
