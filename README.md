@@ -93,7 +93,7 @@ Once this process has been completed, a new entry will:
 
 ### Getting Started
 
-The best place to start is the codelab provided in the [conformance](./cmd/conformance/) directory.
+The best place to start is the [codelab](./cmd/conformance#codelab). 
 This will walk you through setting up your first log, writing some entries to it via HTTP, and inspecting the contents.
 
 Take a look at the example personalities in the `/cmd/` directory:
