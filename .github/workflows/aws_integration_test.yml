@@ -5,7 +5,7 @@ on:
     # TODO(phboneff): change this to main when I submit, leave like this for
     # now to allow testing with the PR
     pull_request:
-      converted_to_draft
+      open
     #branches:
     #  - main
 
