@@ -9,6 +9,7 @@ Implementations are provided that use:
  - [A local filesystem](./posix/)
  - [MySQL](./mysql/)
  - [GCP](./gcp/)
+ - [AWS](deployment/live/aws/codelab/)
 
 Each of these personalities exposes an endpoint that accepts `POST` requests at a `/add` URL.
 The contents of any request body will be appended to the log, and the decimal index assigned to this newly _sequenced_ entry will be returned.
