@@ -4,7 +4,7 @@ This endpoint takes arbitrary data and adds it to a file-based log.
 
 ## Bring up the log
 This will create a directory in your filesystem to store a log, and start a personality binary
-that can add entries to the log.
+that can add entries to this log.
 
 First, define a few environment vaiables:
 
