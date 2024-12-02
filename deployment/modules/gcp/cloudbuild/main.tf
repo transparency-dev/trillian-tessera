@@ -37,7 +37,7 @@ resource "google_cloudbuild_trigger" "docker" {
     ## This might happen if a previous cloud build failed for some reason.
     step {
       id     = "preclean_env"
-      name   = "alpine/terragrunt"
+      name   = "alpine/terragrunt:1.9.5"
       script = <<EOT
         terragrunt --terragrunt-non-interactive --terragrunt-no-color destroy -auto-approve -no-color 2>&1
       EOT
@@ -94,7 +94,7 @@ resource "google_cloudbuild_trigger" "docker" {
     ## running the conformance server docker image built above.
     step {
       id     = "terraform_apply_conformance_ci"
-      name   = "alpine/terragrunt"
+      name   = "alpine/terragrunt:1.9.5"
       script = <<EOT
         export TESSERA_SIGNER=$(cat /workspace/key.sec)
         terragrunt --terragrunt-non-interactive --terragrunt-no-color apply -auto-approve -no-color 2>&1
@@ -116,7 +116,7 @@ resource "google_cloudbuild_trigger" "docker" {
     ## them in files under /workspace. These are needed for later steps.
     step {
       id       = "terraform_outputs"
-      name     = "alpine/terragrunt"
+      name   = "alpine/terragrunt:1.9.5"
       script   = <<EOT
         cd deployment/live/gcp/conformance/ci
         export TESSERA_SIGNER=$(cat /workspace/key.sec)
@@ -165,7 +165,7 @@ resource "google_cloudbuild_trigger" "docker" {
     ## above.
     step {
       id     = "terraform_destroy_conformance_ci"
-      name   = "alpine/terragrunt"
+      name   = "alpine/terragrunt:1.9.5"
       script = <<EOT
         terragrunt --terragrunt-non-interactive --terragrunt-no-color destroy -auto-approve -no-color 2>&1
       EOT
