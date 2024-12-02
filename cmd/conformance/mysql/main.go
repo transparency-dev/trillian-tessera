@@ -40,6 +40,7 @@ var (
 	initSchemaPath            = flag.String("init_schema_path", "", "Location of the schema file if database initialization is needed")
 	listen                    = flag.String("listen", ":2024", "Address:port to listen on")
 	privateKeyPath            = flag.String("private_key_path", "", "Location of private key file")
+	publishInterval           = flag.Duration("publish_interval", 3*time.Second, "How frequently to publish updated checkpoints")
 	additionalPrivateKeyPaths = []string{}
 )
 
@@ -61,7 +62,7 @@ func main() {
 	// Initialise the Tessera MySQL storage
 	storage, err := mysql.New(ctx, db,
 		tessera.WithCheckpointSigner(noteSigner, additionalSigners...),
-		tessera.WithCheckpointInterval(3*time.Second),
+		tessera.WithCheckpointInterval(*publishInterval),
 	)
 	if err != nil {
 		klog.Exitf("Failed to create new MySQL storage: %v", err)

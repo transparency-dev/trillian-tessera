@@ -495,7 +495,7 @@ func (s *Storage) integrate(ctx context.Context, tx *sql.Tx, fromSeq uint64, ent
 		}
 	}
 
-	// Write new checkpoint.
+	// Write new tree state.
 	if err := s.writeTreeState(ctx, tx, newSize, newRoot); err != nil {
 		return fmt.Errorf("writeCheckpoint: %w", err)
 	}
