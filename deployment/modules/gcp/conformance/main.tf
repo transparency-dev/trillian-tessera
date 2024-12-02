@@ -13,7 +13,7 @@ data "google_compute_default_service_account" "default" {
 }
 
 locals {
-  readers = length(var.conformance_readers) < 0 ? var.conformance_readers : ["serviceAccount:${data.google_compute_default_service_account.default.email}"]
+  readers = length(var.conformance_readers) > 0 ? var.conformance_readers : ["serviceAccount:${data.google_compute_default_service_account.default.email}"]
   writers = length(var.conformance_writers) > 0 ? var.conformance_writers : ["serviceAccount:${data.google_compute_default_service_account.default.email}"]
   cloudrun_service_account = length(var.cloudrun_service_account) > 0 ? var.cloudrun_service_account : data.google_compute_default_service_account.default.email
 }
