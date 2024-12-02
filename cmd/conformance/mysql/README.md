@@ -40,7 +40,9 @@ docker compose -f ./cmd/conformance/mysql/docker/compose.yaml down
 
 #### Prerequisites
 
-You need to have a MySQL database running on port `3306`.
+You need to have a MySQL database configured to run on port `3306`, accepting
+password auth for `root` with the password set to `root`, and a DB instance
+called `test_tessera`.
 
 You can start one using [Docker](https://docs.docker.com/engine/install/).
 
