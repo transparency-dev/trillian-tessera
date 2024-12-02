@@ -14,12 +14,28 @@
 
 -- MySQL version of the Trillian Tessera database schema.
 
--- "Checkpoint" table stores a single row that records the current state of the log. It is updated after every sequence and integration.
+-- "Checkpoint" table stores a single row that records the latest _published_ checkpoint for the log.
+-- This is stored separately from the TreeState in order to enable publishing of commitments to updated tree states to happen
+-- on an indepentent timeframe to the internal updating of state.
 CREATE TABLE IF NOT EXISTS `Checkpoint` (
   -- id is expected to be always 0 to maintain a maximum of a single row.
   `id`    INT UNSIGNED NOT NULL,
   -- note is the text signed by one or more keys in the checkpoint format. See https://c2sp.org/tlog-checkpoint and https://c2sp.org/signed-note.
   `note`  MEDIUMBLOB NOT NULL,
+  -- published_at is the millisecond UNIX timestamp of when this row was written.
+  `published_at` BIGINT NOT NULL,
+  PRIMARY KEY(`id`)
+);
+
+-- "TreeState" table stores the current state of the integrated tree.
+-- This is not the same thing as a Checkpoint, which is a signed commitment to such a state.
+CREATE TABLE IF NOT EXISTS `TreeState` (
+  -- id is expected to be always 0 to maintain a maximum of a single row.
+  `id`    INT UNSIGNED NOT NULL,
+  -- size is the extent of the currently integrated tree.
+  `size`  BIGINT UNSIGNED NOT NULL,
+  -- root is the root hash of the tree at the size stored in `size`.
+  `root`  TINYBLOB NOT NULL,
   PRIMARY KEY(`id`)
 );
 
