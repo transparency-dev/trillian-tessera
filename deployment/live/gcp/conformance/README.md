@@ -21,7 +21,7 @@ need to be manually applied.
 
 You'll need the following tools installed:
 
-- ['golang'](https://go.dev/doc/install)
+- [`golang`](https://go.dev/doc/install)
 - [`docker`](https://docs.docker.com/engine/install/)
 - [`gcloud`](https://cloud.google.com/sdk/docs/install)
 - One of:
