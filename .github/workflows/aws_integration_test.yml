@@ -6,6 +6,12 @@ on:
     branches:
       - integration
 
+# This prevents two workflows to run at the same time.
+# This workflows calls terragrunt, which does not allow concurent runs.
+concurrency:
+  group: aws-integration
+  cancel-in-progress: false
+
 permissions:
   contents: read
 
