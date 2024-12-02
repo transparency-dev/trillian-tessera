@@ -16,7 +16,7 @@ The contents of any request body will be appended to the log, and the decimal in
 
 ## Codelab
 
-This codelab will help you add a few entries to a log, and read log contents.
+This codelab will help you add a few entries to a log, and inspect its contents.
 First, you need to bring up personality (a server built with Tessera which manages the log) on the infrastructure of your choice:
  - [A local POSIX-compliant filesystem](./posix#bring-up-a-log)
  - [MySQL](./mysql#bring-up-a-log)
