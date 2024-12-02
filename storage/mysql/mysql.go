@@ -162,8 +162,8 @@ func (s *Storage) ReadCheckpoint(ctx context.Context) ([]byte, error) {
 
 // publishCheckpoint creates a new checkpoint for the given size and root hash, and stores it in the
 // Checkpoint table.
-func (s *Storage) publishCheckpoint(ctx context.Context, i time.Duration) error {
-	tx, err := s.db.Begin()
+func (s *Storage) publishCheckpoint(ctx context.Context, interval time.Duration) error {
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin tx: %v", err)
 	}
@@ -178,7 +178,7 @@ func (s *Storage) publishCheckpoint(ctx context.Context, i time.Duration) error 
 	if err := tx.QueryRowContext(ctx, selectCheckpointByIDForUpdateSQL, checkpointID).Scan(&note, &at); err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return fmt.Errorf("scan checkpoint: %v", err)
 	}
-	if time.Since(time.UnixMilli(at)) < i {
+	if time.Since(time.UnixMilli(at)) < interval {
 		// Too soon, try again later.
 		klog.V(1).Info("skipping publish - too soon")
 		return nil
