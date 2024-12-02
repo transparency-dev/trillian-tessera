@@ -37,7 +37,7 @@ resource "google_cloudbuild_trigger" "docker" {
     ## This might happen if a previous cloud build failed for some reason.
     step {
       id     = "preclean_env"
-      name   = "alpine/terragrunt"
+      name   = "alpine/terragrunt:1.9.5"
       script = <<EOT
         terragrunt --terragrunt-non-interactive --terragrunt-no-color destroy -auto-approve -no-color 2>&1
       EOT
@@ -46,8 +46,8 @@ resource "google_cloudbuild_trigger" "docker" {
         "TESSERA_SIGNER=unused",
         "TESSERA_CLOUD_RUN_DOCKER_IMAGE=${local.conformance_gcp_docker_image}:latest",
         "TESSERA_CLOUD_RUN_SERVICE_ACCOUNT=cloudrun-ci-sa@trillian-tessera.iam.gserviceaccount.com",
-        "TESSERA_READER=cloudbuild-prod-sa@trillian-tessera.iam.gserviceaccount.com",
-        "TESSERA_WRITER=cloudbuild-prod-sa@trillian-tessera.iam.gserviceaccount.com",
+        "TESSERA_READER=serviceAccount:cloudbuild-prod-sa@trillian-tessera.iam.gserviceaccount.com",
+        "TESSERA_WRITER=serviceAccount:cloudbuild-prod-sa@trillian-tessera.iam.gserviceaccount.com",
         "GOOGLE_PROJECT=${var.project_id}",
         "TF_IN_AUTOMATION=1",
         "TF_INPUT=false",
@@ -94,7 +94,7 @@ resource "google_cloudbuild_trigger" "docker" {
     ## running the conformance server docker image built above.
     step {
       id     = "terraform_apply_conformance_ci"
-      name   = "alpine/terragrunt"
+      name   = "alpine/terragrunt:1.9.5"
       script = <<EOT
         export TESSERA_SIGNER=$(cat /workspace/key.sec)
         terragrunt --terragrunt-non-interactive --terragrunt-no-color apply -auto-approve -no-color 2>&1
@@ -104,8 +104,8 @@ resource "google_cloudbuild_trigger" "docker" {
         "GOOGLE_PROJECT=${var.project_id}",
         "TESSERA_CLOUD_RUN_DOCKER_IMAGE=${local.conformance_gcp_docker_image}:latest",
         "TESSERA_CLOUD_RUN_SERVICE_ACCOUNT=cloudrun-ci-sa@trillian-tessera.iam.gserviceaccount.com",
-        "TESSERA_READER=cloudbuild-prod-sa@trillian-tessera.iam.gserviceaccount.com",
-        "TESSERA_WRITER=cloudbuild-prod-sa@trillian-tessera.iam.gserviceaccount.com",
+        "TESSERA_READER=serviceAccount:cloudbuild-prod-sa@trillian-tessera.iam.gserviceaccount.com",
+        "TESSERA_WRITER=serviceAccount:cloudbuild-prod-sa@trillian-tessera.iam.gserviceaccount.com",
         "TF_IN_AUTOMATION=1",
         "TF_INPUT=false",
         "TF_VAR_project_id=${var.project_id}"
@@ -116,10 +116,12 @@ resource "google_cloudbuild_trigger" "docker" {
     ## them in files under /workspace. These are needed for later steps.
     step {
       id       = "terraform_outputs"
-      name     = "alpine/terragrunt"
+      name   = "alpine/terragrunt:1.9.5"
       script   = <<EOT
         cd deployment/live/gcp/conformance/ci
+        export GOOGLE_PROJECT=${var.project_id}
         export TESSERA_SIGNER=$(cat /workspace/key.sec)
+        export TESSERA_CLOUD_RUN_DOCKER_IMAGE=unused,
         terragrunt output --raw conformance_url > /workspace/conformance_url
       EOT
       wait_for = ["terraform_apply_conformance_ci"]
@@ -165,7 +167,7 @@ resource "google_cloudbuild_trigger" "docker" {
     ## above.
     step {
       id     = "terraform_destroy_conformance_ci"
-      name   = "alpine/terragrunt"
+      name   = "alpine/terragrunt:1.9.5"
       script = <<EOT
         terragrunt --terragrunt-non-interactive --terragrunt-no-color destroy -auto-approve -no-color 2>&1
       EOT
@@ -174,8 +176,8 @@ resource "google_cloudbuild_trigger" "docker" {
         "TESSERA_SIGNER=unused",
         "TESSERA_CLOUD_RUN_DOCKER_IMAGE=${local.conformance_gcp_docker_image}:latest",
         "TESSERA_CLOUD_RUN_SERVICE_ACCOUNT=cloudrun-ci-sa@trillian-tessera.iam.gserviceaccount.com",
-        "TESSERA_READER=cloudbuild-prod-sa@trillian-tessera.iam.gserviceaccount.com",
-        "TESSERA_WRITER=cloudbuild-prod-sa@trillian-tessera.iam.gserviceaccount.com",
+        "TESSERA_READER=serviceAccount:cloudbuild-prod-sa@trillian-tessera.iam.gserviceaccount.com",
+        "TESSERA_WRITER=serviceAccount:cloudbuild-prod-sa@trillian-tessera.iam.gserviceaccount.com",
         "GOOGLE_PROJECT=${var.project_id}",
         "TF_IN_AUTOMATION=1",
         "TF_INPUT=false",
