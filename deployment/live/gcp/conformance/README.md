@@ -53,10 +53,6 @@ export TESSERA_SIGNER={VALUE}
 # This is the name of the artifact registry docker repo to create/use.
 export DOCKER_REPO_NAME=tessera-docker
 
-# A docker image built from /cmd/conformance/gcp/Dockerfile
-# Use the name/tag from the docker image you built above.
-export TESSERA_CLOUD_RUN_DOCKER_IMAGE=us-central1-docker.pkg.dev/${GOOGLE_PROJECT}/${DOCKER_REPO_NAME}/conformance:latest
-
 ```
 
 Optionally, set the environment variables below to customize the deployment:
@@ -85,7 +81,7 @@ export TESSERA_WRITER={VALUE}
 First, create a new artifact registry based Docker repo:
 
 ```bash
-$ gcloud artifacts repositories create ${DOCKER_REPO_NAME} \
+gcloud artifacts repositories create ${DOCKER_REPO_NAME} \
         --repository-format=docker \
         --location=us-central1 \
         --description="My Tessera docker repo" \
@@ -95,7 +91,7 @@ $ gcloud artifacts repositories create ${DOCKER_REPO_NAME} \
 Then authorize your local `docker` command to be able to interact with it:
 
 ```bash
-$ gcloud auth configure-docker us-central1-docker.pkg.dev
+gcloud auth configure-docker us-central1-docker.pkg.dev
 ```
 
 ### Process
@@ -112,9 +108,12 @@ configure your local `docker` to get access to Artifact Registry using the gclou
 then build locally and push to Artifact Registry. Details on this can be found in the link above.
 
 ```bash
-$ docker build . -f ./cmd/conformance/gcp/Dockerfile --tag us-central1-docker.pkg.dev/${YOUR_GCP_PROJECT}/${DOCKER_REPO_NAME}/conformance:latest
+docker build . -f ./cmd/conformance/gcp/Dockerfile --tag us-central1-docker.pkg.dev/${GOOGLE_PROJECT}/${DOCKER_REPO_NAME}/conformance:latest
 
-$ docker push us-central1-docker.pkg.dev/${YOUR_GCP_PROJECT}/${DOCKER_REPO_NAME}/conformance:latest
+docker push us-central1-docker.pkg.dev/${GOOGLE_PROJECT}/${DOCKER_REPO_NAME}/conformance:latest
+
+# The docker image:tag for the image you just built.
+export TESSERA_CLOUD_RUN_DOCKER_IMAGE=us-central1-docker.pkg.dev/${GOOGLE_PROJECT}/${DOCKER_REPO_NAME}/conformance:latest
 
 ```
 
