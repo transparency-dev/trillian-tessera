@@ -8,6 +8,7 @@ on:
 
 # This prevents two workflows to run at the same time.
 # This workflows calls terragrunt, which does not allow concurent runs.
+# concurrency test!
 concurrency:
   group: aws-integration
   cancel-in-progress: false
