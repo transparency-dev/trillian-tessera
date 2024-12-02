@@ -7,14 +7,19 @@ terraform {
       version = "6.1.0"
     }
   }
+
+  required_version = "= 1.9.8"
 }
 
 data "google_compute_default_service_account" "default" {
+  depends_on = [
+    google_project_service.compute_engine,
+  ]
 }
 
 locals {
-  readers = length(var.conformance_readers) > 0 ? var.conformance_readers : ["serviceAccount:${data.google_compute_default_service_account.default.email}"]
-  writers = length(var.conformance_writers) > 0 ? var.conformance_writers : ["serviceAccount:${data.google_compute_default_service_account.default.email}"]
+  readers                  = length(var.conformance_readers) > 0 ? var.conformance_readers : ["serviceAccount:${data.google_compute_default_service_account.default.email}"]
+  writers                  = length(var.conformance_writers) > 0 ? var.conformance_writers : ["serviceAccount:${data.google_compute_default_service_account.default.email}"]
   cloudrun_service_account = length(var.cloudrun_service_account) > 0 ? var.cloudrun_service_account : data.google_compute_default_service_account.default.email
 }
 
@@ -46,6 +51,11 @@ resource "google_project_service" "cloudrun_api" {
 
 resource "google_project_service" "compute_engine" {
   service            = "compute.googleapis.com"
+  disable_on_destroy = false
+}
+
+resource "google_project_service" "spanner_api" {
+  service            = "spanner.googleapis.com"
   disable_on_destroy = false
 }
 
