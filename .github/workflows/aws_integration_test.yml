@@ -1,0 +1,150 @@
+name: AWS Conformance Test
+
+on:
+  push:
+    # TODO(phboneff): change this to main when I submit
+    branches:
+      - integration
+
+permissions:
+  contents: read
+
+env:
+  TF_VERSION: "1.10.0"
+  TG_VERSION: "0.67.0"
+  TG_DIR: "deployment/live/aws/conformance/ci/"
+  # TODO(phboneff): change these values when I submit
+  TESSERA_PREFIX_NAME: phboneff-dev
+  ECR_REGISTRY: 869935063533.dkr.ecr.us-east-1.amazonaws.com
+  ECR_REPOSITORY_CONFORMANCE: transparency-dev/phbtest-trillian-tessera:latest
+  ECR_REPOSITORY_HAMMER: transparency-dev/phbtest-hammer:latest
+  AWS_REGION: us-east-1
+
+jobs:
+  aws-integration:
+    runs-on: ubuntu-latest
+
+    steps:
+      ## Authenticate to AWS with the credentials stored in Github Secrets.
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          # TODO(phboneff): use a better form of authentication
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Checkout code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      ## Authenticate with ECR to push the conformance and hammer images.
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      ## Build the conformance image and push it to ECR. This will be used
+      ## later on by Terragrunt.
+      - name: Build, tag, and push Conformance image to Amazon ECR
+        id: build-publish-conformance
+        shell: bash
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: ${{ env.ECR_REPOSITORY_CONFORMANCE }}
+        run: |
+          docker build -f ./cmd/conformance/aws/Dockerfile . -t "$ECR_REGISTRY/$ECR_REPOSITORY"
+          docker push "$ECR_REGISTRY/$ECR_REPOSITORY"
+          echo "Pushed image to $ECR_REGISTRY/$ECR_REPOSITORY"
+
+      ## Build the hammer image and push it to ECR. This will be used
+      ## later on by Terragrunt.
+      - name: Build, tag, and push Hammer image to Amazon ECR
+        id: build-publish-hammer
+        shell: bash
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: ${{ env.ECR_REPOSITORY_HAMMER }}
+        run: |
+          docker build -f ./internal/hammer/Dockerfile . -t "$ECR_REGISTRY/$ECR_REPOSITORY"
+          docker push "$ECR_REGISTRY/$ECR_REPOSITORY"
+          echo "Pushed image to $ECR_REGISTRY/$ECR_REPOSITORY"
+
+      ## Destroy any pre-existing deployment/live/aws/conformance/ci env.
+      ## This might happen if a previous integration test workflow has failed.
+      - name: Terragrunt destroy pre conformance test
+        id: terragrunt-destroy-pre
+        uses: gruntwork-io/terragrunt-action@v2
+        with:
+          tf_version: ${{ env.TF_VERSION }}
+          tg_version: ${{ env.TG_VERSION }}
+          tg_dir: ${{ env.TG_DIR }}
+          tg_command: "destroy"
+        env:
+          TESSERA_SIGNER: unused
+          TESSERA_VERIFIER: unused
+
+      ## Generate a new keys for the log to use, and export them to environment
+      ## variables for Terragrunt to use.
+      - name: Generate Tessera keys
+        id: generate-keys
+        shell: bash
+        run: |
+          go run github.com/transparency-dev/serverless-log/cmd/generate_keys@80334bc9dc573e8f6c5b3694efad6358da50abd4 \
+            --key_name=tessera/test/conformance \
+            --out_priv=${{ runner.temp }}/key.sec \
+            --out_pub=${{ runner.temp }}/key.pub
+          cat ${{ runner.temp }}/key.pub
+          echo "TESSERA_SIGNER=$(cat ${{ runner.temp }}/key.sec)" >> "$GITHUB_ENV"
+          echo "TESSERA_VERIFIER=$(cat ${{ runner.temp }}/key.pub)" >> "$GITHUB_ENV"
+
+      ## Apply the deployment/live/aws/conformance/ci terragrunt config.
+      ## This will bring up the conformance infrastructure whitch consists of:
+      ##   - the storage module
+      ##   - a private S3 <--> ECS network link for the hammer to read the log
+      ##   - an ECS cluster to run Fargate tasks
+      ##   - a conformance service, with multiple conformance binary instances
+      ##   - a hammer task definition (but no execution)
+      # TODO(phboneff): AuroraDB take a long time to be brouht up and down
+      #  consider keeping it around between tests / using Aurora Serveless
+      - name: Terragrunt apply
+        id: terragrunt-apply
+        uses: gruntwork-io/terragrunt-action@v2
+        with:
+          tf_version: ${{ env.TF_VERSION }}
+          tg_version: ${{ env.TG_VERSION }}
+          tg_dir: ${{ env.TG_DIR }}
+          tg_command: "apply"
+        env:
+          INPUT_POST_EXEC_1: |
+            echo "ECS_CLUSTER=$(terragrunt output -raw ecs_cluster)" >> "$GITHUB_ENV"
+          INPUT_POST_EXEC_2: |
+            echo "VPC_SUBNETS=$(terragrunt output -json vpc_subnets)" >> "$GITHUB_ENV"
+
+      ## How we can run the hammer using the task definition, against the
+      ## conformance service. This step returns the hammer task's exit code.
+      - name: Run Hammer
+        id: hammer
+        shell: bash
+        run: |
+          cat ${{ runner.temp }}/key.pub
+          echo "Will launch a hammer ECS task."
+          HAMMER_ARN=$(aws ecs run-task \
+            --cluster="$ECS_CLUSTER" \
+            --task-definition=hammer \
+            --count=1 \
+            --launch-type=FARGATE \
+            --network-configuration='{"awsvpcConfiguration": {"assignPublicIp":"ENABLED","subnets": '$VPC_SUBNETS'}}' \
+            --query 'tasks[0].taskArn')
+          echo "Hammer task running, ARN: $HAMMER_ARN."
+          echo "Waiting for task to stop..."
+          aws ecs wait tasks-stopped --cluster="$ECS_CLUSTER" --tasks=[$HAMMER_ARN]
+          echo "The task has stopped. Fetching exit code and returning this action with it."
+          exit $(aws ecs describe-tasks --cluster="$ECS_CLUSTER" --tasks=[$HAMMER_ARN] --query 'tasks[0].containers[0].exitCode')
+
+      - name: Terragrunt destroy post conformance test
+        id: terragrunt-destroy-post
+        uses: gruntwork-io/terragrunt-action@v2
+        with:
+          tf_version: ${{ env.TF_VERSION }}
+          tg_version: ${{ env.TG_VERSION }}
+          tg_dir: ${{ env.TG_DIR }}
+          tg_command: "destroy"
