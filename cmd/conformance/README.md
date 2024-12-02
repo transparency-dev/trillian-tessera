@@ -17,7 +17,8 @@ The contents of any request body will be appended to the log, and the decimal in
 ## Codelab
 
 This codelab will help you add a few entries to a log, and read log contents.
-First, you need to run a Trillian Tessera personality on the infrastructure of your choice:
+First, you need to bring up a Trillian Tessera log and to start personality (a server that 
+interfaces with the log) on the infrastructure of your choice:
  - [A local filesystem](./posix#bring-up-a-log)
  - [MySQL](./mysql#bring-up-a-log)
  - [GCP](./gcp) 

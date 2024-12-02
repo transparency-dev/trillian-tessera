@@ -9,8 +9,8 @@ This endpoint takes arbitrary data and adds it to a MySQL based Tessera log.
 
 ## Bring up a log
 
-This will help you bring up a MySQL database, and start a personality binary that can add
-entries to a Tessera log stored in this MySQL database.
+This will help you bring up a MySQL database to store a Tessera log, and start a personality
+binary that can add entries to it.
 
 You can either start this log using Docker Compose, or manually with `go run`.
 
