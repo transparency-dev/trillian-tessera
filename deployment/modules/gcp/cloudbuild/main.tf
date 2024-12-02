@@ -119,7 +119,9 @@ resource "google_cloudbuild_trigger" "docker" {
       name   = "alpine/terragrunt:1.9.5"
       script   = <<EOT
         cd deployment/live/gcp/conformance/ci
+        export GOOGLE_PROJECT=${var.project_id}
         export TESSERA_SIGNER=$(cat /workspace/key.sec)
+        export TESSERA_CLOUD_RUN_DOCKER_IMAGE=unused,
         terragrunt output --raw conformance_url > /workspace/conformance_url
       EOT
       wait_for = ["terraform_apply_conformance_ci"]
