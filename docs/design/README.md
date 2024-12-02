@@ -94,9 +94,9 @@ can easily be constructed by third parties.
 Each of the provided storage implementations has an associated "one-pager" design doc which offers
 a detailed explanation of how it works:
 
-* [GCP](gcp_storage.md)
-* [MySQL](mysql_storage.md)
-* [POSIX filesystem](posix_storage.md)
+* [GCP](/storage/gcp/README.md)
+* [MySQL](/storage/mysql/DESIGN.md)
+* [POSIX filesystem](/storage/posix/README.md)
 
 Every storage implementation is required to expose a small number of fairly high-level APIs:
 
