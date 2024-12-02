@@ -2,7 +2,7 @@
 This binary runs an HTTP web server that accepts POST HTTP requests to a `/add` endpoint.
 This endpoint takes arbitrary data and adds it to a file-based log.
 
-## Bring up the log
+## Bring up a log
 This will create a directory in your filesystem to store a log, and start a personality binary
 that can add entries to this log.
 

@@ -7,7 +7,7 @@ This endpoint takes arbitrary data and adds it to a MySQL based Tessera log.
 > - This is an example and is not fit for production use, but demonstrates a way of using the Tessera Log with MySQL storage backend.
 > - This example is built on the [tlog tiles API](https://c2sp.org/tlog-tiles) for read endpoints and exposes a /add endpoint that allows any POSTed data to be added to the log.
 
-## Bring up the log
+## Bring up a log
 
 This will help you bring up a MySQL database, and start a personality binary that can add
 entries to a Tessera log stored in this MySQL database.
