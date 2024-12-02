@@ -10,6 +10,5 @@ include "root" {
 inputs = merge(
   include.root.locals,
   {
-    server_docker_image = "us-central1-docker.pkg.dev/trillian-tessera/docker-prod/conformance-gcp:latest"
   }
 )
