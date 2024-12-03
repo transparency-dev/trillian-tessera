@@ -829,7 +829,7 @@ func (d *DedupStorage) Index(ctx context.Context, h []byte) (*uint64, error) {
 	}
 }
 
-func (d *DedupStorage) Set(ctx context.Context, entries []tessera.DedupEntry) error {
+func (d *DedupStorage) Set(ctx context.Context, entries []tessera.DedupeMapping) error {
 	m := make([]*spanner.MutationGroup, 0, len(entries))
 	for _, e := range entries {
 		m = append(m, &spanner.MutationGroup{

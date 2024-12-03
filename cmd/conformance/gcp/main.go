@@ -17,7 +17,6 @@ package main
 
 import (
 	"context"
-	"crypto/sha256"
 	"errors"
 	"flag"
 	"fmt"
@@ -38,6 +37,7 @@ var (
 	listen            = flag.String("listen", ":2024", "Address:port to listen on")
 	spanner           = flag.String("spanner", "", "Spanner resource URI ('projects/.../...')")
 	signer            = flag.String("signer", "", "Note signer to use to sign checkpoints")
+	persistentDedup   = flag.Bool("gcp_dedup", false, "Set to true to enable persistent dedupe storage")
 	additionalSigners = []string{}
 )
 
@@ -66,13 +66,17 @@ func main() {
 	if err != nil {
 		klog.Exitf("Failed to create new GCP storage: %v", err)
 	}
-	dedupeAdd := tessera.InMemoryDedupe(storage.Add, 256)
 
-	gcpDedup, err := gcp.NewDedupeStorage(ctx, fmt.Sprintf("%s_dedup", *spanner))
-	if err != nil {
-		klog.Exitf("Failed to create new GCP dedupe storage: %v", err)
+	// Handle dedup configuration
+	addDelegate := storage.Add
+	if *persistentDedup {
+		gcpDedup, err := gcp.NewDedupeStorage(ctx, fmt.Sprintf("%s_dedup", *spanner))
+		if err != nil {
+			klog.Exitf("Failed to create new GCP dedupe storage: %v", err)
+		}
+		addDelegate = tessera.PersistentDedupe(ctx, gcpDedup, addDelegate)
 	}
-	dedup := tessera.NewDeduper(ctx, gcpDedup)
+	dedupeAdd := tessera.InMemoryDedupe(addDelegate, 256)
 
 	// Expose a HTTP handler for the conformance test writes.
 	// This should accept arbitrary bytes POSTed to /add, and return an ascii
@@ -81,16 +85,6 @@ func main() {
 		b, err := io.ReadAll(r.Body)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
-			return
-		}
-
-		id := sha256.Sum256(b)
-		if idx, err := dedup.Index(r.Context(), id[:]); err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
-			_, _ = w.Write([]byte(err.Error()))
-			return
-		} else if idx != nil {
-			_, _ = w.Write([]byte(fmt.Sprintf("%d", *idx)))
 			return
 		}
 
@@ -107,9 +101,6 @@ func main() {
 		}
 		// Write out the assigned index
 		_, _ = w.Write([]byte(fmt.Sprintf("%d", idx)))
-		if err := dedup.Set(r.Context(), id[:], idx); err != nil {
-			klog.Warningf("Failed to set dedup %x -> %d: %v", id, idx, err)
-		}
 	})
 
 	h2s := &http2.Server{}
