@@ -8,7 +8,7 @@ locals {
   region                     = get_env("AWS_REGION", "us-east-1")
   base_name                  = get_env("TESSERA_BASE_NAME", "${local.env}-conformance")
   prefix_name                = get_env("TESSERA_PREFIX_NAME", "trillian-tessera")
-  ecr_registry               = get_env("ECR_REGISTRY", "${local.env}.dkr.ecr.${local.region}.amazonaws.com")
+  ecr_registry               = get_env("ECR_REGISTRY", "${local.account_id}.dkr.ecr.${local.region}.amazonaws.com")
   ecr_repository_conformance = get_env("ECR_REPOSITORY_CONFORMANCE", "trillian-tessera/conformance:latest")
   ecr_repository_hammer      = get_env("ECR_REPOSITORY_HAMMER", "trillian-tessera/hammer:latest")
   signer                     = get_env("TESSERA_SIGNER")
