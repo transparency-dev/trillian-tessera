@@ -1,8 +1,8 @@
 # Tessera Storage Performance
 
-Tessera is designed to scale up and down to meet the needs of most currently envisioned workloads in a cost-effective manner.
+Tessera is designed to scale to meet the needs of most currently envisioned workloads in a cost-effective manner.
 
-All storage backends currently implemented have been tested to meet the write-throughput of CT-scale loads without issue.
+All storage backends have been tested to meet the write-throughput of CT-scale loads without issue.
 The read API of Tessera based logs scales extremely well due to the immutable resource based approach used, which allows for:
 1. Aggressive caching to be applied, e.g. via CDN
 2. Horizontal scaling of read infrastructure (e.g. object storage)[^1]
@@ -21,12 +21,12 @@ binaries in various environments.
 Exact performance numbers are highly dependent on the exact infrastructure being used (e.g. storage type & locality, host resources
 of the machine(s) running the personality binary, network speed and weather, etc.)  If in doubt, you should run your own performance
 tests on infrastructure which is as close as possible to that which will ultimately be used to run the log in production.
-The [conformance binaries](/cmd/conformance) and [hammer tool](/internal/hammer) may be helpful for running such tests.
+The [conformance binaries](/cmd/conformance) and [hammer tool](/internal/hammer) are designed for this kind of performance testing.
 
 ### Deduplication
 
 Deduplicating incoming entries is a somewhat expensive operation in terms of both storage and throughput.
-Not all personality designs will require it, so Tessera is build such that you only incur these costs if they are necessary
+Not all personality designs will require it, so Tessera is built such that you only incur these costs if they are necessary
 for your design.
 
 Leaving deduplication disabled will greatly increase the throughput of the log, and decrease CPU and storage costs.
