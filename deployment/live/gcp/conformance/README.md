@@ -136,9 +136,9 @@ docker image you created above.
 
 ### Clean up
 
-[!IMPORTANT]
-You need to run this step on your project if you want to ensure you don't get charged into perpetuity 
-for the resources we've setup. 
+> [!IMPORTANT]
+> You need to run this step on your project if you want to ensure you don't get charged into perpetuity 
+> for the resources we've setup. 
 
 This will delete your project!! Do not do this on a project that you didn't create expressly to run this demo.
 ```bash
