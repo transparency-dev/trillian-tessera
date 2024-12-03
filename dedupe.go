@@ -16,7 +16,6 @@ package tessera
 
 import (
 	"context"
-	"sync"
 
 	"github.com/hashicorp/golang-lru/v2/expirable"
 )
@@ -44,16 +43,17 @@ func InMemoryDedupe(delegate func(ctx context.Context, e *Entry) IndexFuture, si
 
 type inMemoryDedupe struct {
 	delegate func(ctx context.Context, e *Entry) IndexFuture
-	mu       sync.Mutex // cache is thread safe, but this mutex allows us to do conditional writes
-	cache    *expirable.LRU[string, IndexFuture]
+	//	mu       sync.Mutex // cache is thread safe, but this mutex allows us to do conditional writes
+	cache *expirable.LRU[string, IndexFuture]
 }
 
 // Add adds the entry to the underlying delegate only if e hasn't been recently seen. In either case,
 // an IndexFuture will be returned that the client can use to get the sequence number of this entry.
 func (d *inMemoryDedupe) add(ctx context.Context, e *Entry) IndexFuture {
 	id := string(e.Identity())
-	d.mu.Lock()
-	defer d.mu.Unlock()
+	// XXX: This can't lock like this, or it won't compose well with other dedupe "layers" which also block.
+	//	d.mu.Lock()
+	//	defer d.mu.Unlock()
 
 	f, ok := d.cache.Get(id)
 	if !ok {
