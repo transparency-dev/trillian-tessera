@@ -1,11 +1,9 @@
 name: AWS Conformance Test
 
 on:
-  # TODO(phboneff): change this to main when I submit, leave like this for
-  # now to allow testing with the PR
   push:
     branches:
-    - integration
+    - main
 
 # This prevents two workflows to run at the same time.
 # This workflows calls terragrunt, which does not allow concurent runs.
