@@ -43,7 +43,12 @@ variable "verifier" {
   type        = string
 }
 
-variable "ecs_role" {
-  description = "Role used to run the ECS containers and task."
+variable "ecs_execution_role" {
+  description = "Role used to run the ECS task."
+  type        = string
+}
+
+variable "ecs_conformance_task_role" {
+  description = "Role assumed by conformance containers when they run."
   type        = string
 }
