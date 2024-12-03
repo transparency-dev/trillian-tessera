@@ -14,7 +14,7 @@ locals {
   signer                     = get_env("TESSERA_SIGNER")
   verifier                   = get_env("TESSERA_VERIFIER")
   # Roles are defined externally
-  ecs_execution_role        = "arn:aws:iam::864981736166:role/ConformanceECSTaskExecutionRolePolicy"
+  ecs_execution_role        = "arn:aws:iam::864981736166:role/ecsTaskExecutionRole"
   ecs_conformance_task_role = "arn:aws:iam::864981736166:role/ConformanceECSTaskRolePolicy"
   ephemeral                 = true
 }
