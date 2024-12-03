@@ -15,6 +15,11 @@ resource "google_project_service" "storage_googleapis_com" {
   service            = "storage.googleapis.com"
   disable_on_destroy = false
 }
+resource "google_project_service" "spanner_api" {
+  service            = "spanner.googleapis.com"
+  disable_on_destroy = false
+}
+
 
 ## Resources
 
@@ -26,12 +31,12 @@ resource "google_storage_bucket" "log_bucket" {
   storage_class               = "STANDARD"
   uniform_bucket_level_access = true
 
-  force_destroy               = var.ephemeral
+  force_destroy = var.ephemeral
 }
 
 resource "google_storage_bucket_iam_binding" "log_bucket_reader" {
-  bucket = google_storage_bucket.log_bucket.name
-  role   = "roles/storage.objectViewer"
+  bucket  = google_storage_bucket.log_bucket.name
+  role    = "roles/storage.objectViewer"
   members = var.bucket_readers
 }
 
@@ -49,7 +54,10 @@ resource "google_spanner_instance" "log_spanner" {
   display_name     = var.base_name
   processing_units = 100
 
-  force_destroy    = var.ephemeral
+  force_destroy = var.ephemeral
+  depends_on = [
+    google_project_service.spanner_api,
+  ]
 }
 
 resource "google_spanner_database" "log_db" {
@@ -61,7 +69,7 @@ resource "google_spanner_database" "log_db" {
     "CREATE TABLE IntCoord (id INT64 NOT NULL, seq INT64 NOT NULL, rootHash BYTES(32)) PRIMARY KEY (id)",
   ]
 
-  deletion_protection         = !var.ephemeral
+  deletion_protection = !var.ephemeral
 }
 
 resource "google_spanner_database_iam_binding" "database" {
