@@ -37,7 +37,7 @@ var (
 	listen            = flag.String("listen", ":2024", "Address:port to listen on")
 	spanner           = flag.String("spanner", "", "Spanner resource URI ('projects/.../...')")
 	signer            = flag.String("signer", "", "Note signer to use to sign checkpoints")
-	persistentDedup   = flag.Bool("gcp_dedup", false, "Set to true to enable persistent dedupe storage")
+	persistentDedup   = flag.Bool("gcp_dedup", false, "EXPERIMENTAL: Set to true to enable persistent dedupe storage")
 	additionalSigners = []string{}
 )
 
@@ -69,6 +69,8 @@ func main() {
 
 	// Handle dedup configuration
 	addDelegate := storage.Add
+
+	// PersistentDedup is currently experimental, so there's no terraform or documentation yet!
 	if *persistentDedup {
 		gcpDedup, err := gcp.NewDedupeStorage(ctx, fmt.Sprintf("%s_dedup", *spanner))
 		if err != nil {
