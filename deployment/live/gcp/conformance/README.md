@@ -53,9 +53,8 @@ export GOOGLE_PROJECT=$(gcloud config get project)
 
 # This should be a note signer string.
 # You can use the generate_keys tool to create a new signer & verifier pair:
-#   go run github.com/transparency-dev/serverless-log/cmd/generate_keys@HEAD --key_name="TestTessera" --print
-#   set {VALUE} to the entire first line of output, e.g. TESSERA_SIGNER='PRIVATE+KEY+TestTessera+....'
-export TESSERA_SIGNER={VALUE}
+go run github.com/transparency-dev/serverless-log/cmd/generate_keys@HEAD --key_name="TestTessera" --out_priv=tessera.sec --out_pub=tessera.pub
+export TESSERA_SIGNER=$(cat tessera.sec)
 
 # This is the name of the artifact registry docker repo to create/use.
 export DOCKER_REPO_NAME=tessera-docker
