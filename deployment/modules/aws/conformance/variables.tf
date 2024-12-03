@@ -48,7 +48,7 @@ variable "ecs_execution_role" {
   type        = string
 }
 
-variable "ecs_task_role" {
-  description = "Role assumed by containers when they run."
+variable "ecs_conformance_task_role" {
+  description = "Role assumed by conformance containers when they run."
   type        = string
 }

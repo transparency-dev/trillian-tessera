@@ -136,8 +136,8 @@ resource "aws_ecs_task_definition" "conformance" {
   network_mode             = "awsvpc"
   cpu                      = 1024
   memory                   = 2048
-  task_role_arn            = var.ecs_role
-  execution_role_arn       = var.ecs_role
+  execution_role_arn       = var.ecs_execution_role
+  task_role_arn            = var.ecs_conformance_task_role
   container_definitions    = jsonencode([{
     "name": "${local.name}-conformance",
     "image": "${var.ecr_registry}/${var.ecr_repository_conformance}",
@@ -223,7 +223,6 @@ resource "aws_ecs_task_definition" "hammer" {
   network_mode             = "awsvpc"
   cpu                      = 1024
   memory                   = 2048
-  task_role_arn            = var.ecs_task_role
   execution_role_arn       = var.ecs_execution_role
   container_definitions = jsonencode([{
     "name": "${local.name}-hammer",
