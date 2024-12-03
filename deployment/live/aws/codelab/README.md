@@ -81,7 +81,7 @@ with a running EC2 Amazon Linux VM, and the following software installed:
     export LOG_NAME=$(terragrunt output --terragrunt-working-dir=deployment/live/aws/codelab/ --raw log_name)
     ```
  1. Configure the VM and RDS instance to be able to speak to one another following
-    [these instructions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/tutorial-ec2-rds-option3.html),
+    [these instructions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/tutorial-ec2-rds-option1.html#option1-task3-connect-ec2-instance-to-rds-database),
     it takes a few clicks in the UI.
  1. Generate the key pair used to sign and verify checkpoints:
     ```
