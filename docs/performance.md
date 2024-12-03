@@ -1,194 +1,88 @@
 # Tessera Storage Performance
 
-This document describes the performance of each Trillian Tessera storage implementation under different conditions.
+Tessera is designed to scale to meet the needs of most currently envisioned workloads in a cost-effective manner.
 
-> [!TIP]
-> The performance test result shows that Trillian Tessera can run on the free tier VM instance on GCP.
+All storage backends have been tested to meet the write-throughput of CT-scale loads without issue.
+The read API of Tessera based logs scales extremely well due to the immutable resource based approach used, which allows for:
+1. Aggressive caching to be applied, e.g. via CDN
+2. Horizontal scaling of read infrastructure (e.g. object storage)[^1]
 
-## MySQL
+[^1]: The MySQL storage backend is different to the others in that reads must be served via the personality rather than directly,
+      however, due to changes in how MySQL is used compared to Trillian v1, read performance should be far better, and _could_ still
+      be scaled horizontally with additional MySQL read replicas & read-only personality instances.
 
-### GCP Free Tier VM Instance
+Below are some indicative figures which show the rough scale of performance we've seen from deploying Tessera conformance
+binaries in various environments.
 
-**tl;dr:** Tessera (MySQL) can run on the free tier VM instance on GCP with around **300 write QPS**. The bottleneck comes from the lack of memory which is consumed by the dockerized MySQL instance.
+## Performance factors
 
-**e2-micro**
+### Resources
 
-- vCPU: 0.25-2 vCPU (1 shared core)
-- Memory: 1 GB
-- OS: Debian GNU/Linux 12 (bookworm)
+Exact performance numbers are highly dependent on the exact infrastructure being used (e.g. storage type & locality, host resources
+of the machine(s) running the personality binary, network speed and weather, etc.)  If in doubt, you should run your own performance
+tests on infrastructure which is as close as possible to that which will ultimately be used to run the log in production.
+The [conformance binaries](/cmd/conformance) and [hammer tool](/internal/hammer) are designed for this kind of performance testing.
+
+### Deduplication
+
+Deduplicating incoming entries is a somewhat expensive operation in terms of both storage and throughput.
+Not all personality designs will require it, so Tessera is built such that you only incur these costs if they are necessary
+for your design.
+
+Leaving deduplication disabled will greatly increase the throughput of the log, and decrease CPU and storage costs.
+
+
+## Backends
+
+The currently supported storage backends are listed below, with a rough idea of the expected performance figures.
+Individual storage implementations may have more detailed information about performance in their respective directories.
+
+### GCP
+
+The main lever for cost vs performance on GCP is Spanner, in the form of "Performance Units" (PUs).
+PUs can be allocated in blocks of 100, and 1000 PUs is equivalent to 1 Spanner Server.
+
+The table below shows some rough numbers of measured performance:
+
+| Spanner PUs | Num FEs | QPS no-dedup | QPS dedup |
+|-------------|---------|--------------|-----------|
+| 100         | 1       | > 3,000      | > 800     |
+| 200         | 1       | not done     | > 1500    |
+| 300         | 1       | not done     | > 3000    |
+| 300         | 2       | not done     | > 5000    |
+
+
+### POSIX
+
+The POSIX storage backend does not currently support the optional persistent dedup storage, so all numbers are without
+deduplication.
+
+#### Local storage
+
+A single local instance on an 12-core VM with 8GB of RAM writing to local filesystem stored on a mirrored pair of SAS disks
+was able to sustain 40,000 writes/s using roughly 4 of the cores for the server, and 5 for the hammer. 
+
+```
+┌───────────────────────────────────────────────────────────────────────────────┐
+│Read (8 workers): Current max: 20/s. Oversupply in last second: 0              │
+│Write (2000 workers): Current max: 40000/s. Oversupply in last second: 0       │
+│TreeSize: 2360352 (Δ 40021qps over 30s)                                        │
+│Time-in-queue: 212ms/228ms/273ms (min/avg/max)                                 │
+│Observed-time-to-integrate: 5409ms/5492ms/5537ms (min/avg/max)                 │
+├───────────────────────────────────────────────────────────────────────────────┤
+```
+
+#### Network storage
+
+A 4 node CephFS cluster (1 admin, 3x storage nodes) running on E2 nodes sustained > 1000qps of writes.
+
+#### GCP Free Tier VM Instance
+
+A small `e2-micro` free-tier VM is able to sustain > 1500 writes/s.
 
 > [!NOTE]
-> Virtual CPUs (vCPUs) in virtualized environments often share physical CPU cores with other vCPUs and introduce variability and potential performance impacts.
-
-#### Result
-
-```
-┌──────────────────────────────────────────────────────────────────────┐
-│Read (8 workers): Current max: 0/s. Oversupply in last second: 0      │
-│Write (256 workers): Current max: 409/s. Oversupply in last second: 0 │
-│TreeSize: 240921 (Δ 307qps over 30s)                                  │
-│Time-in-queue: 86ms/566ms/2172ms (min/avg/max)                        │
-│Observed-time-to-integrate: 516ms/1056ms/2531ms (min/avg/max)         │
-└──────────────────────────────────────────────────────────────────────┘
-```
-
-The bottleneck is at the dockerized MySQL instance, which consumes around 50% of the memory.
-
-```
-top - 20:07:16 up 9 min,  3 users,  load average: 0.55, 0.56, 0.29
-Tasks: 103 total,   1 running, 102 sleeping,   0 stopped,   0 zombie
-%Cpu(s):  3.5 us,  1.7 sy,  0.0 ni, 89.9 id,  2.9 wa,  0.0 hi,  2.0 si,  0.0 st 
-MiB Mem :    970.0 total,     74.5 free,    932.7 used,     65.2 buff/cache     
-MiB Swap:      0.0 total,      0.0 free,      0.0 used.     37.3 avail Mem 
-
-    PID USER      PR  NI    VIRT    RES    SHR S  %CPU  %MEM     TIME+ COMMAND
-   1770 root      20   0 1231828  22808      0 S   8.6   2.3   0:18.35 conformance-mys
-   1140 999       20   0 1842244 493652      0 S   4.0  49.7   0:13.93 mysqld
-```
-
-#### Steps
-
-1. Create a [GCP free tier](https://cloud.google.com/free/docs/free-cloud-features#free-tier) e2-micro VM instance in us-central1 (iowa).
-
-1. [Install Go](https://go.dev/doc/install)
-   
-   ```sh
-   instance:~$ wget https://go.dev/dl/go1.23.0.linux-amd64.tar.gz
-   instance:~$ sudo rm -rf /usr/local/go && sudo tar -C /usr/local -xzf go1.23.0.linux-amd64.tar.gz
-   instance:~$ export PATH=$PATH:/usr/local/go/bin
-   instance:~$ go version
-   go version go1.23.0 linux/amd64
-   ```
-
-1. [Install Docker using the `apt` repository](https://docs.docker.com/engine/install/ubuntu/#install-using-the-repository)
-
-1. Install Git
-
-   ```sh
-   instance:~$ sudo apt-get install git -y -q
-   ...
-   instance:~$ git version
-   git version 2.39.2
-   ```
-
-1. Clone the Trillian Tessera repository
-
-   ```sh
-   instance:~$ git clone https://github.com/transparency-dev/trillian-tessera.git
-   Cloning into 'trillian-tessera'...
-   ```
-
-1. Run `cmd/conformance/mysql` and MySQL database via Docker compose
-
-   ```sh
-   instance:~/trillian-tessera$ sudo docker compose -f ./cmd/conformance/mysql/docker/compose.yaml up
-   ```
-
-1. Run `hammer` and get performance metrics
-
-   ```sh
-   hammer:~/trillian-tessera$ go run ./internal/hammer --log_public_key=transparency.dev/tessera/example+ae330e15+ASf4/L1zE859VqlfQgGzKy34l91Gl8W6wfwp+vKP62DW --log_url=http://10.128.0.3:2024 --max_read_ops=0 --num_writers=512 --max_write_ops=512
-   ```
-
-### GCP Free Tier VM Instance + Cloud SQL (MySQL)
-
-**tl;dr:** Tessera (MySQL) can run on the free tier VM instance on GCP with around **2000 write QPS** when the MySQL database is run on Cloud SQL.
-
-**e2-micro**
-
-- vCPU: 0.25-2 vCPU (1 shared core)
-- Memory: 1 GB
-- OS: Debian GNU/Linux 12 (bookworm)
-
-> [!NOTE]
-> Virtual CPUs (vCPUs) in virtualized environments often share physical CPU cores with other vCPUs and introduce variability and potential performance impacts.
-
-**Cloud SQL (MySQL 8.0.31)**
-
-- vCPUs: 4
-- Memory: 7.5 GB
-- SSD storage: 10 GB
-
-#### Result
-
-```
-┌───────────────────────────────────────────────────────────────────────┐
-│Read (8 workers): Current max: 0/s. Oversupply in last second: 0       │
-│Write (512 workers): Current max: 2571/s. Oversupply in last second: 0 │
-│TreeSize: 2530480 (Δ 2047qps over 30s)                                 │
-│Time-in-queue: 41ms/120ms/288ms (min/avg/max)                          │
-│Observed-time-to-integrate: 568ms/636ms/782ms (min/avg/max)            │
-└───────────────────────────────────────────────────────────────────────┘
-```
-
-The bottleneck comes from CPU usage of the `cmd/conformance/mysql` binary on the free tier VM instance. The Cloud SQL (MySQL) CPU usage is lower than 10%.
-
-#### Steps
-
-1. Create a MySQL instance on Cloud SQL.
-
-1. Create a [GCP free tier](https://cloud.google.com/free/docs/free-cloud-features#free-tier) e2-micro VM instance in us-central1 (iowa).
-
-1. Setup VPC peering.
-
-1. [Install Go](https://go.dev/doc/install)
-   
-   ```sh
-   instance:~$ wget https://go.dev/dl/go1.23.0.linux-amd64.tar.gz
-   instance:~$ sudo rm -rf /usr/local/go && sudo tar -C /usr/local -xzf go1.23.0.linux-amd64.tar.gz
-   instance:~$ export PATH=$PATH:/usr/local/go/bin
-   instance:~$ go version
-   go version go1.23.0 linux/amd64
-   ```
-
-1. Install Git
-
-   ```sh
-   instance:~$ sudo apt-get install git -y -q
-   ...
-   instance:~$ git version
-   git version 2.39.2
-   ```
-
-1. Clone the Trillian Tessera repository
-
-   ```sh
-   instance:~$ git clone https://github.com/transparency-dev/trillian-tessera.git
-   Cloning into 'trillian-tessera'...
-   ```
-
-1. Run `cloud-sql-proxy`
-
-   ```sh
-   instance:~$ ./cloud-sql-proxy --port 3306 transparency-dev-playground:us-central1:mysql-dev-instance-1
-   ```
-
-1. Run `cmd/conformance/mysql`
-
-   ```sh
-   instance:~/trillian-tessera$ go run ./cmd/conformance/mysql --mysql_uri="root:root@tcp(127.0.0.1:3306)/test_tessera" --init_schema_path="./storage/mysql/schema.sql" --private_key_path="./cmd/conformance/mysql/docker/testdata/key" --db_max_open_conns=1024 --db_max_idle_conns=512
-   ```
-
-1. Run `hammer` and get performance metrics
-
-   ```sh
-   hammer:~/trillian-tessera$ go run ./internal/hammer --log_public_key=transparency.dev/tessera/example+ae330e15+ASf4/L1zE859VqlfQgGzKy34l91Gl8W6wfwp+vKP62DW --log_url=http://10.128.0.3:2024 --max_read_ops=0 --num_writers=512 --max_write_ops=512
-   ```
-
-## POSIX
-
-### GCP Free Tier VM Instance
-
-**e2-micro**
-
-- vCPU: 0.25-2 vCPU (1 shared core)
-- Memory: 1 GB
-- OS: Debian GNU/Linux 12 (bookworm)
-
-> [!NOTE]
-> Virtual CPUs (vCPUs) in virtualized environments often share physical CPU cores with other vCPUs and introduce variability and potential performance impacts.
-
-#### Result
+> Virtual CPUs (vCPUs) in virtualized environments often share physical CPU cores with other vCPUs and introduce variability
+> and potential performance impacts.
 
 ```
 ┌───────────────────────────────────────────────────────────────────────┐
@@ -200,63 +94,49 @@ The bottleneck comes from CPU usage of the `cmd/conformance/mysql` binary on the
 └───────────────────────────────────────────────────────────────────────┘
 ```
 
+More details on Tessera POSIX performance can be found [here](/storage/posix/PERFORMANCE.md).
+
+
+## MySQL
+
+Figures below were measured using VMs on GCP in order to provide an idea of size of machine required to
+achieve the results.
+
+> [!NOTE]
+> Note that for Tessera on GCP deployments, we **strongly recommended* using the Tessera GCP storage implementation instead.
+
+
+### GCP free-tier + CloudSQL
+
+Tessera running on an `e2-micro` free tier VM instance on GCP, using CloudSQL for storage can sustain around 2000 write/s.
+
 ```
-top - 20:45:35 up 47 min,  3 users,  load average: 1.89, 0.88, 1.03
-Tasks:  97 total,   1 running,  96 sleeping,   0 stopped,   0 zombie
-%Cpu(s): 47.2 us, 24.7 sy,  0.0 ni,  0.0 id,  0.0 wa,  0.0 hi, 28.1 si,  0.0 st 
-MiB Mem :    970.0 total,    158.7 free,    566.8 used,    409.3 buff/cache     
-MiB Swap:      0.0 total,      0.0 free,      0.0 used.    403.2 avail Mem 
-
-    PID USER      PR  NI    VIRT    RES    SHR S  %CPU  %MEM     TIME+ COMMAND
-   8336 root      20   0 1231800  34784   5080 S 200.0   3.5   2:59.50 conformance-pos
-    409 root      20   0 2442648  79112  26836 S   1.0   8.0   0:49.10 dockerd
-   6848 root      20   0 1800176  34376  16940 S   0.7   3.5   0:12.57 docker-compose
+┌───────────────────────────────────────────────────────────────────────┐
+│Read (8 workers): Current max: 0/s. Oversupply in last second: 0       │
+│Write (512 workers): Current max: 2571/s. Oversupply in last second: 0 │
+│TreeSize: 2530480 (Δ 2047qps over 30s)                                 │
+│Time-in-queue: 41ms/120ms/288ms (min/avg/max)                          │
+│Observed-time-to-integrate: 568ms/636ms/782ms (min/avg/max)            │
+└───────────────────────────────────────────────────────────────────────┘
 ```
 
-#### Steps
+### GCP free-tier VM only
 
-1. Create a [GCP free tier](https://cloud.google.com/free/docs/free-cloud-features#free-tier) e2-micro VM instance in us-central1 (iowa).
+Tessera + MySQL both running on an `e2-micro` free tier VM instance on GCP can sustain around 300 writes/s.
 
-1. [Install Go](https://go.dev/doc/install)
-   
-   ```sh
-   instance:~$ wget https://go.dev/dl/go1.23.0.linux-amd64.tar.gz
-   instance:~$ sudo rm -rf /usr/local/go && sudo tar -C /usr/local -xzf go1.23.0.linux-amd64.tar.gz
-   instance:~$ export PATH=$PATH:/usr/local/go/bin
-   instance:~$ go version
-   go version go1.23.0 linux/amd64
-   ```
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│Read (8 workers): Current max: 0/s. Oversupply in last second: 0      │
+│Write (256 workers): Current max: 409/s. Oversupply in last second: 0 │
+│TreeSize: 240921 (Δ 307qps over 30s)                                  │
+│Time-in-queue: 86ms/566ms/2172ms (min/avg/max)                        │
+│Observed-time-to-integrate: 516ms/1056ms/2531ms (min/avg/max)         │
+└──────────────────────────────────────────────────────────────────────┘
+```
 
-1. [Install Docker using the `apt` repository](https://docs.docker.com/engine/install/ubuntu/#install-using-the-repository)
+More details on Tessera MySQL performance can be found [here](/storage/mysql/PERFORMANCE.md).
 
-1. Install Git
 
-   ```sh
-   instance:~$ sudo apt-get install git -y -q
-   ...
-   instance:~$ git version
-   git version 2.39.2
-   ```
-
-1. Clone the Trillian Tessera repository
-
-   ```sh
-   instance:~$ git clone https://github.com/transparency-dev/trillian-tessera.git
-   Cloning into 'trillian-tessera'...
-   ```
-
-1. Run `cmd/conformance/posix` via Docker compose
-
-   ```sh
-   instance:~/trillian-tessera$ sudo docker compose -f ./cmd/conformance/posix/docker/compose.yaml up
-   ```
-
-1. Run `hammer` and get performance metrics
-
-   ```sh
-   hammer:~/trillian-tessera$ go run ./internal/hammer --log_public_key=example.com/log/testdata+33d7b496+AeHTu4Q3hEIMHNqc6fASMsq3rKNx280NI+oO5xCFkkSx --log_url=http://localhost:2025 --max_read_ops=0 --num_writers=512 --max_write_ops=512
-   ```
-
-## GCP
+## AWS
 
 Coming soon.
