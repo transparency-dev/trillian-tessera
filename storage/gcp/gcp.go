@@ -37,11 +37,13 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"sync/atomic"
 	"time"
 
 	"cloud.google.com/go/spanner"
 	"cloud.google.com/go/spanner/apiv1/spannerpb"
 	gcs "cloud.google.com/go/storage"
+	"github.com/globocom/go-buffer"
 	"github.com/google/go-cmp/cmp"
 	"github.com/transparency-dev/merkle/rfc6962"
 	tessera "github.com/transparency-dev/trillian-tessera"
@@ -784,12 +786,20 @@ func (s *gcsStorage) lastModified(ctx context.Context, obj string) (time.Time, e
 	return r.Attrs.LastModified, r.Close()
 }
 
-// NewDedupeStorage returns a struct which can be used to store identity -> index mappings backed
-// by Spanner.
+// NewDedupe returns wrapped Add func which will use Spanner to maintain a mapping of
+// previously seen entries and their assigned indices. Future calls with the same entry
+// will return the previously assigned index, as yet unseen entries will be passed to the provided
+// delegate function to have an index assigned.
 //
-// Note that updates to this dedup storage is logically entriely separate from any updates
-// happening to the log storage.
-func NewDedupeStorage(ctx context.Context, spannerDB string) (*DedupStorage, error) {
+// For performance reasons, the ID -> index associations returned by the delegate are buffered before
+// being flushed to Spanner. This can result in duplicates occuring in some circumstances, but in
+// general this should not be a problem.
+//
+// Note that the storage for this mapping is entirely separate and unconnected to the storage used for
+// maintaining the Merkle tree.
+//
+// This functionality is experimental!
+func NewDedupe(ctx context.Context, spannerDB string, delegate func(ctx context.Context, e *tessera.Entry) tessera.IndexFuture) (func(ctx context.Context, e *tessera.Entry) tessera.IndexFuture, error) {
 	/*
 	   Schema for reference:
 
@@ -804,16 +814,49 @@ func NewDedupeStorage(ctx context.Context, spannerDB string) (*DedupStorage, err
 		return nil, fmt.Errorf("failed to connect to Spanner: %v", err)
 	}
 
-	return &DedupStorage{
-		dbPool: dedupDB,
-	}, nil
+	r := &dedupStorage{
+		ctx:      ctx,
+		dbPool:   dedupDB,
+		delegate: delegate,
+	}
+
+	// TODO(al): Make these configurable
+	r.buf = buffer.New(
+		buffer.WithSize(64),
+		buffer.WithFlushInterval(200*time.Millisecond),
+		buffer.WithFlusher(buffer.FlusherFunc(r.flush)),
+		buffer.WithPushTimeout(15*time.Second),
+	)
+	go func(ctx context.Context) {
+		t := time.NewTicker(time.Second)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				klog.V(1).Infof("DEDUP: # Writes %d, # Lookups %d, # DB hits %v, # buffer Push discards %d", r.numWrites.Load(), r.numLookups.Load(), r.numDBDedups.Load(), r.numPushErrs.Load())
+			}
+		}
+	}(ctx)
+	return r.add, nil
 }
 
-type DedupStorage struct {
-	dbPool *spanner.Client
+type dedupStorage struct {
+	ctx      context.Context
+	dbPool   *spanner.Client
+	delegate func(ctx context.Context, e *tessera.Entry) tessera.IndexFuture
+
+	numLookups  atomic.Uint64
+	numWrites   atomic.Uint64
+	numDBDedups atomic.Uint64
+	numPushErrs atomic.Uint64
+
+	buf *buffer.Buffer
 }
 
-func (d *DedupStorage) Index(ctx context.Context, h []byte) (*uint64, error) {
+// index returns the index (if any) previously associated with the provided hash
+func (d *dedupStorage) index(ctx context.Context, h []byte) (*uint64, error) {
+	d.numLookups.Add(1)
 	var idx int64
 	if row, err := d.dbPool.Single().ReadRow(ctx, "IDSeq", spanner.Key{0, h}, []string{"idx"}); err != nil {
 		if c := spanner.ErrCode(err); c == codes.NotFound {
@@ -825,11 +868,16 @@ func (d *DedupStorage) Index(ctx context.Context, h []byte) (*uint64, error) {
 			return nil, fmt.Errorf("failed to read dedup index: %v", err)
 		}
 		idx := uint64(idx)
+		d.numDBDedups.Add(1)
 		return &idx, nil
 	}
 }
 
-func (d *DedupStorage) Set(ctx context.Context, entries []tessera.DedupeMapping) error {
+// storeMappings stores the associations between the keys and IDs in a non-atomic fashion
+// (i.e. it does not store all or none in a transactional sense).
+//
+// Returns an error if one or more mappings cannot be stored.
+func (d *dedupStorage) storeMappings(ctx context.Context, entries []dedupeMapping) error {
 	m := make([]*spanner.MutationGroup, 0, len(entries))
 	for _, e := range entries {
 		m = append(m, &spanner.MutationGroup{
@@ -845,4 +893,62 @@ func (d *DedupStorage) Set(ctx context.Context, entries []tessera.DedupeMapping)
 		}
 		return nil
 	})
+}
+
+// dedupeMapping represents an ID -> index mapping.
+type dedupeMapping struct {
+	ID  []byte
+	Idx uint64
+}
+
+// add adds the entry to the underlying delegate only if e isn't already known. In either case,
+// an IndexFuture will be returned that the client can use to get the sequence number of this entry.
+func (d *dedupStorage) add(ctx context.Context, e *tessera.Entry) tessera.IndexFuture {
+	idx, err := d.index(ctx, e.Identity())
+	if err != nil {
+		return func() (uint64, error) { return 0, err }
+	}
+	if idx != nil {
+		return func() (uint64, error) { return *idx, nil }
+	}
+
+	i, err := d.delegate(ctx, e)()
+	if err != nil {
+		return func() (uint64, error) { return 0, err }
+	}
+
+	err = d.enqueueMapping(ctx, e.Identity(), i)
+	return func() (uint64, error) {
+		return i, err
+	}
+}
+
+// enqueueMapping buffers the provided ID -> index mapping ready to be flushed to storage.
+func (d *dedupStorage) enqueueMapping(_ context.Context, h []byte, idx uint64) error {
+	err := d.buf.Push(dedupeMapping{ID: h, Idx: idx})
+	if err != nil {
+		d.numPushErrs.Add(1)
+		// This means there's pressure flushing dedup writes out, so discard this write.
+		if err != buffer.ErrTimeout {
+			return err
+		}
+	}
+	return nil
+}
+
+// flush writes enqueued mappings to storage.
+func (d *dedupStorage) flush(items []interface{}) {
+	entries := make([]dedupeMapping, len(items))
+	for i := range items {
+		entries[i] = items[i].(dedupeMapping)
+	}
+
+	ctx, c := context.WithTimeout(d.ctx, 15*time.Second)
+	defer c()
+
+	if err := d.storeMappings(ctx, entries); err != nil {
+		klog.Infof("Failed to flush dedup entries: %v", err)
+		return
+	}
+	d.numWrites.Add(uint64(len(entries)))
 }
