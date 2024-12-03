@@ -31,10 +31,10 @@ You'll need the following tools installed:
 
 #### Google Cloud tooling
 
-[!CAUTION]
-This example creates real Google Cloud resources running in your project. They will almost certainly
-cost you real money if left running.  For the purposes of this demo it is strongly recommended that 
-you create a new project so that you can easily clean up at the end.
+> [!CAUTION]
+> This example creates real Google Cloud resources running in your project. They will almost certainly
+> cost you real money if left running.  For the purposes of this demo it is strongly recommended that 
+> you create a new project so that you can easily clean up at the end.
 
 Once you've got a Google Cloud project you want to use, and have configured your local `gcloud`
 tool use use it, and authenticated as a principle with sufficient ACLs for the project:
