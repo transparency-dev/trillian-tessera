@@ -1,12 +1,19 @@
 # AWS Conformance Configs
 
-Work in progress.
+This config uses the [aws/conformance](/deployment/modules/aws/conformance)
+module to define a conformance testing environment, actuated by the [AWS
+Conformance
+Test](https://github.com/transparency-dev/trillian-tessera/blob/main/.github/workflows/aws_integration_test.yml)
+GitHub action. At a high level, this environment consists of:
+ - Aurora MySQL database
+ - S3 Bucket
+ - ECS+Fargate service running the AWS-specific conformance binary and hammer
 
 ## Prequisites
 
 You'll need to have configured the right IAM permissions to create S3 buckets
 and RDS databases, and configured a local AWS profile that can make use of
-these permissions. For instance, 
+these permissions.
 
 TODO(phboneff): establish what's the minimum set of permissions we need, and list
 them here.
@@ -26,7 +33,6 @@ export AWS_PROFILE={VALUE}
 Optionally, customize the AWS region (defaults to "us-east-1"), prefix, and base
 name for resources (defaults to "trillian-tessera" and "conformance"):
 ```bash
-export AWS_REGION={VALUE}
 export TESSERA_BASE_NAME={VALUE}
 export TESSERA_PREFIX_NAME={VALUE}
 ```
@@ -37,4 +43,3 @@ convention.
 Terraforming the project can be done by:
  1. `cd` to the relevant directory for the environment to deploy/change (e.g. `ci`)
  2. Run `terragrunt apply`
-
