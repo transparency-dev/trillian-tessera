@@ -5,9 +5,8 @@ on:
     branches:
     - main
 
-# This prevents two workflows to run at the same time.
-# This workflows calls terragrunt, which does not allow concurent runs.
-# concurrency test!
+# This prevents two workflows from running at the same time.
+# This workflows calls terragrunt, which does not allow concurrent runs.
 concurrency:
   group: aws-conformance
   cancel-in-progress: false
@@ -102,13 +101,13 @@ jobs:
           echo "TESSERA_VERIFIER=$(cat ${{ runner.temp }}/key.pub)" >> "$GITHUB_ENV"
 
       ## Apply the deployment/live/aws/conformance/ci terragrunt config.
-      ## This will bring up the conformance infrastructure whitch consists of:
+      ## This will bring up the conformance infrastructure which consists of:
       ##   - the storage module
       ##   - a private S3 <--> ECS network link for the hammer to read the log
       ##   - an ECS cluster to run Fargate tasks
       ##   - a conformance service, with multiple conformance binary instances
       ##   - a hammer task definition (but no execution)
-      # TODO(phboneff): AuroraDB take a long time to be brouht up and down
+      # TODO(phboneff): AuroraDB takes a long time to be brought up and down
       #  consider keeping it around between tests / using Aurora Serveless
       - name: Terragrunt apply
         id: terragrunt-apply
@@ -124,7 +123,7 @@ jobs:
           INPUT_POST_EXEC_2: |
             echo "VPC_SUBNETS=$(terragrunt output -json vpc_subnets)" >> "$GITHUB_ENV"
 
-      ## How we can run the hammer using the task definition, against the
+      ## Now we can run the hammer using the task definition, against the
       ## conformance service. This step returns the hammer task's exit code.
       - name: Run Hammer
         id: hammer
