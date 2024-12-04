@@ -163,10 +163,11 @@ func New(ctx context.Context, cfg Config, opts ...func(*options.StorageOptions))
 
 				if _, err := r.sequencer.consumeEntries(cctx, DefaultIntegrationSizeLimit, r.integrate, false); err != nil {
 					klog.Errorf("integrate: %v", err)
-					select {
-					case r.cpUpdated <- struct{}{}:
-					default:
-					}
+					return
+				}
+				select {
+				case r.cpUpdated <- struct{}{}:
+				default:
 				}
 			}()
 		}
