@@ -91,6 +91,19 @@ with a running EC2 Amazon Linux VM, and the following software installed:
               --out_priv=/home/ec2-user/tessera-keys/$LOG_NAME.sec \
               --out_pub=/home/ec2-user/tessera-keys/$LOG_NAME.pub
     ```
+ 1. Generate and copy these environment variale definitions in order to send requests to
+    the log from a different terminal when it will be running:
+    ```
+    echo -e "\n\n"
+    echo =================================================================================================================
+    echo "Copy these variable definitions to use in a different terminal:"
+    echo -e "\n"
+    echo "export WRITE_URL=http://localhost:2024/"
+    echo "export READ_URL=https://$LOG_BUCKET.s3.$AWS_REGION.amazonaws.com/"
+    echo "export LOG_PUBLIC_KEY=$(cat /home/ec2-user/tessera-keys/$LOG_NAME.pub)"
+    echo =================================================================================================================
+    echo -e "\n\n"
+    ```
  1. Run the conformance binary in `trillian-tessera/cmd/conformance/aws`.
     This binary is a small personality that accepts `add/` requests,
     and stores the data in the Trillian Tessera infrastructure you've
@@ -100,9 +113,10 @@ with a running EC2 Amazon Linux VM, and the following software installed:
     ```
  1. Congratulations, you've now successfully brought up a Trillian Tessera
     stack on AWS, and started a personality server that can add entries to it.
-    This server accepts `add/` requests at `WRITE_URL=http://localhost:2024/`.
+    Use the environment variables from above to interact with the personality.
+    This personality accepts `add/` requests at `WRITE_URL`.
     Log entries can be read directly from S3 without going through the server,
-    at `READ_URL=https://$LOG_BUCKET.s3.$AWS_REGION.amazonaws.com/`
+    at `READ_URL`, and checkpoint signatures can be verified with `LOG_PUBLIC_KEY`.
  1. Head over to the [remainder of this codelab](https://github.com/transparency-dev/trillian-tessera/tree/main/cmd/conformance#codelab)
-    to add leaves to the log.
+    to add leaves to the log and inspect its contents.
  
