@@ -38,10 +38,11 @@ curl -d 'two!' -H "Content-Type: application/data" -X POST ${WRITE_URL}add &
 curl -d 'three!' -H "Content-Type: application/data" -X POST ${WRITE_URL}add &
 wait
 
-# Check that the checkpoint is of the correct size
+# Check that the checkpoint is of the correct size (i.e. 3).
+# If the checkpoint size is zero, this is expected. It may take a second to integrate the entries and publish the checkpoint.
 curl -s ${READ_URL}checkpoint
 
-# Look at the leaves. Piping into xxd to reveal the leaf sizes.
+# Look at the leaves after confirming the checkpoint size. Piping into xxd to reveal the leaf sizes.
 curl -s ${READ_URL}tile/entries/000.p/3 | xxd
 ```
 
