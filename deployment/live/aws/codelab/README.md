@@ -1,7 +1,7 @@
 # AWS codelab deployment
 
 This codelab helps you bring a test Trillian Tessera infrastructure on AWS, and
-to use it running a test personality server on an EC2 VM. The infrastructure 
+to use it by running a test personality server on an EC2 VM. The infrastructure 
 will be comprised of an [Aurora](https://aws.amazon.com/rds/aurora/) MySQL
 database and a private [S3](https://aws.amazon.com/s3/) bucket. 
 
@@ -108,7 +108,7 @@ VM.
 
 ### Start a Trillian Tessera personality
 A personality is a server that interacts with Trillian Tessera's storage
-infrastructure. In this codelab, it accepts writes requests on a `add/` HTTP
+infrastructure. In this codelab, it accepts POST requests on a `add/` HTTP
 endpoint.
 
  1. Generate the key pair used to sign and verify checkpoints:
@@ -120,19 +120,13 @@ endpoint.
               --out_pub=/home/ec2-user/tessera-keys/$LOG_NAME.pub
     ```
 
- 1. Generate and copy these environment variale definitions. \
-    They will allow you
- to send requests to the log from a different terminal once it's running:
+ 1. Running the commands below will print some easily copy-and-pasteable exports
+ which you can use to set up the environment in a second terminal ready to be
+ able to send requests:
     ```
-    echo -e "\n\n"
-    echo =================================================================================================================
-    echo "Copy these variable definitions to use in a different terminal:"
-    echo -e "\n"
     echo "export WRITE_URL=http://localhost:2024/"
     echo "export READ_URL=https://$LOG_BUCKET.s3.$AWS_REGION.amazonaws.com/"
     echo "export LOG_PUBLIC_KEY=$(cat /home/ec2-user/tessera-keys/$LOG_NAME.pub)"
-    echo =================================================================================================================
-    echo -e "\n\n"
     ```
 
  1. Run the Conformance personality binary.
@@ -149,12 +143,12 @@ endpoint.
 
  1. 🎉 **Congratulations** 🎉
 
-    You have successfully brought up a Trillian Tessera
-    infrastructure on AWS, and started a personality server that can add entries to it.
+    You have successfully brought up Trillian Tessera's
+    AWS infrastructure, and started a personality server that can add entries to it.
 
     Use the environment variables from above to interact with the personality in a different terminal.
 
-    This personality accepts `add/` requests at `WRITE_URL`.
+    This personality accepts `POST` requests to the `/add` endpoint under `WRITE_URL`.
     Log entries can be read directly from S3 without going through the server,
     at `READ_URL`, and checkpoint signatures can be verified with `LOG_PUBLIC_KEY`.
 
