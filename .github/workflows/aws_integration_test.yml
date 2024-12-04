@@ -15,7 +15,7 @@ permissions:
   contents: read
 
 env:
-  TF_VERSION: "1.9.8"
+  TF_VERSION: "1.10.0"
   TG_VERSION: "0.67.0"
   TG_DIR: "deployment/live/aws/conformance/ci/"
   TESSERA_PREFIX_NAME: trillian-tessera
