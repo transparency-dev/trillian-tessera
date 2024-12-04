@@ -1,30 +1,41 @@
 # AWS codelab deployment
 
-This codelab helps you bring a test Trillian Tessera stack on AWS,
-and to use it running a test personality server on an EC2 VM.
-The Tessera test stack will be comprised of an Aurora RDS MySQL database
-and a private S3 bucket. This codelab will also guide you to connect both
-the RDS instance and the S3 bucket to your VM.
+This codelab helps you bring a test Trillian Tessera infrastructure on AWS, and
+to use it running a test personality server on an EC2 VM. The infrastructure 
+will be comprised of an [Aurora](https://aws.amazon.com/rds/aurora/) MySQL
+database and a private [S3](https://aws.amazon.com/s3/) bucket. 
+
+> [!CAUTION]
+> 
+> This example creates real Amazon Web Services resources running in your
+> project. They will cost you real money. For the purposes of this demo 
+> it is strongly recommended that you create a new project so that you
+> can easily clean up at the end.
  
 ## Prerequisites
 For the remainder of this codelab, you'll need to have an AWS account,
 with a running EC2 Amazon Linux VM, and the following software installed:
+
  - [golang](https://go.dev/doc/install), which we'll use to compile and
    run the test personality on the VM
  - [terraform](https://developer.hashicorp.com/terraform/tutorials/aws-get-started/install-cli)
    and [terragrunt](https://terragrunt.gruntwork.io/docs/getting-started/install/)
-   in order to deploy the Trillian Tessera stack from the VM.
+   in order to deploy the Trillian Tessera infrastructure from the VM.
  - `git` to clone the repo
  - a terminal multiplexer of your choice for convenience
 
 ## Instructions
 
- 1. SSH to your VM
+ ### Prepare your environment
+ 1. SSH to your VM.
+
  1. Authenticate with a role that has sufficient access to create resources.
-    For the purpose of this codelab, and for ease of demonstration, we'll use
-    the `AdministratorAccess` role, and authenticate with `aws configure sso`.
-    DO NOT use this role to run any production software, or if there are other
+    For the purpose of this codelab, and for ease of demonstration, we'll use the
+    `AdministratorAccess` role, and authenticate with `aws configure sso`.
+    **DO NOT** use this role to run any production infrastructure, or if there are
+    *other
     services running on your AWS account.
+
     Here's an example run:
     ```
     [ec2-user@ip-172-31-21-186 trillian-tessera]$ aws configure sso
@@ -52,37 +63,54 @@ with a running EC2 Amazon Linux VM, and the following software installed:
     
     aws s3 ls --profile AdministratorAccess-<REDACTED>
     ```
+
  1. Set these environment variables according to the ones you chose when configuring
     your AWS profile:
     ```
     export AWS_REGION=us-east-1
     export AWS_PROFILE=AdministratorAccess-<REDACTED>
     ```
- 1. Fetch the Tessera repo:
+
+ 1. Fetch the Tessera repo, and go to its root:
     ```
     git clone https://github.com/transparency-dev/trillian-tessera
+    cd trillian-tessera/
     ```
- 1. From the root of the trillian-tessera repo, init terragrunt:
+
+### Deploy a Trillian Tessera storage infrastructure
+In this section, we'll bring up a [S3](https://aws.amazon.com/s3/) bucket, an
+[Aurora](https://aws.amazon.com/rds/aurora/) MySQL, and we'll connect them to the
+VM.
+
+ 1. From the root of the trillian-tessera repo, initialize terragrunt:
     ```
     terragrunt init --terragrunt-working-dir=deployment/live/aws/codelab/
     ```
- 1. Apply everything:
+
+ 1. Deploy the infrastructure:
     ```
     terragrunt apply --terragrunt-working-dir=deployment/live/aws/codelab/
     ```
-    This brings up the Terraform infrastructure (S3 bucket + DynamoDB table
-    for terraform state locking only) and the Trillian Tessera stack: an RDS
-    Aurora instance, a private S3 bucket, and connects this bucket to the
-    default VPC.
+    This brings up the Terraform infrastructure (S3 bucket + DynamoDB table for
+    terraform state locking only) and the Trillian Tessera infrastructure: an
+    RDS Aurora instance, a private S3 bucket, and connects this bucket to the
+    default VPC that your VM should be connected to.
+
  1. Save the RDS instance URI and S3 bucket name for later:
     ```
     export LOG_RDS_DB=$(terragrunt output --terragrunt-working-dir=deployment/live/aws/codelab/ --raw log_rds_db)
     export LOG_BUCKET=$(terragrunt output --terragrunt-working-dir=deployment/live/aws/codelab/ --raw log_bucket_id)
     export LOG_NAME=$(terragrunt output --terragrunt-working-dir=deployment/live/aws/codelab/ --raw log_name)
     ```
- 1. Configure the VM and RDS instance to be able to speak to one another following
-    [these instructions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/tutorial-ec2-rds-option1.html#option1-task3-connect-ec2-instance-to-rds-database),
-    it takes a few clicks in the UI.
+ 
+1. Connect the VM and Aurora database following [these instructions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/tutorial-ec2-rds-option1.html#option1-task3-connect-ec2-instance-to-rds-database),
+   it takes a few clicks in the UI.
+
+### Start a Trillian Tessera personality
+A personality is a server that interacts with Trillian Tessera's storage
+infrastructure. In this codelab, it accepts writes requests on a `add/` HTTP
+endpoint.
+
  1. Generate the key pair used to sign and verify checkpoints:
     ```
     mkdir -p /home/ec2-user/tessera-keys
@@ -91,8 +119,10 @@ with a running EC2 Amazon Linux VM, and the following software installed:
               --out_priv=/home/ec2-user/tessera-keys/$LOG_NAME.sec \
               --out_pub=/home/ec2-user/tessera-keys/$LOG_NAME.pub
     ```
- 1. Generate and copy these environment variale definitions in order to send requests to
-    the log from a different terminal when it will be running:
+
+ 1. Generate and copy these environment variale definitions. \
+    They will allow you
+ to send requests to the log from a different terminal once it's running:
     ```
     echo -e "\n\n"
     echo =================================================================================================================
@@ -104,19 +134,33 @@ with a running EC2 Amazon Linux VM, and the following software installed:
     echo =================================================================================================================
     echo -e "\n\n"
     ```
- 1. Run the conformance binary in `trillian-tessera/cmd/conformance/aws`.
-    This binary is a small personality that accepts `add/` requests,
-    and stores the data in the Trillian Tessera infrastructure you've
-    just brought up:
+
+ 1. Run the Conformance personality binary.
     ```
-    go run ./cmd/conformance/aws --bucket=$LOG_BUCKET --db_user=root --db_password=password --db_name=tessera --db_host=$LOG_RDS_DB --signer=$(cat /home/ec2-user/tessera-keys/$LOG_NAME.sec)  -v=3
+    go run ./cmd/conformance/aws \
+      --bucket=$LOG_BUCKET \
+      --db_user=root \
+      --db_password=password \
+      --db_name=tessera \
+      --db_host=$LOG_RDS_DB \
+      --signer=$(cat /home/ec2-user/tessera-keys/$LOG_NAME.sec)
+      -v=3
     ```
- 1. Congratulations, you've now successfully brought up a Trillian Tessera
-    stack on AWS, and started a personality server that can add entries to it.
-    Use the environment variables from above to interact with the personality.
+
+ 1. 🎉 **Congratulations** 🎉
+
+    You have successfully brought up a Trillian Tessera
+    infrastructure on AWS, and started a personality server that can add entries to it.
+
+    Use the environment variables from above to interact with the personality in a different terminal.
+
     This personality accepts `add/` requests at `WRITE_URL`.
     Log entries can be read directly from S3 without going through the server,
     at `READ_URL`, and checkpoint signatures can be verified with `LOG_PUBLIC_KEY`.
+
  1. Head over to the [remainder of this codelab](https://github.com/transparency-dev/trillian-tessera/tree/main/cmd/conformance#codelab)
     to add leaves to the log and inspect its contents.
- 
+
+> [!IMPORTANT]  
+> Do not forget to delete all the resources to avoid incuring any further cost
+> when you're done using the log. The easiest way to do this, is to [close the account](https://docs.aws.amazon.com/accounts/latest/reference/manage-acct-closing.html).
