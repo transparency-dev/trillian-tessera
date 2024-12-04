@@ -127,13 +127,18 @@ When writing your Tessera personality, the biggest decision you need to make fir
  *   [POSIX](./storage/posix/)
 
 Each of these implementations has a very similar API, but they have different characteristics.
-The easiest implementations to operate and to scale are the cloud implementations: GCP and AWS.
-These are the recommended choice for the majority of users.
 
-If you aren't using a cloud provider, then your options are MySQL and POSIX.
-POSIX is the more niche choice, intended to be lightweight and for logs that are infrequently updated.
-If you already serve static files as part of your business this could be a good fit.
-If you are more used to operating user-facing applications backed by a RDBMS, then MySQL will be a natural fit.
+The easiest implementations to operate and to scale are the cloud implementations: GCP and AWS.
+These are the recommended choice for the majority of users running in production.
+
+If you aren't using a cloud provider, then your options are MySQL and POSIX:
+- POSIX is the simplest to get started with as it needs little in the way of extra infrastructure, and
+  if you already serve static files as part of your business/project this could be a good fit.
+- Alternatively, if you are used to operating user-facing applications backed by a RDBMS, then MySQL could
+  be a natural fit.
+
+To get a sense of the rough performance you can expect from the different backends, take a look at
+[docs/performance.md](/docs/performance).
 
 #### Setup
 
