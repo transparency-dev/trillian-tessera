@@ -24,10 +24,16 @@ with a running EC2 Amazon Linux VM, and the following software installed:
  - `git` to clone the repo
  - a terminal multiplexer of your choice for convenience
 
+Follow [these
+instructions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/EC2_GetStarted.html)
+to set up a VM. A free-tier `t2.micro` VM is enough for this codelab. Leave all
+the defaults settings, including for the default VPC. Don't forget to run
+`chmod 400` on your SSH key.
+
 ## Instructions
 
  ### Prepare your environment
- 1. SSH to your VM.
+ 1. [SSH to your VM](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/EC2_GetStarted.html#ec2-connect-to-instance).
 
  1. Authenticate with a role that has sufficient access to create resources.
     For the purpose of this codelab, and for ease of demonstration, we'll use the
