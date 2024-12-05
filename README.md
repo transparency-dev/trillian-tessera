@@ -138,7 +138,7 @@ If you aren't using a cloud provider, then your options are MySQL and POSIX:
   be a natural fit.
 
 To get a sense of the rough performance you can expect from the different backends, take a look at
-[docs/performance.md](/docs/performance).
+[docs/performance.md](/docs/performance.md).
 
 #### Setup
 
