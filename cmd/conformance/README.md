@@ -20,7 +20,7 @@ This codelab will help you add a few entries to a log, and inspect its contents.
 First, you need to bring up personality (a server built with Tessera which manages the log) on the infrastructure of your choice:
  - [A local POSIX-compliant filesystem](./posix#bring-up-a-log)
  - [MySQL](./mysql#bring-up-a-log)
- - [GCP](./gcp) 
+ - [GCP](/deployment/live/gcp/conformance#manual-deployment)
  - [AWS](/deployment/live/aws/codelab#aws-codelab-deployment)
 
 Choose one of the implementations above and deploy it.
