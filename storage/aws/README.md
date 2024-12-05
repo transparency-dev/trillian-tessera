@@ -34,23 +34,23 @@ This table is used to coordinate integration of sequenced batches in the `Seq` t
 ## Life of a leaf
 
 1. Leaves are submitted by the binary built using Tessera via a call the storage's `Add` func.
-2. The storage library batches these entries up, and, after a configurable period of time has elapsed
+1. The storage library batches these entries up, and, after a configurable period of time has elapsed
    or the batch reaches a configurable size threshold, the batch is written to the `Seq` table which effectively
    assigns a sequence numbers to the entries using the following algorithm:
    In a transaction:
    1. selects next from `SeqCoord` with for update ← this blocks other FE from writing their pools, but only for a short duration.
-   2. Inserts batch of entries into `Seq` with key `SeqCoord.next`
-   3. Update `SeqCoord` with `next+=len(batch)`
-3. Integrators periodically integrate new sequenced entries into the tree:
+   1. Inserts batch of entries into `Seq` with key `SeqCoord.next`
+   1. Update `SeqCoord` with `next+=len(batch)`
+1. Integrators periodically integrate new sequenced entries into the tree:
    In a transaction:
    1. select `seq` from `IntCoord` with for update ← this blocks other integrators from proceeding.
-   2. Select one or more consecutive batches from `Seq` for update, starting at `IntCoord.seq`
-   3. Write leaf bundles to S3 using batched entries
-   4. Integrate in Merkle tree and write tiles to S3
-   5. Update checkpoint in S3
-   6. Delete consumed batches from `Seq`
-   7. Update `IntCoord` with `seq+=num_entries_integrated` and the latest `rootHash`
-4. Checkpoints representing the latest state of the tree are published at the configured interval.
+   1. Select one or more consecutive batches from `Seq` for update, starting at `IntCoord.seq`
+   1. Write leaf bundles to S3 using batched entries
+   1. Integrate in Merkle tree and write tiles to S3
+   1. Update checkpoint in S3
+   1. Delete consumed batches from `Seq`
+   1. Update `IntCoord` with `seq+=num_entries_integrated` and the latest `rootHash`
+1. Checkpoints representing the latest state of the tree are published at the configured interval.
 
 ## Dedup
 
