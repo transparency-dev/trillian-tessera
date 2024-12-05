@@ -165,15 +165,15 @@ func configureTilesReadAPI(mux *http.ServeMux, storage *mysql.Storage) {
 			}
 			return
 		}
-		impliedSize := (index*256 + width) << (level * 8)
-		tile, err := storage.ReadTile(r.Context(), level, index, impliedSize)
+		inferredMinTreeSize := (index*256 + width) << (level * 8)
+		tile, err := storage.ReadTile(r.Context(), level, index, inferredMinTreeSize)
 		if err != nil {
+			if os.IsNotExist(err) {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
 			klog.Errorf("/tile/{level}/{index...}: %v", err)
 			w.WriteHeader(http.StatusInternalServerError)
-			return
-		}
-		if tile == nil {
-			w.WriteHeader(http.StatusNotFound)
 			return
 		}
 

@@ -21,6 +21,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -121,7 +122,7 @@ func (s *Storage) maybeInitTree(ctx context.Context) error {
 	}()
 
 	treeState, err := s.readTreeState(ctx, tx)
-	if err != nil {
+	if err != nil && !os.IsNotExist(err) {
 		klog.Errorf("Failed to read tree state: %v", err)
 		return err
 	}
@@ -153,7 +154,7 @@ func (s *Storage) ReadCheckpoint(ctx context.Context) ([]byte, error) {
 	var at int64
 	if err := row.Scan(&checkpoint, &at); err != nil {
 		if err == sql.ErrNoRows {
-			return nil, nil
+			return nil, os.ErrNotExist
 		}
 		return nil, fmt.Errorf("scan checkpoint: %v", err)
 	}
@@ -217,7 +218,7 @@ func (s *Storage) readTreeState(ctx context.Context, tx *sql.Tx) (*treeState, er
 	r := &treeState{}
 	if err := row.Scan(&r.size, &r.root); err != nil {
 		if err == sql.ErrNoRows {
-			return nil, nil
+			return nil, os.ErrNotExist
 		}
 		return nil, fmt.Errorf("scan tree state: %v", err)
 	}
@@ -234,8 +235,8 @@ func (s *Storage) writeTreeState(ctx context.Context, tx *sql.Tx, size uint64, r
 	return nil
 }
 
-// ReadTile returns a full tile or a partial tile at the given level, index and width.
-// If the tile is not found, nil is returned with no error.
+// ReadTile returns a full tile or a partial tile at the given level, index and treeSize.
+// If the tile is not found, it returns os.ErrNotExist.
 //
 // TODO: Handle the following scenarios:
 // 1. Full tile request with full tile output: Return full tile.
@@ -243,7 +244,7 @@ func (s *Storage) writeTreeState(ctx context.Context, tx *sql.Tx, size uint64, r
 // 3. Partial tile request with full/larger partial tile output: Return trimmed partial tile with correct tile width.
 // 4. Partial tile request with partial tile (same width) output: Return partial tile.
 // 5. Partial tile request with smaller partial tile output: Return error.
-func (s *Storage) ReadTile(ctx context.Context, level, index, width uint64) ([]byte, error) {
+func (s *Storage) ReadTile(ctx context.Context, level, index, minTreeSize uint64) ([]byte, error) {
 	row := s.db.QueryRowContext(ctx, selectSubtreeByLevelAndIndexSQL, level, index)
 	if err := row.Err(); err != nil {
 		return nil, err
@@ -252,18 +253,35 @@ func (s *Storage) ReadTile(ctx context.Context, level, index, width uint64) ([]b
 	var tile []byte
 	if err := row.Scan(&tile); err != nil {
 		if err == sql.ErrNoRows {
-			return nil, nil
+			return nil, os.ErrNotExist
 		}
 
 		return nil, fmt.Errorf("scan tile: %v", err)
 	}
 
-	// Return nil when returning a partial tile on a full tile request.
-	if width == 256 && uint64(len(tile)/32) != width {
-		return nil, nil
+	minSize := partialTileSize(level, index, minTreeSize)
+	if minSize == 0 {
+		minSize = 256
+	}
+	numEntries := uint64(len(tile) / 32)
+
+	if minSize > numEntries {
+		// If the user has requested a size larger than we have, they can't have it
+		return nil, os.ErrNotExist
 	}
 
 	return tile, nil
+}
+
+// partialTileSize returns the expected number of leaves in a tile at the given location within
+// a tree of the specified logSize, or 0 if the tile is expected to be fully populated.
+func partialTileSize(level, index, logSize uint64) uint64 {
+	sizeAtLevel := logSize >> (level * 8)
+	fullTiles := sizeAtLevel / 256
+	if index < fullTiles {
+		return 0
+	}
+	return sizeAtLevel % 256
 }
 
 // writeTile replaces the tile nodes at the given level and index.
@@ -277,7 +295,7 @@ func (s *Storage) writeTile(ctx context.Context, tx *sql.Tx, level, index uint64
 }
 
 // ReadEntryBundle returns the log entries at the given index.
-// If the entry bundle is not found, nil is returned with no error.
+// If the entry bundle is not found, it returns os.ErrNotExist.
 //
 // TODO: Handle the following scenarios:
 // 1. Full tile request with full tile output: Return full tile.
@@ -294,9 +312,8 @@ func (s *Storage) ReadEntryBundle(ctx context.Context, index, treeSize uint64) (
 	var entryBundle []byte
 	if err := row.Scan(&entryBundle); err != nil {
 		if err == sql.ErrNoRows {
-			return nil, nil
+			return nil, os.ErrNotExist
 		}
-
 		return nil, fmt.Errorf("scan entry bundle: %v", err)
 	}
 

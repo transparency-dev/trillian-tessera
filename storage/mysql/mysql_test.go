@@ -24,6 +24,7 @@ import (
 	"context"
 	"database/sql"
 	"flag"
+	"fmt"
 	"os"
 	"testing"
 	"time"
@@ -48,8 +49,8 @@ var (
 )
 
 const (
-	// Matching public key: "transparency.dev/tessera/example+ae330e15+ASf4/L1zE859VqlfQgGzKy34l91Gl8W6wfwp+vKP62DW"
 	testPrivateKey = "PRIVATE+KEY+transparency.dev/tessera/example+ae330e15+AXEwZQ2L6Ga3NX70ITObzyfEIketMr2o9Kc+ed/rt/QR"
+	testPublicKey  = "transparency.dev/tessera/example+ae330e15+ASf4/L1zE859VqlfQgGzKy34l91Gl8W6wfwp+vKP62DW"
 )
 
 // TestMain checks whether the test MySQL database is available and starts the tests including database schema initialization.
@@ -163,6 +164,93 @@ func TestNew(t *testing.T) {
 	}
 }
 
+func TestGetTile(t *testing.T) {
+	ctx := context.Background()
+	s := newTestMySQLStorage(t, ctx)
+
+	awaiter := tessera.NewIntegrationAwaiter(ctx, s.ReadCheckpoint, 10*time.Millisecond)
+
+	treeSize := 258
+	var lastIndex uint64
+	for i := range treeSize {
+		idx, _, err := awaiter.Await(ctx, s.Add(ctx, tessera.NewEntry([]byte(fmt.Sprintf("TestGetTile %d", i)))))
+		if err != nil {
+			t.Fatalf("Failed to prep test with entry: %v", err)
+		}
+		if idx > lastIndex {
+			lastIndex = idx
+		}
+	}
+	if got, want := lastIndex, uint64(treeSize-1); got != want {
+		t.Fatalf("expected only newly created entries in database; tests are not hermetic (got %d, want %d)", got, want)
+	}
+
+	for _, test := range []struct {
+		name                   string
+		level, index, treeSize uint64
+		wantEntries            int
+		wantNotFound           bool
+	}{
+		{
+			name:  "really too small but that's ok",
+			level: 0, index: 0, treeSize: 10,
+			wantEntries:  256,
+			wantNotFound: false,
+		},
+		{
+			name:  "too small but that's ok",
+			level: 0, index: 1, treeSize: uint64(treeSize) - 1,
+			wantEntries:  2,
+			wantNotFound: false,
+		},
+		{
+			name:  "just right",
+			level: 0, index: 1, treeSize: uint64(treeSize),
+			wantEntries:  2,
+			wantNotFound: false,
+		},
+		{
+			name:  "too big",
+			level: 0, index: 1, treeSize: uint64(treeSize + 1),
+			wantNotFound: true,
+		},
+		{
+			name:  "level 1 too small",
+			level: 1, index: 0, treeSize: uint64(treeSize - 1),
+			wantEntries:  1,
+			wantNotFound: false,
+		},
+		{
+			name:  "level 1 just right",
+			level: 1, index: 0, treeSize: uint64(treeSize),
+			wantEntries:  1,
+			wantNotFound: false,
+		},
+		{
+			name:  "level 1 too big",
+			level: 1, index: 0, treeSize: 550,
+			wantNotFound: true,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			tile, err := s.ReadTile(ctx, test.level, test.index, test.treeSize)
+			if err != nil {
+				if notFound, wantNotFound := os.IsNotExist(err), test.wantNotFound; notFound != wantNotFound {
+					t.Errorf("wantNotFound %v but notFound %v", wantNotFound, notFound)
+				}
+				if test.wantNotFound {
+					return
+				}
+				t.Errorf("got err: %v", err)
+			}
+			numEntries := len(tile) / 32
+			if got, want := numEntries, test.wantEntries; got != want {
+				t.Errorf("got %d entries, but want %d", got, want)
+			}
+		})
+	}
+}
+
 func TestReadMissingTile(t *testing.T) {
 	ctx := context.Background()
 	s := newTestMySQLStorage(t, ctx)
@@ -183,6 +271,10 @@ func TestReadMissingTile(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			tile, err := s.ReadTile(ctx, test.level, test.index, test.width)
 			if err != nil {
+				if os.IsNotExist(err) {
+					// this is success for this test
+					return
+				}
 				t.Errorf("got err: %v", err)
 			}
 			if tile != nil {
@@ -212,6 +304,10 @@ func TestReadMissingEntryBundle(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			entryBundle, err := s.ReadEntryBundle(ctx, test.index, test.index)
 			if err != nil {
+				if os.IsNotExist(err) {
+					// this is success for this test
+					return
+				}
 				t.Errorf("got err: %v", err)
 			}
 			if entryBundle != nil {
@@ -286,7 +382,7 @@ func TestTileRoundTrip(t *testing.T) {
 			}
 
 			tileLevel, tileIndex, _, nodeIndex := layout.NodeCoordsToTileAddress(0, entryIndex)
-			tileRaw, err := s.ReadTile(ctx, tileLevel, tileIndex, nodeIndex)
+			tileRaw, err := s.ReadTile(ctx, tileLevel, tileIndex, nodeIndex+1)
 			if err != nil {
 				t.Errorf("ReadTile got err: %v", err)
 			}
@@ -358,8 +454,12 @@ func TestEntryBundleRoundTrip(t *testing.T) {
 
 func newTestMySQLStorage(t *testing.T, ctx context.Context) *mysql.Storage {
 	t.Helper()
+	initDatabaseSchema(ctx)
 
-	s, err := mysql.New(ctx, testDB, tessera.WithCheckpointSigner(noteSigner))
+	s, err := mysql.New(ctx, testDB,
+		tessera.WithCheckpointSigner(noteSigner),
+		tessera.WithCheckpointInterval(200*time.Millisecond),
+		tessera.WithBatching(128, 100*time.Millisecond))
 	if err != nil {
 		t.Errorf("Failed to create mysql.Storage: %v", err)
 	}
