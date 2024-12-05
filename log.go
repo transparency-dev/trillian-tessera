@@ -26,6 +26,15 @@ import (
 	"k8s.io/klog/v2"
 )
 
+const (
+	// DefaultBatchMaxSize is used by storage implementations if no WithBatching option is provided when instantiating it.
+	DefaultBatchMaxSize = 256
+	// DefaultBatchMaxAge is used by storage implementations if no WithBatching option is provided when instantiating it.
+	DefaultBatchMaxAge = 250 * time.Millisecond
+	// DefaultCheckpointInterval is used by storage implementations if no WithCheckpointInterval option is provided when instantiating it.
+	DefaultCheckpointInterval = 10 * time.Second
+)
+
 // ErrPushback is returned by underlying storage implementations when there are too many
 // entries with indices assigned but which have not yet been integrated into the tree.
 //
@@ -95,6 +104,8 @@ func WithCheckpointSigner(s note.Signer, additionalSigners ...note.Signer) func(
 // balance of sequencing latency with cost. In general, larger batches allow for
 // lower cost of operation, where more frequent batches reduce the amount of time
 // required for entries to be included in the log.
+//
+// If this option isn't provided, storage implementations with use the DefaultBatchMaxSize and DefaultBatchMaxAge consts above.
 func WithBatching(maxSize uint, maxAge time.Duration) func(*options.StorageOptions) {
 	return func(o *options.StorageOptions) {
 		o.BatchMaxSize = maxSize
@@ -124,6 +135,8 @@ func WithPushback(maxOutstanding uint) func(*options.StorageOptions) {
 //     view of the log refreshed, which in turn helps reduce work/load across the ecosystem.
 //
 // Note that this option probably only makes sense for long-lived applications (e.g. HTTP servers).
+//
+// If this option isn't provided, storage implementations will use the DefaultCheckpointInterval const above.
 func WithCheckpointInterval(interval time.Duration) func(*options.StorageOptions) {
 	return func(o *options.StorageOptions) {
 		o.CheckpointInterval = interval

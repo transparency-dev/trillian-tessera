@@ -15,25 +15,18 @@
 package storage
 
 import (
-	"time"
-
+	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
 	"github.com/transparency-dev/trillian-tessera/internal/options"
-)
-
-const (
-	DefaultBatchMaxSize       = 256
-	DefaultBatchMaxAge        = 250 * time.Millisecond
-	DefaultCheckpointInterval = 10 * time.Second
 )
 
 // ResolveStorageOptions turns a variadic array of storage options into a StorageOptions instance.
 func ResolveStorageOptions(opts ...func(*options.StorageOptions)) *options.StorageOptions {
 	defaults := &options.StorageOptions{
-		BatchMaxSize:       DefaultBatchMaxSize,
-		BatchMaxAge:        DefaultBatchMaxAge,
+		BatchMaxSize:       tessera.DefaultBatchMaxSize,
+		BatchMaxAge:        tessera.DefaultBatchMaxAge,
 		EntriesPath:        layout.EntriesPath,
-		CheckpointInterval: DefaultCheckpointInterval,
+		CheckpointInterval: tessera.DefaultCheckpointInterval,
 	}
 	for _, opt := range opts {
 		opt(defaults)
