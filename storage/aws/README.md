@@ -69,12 +69,12 @@ operational overhead, code complexity, and so was selected.
 
 The alpha implementation was tested with entries of size 1KB each, at a write
 rate of 1500/s. This was done using the smallest possible Aurora instance
-availalbe, `db.r5.large`, running `8.0.mysql_aurora.3.05.2`.
+available, `db.r5.large`, running `8.0.mysql_aurora.3.05.2`.
 
 Aurora (Serverless v2) worked out well, but seems less cost effective than
-provisionned Aurora for sustained traffic. For now, we decided not to explore this option further.
+provisioned Aurora for sustained traffic. For now, we decided not to explore this option further.
 
-RDS (MySQL) worked out well, but requires more admistrative overhead than
+RDS (MySQL) worked out well, but requires more administrative overhead than
 Aurora. For now, we decided not to explore this option further. 
 
 DynamoDB worked out to be less cost efficient than Aurora and RDS. It also has
