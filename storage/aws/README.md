@@ -29,34 +29,28 @@ A table with a single row which is used to keep track of the next assignable seq
 This holds batches of entries keyed by the sequence number assigned to the first entry in the batch.
 
 ### `IntCoord`
-TODO: add the new checkpoint updater logic, and update the docstring in aws.go.
-
-This table is used to coordinate integration of sequenced batches in the `Seq` table.
+This table is used to coordinate integration of sequenced batches in the `Seq` table, and keep track of the current tree state.
 
 ## Life of a leaf
 
-TODO: add the new checkpoint updater logic.
-
 1. Leaves are submitted by the binary built using Tessera via a call the storage's `Add` func.
-2. [Not implemented yet - Dupe squashing: look for existing `<identity_hash>` object, read assigned sequence number if present and return.]
-3. The storage library batches these entries up, and, after a configurable period of time has elapsed
+1. The storage library batches these entries up, and, after a configurable period of time has elapsed
    or the batch reaches a configurable size threshold, the batch is written to the `Seq` table which effectively
    assigns a sequence numbers to the entries using the following algorithm:
    In a transaction:
    1. selects next from `SeqCoord` with for update ← this blocks other FE from writing their pools, but only for a short duration.
-   2. Inserts batch of entries into `Seq` with key `SeqCoord.next`
-   3. Update `SeqCoord` with `next+=len(batch)`
-4. Integrators periodically integrate new sequenced entries into the tree:
+   1. Inserts batch of entries into `Seq` with key `SeqCoord.next`
+   1. Update `SeqCoord` with `next+=len(batch)`
+1. Integrators periodically integrate new sequenced entries into the tree:
    In a transaction:
    1. select `seq` from `IntCoord` with for update ← this blocks other integrators from proceeding.
-   2. Select one or more consecutive batches from `Seq` for update, starting at `IntCoord.seq`
-   3. Write leaf bundles to S3 using batched entries
-   4. Integrate in Merkle tree and write tiles to S3
-   5. Update checkpoint in S3
-   6. Delete consumed batches from `Seq`
-   7. Update `IntCoord` with `seq+=num_entries_integrated`
-   8. [Not implemented yet - Dupe detection:
-      1. Writes out `<identity_hash>` containing the leaf's sequence number]
+   1. Select one or more consecutive batches from `Seq` for update, starting at `IntCoord.seq`
+   1. Write leaf bundles to S3 using batched entries
+   1. Integrate in Merkle tree and write tiles to S3
+   1. Update checkpoint in S3
+   1. Delete consumed batches from `Seq`
+   1. Update `IntCoord` with `seq+=num_entries_integrated` and the latest `rootHash`
+1. Checkpoints representing the latest state of the tree are published at the configured interval.
 
 ## Dedup
 
@@ -75,12 +69,12 @@ operational overhead, code complexity, and so was selected.
 
 The alpha implementation was tested with entries of size 1KB each, at a write
 rate of 1500/s. This was done using the smallest possible Aurora instance
-availalbe, `db.r5.large`, running `8.0.mysql_aurora.3.05.2`.
+available, `db.r5.large`, running `8.0.mysql_aurora.3.05.2`.
 
 Aurora (Serverless v2) worked out well, but seems less cost effective than
-provisionned Aurora for sustained traffic. For now, we decided not to explore this option further.
+provisioned Aurora for sustained traffic. For now, we decided not to explore this option further.
 
-RDS (MySQL) worked out well, but requires more admistrative overhead than
+RDS (MySQL) worked out well, but requires more administrative overhead than
 Aurora. For now, we decided not to explore this option further. 
 
 DynamoDB worked out to be less cost efficient than Aurora and RDS. It also has
