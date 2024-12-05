@@ -55,7 +55,7 @@ Sequence pool:
 Sequence & integrate (DB integration starts here):
 
 1. Takes a batch of entries to sequence and integrate
-1. Starts a transaction, which first takes a write lock on the `TreeState`` row to ensure that:
+1. Starts a transaction, which first takes a write lock on the `TreeState` row to ensure that:
    1. No other processes will be competing with this work.
    1. That the next index to sequence is known (this is the same as the current tree size)
 1. Update the required TiledLeaves rows
