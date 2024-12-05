@@ -1,12 +1,12 @@
-# GCP Design
+# AWS Design
 
-This document describes how the storage implementation for running Tessera on Google Cloud
+This document describes how the storage implementation for running Tessera on Amazon Web Services
 is intended to work.
 
 ## Overview
 
-This design takes advantage of GCS for long term storage and low cost & complexity serving of read traffic, 
-but leverages something more transactional for coordinating the cluster.
+This design takes advantage of S3 for long term storage and low cost & complexity serving of read traffic,
+but leverages something more transactional for coordinating writes.
 
 New entries flow in from the binary built with Tessera into transactional storage, where they're held
 temporarily to batch them up, and then assigned sequence numbers as each batch is flushed.
@@ -20,53 +20,93 @@ noting that all tree derivations are therefore idempotent.
 
 ## Transactional storage
 
-The transactional storage is implemented with Cloud Spanner, and uses a schema with 3 tables:
+The transactional storage is implemented with Aurora MySQL, and uses a schema with 3 tables:
 
 ### `SeqCoord`
 A table with a single row which is used to keep track of the next assignable sequence number.
 
+<ins>Schema:</ins>
+```
+id INT UNSIGNED NOT NULL,
+next BIGINT UNSIGNED NOT NULL,
+PRIMARY KEY (id)
+```
+
 ### `Seq`
 This holds batches of entries keyed by the sequence number assigned to the first entry in the batch.
 
+<ins>Schema:</ins>
+```
+id INT UNSIGNED NOT NULL,
+seq BIGINT UNSIGNED NOT NULL,
+v LONGBLOB,
+PRIMARY KEY (id, seq)
+```
+
 ### `IntCoord`
+TODO: add the new checkpoint updater logic, and update the docstring in aws.go.
+
 This table is used to coordinate integration of sequenced batches in the `Seq` table.
+
+<ins>Schema:</ins>
+```
+id INT UNSIGNED NOT NULL,
+seq BIGINT UNSIGNED NOT NULL,
+PRIMARY KEY (id)
+```
 
 ## Life of a leaf
 
+TODO: add the new checkpoint updater logic.
+
 1. Leaves are submitted by the binary built using Tessera via a call the storage's `Add` func.
-1. Dupe squashing (TODO): look for existing `<identity_hash>` object, read assigned sequence number if present and return.
-1. The storage library batches these entries up, and, after a configurable period of time has elapsed
+2. [Not implemented yet - Dupe squashing: look for existing `<identity_hash>` object, read assigned sequence number if present and return.]
+3. The storage library batches these entries up, and, after a configurable period of time has elapsed
    or the batch reaches a configurable size threshold, the batch is written to the `Seq` table which effectively
    assigns a sequence numbers to the entries using the following algorithm:
    In a transaction:
    1. selects next from `SeqCoord` with for update ← this blocks other FE from writing their pools, but only for a short duration.
-   1. Inserts batch of entries into `Seq` with key `SeqCoord.next`
-   1. Update `SeqCoord` with `next+=len(batch)`
-1. Integrators periodically integrate new sequenced entries into the tree:
+   2. Inserts batch of entries into `Seq` with key `SeqCoord.next`
+   3. Update `SeqCoord` with `next+=len(batch)`
+4. Integrators periodically integrate new sequenced entries into the tree:
    In a transaction:
    1. select `seq` from `IntCoord` with for update ← this blocks other integrators from proceeding.
-   1. Select one or more consecutive batches from `Seq` for update, starting at `IntCoord.seq`
-   1. Write leaf bundles to GCS using batched entries
-   1. Integrate in Merkle tree and write tiles to GCS
-   1. Update checkpoint in GCS
-   1. Delete consumed batches from `Seq`
-   1. Update `IntCoord` with `seq+=num_entries_integrated`
-   1. Dupe detection (TODO):
-      1. Writes out `<identity_hash>` containing the leaf's sequence number
+   2. Select one or more consecutive batches from `Seq` for update, starting at `IntCoord.seq`
+   3. Write leaf bundles to S3 using batched entries
+   4. Integrate in Merkle tree and write tiles to S3
+   5. Update checkpoint in S3
+   6. Delete consumed batches from `Seq`
+   7. Update `IntCoord` with `seq+=num_entries_integrated`
+   8. [Not implemented yet - Dupe detection:
+      1. Writes out `<identity_hash>` containing the leaf's sequence number]
 
 ## Dedup
 
-An experimental implementation has been tested which uses Spanner to store the `<identity_hash>` --> `sequence`
-mapping. This works well using "slack" Spanner CPU available in the smallest possible footprint, and consequently
-is comparably cheap requiring only extra Spanner storage costs.
+Two experimental implementations have been tested which uses either Aurora MySQL,
+or a local bbolt database to store the `<identity_hash>` --> `sequence` mapping.
+They work well, but call for further stress testing and cost analysis.
 
 ### Alternatives considered
 
-Other transactional storage systems are available on GCP, e.g. CloudSQL or AlloyDB.
-Experiments were run using CloudSQL (MySQL), AlloyDB, and Spanner.
+Other transactional storage systems are available on GCP, e.g. Redshift, RDS or
+DynamoDB. Experiments were run using Aurora (MySQL, Serverless v2), RDS (MySQL),
+and DynamoDB.
 
-Spanner worked out to be the cheapest while also removing much of the administrative overhead which 
-would come from even a managed MySQL instance, and so was selected.
+Aurora (MySQL) worked out to be a good compromise between cost, performance,
+operational overhead, code complexity, and so was selected.
 
-The experimental implementation was tested to around 1B entries of 1KB each at a write rate of 1500/s.
-This was done using the smallest possible Spanner alloc of 100 Processing Units.
+The alpha implementation was tested with entries of size 1KB each, at a write
+rate of 1500/s. This was done using the smallest possible Aurora instance
+availalbe, `db.r5.large`, running `8.0.mysql_aurora.3.05.2`.
+
+Aurora (Serverless v2) worked out well, but seems less cost effective than
+provisionned Aurora for sustained traffic. For now, we decided not to explore this option further.
+
+RDS (MySQL) worked out well, but requires more admistrative overhead than
+Aurora. For now, we decided not to explore this option further. 
+
+DynamoDB worked out to be less cost efficient than Aurora and RDS. It also has
+constraints that introduced a non trivial amount of complexity: max object size
+is 400KB,  max transaction size is {4MB OR 25 rows for write OR 100 rows for
+reads}, binary values must be base64 encoded, arrays of bytes are marshaled as
+sets by default (as of Dec. 2024). We decided not to explore this option further.
