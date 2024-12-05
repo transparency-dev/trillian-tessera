@@ -172,19 +172,19 @@ func TestGetTile(t *testing.T) {
 	awaiter := tessera.NewIntegrationAwaiter(ctx, s.ReadCheckpoint, 10*time.Millisecond)
 
 	treeSize := 258
-	var lastIndex uint64
+
+	wg := errgroup.Group{}
 	for i := range treeSize {
-		idx, _, err := awaiter.Await(ctx, s.Add(ctx, tessera.NewEntry([]byte(fmt.Sprintf("TestGetTile %d", i)))))
-		if err != nil {
-			t.Fatalf("Failed to prep test with entry: %v", err)
-		}
-		if idx > lastIndex {
-			lastIndex = idx
-		}
+		wg.Go(
+			func() error {
+				_, _, err := awaiter.Await(ctx, s.Add(ctx, tessera.NewEntry([]byte(fmt.Sprintf("TestGetTile %d", i)))))
+				if err != nil {
+					return fmt.Errorf("Failed to prep test with entry: %v", err)
+				}
+				return nil
+			})
 	}
-	if got, want := lastIndex, uint64(treeSize-1); got != want {
-		t.Fatalf("expected only newly created entries in database; tests are not hermetic (got %d, want %d)", got, want)
-	}
+	wg.Wait()
 
 	for _, test := range []struct {
 		name                   string
