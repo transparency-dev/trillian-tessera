@@ -37,6 +37,7 @@ var (
 	listen            = flag.String("listen", ":2024", "Address:port to listen on")
 	spanner           = flag.String("spanner", "", "Spanner resource URI ('projects/.../...')")
 	signer            = flag.String("signer", "", "Note signer to use to sign checkpoints")
+	persistentDedup   = flag.Bool("gcp_dedup", false, "EXPERIMENTAL: Set to true to enable persistent dedupe storage")
 	additionalSigners = []string{}
 )
 
@@ -65,7 +66,18 @@ func main() {
 	if err != nil {
 		klog.Exitf("Failed to create new GCP storage: %v", err)
 	}
-	dedupeAdd := tessera.InMemoryDedupe(storage.Add, 256)
+
+	// Handle dedup configuration
+	addDelegate := storage.Add
+
+	// PersistentDedup is currently experimental, so there's no terraform or documentation yet!
+	if *persistentDedup {
+		addDelegate, err = gcp.NewDedupe(ctx, fmt.Sprintf("%s_dedup", *spanner), addDelegate)
+		if err != nil {
+			klog.Exitf("Failed to create new GCP dedupe: %v", err)
+		}
+	}
+	dedupeAdd := tessera.InMemoryDedupe(addDelegate, 256)
 
 	// Expose a HTTP handler for the conformance test writes.
 	// This should accept arbitrary bytes POSTed to /add, and return an ascii
