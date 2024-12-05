@@ -179,12 +179,14 @@ func TestGetTile(t *testing.T) {
 			func() error {
 				_, _, err := awaiter.Await(ctx, s.Add(ctx, tessera.NewEntry([]byte(fmt.Sprintf("TestGetTile %d", i)))))
 				if err != nil {
-					return fmt.Errorf("Failed to prep test with entry: %v", err)
+					return fmt.Errorf("failed to prep test with entry: %v", err)
 				}
 				return nil
 			})
 	}
-	wg.Wait()
+	if err := wg.Wait(); err != nil {
+		t.Fatalf("Failed to set up database with required leaves: %v", err)
+	}
 
 	for _, test := range []struct {
 		name                   string
