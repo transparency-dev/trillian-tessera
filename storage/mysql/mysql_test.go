@@ -22,6 +22,7 @@ package mysql_test
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"flag"
 	"fmt"
@@ -192,7 +193,7 @@ func TestGetTile(t *testing.T) {
 		wantNotFound           bool
 	}{
 		{
-			name:  "really too small but that's ok",
+			name:  "requested partial tile for a complete tile",
 			level: 0, index: 0, treeSize: 10,
 			wantEntries:  256,
 			wantNotFound: false,
@@ -243,7 +244,7 @@ func TestGetTile(t *testing.T) {
 				}
 				t.Errorf("got err: %v", err)
 			}
-			numEntries := len(tile) / 32
+			numEntries := len(tile) / sha256.Size
 			if got, want := numEntries, test.wantEntries; got != want {
 				t.Errorf("got %d entries, but want %d", got, want)
 			}

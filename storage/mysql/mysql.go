@@ -18,6 +18,7 @@ package mysql
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -238,12 +239,9 @@ func (s *Storage) writeTreeState(ctx context.Context, tx *sql.Tx, size uint64, r
 // ReadTile returns a full tile or a partial tile at the given level, index and treeSize.
 // If the tile is not found, it returns os.ErrNotExist.
 //
-// TODO: Handle the following scenarios:
-// 1. Full tile request with full tile output: Return full tile.
-// 2. Full tile request with partial tile output: Return error.
-// 3. Partial tile request with full/larger partial tile output: Return trimmed partial tile with correct tile width.
-// 4. Partial tile request with partial tile (same width) output: Return partial tile.
-// 5. Partial tile request with smaller partial tile output: Return error.
+// Note that if a partial tile is requested, but a larger tile is available, this
+// will return the largest tile available. This could be trimmed to return only the
+// number of entries specifically requested if this behaviour becomes problematic.
 func (s *Storage) ReadTile(ctx context.Context, level, index, minTreeSize uint64) ([]byte, error) {
 	row := s.db.QueryRowContext(ctx, selectSubtreeByLevelAndIndexSQL, level, index)
 	if err := row.Err(); err != nil {
@@ -260,10 +258,7 @@ func (s *Storage) ReadTile(ctx context.Context, level, index, minTreeSize uint64
 	}
 
 	requestedWidth := partialTileSize(level, index, minTreeSize)
-	if requestedWidth == 0 {
-		requestedWidth = 256
-	}
-	numEntries := uint64(len(tile) / 32)
+	numEntries := uint64(len(tile) / sha256.Size)
 
 	if requestedWidth > numEntries {
 		// If the user has requested a size larger than we have, they can't have it
@@ -279,7 +274,7 @@ func partialTileSize(level, index, logSize uint64) uint64 {
 	sizeAtLevel := logSize >> (level * 8)
 	fullTiles := sizeAtLevel / 256
 	if index < fullTiles {
-		return 0
+		return 256
 	}
 	return sizeAtLevel % 256
 }
