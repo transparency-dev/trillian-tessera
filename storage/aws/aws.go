@@ -77,7 +77,7 @@ type Storage struct {
 
 	queue *storage.Queue
 
-	cpUpdated chan struct{}
+	treeUpdated chan struct{}
 }
 
 // objStore describes a type which can store and retrieve objects.
@@ -149,7 +149,7 @@ func New(ctx context.Context, cfg Config, opts ...func(*options.StorageOptions))
 		sequencer:   seq,
 		newCP:       opt.NewCP,
 		entriesPath: opt.EntriesPath,
-		cpUpdated:   make(chan struct{}),
+		treeUpdated: make(chan struct{}),
 	}
 	r.queue = storage.NewQueue(ctx, opt.BatchMaxAge, opt.BatchMaxSize, r.sequencer.assignEntries)
 
@@ -189,7 +189,7 @@ func (s *Storage) consumeEntriesTask(ctx context.Context) {
 				return
 			}
 			select {
-			case s.cpUpdated <- struct{}{}:
+			case s.treeUpdated <- struct{}{}:
 			default:
 			}
 		}()
@@ -207,7 +207,7 @@ func (s *Storage) publishCheckpointTask(ctx context.Context, interval time.Durat
 		select {
 		case <-ctx.Done():
 			return
-		case <-s.cpUpdated:
+		case <-s.treeUpdated:
 		case <-t.C:
 		}
 		if err := s.publishCheckpoint(ctx, interval); err != nil {
@@ -257,7 +257,7 @@ func (s *Storage) init(ctx context.Context) error {
 				return fmt.Errorf("forced integrate: %v", err)
 			}
 			select {
-			case s.cpUpdated <- struct{}{}:
+			case s.treeUpdated <- struct{}{}:
 			default:
 			}
 			return nil
