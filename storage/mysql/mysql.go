@@ -259,13 +259,13 @@ func (s *Storage) ReadTile(ctx context.Context, level, index, minTreeSize uint64
 		return nil, fmt.Errorf("scan tile: %v", err)
 	}
 
-	minSize := partialTileSize(level, index, minTreeSize)
-	if minSize == 0 {
-		minSize = 256
+	requestedWidth := partialTileSize(level, index, minTreeSize)
+	if requestedWidth == 0 {
+		requestedWidth = 256
 	}
 	numEntries := uint64(len(tile) / 32)
 
-	if minSize > numEntries {
+	if requestedWidth > numEntries {
 		// If the user has requested a size larger than we have, they can't have it
 		return nil, os.ErrNotExist
 	}
