@@ -43,6 +43,7 @@ var (
 	dbMaxConns        = flag.Int("db_max_conns", 0, "Maximum connections to the database, defaults to 0, i.e unlimited")
 	dbMaxIdle         = flag.Int("db_max_idle_conns", 2, "Maximum idle database connections in the connection pool, defaults to 2")
 	signer            = flag.String("signer", "", "Note signer to use to sign checkpoints")
+	publishInterval   = flag.Duration("publish_interval", 3*time.Second, "How frequently to publish updated checkpoints")
 	additionalSigners = []string{}
 )
 
@@ -64,6 +65,7 @@ func main() {
 	awsCfg := storageConfigFromFlags()
 	storage, err := aws.New(ctx, awsCfg,
 		tessera.WithCheckpointSigner(s, a...),
+		tessera.WithCheckpointInterval(*publishInterval),
 		tessera.WithBatching(1024, time.Second),
 		tessera.WithPushback(10*4096),
 	)

@@ -163,10 +163,11 @@ func New(ctx context.Context, cfg Config, opts ...func(*options.StorageOptions))
 
 				if _, err := r.sequencer.consumeEntries(cctx, DefaultIntegrationSizeLimit, r.integrate, false); err != nil {
 					klog.Errorf("integrate: %v", err)
-					select {
-					case r.cpUpdated <- struct{}{}:
-					default:
-					}
+					return
+				}
+				select {
+				case r.cpUpdated <- struct{}{}:
+				default:
 				}
 			}()
 		}
@@ -372,11 +373,7 @@ func (s *Storage) integrate(ctx context.Context, fromSeq uint64, entries []stora
 		if err != nil {
 			return fmt.Errorf("Integrate: %v", err)
 		}
-		if newSize > 0 {
-			newRoot = root
-		} else {
-			newRoot = rfc6962.DefaultHasher.EmptyRoot()
-		}
+		newRoot = root
 		for k, v := range tiles {
 			func(ctx context.Context, k storage.TileID, v *api.HashTile) {
 				errG.Go(func() error {

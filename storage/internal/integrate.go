@@ -111,6 +111,11 @@ func (t *treeBuilder) integrate(ctx context.Context, fromSize uint64, entries []
 	}
 	if len(entries) == 0 {
 		klog.V(1).Infof("Nothing to do.")
+		// C2SP.org/log-tiles says all Merkle operations are those from RFC6962, we need to override
+		// the root of the empty tree to match (compact.Range will return an empty slice).
+		if fromSize == 0 {
+			r = rfc6962.DefaultHasher.EmptyRoot()
+		}
 		// Nothing to do, nothing done.
 		return fromSize, r, nil, nil
 	}
