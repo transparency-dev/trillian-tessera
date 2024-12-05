@@ -116,7 +116,7 @@ func WithPushback(maxOutstanding uint) func(*options.StorageOptions) {
 // a new checkpoint.
 //
 // Well behaved clients of the log will only "see" newly sequenced entries once a new checkpoint is published,
-// so it's important to consider the value being set.
+// so it's important to set that value such that it works well with your ecosystem.
 //
 // Regularly publishing new checkpoints:
 //   - helps show that the log is "live", even if no entries are being added.
