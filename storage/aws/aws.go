@@ -121,6 +121,9 @@ type Config struct {
 }
 
 // New creates a new instance of the AWS based Storage.
+//
+// Storage instances created via this c'tor will participate in integrating newly sequenced entries into the log
+// and periodically publishing a new checkpoint which commits to the state of the tree.
 func New(ctx context.Context, cfg Config, opts ...func(*options.StorageOptions)) (*Storage, error) {
 	opt := storage.ResolveStorageOptions(opts...)
 	if opt.PushbackMaxOutstanding == 0 {
@@ -154,50 +157,63 @@ func New(ctx context.Context, cfg Config, opts ...func(*options.StorageOptions))
 		return nil, fmt.Errorf("failed to initialise log storage: %v", err)
 	}
 
-	go func() {
-		t := time.NewTicker(1 * time.Second)
-		defer t.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-t.C:
-			}
+	// Kick off go-routine which handles the integration of entries.
+	go r.consumeEntriesTask(ctx)
 
-			func() {
-				// Don't quickloop for now, it causes issues updating checkpoint too frequently.
-				cctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-				defer cancel()
-
-				if _, err := r.sequencer.consumeEntries(cctx, DefaultIntegrationSizeLimit, r.integrate, false); err != nil {
-					klog.Errorf("integrate: %v", err)
-					return
-				}
-				select {
-				case r.cpUpdated <- struct{}{}:
-				default:
-				}
-			}()
-		}
-	}()
-
-	go func(ctx context.Context, i time.Duration) {
-		t := time.NewTicker(i)
-		defer t.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-r.cpUpdated:
-			case <-t.C:
-			}
-			if err := r.publishCheckpoint(ctx, i); err != nil {
-				klog.Warningf("publishCheckpoint: %v", err)
-			}
-		}
-	}(ctx, opt.CheckpointInterval)
+	// Kick off go-routing which handles the publication of checkpoints.
+	go r.publishCheckpointTask(ctx, opt.CheckpointInterval)
 
 	return r, nil
+}
+
+// sequenceEntriesTask periodically integrates newly sequenced entries.
+//
+// This function does not return until the passed context is done.
+func (s *Storage) consumeEntriesTask(ctx context.Context) {
+	t := time.NewTicker(1 * time.Second)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+
+		func() {
+			// Don't quickloop for now, it causes issues updating checkpoint too frequently.
+			cctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+			defer cancel()
+
+			if _, err := s.sequencer.consumeEntries(cctx, DefaultIntegrationSizeLimit, s.integrate, false); err != nil {
+				klog.Errorf("integrate: %v", err)
+				return
+			}
+			select {
+			case s.cpUpdated <- struct{}{}:
+			default:
+			}
+		}()
+	}
+}
+
+// publishCheckpointTask periodically attempts to publish a new checkpoint representing the current state
+// of the tree, once per interval.
+//
+// This function does not return until the passed in context is done.
+func (s *Storage) publishCheckpointTask(ctx context.Context, interval time.Duration) {
+	t := time.NewTicker(interval)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-s.cpUpdated:
+		case <-t.C:
+		}
+		if err := s.publishCheckpoint(ctx, interval); err != nil {
+			klog.Warningf("publishCheckpoint: %v", err)
+		}
+	}
 }
 
 // Add is the entrypoint for adding entries to a sequencing log.
