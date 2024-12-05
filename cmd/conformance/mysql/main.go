@@ -165,15 +165,15 @@ func configureTilesReadAPI(mux *http.ServeMux, storage *mysql.Storage) {
 			}
 			return
 		}
-		impliedSize := (index*256 + width) << (level * 8)
-		tile, err := storage.ReadTile(r.Context(), level, index, impliedSize)
+		inferredMinTreeSize := (index*256 + width) << (level * 8)
+		tile, err := storage.ReadTile(r.Context(), level, index, inferredMinTreeSize)
 		if err != nil {
+			if os.IsNotExist(err) {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
 			klog.Errorf("/tile/{level}/{index...}: %v", err)
 			w.WriteHeader(http.StatusInternalServerError)
-			return
-		}
-		if tile == nil {
-			w.WriteHeader(http.StatusNotFound)
 			return
 		}
 
@@ -207,6 +207,9 @@ func configureTilesReadAPI(mux *http.ServeMux, storage *mysql.Storage) {
 		}
 
 		// TODO: Add immutable Cache-Control header.
+		// Only do this once we're sure we're returning the right number of entries
+		// Currently a user can request a full tile and we can return a partial tile.
+		// If cache headers were set then this could cause caches to be poisoned.
 
 		if _, err := w.Write(entryBundle); err != nil {
 			klog.Errorf("/tile/entries/{index...}: %v", err)
