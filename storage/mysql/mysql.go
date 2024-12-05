@@ -143,7 +143,7 @@ func (s *Storage) maybeInitTree(ctx context.Context) error {
 }
 
 // ReadCheckpoint returns the latest stored checkpoint.
-// If the checkpoint is not found, nil is returned with no error.
+// If the checkpoint is not found, it returns os.ErrNotExist.
 func (s *Storage) ReadCheckpoint(ctx context.Context) ([]byte, error) {
 	row := s.db.QueryRowContext(ctx, selectCheckpointByIDSQL, checkpointID)
 	if err := row.Err(); err != nil {
@@ -208,7 +208,7 @@ type treeState struct {
 }
 
 // readTreeState returns the currently stored tree state information.
-// If there is no stored tree state, nil is returned with no error.
+// If there is no stored tree state, it returns os.ErrNotExist.
 func (s *Storage) readTreeState(ctx context.Context, tx *sql.Tx) (*treeState, error) {
 	row := tx.QueryRowContext(ctx, selectTreeStateByIDForUpdateSQL, treeStateID)
 	if err := row.Err(); err != nil {
