@@ -34,7 +34,6 @@ This table is used to coordinate integration of sequenced batches in the `Seq` t
 ## Life of a leaf
 
 1. Leaves are submitted by the binary built using Tessera via a call the storage's `Add` func.
-1. Dupe squashing (TODO): look for existing `<identity_hash>` object, read assigned sequence number if present and return.
 1. The storage library batches these entries up, and, after a configurable period of time has elapsed
    or the batch reaches a configurable size threshold, the batch is written to the `Seq` table which effectively
    assigns a sequence numbers to the entries using the following algorithm:
@@ -48,11 +47,9 @@ This table is used to coordinate integration of sequenced batches in the `Seq` t
    1. Select one or more consecutive batches from `Seq` for update, starting at `IntCoord.seq`
    1. Write leaf bundles to GCS using batched entries
    1. Integrate in Merkle tree and write tiles to GCS
-   1. Update checkpoint in GCS
    1. Delete consumed batches from `Seq`
-   1. Update `IntCoord` with `seq+=num_entries_integrated`
-   1. Dupe detection (TODO):
-      1. Writes out `<identity_hash>` containing the leaf's sequence number
+   1. Update `IntCoord` with `seq+=num_entries_integrated` and the latest `rootHash`
+1. Checkpoints representing the latest state of the tree are published at the configured interval.
 
 ## Dedup
 

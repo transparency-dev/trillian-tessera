@@ -17,7 +17,11 @@ The DB layout has been designed such that serving any read request is a point lo
 
 #### `Checkpoint`
 
-A single row that records the current state of the log. Updated after every sequence + integration.
+A single row that records the current published checkpoint.
+
+#### `TreeState`
+
+A single row that records the current state of the tree. Updated after every integration.
 
 #### `Subtree`
 
@@ -51,12 +55,13 @@ Sequence pool:
 Sequence & integrate (DB integration starts here):
 
 1. Takes a batch of entries to sequence and integrate
-1. Starts a transaction, which first takes a write lock on the checkpoint row to ensure that:
+1. Starts a transaction, which first takes a write lock on the `TreeState`` row to ensure that:
    1. No other processes will be competing with this work.
-   1. That the next index to sequence is known (this is the same as the current checkpoint size)
+   1. That the next index to sequence is known (this is the same as the current tree size)
 1. Update the required TiledLeaves rows
-1. Perform an integration operation to update the Merkle tree, updating/adding Subtree rows as needed, and eventually updating the Checkpoint row
+1. Perform an integration operation to update the Merkle tree, updating/adding Subtree rows as needed, and eventually updating the `TreeState` row
 1. Commit the transaction
+1. Checkpoints representing the latest state of the tree are published at the configured interval.
 
 ## Costs
 
