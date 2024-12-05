@@ -404,7 +404,8 @@ func (s *Storage) integrate(ctx context.Context, fromSeq uint64, entries []stora
 		return nil
 	})
 
-	return newRoot, errG.Wait()
+	err := errG.Wait()
+	return newRoot, err
 }
 
 // updateEntryBundles adds the entries being integrated into the entry bundles.
