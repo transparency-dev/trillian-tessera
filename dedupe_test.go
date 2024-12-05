@@ -16,6 +16,7 @@ package tessera_test
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"sync"
 	"testing"
@@ -92,7 +93,7 @@ func BenchmarkDedupe(b *testing.B) {
 		for leafIndex := range 1024 {
 			wg.Add(1)
 			go func(index int) {
-				_, err := dedupeAdd(ctx, tessera.NewEntry([]byte(fmt.Sprintf("leaf with value %d", index%32))))()
+				_, err := dedupeAdd(ctx, tessera.NewEntry([]byte(fmt.Sprintf("leaf with value %d", index%sha256.Size))))()
 				if err != nil {
 					b.Error(err)
 				}

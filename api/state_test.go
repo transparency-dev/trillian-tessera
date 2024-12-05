@@ -18,6 +18,7 @@ package api_test
 import (
 	"bytes"
 	"crypto/rand"
+	"crypto/sha256"
 	"fmt"
 	"testing"
 
@@ -44,7 +45,7 @@ func TestHashTile_MarshalTileRoundtrip(t *testing.T) {
 			tile := api.HashTile{Nodes: make([][]byte, 0, test.size)}
 			for i := 0; i < test.size; i++ {
 				// Fill in the leaf index
-				tile.Nodes = append(tile.Nodes, make([]byte, 32))
+				tile.Nodes = append(tile.Nodes, make([]byte, sha256.Size))
 				if _, err := rand.Read(tile.Nodes[i]); err != nil {
 					t.Error(err)
 				}
