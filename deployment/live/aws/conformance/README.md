@@ -3,7 +3,7 @@
 This config uses the [aws/conformance](/deployment/modules/aws/conformance)
 module to define a conformance testing environment, actuated by the [AWS
 Conformance
-Test](https://github.com/transparency-dev/trillian-tessera/blob/main/.github/workflows/aws_integration_test.yml)
+Test](/.github/workflows/aws_integration_test.yml)
 GitHub action. At a high level, this environment consists of:
  - Aurora MySQL database
  - S3 Bucket
