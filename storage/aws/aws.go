@@ -391,11 +391,7 @@ func (s *Storage) integrate(ctx context.Context, fromSeq uint64, entries []stora
 		if err != nil {
 			return fmt.Errorf("Integrate: %v", err)
 		}
-		if newSize > 0 {
-			newRoot = root
-		} else {
-			newRoot = rfc6962.DefaultHasher.EmptyRoot()
-		}
+		newRoot = root
 		for k, v := range tiles {
 			func(ctx context.Context, k storage.TileID, v *api.HashTile) {
 				errG.Go(func() error {
