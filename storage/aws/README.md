@@ -25,35 +25,13 @@ The transactional storage is implemented with Aurora MySQL, and uses a schema wi
 ### `SeqCoord`
 A table with a single row which is used to keep track of the next assignable sequence number.
 
-<ins>Schema:</ins>
-```
-id INT UNSIGNED NOT NULL,
-next BIGINT UNSIGNED NOT NULL,
-PRIMARY KEY (id)
-```
-
 ### `Seq`
 This holds batches of entries keyed by the sequence number assigned to the first entry in the batch.
-
-<ins>Schema:</ins>
-```
-id INT UNSIGNED NOT NULL,
-seq BIGINT UNSIGNED NOT NULL,
-v LONGBLOB,
-PRIMARY KEY (id, seq)
-```
 
 ### `IntCoord`
 TODO: add the new checkpoint updater logic, and update the docstring in aws.go.
 
 This table is used to coordinate integration of sequenced batches in the `Seq` table.
-
-<ins>Schema:</ins>
-```
-id INT UNSIGNED NOT NULL,
-seq BIGINT UNSIGNED NOT NULL,
-PRIMARY KEY (id)
-```
 
 ## Life of a leaf
 
@@ -88,7 +66,7 @@ They work well, but call for further stress testing and cost analysis.
 
 ### Alternatives considered
 
-Other transactional storage systems are available on GCP, e.g. Redshift, RDS or
+Other transactional storage systems are available on AWS, e.g. Redshift, RDS or
 DynamoDB. Experiments were run using Aurora (MySQL, Serverless v2), RDS (MySQL),
 and DynamoDB.
 
