@@ -36,7 +36,7 @@ import (
 // InMemoryDedupe. This allows recent duplicates to be deduplicated in memory, reducing the need to
 // make calls to a persistent storage.
 func InMemoryDedupe(delegate func(ctx context.Context, e *Entry) IndexFuture, size uint) func(context.Context, *Entry) IndexFuture {
-	c, err := lru.New[string, IndexFuture](int(size))
+	c, err := lru.New[string, func() IndexFuture](int(size))
 	if err != nil {
 		panic(fmt.Errorf("lru.New(%d): %v", size, err))
 	}
@@ -49,7 +49,7 @@ func InMemoryDedupe(delegate func(ctx context.Context, e *Entry) IndexFuture, si
 
 type inMemoryDedupe struct {
 	delegate func(ctx context.Context, e *Entry) IndexFuture
-	cache    *lru.Cache[string, IndexFuture]
+	cache    *lru.Cache[string, func() IndexFuture]
 }
 
 // Add adds the entry to the underlying delegate only if e hasn't been recently seen. In either case,
@@ -59,8 +59,8 @@ func (d *inMemoryDedupe) add(ctx context.Context, e *Entry) IndexFuture {
 
 	// However many calls with the same entry come in and are deduped, we should only call delegate
 	// once for each unique entry:
-	f := sync.OnceValues(func() (uint64, error) {
-		return d.delegate(ctx, e)()
+	f := sync.OnceValue(func() IndexFuture {
+		return d.delegate(ctx, e)
 	})
 
 	// if we've seen this entry before, discard our f and replace
@@ -69,9 +69,5 @@ func (d *inMemoryDedupe) add(ctx context.Context, e *Entry) IndexFuture {
 		f = prev
 	}
 
-	// Someone MUST resolve the future or the entry will never actually get assigned a sequence number.
-	// We may as well do it here for now to avoid anyone getting confused if they forget to do so in the
-	// personality.
-	_, _ = f()
-	return f
+	return f()
 }
