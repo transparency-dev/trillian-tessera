@@ -77,17 +77,18 @@ All index numbers are contiguous and start from 0.
 
 ### Integration
 
-Integration is a background process that happens when a Tessera storage implementation has been created.
-This process takes sequenced entries and merges them into the log.
-Once this process has been completed, a new entry will:
- - Be available via the read API at the index that was returned from sequencing
- - Have Merkle tree hashes that commit to this data being included in the tree
- - Be committed to by the latest Checkpoint (and any Checkpoints issued after this point)
+Integration is a background process that starts when a Tessera storage implementation is instantiated.
+This process takes sequenced entries and merges them into the log, by computing new Merkle tree hashes.
 
 > [!IMPORTANT]
 > There is currently no easy way to determine that integration has completed.
 > This isn't an issue if the personality process is continually running.
 > For personalities that require periods of downtime, [#341](https://github.com/transparency-dev/trillian-tessera/issues/341) tracks adding an API to allow for clean shutdown.
+
+### Checkpoint publishing
+
+Checkpoint publishing is a background process that starts when a Tessera storage implementation is instantiated. On a clock, a process will publish a Checkpoint, committing the log to the most recent
+complete integration, and the entries it processed. Entries with an index smaller than the Checkpoint size can then be accessed via the read API.
 
 ## Usage
 
