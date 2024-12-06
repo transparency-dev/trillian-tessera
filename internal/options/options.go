@@ -27,7 +27,7 @@ type NewCPFunc func(size uint64, hash []byte) ([]byte, error)
 type ParseCPFunc func(raw []byte) (*f_log.Checkpoint, error)
 
 // EntriesPathFunc is the signature of a function which knows how to format entry bundle paths.
-type EntriesPathFunc func(n, logSize uint64) string
+type EntriesPathFunc func(n uint64, p uint8) string
 
 // StorageOptions holds optional settings for all storage implementations.
 type StorageOptions struct {
