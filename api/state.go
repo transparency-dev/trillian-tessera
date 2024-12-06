@@ -22,6 +22,8 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
+
+	"github.com/transparency-dev/trillian-tessera/api/layout"
 )
 
 // HashTile represents a tile within the Merkle hash tree.
@@ -71,7 +73,7 @@ type EntryBundle struct {
 // UnmarshalText implements encoding/TextUnmarshaler and reads EntryBundles
 // which are encoded using the tlog-tiles spec.
 func (t *EntryBundle) UnmarshalText(raw []byte) error {
-	nodes := make([][]byte, 0, 256)
+	nodes := make([][]byte, 0, layout.EntryBundleWidth)
 	for index := 0; index < len(raw); {
 		dataIndex := index + 2
 		if dataIndex > len(raw) {

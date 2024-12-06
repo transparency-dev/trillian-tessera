@@ -37,13 +37,13 @@ const (
 // The logSize is required so that a partial qualifier can be appended to tiles that
 // would contain fewer than 256 entries.
 func EntriesPathForLogIndex(seq, logSize uint64) string {
-	return EntriesPath(seq/256, logSize)
+	return EntriesPath(seq/EntryBundleWidth, PartialTileSize(0, seq, logSize))
 }
 
-// NWithSuffix returns a tiles-spec "N" path, with a partial suffix if applicable.
-func NWithSuffix(l, n, logSize uint64) string {
+// NWithSuffix returns a tiles-spec "N" path, with a partial suffix if p > 0.
+func NWithSuffix(l, n uint64, p uint8) string {
 	suffix := ""
-	if p := partialTileSize(l, n, logSize); p > 0 {
+	if p > 0 {
 		suffix = fmt.Sprintf(".p/%d", p)
 	}
 	return fmt.Sprintf("%s%s", fmtN(n), suffix)
@@ -51,13 +51,14 @@ func NWithSuffix(l, n, logSize uint64) string {
 
 // EntriesPath returns the local path for the nth entry bundle. p denotes the partial
 // tile size, or 0 if the tile is complete.
-func EntriesPath(n, logSize uint64) string {
-	return fmt.Sprintf("tile/entries/%s", NWithSuffix(0, n, logSize))
+func EntriesPath(n uint64, p uint8) string {
+	return fmt.Sprintf("tile/entries/%s", NWithSuffix(0, n, p))
 }
 
 // TilePath builds the path to the subtree tile with the given level and index in tile space.
-func TilePath(tileLevel, tileIndex, logSize uint64) string {
-	return fmt.Sprintf("tile/%d/%s", tileLevel, NWithSuffix(tileLevel, tileIndex, logSize))
+// If p > 0 the path represents a partial tile.
+func TilePath(tileLevel, tileIndex uint64, p uint8) string {
+	return fmt.Sprintf("tile/%d/%s", tileLevel, NWithSuffix(tileLevel, tileIndex, p))
 }
 
 // fmtN returns the "N" part of a Tiles-spec path.
@@ -83,13 +84,13 @@ func fmtN(N uint64) string {
 // Examples:
 // "/tile/0/x001/x234/067" means level 0 and index 1234067 of a full tile.
 // "/tile/0/x001/x234/067.p/8" means level 0, index 1234067 and width 8 of a partial tile.
-func ParseTileLevelIndexWidth(level, index string) (uint64, uint64, uint64, error) {
+func ParseTileLevelIndexPartial(level, index string) (uint64, uint64, uint8, error) {
 	l, err := ParseTileLevel(level)
 	if err != nil {
 		return 0, 0, 0, err
 	}
 
-	i, w, err := ParseTileIndexWidth(index)
+	i, w, err := ParseTileIndexPartial(index)
 	if err != nil {
 		return 0, 0, 0, err
 	}
@@ -107,17 +108,18 @@ func ParseTileLevel(level string) (uint64, error) {
 	return l, err
 }
 
-// ParseTileIndexWidth takes index in string, validates and returns the index and width in uint64.
-func ParseTileIndexWidth(index string) (uint64, uint64, error) {
-	w := uint64(256)
+// ParseTileIndexPartial takes index in string, validates and returns the index and width in uint64.
+func ParseTileIndexPartial(index string) (uint64, uint8, error) {
+	w := uint8(0)
 	indexPaths := strings.Split(index, "/")
 
 	if strings.Contains(index, ".p") {
 		var err error
-		w, err = strconv.ParseUint(indexPaths[len(indexPaths)-1], 10, 64)
-		if err != nil || w < 1 || w > 255 {
+		w64, err := strconv.ParseUint(indexPaths[len(indexPaths)-1], 10, 64)
+		if err != nil || w64 < 1 || w64 >= TileWidth {
 			return 0, 0, fmt.Errorf("failed to parse tile index")
 		}
+		w = uint8(w64)
 		indexPaths[len(indexPaths)-2] = strings.TrimSuffix(indexPaths[len(indexPaths)-2], ".p")
 		indexPaths = indexPaths[:len(indexPaths)-1]
 	}
