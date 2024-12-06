@@ -76,8 +76,8 @@ func testLogFetcher(_ context.Context, p string) ([]byte, error) {
 	return os.ReadFile(path)
 }
 
-func testLogTileFetcher(ctx context.Context, l, i, s uint64) ([]byte, error) {
-	return testLogFetcher(ctx, layout.TilePath(l, i, s))
+func testLogTileFetcher(ctx context.Context, l, i uint64, p uint8) ([]byte, error) {
+	return testLogFetcher(ctx, layout.TilePath(l, i, p))
 }
 
 // fetchCheckpointShim allows fetcher requests for checkpoints to be intercepted.
@@ -309,7 +309,7 @@ func TestCheckConsistency(t *testing.T) {
 func TestNodeCacheHandlesInvalidRequest(t *testing.T) {
 	ctx := context.Background()
 	wantBytes := []byte("0123456789ABCDEF0123456789ABCDEF")
-	f := func(_ context.Context, _, _, _ uint64) ([]byte, error) {
+	f := func(_ context.Context, _, _ uint64, _ uint8) ([]byte, error) {
 		h := &api.HashTile{
 			Nodes: [][]byte{wantBytes},
 		}
