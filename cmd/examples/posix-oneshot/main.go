@@ -46,7 +46,7 @@ const (
 	// Since this is a short-lived command-line tool, we set this to a relatively low value so that
 	// the tool can publish the new checkpoint and exit relatively quickly after integrating the entries
 	// into the tree.
-	checkpointInterval = 500 * time.Millisecond
+	checkpointInterval = time.Second
 )
 
 // entryInfo binds the actual bytes to be added as a leaf with a
