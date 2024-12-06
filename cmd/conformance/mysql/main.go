@@ -18,9 +18,11 @@ package main
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"os"
 	"time"
@@ -168,7 +170,7 @@ func configureTilesReadAPI(mux *http.ServeMux, storage *mysql.Storage) {
 		inferredMinTreeSize := (index*256 + width) << (level * 8)
 		tile, err := storage.ReadTile(r.Context(), level, index, inferredMinTreeSize)
 		if err != nil {
-			if os.IsNotExist(err) {
+			if errors.Is(err, fs.ErrNotExist) {
 				w.WriteHeader(http.StatusNotFound)
 				return
 			}
