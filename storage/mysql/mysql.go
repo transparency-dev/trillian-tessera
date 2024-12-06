@@ -243,7 +243,7 @@ func (s *Storage) writeTreeState(ctx context.Context, tx *sql.Tx, size uint64, r
 // Note that if a partial tile is requested, but a larger tile is available, this
 // will return the largest tile available. This could be trimmed to return only the
 // number of entries specifically requested if this behaviour becomes problematic.
-func (s *Storage) ReadTile(ctx context.Context, level, index, minTreeSize uint64) ([]byte, error) {
+func (s *Storage) ReadTile(ctx context.Context, level, index uint64, p uint8) ([]byte, error) {
 	row := s.db.QueryRowContext(ctx, selectSubtreeByLevelAndIndexSQL, level, index)
 	if err := row.Err(); err != nil {
 		return nil, err
@@ -258,26 +258,17 @@ func (s *Storage) ReadTile(ctx context.Context, level, index, minTreeSize uint64
 		return nil, fmt.Errorf("scan tile: %v", err)
 	}
 
-	requestedWidth := partialTileSize(level, index, minTreeSize)
 	numEntries := uint64(len(tile) / sha256.Size)
-
-	if requestedWidth > numEntries {
+	requestedEntries := uint64(p)
+	if requestedEntries == 0 {
+		requestedEntries = 256
+	}
+	if requestedEntries > numEntries {
 		// If the user has requested a size larger than we have, they can't have it
 		return nil, os.ErrNotExist
 	}
 
 	return tile, nil
-}
-
-// partialTileSize returns the expected number of leaves in a tile at the given location within
-// a tree of the specified logSize, or 0 if the tile is expected to be fully populated.
-func partialTileSize(level, index, logSize uint64) uint64 {
-	sizeAtLevel := logSize >> (level * 8)
-	fullTiles := sizeAtLevel / 256
-	if index < fullTiles {
-		return 256
-	}
-	return sizeAtLevel % 256
 }
 
 // writeTile replaces the tile nodes at the given level and index.
@@ -299,7 +290,7 @@ func (s *Storage) writeTile(ctx context.Context, tx *sql.Tx, level, index uint64
 // 3. Partial tile request with full/larger partial tile output: Return trimmed partial tile with correct tile width.
 // 4. Partial tile request with partial tile (same width) output: Return partial tile.
 // 5. Partial tile request with smaller partial tile output: Return error.
-func (s *Storage) ReadEntryBundle(ctx context.Context, index, treeSize uint64) ([]byte, error) {
+func (s *Storage) ReadEntryBundle(ctx context.Context, index uint64, p uint8) ([]byte, error) {
 	row := s.db.QueryRowContext(ctx, selectTiledLeavesSQL, index)
 	if err := row.Err(); err != nil {
 		return nil, err
