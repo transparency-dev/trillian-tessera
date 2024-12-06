@@ -28,19 +28,19 @@ func ExampleNodeCoordsToTileAddress() {
 }
 
 func ExampleTilePath() {
-	tilePath := layout.TilePath(0, 1234067, 315921160)
+	tilePath := layout.TilePath(0, 1234067, 8)
 	fmt.Printf("tile path: %s", tilePath)
 	// Output: tile path: tile/0/x001/x234/067.p/8
 }
 
 func ExampleEntriesPath() {
-	entriesPath := layout.EntriesPath(1234067, 315921160)
+	entriesPath := layout.EntriesPath(1234067, 8)
 	fmt.Printf("entries path: %s", entriesPath)
 	// Output: entries path: tile/entries/x001/x234/067.p/8
 }
 
-func ExampleParseTileLevelIndexWidth() {
-	level, index, width, _ := layout.ParseTileLevelIndexWidth("0", "x001/x234/067.p/8")
+func ExampleParseTileLevelIndexPartial() {
+	level, index, width, _ := layout.ParseTileLevelIndexPartial("0", "x001/x234/067.p/8")
 	fmt.Printf("level: %d, index: %d, width: %d", level, index, width)
 	// Output: level: 0, index: 1234067, width: 8
 }
