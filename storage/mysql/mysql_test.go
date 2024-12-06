@@ -24,8 +24,10 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
+	"errors"
 	"flag"
 	"fmt"
+	"io/fs"
 	"os"
 	"testing"
 	"time"
@@ -238,7 +240,7 @@ func TestGetTile(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			tile, err := s.ReadTile(ctx, test.level, test.index, test.treeSize)
 			if err != nil {
-				if notFound, wantNotFound := os.IsNotExist(err), test.wantNotFound; notFound != wantNotFound {
+				if notFound, wantNotFound := errors.Is(err, fs.ErrNotExist), test.wantNotFound; notFound != wantNotFound {
 					t.Errorf("wantNotFound %v but notFound %v", wantNotFound, notFound)
 				}
 				if test.wantNotFound {
@@ -274,7 +276,7 @@ func TestReadMissingTile(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			tile, err := s.ReadTile(ctx, test.level, test.index, test.width)
 			if err != nil {
-				if os.IsNotExist(err) {
+				if errors.Is(err, fs.ErrNotExist) {
 					// this is success for this test
 					return
 				}
@@ -307,7 +309,7 @@ func TestReadMissingEntryBundle(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			entryBundle, err := s.ReadEntryBundle(ctx, test.index, test.index)
 			if err != nil {
-				if os.IsNotExist(err) {
+				if errors.Is(err, fs.ErrNotExist) {
 					// this is success for this test
 					return
 				}
