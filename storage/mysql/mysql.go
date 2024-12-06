@@ -50,6 +50,8 @@ const (
 	checkpointID    = 0
 	treeStateID     = 0
 	entryBundleSize = 256
+
+	minCheckpointInterval = time.Second
 )
 
 // Storage is a MySQL-based storage implementation for Tessera.
@@ -66,6 +68,10 @@ type Storage struct {
 // Note that `tessera.WithCheckpointSigner()` is mandatory in the `opts` argument.
 func New(ctx context.Context, db *sql.DB, opts ...func(*options.StorageOptions)) (*Storage, error) {
 	opt := storage.ResolveStorageOptions(opts...)
+	if opt.CheckpointInterval < minCheckpointInterval {
+		return nil, fmt.Errorf("requested CheckpointInterval too low - %v < %v", opt.CheckpointInterval, minCheckpointInterval)
+	}
+
 	s := &Storage{
 		db:            db,
 		newCheckpoint: opt.NewCP,
