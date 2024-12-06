@@ -98,12 +98,12 @@ func (h HTTPFetcher) ReadCheckpoint(ctx context.Context) ([]byte, error) {
 	return h.fetch(ctx, layout.CheckpointPath)
 }
 
-func (h HTTPFetcher) ReadTile(ctx context.Context, l, i, sz uint64) ([]byte, error) {
-	return h.fetch(ctx, layout.TilePath(l, i, sz))
+func (h HTTPFetcher) ReadTile(ctx context.Context, l, i uint64, p uint8) ([]byte, error) {
+	return h.fetch(ctx, layout.TilePath(l, i, p))
 }
 
-func (h HTTPFetcher) ReadEntryBundle(ctx context.Context, i, sz uint64) ([]byte, error) {
-	return h.fetch(ctx, layout.EntriesPath(i, sz))
+func (h HTTPFetcher) ReadEntryBundle(ctx context.Context, i uint64, p uint8) ([]byte, error) {
+	return h.fetch(ctx, layout.EntriesPath(i, p))
 }
 
 // FileFetcher knows how to fetch log artifacts from a filesystem rooted at Root.
@@ -115,10 +115,10 @@ func (f FileFetcher) ReadCheckpoint(_ context.Context) ([]byte, error) {
 	return os.ReadFile(path.Join(f.Root, layout.CheckpointPath))
 }
 
-func (f FileFetcher) ReadTile(_ context.Context, l, i, sz uint64) ([]byte, error) {
-	return os.ReadFile(path.Join(f.Root, layout.TilePath(l, i, sz)))
+func (f FileFetcher) ReadTile(_ context.Context, l, i uint64, p uint8) ([]byte, error) {
+	return os.ReadFile(path.Join(f.Root, layout.TilePath(l, i, p)))
 }
 
-func (f FileFetcher) ReadEntryBundle(_ context.Context, i, sz uint64) ([]byte, error) {
-	return os.ReadFile(path.Join(f.Root, layout.EntriesPath(i, sz)))
+func (f FileFetcher) ReadEntryBundle(_ context.Context, i uint64, p uint8) ([]byte, error) {
+	return os.ReadFile(path.Join(f.Root, layout.EntriesPath(i, p)))
 }

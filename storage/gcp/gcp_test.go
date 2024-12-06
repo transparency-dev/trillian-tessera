@@ -232,7 +232,7 @@ func TestTileRoundtrip(t *testing.T) {
 				t.Fatalf("setTile: %v", err)
 			}
 
-			expPath := layout.TilePath(test.level, test.index, test.logSize)
+			expPath := layout.TilePath(test.level, test.index, layout.PartialTileSize(test.level, test.index, test.logSize))
 			_, ok := m.mem[expPath]
 			if !ok {
 				t.Fatalf("want tile at %v but found none", expPath)
@@ -284,17 +284,17 @@ func TestBundleRoundtrip(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			wantBundle := makeBundle(t, test.bundleSize)
-			if err := s.setEntryBundle(ctx, test.index, test.logSize, wantBundle); err != nil {
+			if err := s.setEntryBundle(ctx, test.index, uint8(test.bundleSize), wantBundle); err != nil {
 				t.Fatalf("setEntryBundle: %v", err)
 			}
 
-			expPath := layout.EntriesPath(test.index, test.logSize)
+			expPath := layout.EntriesPath(test.index, uint8(test.logSize%layout.EntryBundleWidth))
 			_, ok := m.mem[expPath]
 			if !ok {
 				t.Fatalf("want bundle at %v but found none", expPath)
 			}
 
-			got, err := s.getEntryBundle(ctx, test.index, test.logSize)
+			got, err := s.getEntryBundle(ctx, test.index, uint8(test.logSize%layout.EntryBundleWidth))
 			if err != nil {
 				t.Fatalf("getEntryBundle: %v", err)
 			}
