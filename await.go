@@ -16,7 +16,9 @@ package tessera
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
@@ -111,7 +113,7 @@ func (a *IntegrationAwaiter) pollLoop(ctx context.Context, readCheckpoint func(c
 		// Note that for now, this releases all clients in the event of a single failure.
 		// If this causes problems, this could be changed to attempt retries.
 		rawCp, err := readCheckpoint(ctx)
-		if err != nil {
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
 			a.releaseClientsErr(fmt.Errorf("readCheckpoint: %v", err))
 			continue
 		}
