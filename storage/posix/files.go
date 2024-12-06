@@ -39,6 +39,8 @@ const (
 	dirPerm  = 0o755
 	filePerm = 0o644
 	stateDir = ".state"
+
+	minCheckpointInterval = time.Second
 )
 
 // Storage implements storage functions for a POSIX filesystem.
@@ -64,6 +66,9 @@ type NewTreeFunc func(size uint64, root []byte) error
 // - create must only be set when first creating the log, and will create the directory structure and an empty checkpoint
 func New(ctx context.Context, path string, create bool, opts ...func(*options.StorageOptions)) (*Storage, error) {
 	opt := storage.ResolveStorageOptions(opts...)
+	if opt.CheckpointInterval < minCheckpointInterval {
+		return nil, fmt.Errorf("requested CheckpointInterval (%v) is less than minimum permitted %v", opt.CheckpointInterval, minCheckpointInterval)
+	}
 
 	r := &Storage{
 		path:        path,

@@ -59,8 +59,10 @@ import (
 )
 
 const (
-	logContType  = "application/octet-stream"
-	ckptContType = "text/plain; charset=utf-8"
+	entryBundleSize       = 256
+	logContType           = "application/octet-stream"
+	ckptContType          = "text/plain; charset=utf-8"
+	minCheckpointInterval = 1 * time.Second
 
 	DefaultPushbackMaxOutstanding = 4096
 	DefaultIntegrationSizeLimit   = 5 * 4096
@@ -127,6 +129,9 @@ func New(ctx context.Context, cfg Config, opts ...func(*options.StorageOptions))
 	opt := storage.ResolveStorageOptions(opts...)
 	if opt.PushbackMaxOutstanding == 0 {
 		opt.PushbackMaxOutstanding = DefaultPushbackMaxOutstanding
+	}
+	if opt.CheckpointInterval < minCheckpointInterval {
+		return nil, fmt.Errorf("requested CheckpointInterval (%v) is less than minimum permitted %v", opt.CheckpointInterval, minCheckpointInterval)
 	}
 
 	sdkConfig, err := config.LoadDefaultConfig(ctx)

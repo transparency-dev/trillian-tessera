@@ -59,8 +59,14 @@ import (
 )
 
 const (
-	logContType  = "application/octet-stream"
-	ckptContType = "text/plain; charset=utf-8"
+	entryBundleSize = 256
+	logContType     = "application/octet-stream"
+	ckptContType    = "text/plain; charset=utf-8"
+	// minCheckpointInterval is the shortest permitted interval between updating published checkpoints.
+	// GCS has a rate limit 1 update per second for individual objects, but we've observed that attempting
+	// to update at exactly that rate still results in the occasional refusal, so bake in a little wiggle
+	// room.
+	minCheckpointInterval = 1200 * time.Millisecond
 
 	DefaultPushbackMaxOutstanding = 4096
 	DefaultIntegrationSizeLimit   = 5 * 4096
@@ -119,6 +125,9 @@ func New(ctx context.Context, cfg Config, opts ...func(*options.StorageOptions))
 	opt := storage.ResolveStorageOptions(opts...)
 	if opt.PushbackMaxOutstanding == 0 {
 		opt.PushbackMaxOutstanding = DefaultPushbackMaxOutstanding
+	}
+	if opt.CheckpointInterval < minCheckpointInterval {
+		return nil, fmt.Errorf("requested CheckpointInterval (%v) is less than minimum permitted %v", opt.CheckpointInterval, minCheckpointInterval)
 	}
 
 	c, err := gcs.NewClient(ctx, gcs.WithJSONReads())
