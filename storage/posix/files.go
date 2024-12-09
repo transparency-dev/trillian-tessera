@@ -260,7 +260,7 @@ func (s *Storage) sequenceBatch(ctx context.Context, entries []*tessera.Entry) e
 	return nil
 }
 
-// doIntegrate handles integrating new entries into the log, and updating the checkpoint.
+// doIntegrate handles integrating new entries into the log, and updating the tree state.
 func (s *Storage) doIntegrate(ctx context.Context, fromSeq uint64, entries []storage.SequencedEntry) error {
 	getTiles := func(ctx context.Context, tileIDs []storage.TileID, treeSize uint64) ([]*api.HashTile, error) {
 		n, err := s.readTiles(ctx, tileIDs, treeSize)
@@ -281,9 +281,9 @@ func (s *Storage) doIntegrate(ctx context.Context, fromSeq uint64, entries []sto
 		}
 	}
 
-	klog.Infof("New CP: %d, %x", newSize, newRoot)
+	klog.Infof("New tree state: %d, %x", newSize, newRoot)
 	if err := s.writeTreeState(newSize, newRoot); err != nil {
-		return fmt.Errorf("failed to write new checkpoint: %v", err)
+		return fmt.Errorf("failed to write new tree state: %v", err)
 	}
 
 	return nil
