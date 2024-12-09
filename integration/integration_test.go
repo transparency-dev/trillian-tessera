@@ -35,6 +35,7 @@ import (
 	"github.com/transparency-dev/formats/log"
 	"github.com/transparency-dev/merkle/proof"
 	"github.com/transparency-dev/merkle/rfc6962"
+	"github.com/transparency-dev/trillian-tessera/api/layout"
 	"github.com/transparency-dev/trillian-tessera/client"
 	"golang.org/x/mod/sumdb/note"
 	"golang.org/x/sync/errgroup"
@@ -180,12 +181,12 @@ func TestLiveLogIntegration(t *testing.T) {
 		index := v.(uint64)
 
 		// Step 4.1 - Get entry bundles to read back what was written, check leaves are correct.
-		entryBundle, err := client.GetEntryBundle(ctx, logReadEntryBundle, index/256, checkpoint.Size)
+		entryBundle, err := client.GetEntryBundle(ctx, logReadEntryBundle, index/layout.EntryBundleWidth, checkpoint.Size)
 		if err != nil {
 			t.Fatalf("client.GetEntryBundle: %v", err)
 		}
 
-		got, want := entryBundle.Entries[index%256], []byte(fmt.Sprintf("%d", data))
+		got, want := entryBundle.Entries[index%layout.EntryBundleWidth], []byte(fmt.Sprintf("%d", data))
 		if !bytes.Equal(got, want) {
 			t.Errorf("Entry bundle (index: %d) got %v want %v", index, got, want)
 		}

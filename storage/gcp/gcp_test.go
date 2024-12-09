@@ -221,8 +221,8 @@ func TestTileRoundtrip(t *testing.T) {
 		{
 			name:     "ok",
 			level:    0,
-			index:    3 * 256,
-			logSize:  3*256 + 20,
+			index:    3 * layout.TileWidth,
+			logSize:  3*layout.TileWidth + 20,
 			tileSize: 20,
 		},
 	} {
@@ -277,8 +277,8 @@ func TestBundleRoundtrip(t *testing.T) {
 	}{
 		{
 			name:       "ok",
-			index:      3 * 256,
-			logSize:    3*256 + 20,
+			index:      3 * layout.EntryBundleWidth,
+			logSize:    3*layout.EntryBundleWidth + 20,
 			bundleSize: 20,
 		},
 	} {

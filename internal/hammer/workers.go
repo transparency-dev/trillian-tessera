@@ -22,6 +22,7 @@ import (
 	"math/rand/v2"
 	"time"
 
+	"github.com/transparency-dev/trillian-tessera/api/layout"
 	"github.com/transparency-dev/trillian-tessera/client"
 	"k8s.io/klog/v2"
 )
@@ -94,11 +95,11 @@ func (r *LeafReader) getLeaf(ctx context.Context, i uint64, logSize uint64) ([]b
 		return cached, nil
 	}
 
-	bundle, err := client.GetEntryBundle(ctx, r.f, i/256, logSize)
+	bundle, err := client.GetEntryBundle(ctx, r.f, i/layout.EntryBundleWidth, logSize)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get entry bundle: %v", err)
 	}
-	ti := i % 256
+	ti := i % layout.EntryBundleWidth
 	r.c = leafBundleCache{
 		start:  i - ti,
 		leaves: bundle.Entries,
