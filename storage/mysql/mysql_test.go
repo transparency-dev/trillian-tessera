@@ -465,10 +465,10 @@ func newTestMySQLStorage(t *testing.T, ctx context.Context) *mysql.Storage {
 
 	s, err := mysql.New(ctx, testDB,
 		tessera.WithCheckpointSigner(noteSigner),
-		tessera.WithCheckpointInterval(200*time.Millisecond),
+		tessera.WithCheckpointInterval(time.Second),
 		tessera.WithBatching(128, 100*time.Millisecond))
 	if err != nil {
-		t.Errorf("Failed to create mysql.Storage: %v", err)
+		t.Fatalf("Failed to create mysql.Storage: %v", err)
 	}
 
 	return s
