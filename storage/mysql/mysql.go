@@ -22,6 +22,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"strings"
 	"time"
@@ -123,7 +124,7 @@ func (s *Storage) maybeInitTree(ctx context.Context) error {
 	}()
 
 	treeState, err := s.readTreeState(ctx, tx)
-	if err != nil && !os.IsNotExist(err) {
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		klog.Errorf("Failed to read tree state: %v", err)
 		return err
 	}
