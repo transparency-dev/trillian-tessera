@@ -288,13 +288,13 @@ func TestBundleRoundtrip(t *testing.T) {
 				t.Fatalf("setEntryBundle: %v", err)
 			}
 
-			expPath := layout.EntriesPath(test.index, uint8(test.logSize%layout.EntryBundleWidth))
+			expPath := layout.EntriesPath(test.index, layout.PartialTileSize(0, test.index, test.logSize))
 			_, ok := m.mem[expPath]
 			if !ok {
 				t.Fatalf("want bundle at %v but found none", expPath)
 			}
 
-			got, err := s.getEntryBundle(ctx, test.index, uint8(test.logSize%layout.EntryBundleWidth))
+			got, err := s.getEntryBundle(ctx, test.index, layout.PartialTileSize(0, test.index, test.logSize))
 			if err != nil {
 				t.Fatalf("getEntryBundle: %v", err)
 			}
