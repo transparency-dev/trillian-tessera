@@ -143,15 +143,19 @@ func configureTilesReadAPI(mux *http.ServeMux, storage *mysql.Storage) {
 	mux.HandleFunc("GET /checkpoint", func(w http.ResponseWriter, r *http.Request) {
 		checkpoint, err := storage.ReadCheckpoint(r.Context())
 		if err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
 			klog.Errorf("/checkpoint: %v", err)
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
-		if checkpoint == nil {
-			w.WriteHeader(http.StatusNotFound)
-			return
-		}
 
+		// Don't cache checkpoints as the endpoint refreshes regularly.
+		// A personality that wanted to _could_ set a small cache time here which was no higher
+		// than the checkpoint publish interval.
+		w.Header().Set("Cache-Control", "no-cache")
 		if _, err := w.Write(checkpoint); err != nil {
 			klog.Errorf("/checkpoint: %v", err)
 			return
@@ -207,10 +211,7 @@ func configureTilesReadAPI(mux *http.ServeMux, storage *mysql.Storage) {
 			return
 		}
 
-		// TODO: Add immutable Cache-Control header.
-		// Only do this once we're sure we're returning the right number of entries
-		// Currently a user can request a full tile and we can return a partial tile.
-		// If cache headers were set then this could cause caches to be poisoned.
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 
 		if _, err := w.Write(entryBundle); err != nil {
 			klog.Errorf("/tile/entries/{index...}: %v", err)
