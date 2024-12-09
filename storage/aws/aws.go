@@ -505,7 +505,7 @@ type mySQLSequencer struct {
 func newMySQLSequencer(ctx context.Context, dsn string, maxOutstanding uint64, maxOpenConns, maxIdleConns int) (*mySQLSequencer, error) {
 	dbPool, err := sql.Open("mysql", dsn)
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to MySQL db(%q)): %v", dsn, err)
+		return nil, fmt.Errorf("failed to connect to MySQL db): %v", err)
 	}
 
 	if maxOpenConns > 0 {
@@ -516,7 +516,7 @@ func newMySQLSequencer(ctx context.Context, dsn string, maxOutstanding uint64, m
 	}
 
 	if err := dbPool.Ping(); err != nil {
-		return nil, fmt.Errorf("failed to ping MySQL db(%q): %v", dsn, err)
+		return nil, fmt.Errorf("failed to ping MySQL db: %v", err)
 	}
 
 	r := &mySQLSequencer{
