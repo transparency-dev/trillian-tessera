@@ -43,7 +43,7 @@ func TestNewRangeFetchesTiles(t *testing.T) {
 	}
 
 	for _, id := range wantIDs {
-		if err := m.setTile(ctx, id, treeSize, zeroTile(256)); err != nil {
+		if err := m.setTile(ctx, id, treeSize, zeroTile(layout.TileWidth)); err != nil {
 			t.Fatalf("setTile: %v", err)
 		}
 	}
@@ -78,9 +78,9 @@ func TestTileVisit(t *testing.T) {
 		{
 			name: "ok - multiple tiles",
 			visits: map[compact.NodeID][]byte{
-				{Level: 0, Index: 0}:       {0},
-				{Level: 0, Index: 1 * 256}: {1},
-				{Level: 8, Index: 2 * 256}: {2},
+				{Level: 0, Index: 0}:                    {0},
+				{Level: 0, Index: 1 * layout.TileWidth}: {1},
+				{Level: 8, Index: 2 * layout.TileWidth}: {2},
 			},
 			wantTiles: map[TileID]*api.HashTile{
 				{Level: 0, Index: 0}: {Nodes: [][]byte{{0}}},

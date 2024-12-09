@@ -25,6 +25,7 @@ import (
 	"time"
 
 	tessera "github.com/transparency-dev/trillian-tessera"
+	"github.com/transparency-dev/trillian-tessera/api/layout"
 	"github.com/transparency-dev/trillian-tessera/storage/aws"
 	"golang.org/x/mod/sumdb/note"
 	"golang.org/x/net/http2"
@@ -72,7 +73,7 @@ func main() {
 	if err != nil {
 		klog.Exitf("Failed to create new AWS storage: %v", err)
 	}
-	dedupeAdd := tessera.InMemoryDedupe(storage.Add, 256)
+	dedupeAdd := tessera.InMemoryDedupe(storage.Add, layout.TileWidth)
 
 	// Expose a HTTP handler for the conformance test writes.
 	// This should accept arbitrary bytes POSTed to /add, and return an ascii

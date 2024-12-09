@@ -25,6 +25,7 @@ import (
 	"time"
 
 	tessera "github.com/transparency-dev/trillian-tessera"
+	"github.com/transparency-dev/trillian-tessera/api/layout"
 	"github.com/transparency-dev/trillian-tessera/storage/gcp"
 	"golang.org/x/mod/sumdb/note"
 	"golang.org/x/net/http2"
@@ -77,7 +78,7 @@ func main() {
 			klog.Exitf("Failed to create new GCP dedupe: %v", err)
 		}
 	}
-	dedupeAdd := tessera.InMemoryDedupe(addDelegate, 256)
+	dedupeAdd := tessera.InMemoryDedupe(addDelegate, layout.TileWidth)
 
 	// Expose a HTTP handler for the conformance test writes.
 	// This should accept arbitrary bytes POSTed to /add, and return an ascii
