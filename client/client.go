@@ -286,7 +286,7 @@ func (n *nodeCache) GetNode(ctx context.Context, id compact.NodeID) ([]byte, err
 // GetEntryBundle fetches the entry bundle at the given _tile index_.
 func GetEntryBundle(ctx context.Context, f EntryBundleFetcherFunc, i, logSize uint64) (api.EntryBundle, error) {
 	bundle := api.EntryBundle{}
-	sRaw, err := f(ctx, i, uint8(logSize%layout.EntryBundleWidth))
+	sRaw, err := f(ctx, i, layout.PartialTileSize(0, i, logSize))
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return bundle, fmt.Errorf("leaf bundle at index %d not found: %v", i, err)
