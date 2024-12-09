@@ -290,12 +290,9 @@ func (s *Storage) writeTile(ctx context.Context, tx *sql.Tx, level, index uint64
 // ReadEntryBundle returns the log entries at the given index.
 // If the entry bundle is not found, it returns os.ErrNotExist.
 //
-// TODO: Handle the following scenarios:
-// 1. Full tile request with full tile output: Return full tile.
-// 2. Full tile request with partial tile output: Return error.
-// 3. Partial tile request with full/larger partial tile output: Return trimmed partial tile with correct tile width.
-// 4. Partial tile request with partial tile (same width) output: Return partial tile.
-// 5. Partial tile request with smaller partial tile output: Return error.
+// Note that if a partial tile is requested, but a larger tile is available, this
+// will return the largest tile available. This could be trimmed to return only the
+// number of entries specifically requested if this behaviour becomes problematic.
 func (s *Storage) ReadEntryBundle(ctx context.Context, index uint64, p uint8) ([]byte, error) {
 	row := s.db.QueryRowContext(ctx, selectTiledLeavesSQL, index)
 	if err := row.Err(); err != nil {
@@ -308,6 +305,17 @@ func (s *Storage) ReadEntryBundle(ctx context.Context, index uint64, p uint8) ([
 			return nil, os.ErrNotExist
 		}
 		return nil, fmt.Errorf("scan entry bundle: %v", err)
+	}
+
+	// If the user has requested a size larger than we have, they can't have it
+	// Parsing the bundle here is fast, but faster would be to record the partial bundle
+	// size in the DB and just read the int from there.
+	parsed := api.EntryBundle{}
+	if err := parsed.UnmarshalText(entryBundle); err != nil {
+		return nil, fmt.Errorf("failed to parse entry bundle: %v", err)
+	}
+	if p > uint8(len(parsed.Entries)) {
+		return nil, os.ErrNotExist
 	}
 
 	return entryBundle, nil
