@@ -31,6 +31,7 @@ import (
 	"github.com/transparency-dev/merkle/rfc6962"
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/api"
+	"github.com/transparency-dev/trillian-tessera/api/layout"
 	options "github.com/transparency-dev/trillian-tessera/internal/options"
 	storage "github.com/transparency-dev/trillian-tessera/storage/internal"
 	"k8s.io/klog/v2"
@@ -45,8 +46,8 @@ const (
 	replaceTreeStateSQL              = "REPLACE INTO `TreeState` (`id`, `size`, `root`) VALUES (?, ?, ?)"
 	selectSubtreeByLevelAndIndexSQL  = "SELECT `nodes` FROM `Subtree` WHERE `level` = ? AND `index` = ?"
 	replaceSubtreeSQL                = "REPLACE INTO `Subtree` (`level`, `index`, `nodes`) VALUES (?, ?, ?)"
-	selectTiledLeavesSQL             = "SELECT `data` FROM `TiledLeaves` WHERE `tile_index` = ?"
-	replaceTiledLeavesSQL            = "REPLACE INTO `TiledLeaves` (`tile_index`, `data`) VALUES (?, ?)"
+	selectTiledLeavesSQL             = "SELECT `size`, `data` FROM `TiledLeaves` WHERE `tile_index` = ?"
+	replaceTiledLeavesSQL            = "REPLACE INTO `TiledLeaves` (`tile_index`, `size`, `data`) VALUES (?, ?, ?)"
 
 	checkpointID    = 0
 	treeStateID     = 0
@@ -299,30 +300,29 @@ func (s *Storage) ReadEntryBundle(ctx context.Context, index uint64, p uint8) ([
 		return nil, err
 	}
 
+	var size uint32
 	var entryBundle []byte
-	if err := row.Scan(&entryBundle); err != nil {
+	if err := row.Scan(&size, &entryBundle); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, os.ErrNotExist
 		}
 		return nil, fmt.Errorf("scan entry bundle: %v", err)
 	}
 
-	// If the user has requested a size larger than we have, they can't have it
-	// Parsing the bundle here is fast, but faster would be to record the partial bundle
-	// size in the DB and just read the int from there.
-	parsed := api.EntryBundle{}
-	if err := parsed.UnmarshalText(entryBundle); err != nil {
-		return nil, fmt.Errorf("failed to parse entry bundle: %v", err)
+	requestedSize := uint32(p)
+	if requestedSize == 0 {
+		requestedSize = layout.EntryBundleWidth
 	}
-	if p > uint8(len(parsed.Entries)) {
+
+	if requestedSize > size {
 		return nil, os.ErrNotExist
 	}
 
 	return entryBundle, nil
 }
 
-func (s *Storage) writeEntryBundle(ctx context.Context, tx *sql.Tx, index uint64, entryBundle []byte) error {
-	if _, err := tx.ExecContext(ctx, replaceTiledLeavesSQL, index, entryBundle); err != nil {
+func (s *Storage) writeEntryBundle(ctx context.Context, tx *sql.Tx, index uint64, size uint32, entryBundle []byte) error {
+	if _, err := tx.ExecContext(ctx, replaceTiledLeavesSQL, index, size, entryBundle); err != nil {
 		klog.Errorf("Failed to execute replaceTiledLeavesSQL: %v", err)
 		return err
 	}
@@ -460,9 +460,13 @@ func (s *Storage) integrate(ctx context.Context, tx *sql.Tx, fromSeq uint64, ent
 			return fmt.Errorf("query tiled leaves: %v", err)
 		}
 
+		var size uint32
 		var partialEntryBundle []byte
-		if err := row.Scan(&partialEntryBundle); err != nil {
+		if err := row.Scan(&size, &partialEntryBundle); err != nil {
 			return fmt.Errorf("scan partial entry bundle: %w", err)
+		}
+		if size != uint32(entriesInBundle) {
+			return fmt.Errorf("expected %d entries in storage but found %d", entriesInBundle, size)
 		}
 
 		if _, err := bundleWriter.Write(partialEntryBundle); err != nil {
@@ -479,7 +483,7 @@ func (s *Storage) integrate(ctx context.Context, tx *sql.Tx, fromSeq uint64, ent
 
 		// This bundle is full, so we need to write it out.
 		if entriesInBundle == entryBundleSize {
-			if err := s.writeEntryBundle(ctx, tx, bundleIndex, bundleWriter.Bytes()); err != nil {
+			if err := s.writeEntryBundle(ctx, tx, bundleIndex, uint32(entriesInBundle), bundleWriter.Bytes()); err != nil {
 				return fmt.Errorf("writeEntryBundle: %w", err)
 			}
 
@@ -493,7 +497,7 @@ func (s *Storage) integrate(ctx context.Context, tx *sql.Tx, fromSeq uint64, ent
 	// If we have a partial bundle remaining once we've added all the entries from the batch,
 	// this needs writing out too.
 	if entriesInBundle > 0 {
-		if err := s.writeEntryBundle(ctx, tx, bundleIndex, bundleWriter.Bytes()); err != nil {
+		if err := s.writeEntryBundle(ctx, tx, bundleIndex, uint32(entriesInBundle), bundleWriter.Bytes()); err != nil {
 			return fmt.Errorf("writeEntryBundle: %w", err)
 		}
 	}
