@@ -182,7 +182,7 @@ func TestLiveLogIntegration(t *testing.T) {
 		// Step 4.1 - Get entry bundles to read back what was written, check leaves are correct.
 		entryBundle, err := client.GetEntryBundle(ctx, logReadEntryBundle, index/256, checkpoint.Size)
 		if err != nil {
-			t.Errorf("client.GetEntryBundle: %v", err)
+			t.Fatalf("client.GetEntryBundle: %v", err)
 		}
 
 		got, want := entryBundle.Entries[index%256], []byte(fmt.Sprintf("%d", data))
