@@ -117,7 +117,7 @@ func ParseTileIndexPartial(index string) (uint64, uint8, error) {
 		var err error
 		w64, err := strconv.ParseUint(indexPaths[len(indexPaths)-1], 10, 64)
 		if err != nil || w64 < 1 || w64 >= TileWidth {
-			return 0, 0, fmt.Errorf("failed to parse tile index")
+			return 0, 0, fmt.Errorf("failed to parse tile width")
 		}
 		w = uint8(w64)
 		indexPaths[len(indexPaths)-2] = strings.TrimSuffix(indexPaths[len(indexPaths)-2], ".p")

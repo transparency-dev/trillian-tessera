@@ -20,7 +20,7 @@ const (
 	TileHeight = 8
 	// TileWidth is the maximum number of hashes which can be present in the bottom row of a tile.
 	TileWidth = 1 << TileHeight
-	// EntryBundleWirth is the maximum number of entries which can be present in an EntryBundle.
+	// EntryBundleWidth is the maximum number of entries which can be present in an EntryBundle.
 	// This is defined to be the same as the width of the node tiles by tlog-tile spec.
 	EntryBundleWidth = TileWidth
 )
