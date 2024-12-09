@@ -343,3 +343,44 @@ func TestHandleZeroRoot(t *testing.T) {
 		t.Fatalf("NewProofBuilder: %v", err)
 	}
 }
+
+func TestGetEntryBundleAddressing(t *testing.T) {
+	for _, test := range []struct {
+		name                string
+		idx, logSize        uint64
+		wantPartialTileSize uint8
+	}{
+		{
+			name:                "works - partial tile",
+			idx:                 0,
+			logSize:             34,
+			wantPartialTileSize: 34,
+		},
+		{
+			name:                "works - full tile",
+			idx:                 1,
+			logSize:             256*2 + 45,
+			wantPartialTileSize: 0,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			gotIdx := uint64(0)
+			gotTileSize := uint8(0)
+			f := func(_ context.Context, i uint64, sz uint8) ([]byte, error) {
+				gotIdx = i
+				gotTileSize = sz
+				return []byte{}, nil
+			}
+			_, err := GetEntryBundle(context.Background(), f, test.idx, test.logSize)
+			if err != nil {
+				t.Fatalf("GetEntryBundle: %v", err)
+			}
+			if gotIdx != test.idx {
+				t.Errorf("f got idx %d, want %d", gotIdx, test.idx)
+			}
+			if gotTileSize != test.wantPartialTileSize {
+				t.Errorf("f got tileSize %d, want %d", gotTileSize, test.wantPartialTileSize)
+			}
+		})
+	}
+}
