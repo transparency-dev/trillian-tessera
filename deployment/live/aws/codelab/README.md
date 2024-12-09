@@ -164,3 +164,8 @@ endpoint.
 > [!IMPORTANT]  
 > Do not forget to delete all the resources to avoid incuring any further cost
 > when you're done using the log. The easiest way to do this, is to [close the account](https://docs.aws.amazon.com/accounts/latest/reference/manage-acct-closing.html).
+> If you prefer to delete the resources with `terragrunt destroy`, bare in mind
+> that this command might not destroy all the resources that were created (like
+> the S3 bucket or DynamoDB instance Terraform created to store its state for
+> instance). If `terragrunt destroy`  shows no putput, run
+> `terragrunt destroy --terragrunt-log-level debug --terragrunt-debug`.
