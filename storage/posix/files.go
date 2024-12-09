@@ -194,9 +194,8 @@ func (s *Storage) sequenceBatch(ctx context.Context, entries []*tessera.Entry) e
 		return nil
 	}
 	currTile := &bytes.Buffer{}
-	newSize := s.curSize + uint64(len(entries))
 	seq := s.curSize
-	bundleIndex, entriesInBundle := seq/uint64(256), seq%uint64(256)
+	bundleIndex, entriesInBundle := seq/layout.EntryBundleWidth, seq%layout.EntryBundleWidth
 	if entriesInBundle > 0 {
 		// If the latest bundle is partial, we need to read the data it contains in for our newer, larger, bundle.
 		part, err := s.ReadEntryBundle(ctx, bundleIndex, uint8(s.curSize%layout.EntryBundleWidth))
@@ -207,8 +206,8 @@ func (s *Storage) sequenceBatch(ctx context.Context, entries []*tessera.Entry) e
 			return fmt.Errorf("failed to write partial bundle into buffer: %v", err)
 		}
 	}
-	writeBundle := func(bundleIndex uint64) error {
-		bf := filepath.Join(s.path, s.entriesPath(bundleIndex, uint8(newSize%layout.EntryBundleWidth)))
+	writeBundle := func(bundleIndex uint64, partialSize uint8) error {
+		bf := filepath.Join(s.path, s.entriesPath(bundleIndex, partialSize))
 		if err := os.MkdirAll(filepath.Dir(bf), dirPerm); err != nil {
 			return fmt.Errorf("failed to make entries directory structure: %w", err)
 		}
@@ -233,10 +232,10 @@ func (s *Storage) sequenceBatch(ctx context.Context, entries []*tessera.Entry) e
 		})
 
 		entriesInBundle++
-		if entriesInBundle == uint64(256) {
+		if entriesInBundle == layout.EntryBundleWidth {
 			//  This bundle is full, so we need to write it out...
 			// ... and prepare the next entry bundle for any remaining entries in the batch
-			if err := writeBundle(bundleIndex); err != nil {
+			if err := writeBundle(bundleIndex, 0); err != nil {
 				return err
 			}
 			bundleIndex++
@@ -247,7 +246,13 @@ func (s *Storage) sequenceBatch(ctx context.Context, entries []*tessera.Entry) e
 	// If we have a partial bundle remaining once we've added all the entries from the batch,
 	// this needs writing out too.
 	if entriesInBundle > 0 {
-		if err := writeBundle(bundleIndex); err != nil {
+		// This check should be redundant since this is [currently] checked above, but an overflow around the uint8 below could
+		// potentially be bad news if that check was broken/defeated as we'd be writing invalid bundle data, so do a belt-and-braces
+		// check and bail if need be.
+		if entriesInBundle > layout.EntryBundleWidth {
+			return fmt.Errorf("logic error: entriesInBundle(%d) > max bundle size %d", entriesInBundle, layout.EntryBundleWidth)
+		}
+		if err := writeBundle(bundleIndex, uint8(entriesInBundle)); err != nil {
 			return err
 		}
 	}
@@ -328,8 +333,8 @@ func (s *Storage) readTile(ctx context.Context, level, index uint64, p uint8) (*
 func (s *Storage) storeTile(_ context.Context, level, index, logSize uint64, tile *api.HashTile) error {
 	tileSize := uint64(len(tile.Nodes))
 	klog.V(2).Infof("StoreTile: level %d index %x ts: %x", level, index, tileSize)
-	if tileSize == 0 || tileSize > 256 {
-		return fmt.Errorf("tileSize %d must be > 0 and <= 256", tileSize)
+	if tileSize == 0 || tileSize > layout.TileWidth {
+		return fmt.Errorf("tileSize %d must be > 0 and <= %d", tileSize, layout.TileWidth)
 	}
 	t, err := tile.MarshalText()
 	if err != nil {
@@ -346,7 +351,7 @@ func (s *Storage) storeTile(_ context.Context, level, index, logSize uint64, til
 		return err
 	}
 
-	if tileSize == 256 {
+	if tileSize == layout.TileWidth {
 		partials, err := filepath.Glob(fmt.Sprintf("%s.p/*", tPath))
 		if err != nil {
 			return fmt.Errorf("failed to list partial tiles for clean up; %w", err)
