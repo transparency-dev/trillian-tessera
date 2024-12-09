@@ -232,7 +232,7 @@ func TestTileRoundtrip(t *testing.T) {
 				t.Fatalf("setTile: %v", err)
 			}
 
-			expPath := layout.TilePath(test.level, test.index, test.logSize)
+			expPath := layout.TilePath(test.level, test.index, layout.PartialTileSize(test.level, test.index, test.logSize))
 			_, ok := m.mem[expPath]
 			if !ok {
 				t.Fatalf("want tile at %v but found none", expPath)
@@ -284,17 +284,17 @@ func TestBundleRoundtrip(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			wantBundle := makeBundle(t, test.bundleSize)
-			if err := s.setEntryBundle(ctx, test.index, test.logSize, wantBundle); err != nil {
+			if err := s.setEntryBundle(ctx, test.index, uint8(test.bundleSize), wantBundle); err != nil {
 				t.Fatalf("setEntryBundle: %v", err)
 			}
 
-			expPath := layout.EntriesPath(test.index, test.logSize)
+			expPath := layout.EntriesPath(test.index, layout.PartialTileSize(0, test.index, test.logSize))
 			_, ok := m.mem[expPath]
 			if !ok {
 				t.Fatalf("want bundle at %v but found none", expPath)
 			}
 
-			got, err := s.getEntryBundle(ctx, test.index, test.logSize)
+			got, err := s.getEntryBundle(ctx, test.index, layout.PartialTileSize(0, test.index, test.logSize))
 			if err != nil {
 				t.Fatalf("getEntryBundle: %v", err)
 			}
@@ -347,7 +347,7 @@ func TestPublishCheckpoint(t *testing.T) {
 				t.Fatalf("storage.init: %v", err)
 			}
 			cpOld := []byte("bananas")
-			if err := m.setObject(ctx, layout.CheckpointPath, cpOld, nil, ""); err != nil {
+			if err := m.setObject(ctx, layout.CheckpointPath, cpOld, nil, "", ""); err != nil {
 				t.Fatalf("setObject(bananas): %v", err)
 			}
 			m.lMod = test.cpModifiedAt
@@ -394,7 +394,7 @@ func (m *memObjStore) getObject(_ context.Context, obj string) ([]byte, int64, e
 }
 
 // TODO(phboneff): add content type tests
-func (m *memObjStore) setObject(_ context.Context, obj string, data []byte, cond *gcs.Conditions, _ string) error {
+func (m *memObjStore) setObject(_ context.Context, obj string, data []byte, cond *gcs.Conditions, _, _ string) error {
 	m.Lock()
 	defer m.Unlock()
 

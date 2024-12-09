@@ -22,8 +22,12 @@ package mysql_test
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"errors"
 	"flag"
+	"fmt"
+	"io/fs"
 	"os"
 	"testing"
 	"time"
@@ -48,8 +52,8 @@ var (
 )
 
 const (
-	// Matching public key: "transparency.dev/tessera/example+ae330e15+ASf4/L1zE859VqlfQgGzKy34l91Gl8W6wfwp+vKP62DW"
 	testPrivateKey = "PRIVATE+KEY+transparency.dev/tessera/example+ae330e15+AXEwZQ2L6Ga3NX70ITObzyfEIketMr2o9Kc+ed/rt/QR"
+	testPublicKey  = "transparency.dev/tessera/example+ae330e15+ASf4/L1zE859VqlfQgGzKy34l91Gl8W6wfwp+vKP62DW"
 )
 
 // TestMain checks whether the test MySQL database is available and starts the tests including database schema initialization.
@@ -163,26 +167,121 @@ func TestNew(t *testing.T) {
 	}
 }
 
+func TestGetTile(t *testing.T) {
+	ctx := context.Background()
+	s := newTestMySQLStorage(t, ctx)
+
+	awaiter := tessera.NewIntegrationAwaiter(ctx, s.ReadCheckpoint, 10*time.Millisecond)
+
+	treeSize := 258
+
+	wg := errgroup.Group{}
+	for i := range treeSize {
+		wg.Go(
+			func() error {
+				_, _, err := awaiter.Await(ctx, s.Add(ctx, tessera.NewEntry([]byte(fmt.Sprintf("TestGetTile %d", i)))))
+				if err != nil {
+					return fmt.Errorf("failed to prep test with entry: %v", err)
+				}
+				return nil
+			})
+	}
+	if err := wg.Wait(); err != nil {
+		t.Fatalf("Failed to set up database with required leaves: %v", err)
+	}
+
+	for _, test := range []struct {
+		name         string
+		level, index uint64
+		p            uint8
+		wantEntries  int
+		wantNotFound bool
+	}{
+		{
+			name:  "requested partial tile for a complete tile",
+			level: 0, index: 0, p: 10,
+			wantEntries:  256,
+			wantNotFound: false,
+		},
+		{
+			name:  "too small but that's ok",
+			level: 0, index: 1, p: layout.PartialTileSize(0, 1, uint64(treeSize-1)),
+			wantEntries:  2,
+			wantNotFound: false,
+		},
+		{
+			name:  "just right",
+			level: 0, index: 1, p: layout.PartialTileSize(0, 1, uint64(treeSize)),
+			wantEntries:  2,
+			wantNotFound: false,
+		},
+		{
+			name:  "too big",
+			level: 0, index: 1, p: layout.PartialTileSize(0, 1, uint64(treeSize+1)),
+			wantNotFound: true,
+		},
+		{
+			name:  "level 1 too small",
+			level: 1, index: 0, p: layout.PartialTileSize(1, 0, uint64(treeSize-1)),
+			wantEntries:  1,
+			wantNotFound: false,
+		},
+		{
+			name:  "level 1 just right",
+			level: 1, index: 0, p: layout.PartialTileSize(1, 0, uint64(treeSize)),
+			wantEntries:  1,
+			wantNotFound: false,
+		},
+		{
+			name:  "level 1 too big",
+			level: 1, index: 0, p: layout.PartialTileSize(1, 0, 550),
+			wantNotFound: true,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			tile, err := s.ReadTile(ctx, test.level, test.index, test.p)
+			if err != nil {
+				if notFound, wantNotFound := errors.Is(err, fs.ErrNotExist), test.wantNotFound; notFound != wantNotFound {
+					t.Errorf("wantNotFound %v but notFound %v", wantNotFound, notFound)
+				}
+				if test.wantNotFound {
+					return
+				}
+				t.Errorf("got err: %v", err)
+			}
+			numEntries := len(tile) / sha256.Size
+			if got, want := numEntries, test.wantEntries; got != want {
+				t.Errorf("got %d entries, but want %d", got, want)
+			}
+		})
+	}
+}
+
 func TestReadMissingTile(t *testing.T) {
 	ctx := context.Background()
 	s := newTestMySQLStorage(t, ctx)
 
 	for _, test := range []struct {
-		name                string
-		level, index, width uint64
+		name         string
+		level, index uint64
+		p            uint8
 	}{
 		{
 			name:  "0/0/0",
-			level: 0, index: 0, width: 0,
+			level: 0, index: 0, p: 0,
 		},
 		{
 			name:  "123/456/789",
-			level: 123, index: 456, width: 789,
+			level: 123, index: 456, p: 789 % layout.TileWidth,
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			tile, err := s.ReadTile(ctx, test.level, test.index, test.width)
+			tile, err := s.ReadTile(ctx, test.level, test.index, test.p)
 			if err != nil {
+				if errors.Is(err, fs.ErrNotExist) {
+					// this is success for this test
+					return
+				}
 				t.Errorf("got err: %v", err)
 			}
 			if tile != nil {
@@ -210,8 +309,12 @@ func TestReadMissingEntryBundle(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			entryBundle, err := s.ReadEntryBundle(ctx, test.index, test.index)
+			entryBundle, err := s.ReadEntryBundle(ctx, test.index, uint8(test.index%layout.TileWidth))
 			if err != nil {
+				if errors.Is(err, fs.ErrNotExist) {
+					// this is success for this test
+					return
+				}
 				t.Errorf("got err: %v", err)
 			}
 			if entryBundle != nil {
@@ -286,7 +389,7 @@ func TestTileRoundTrip(t *testing.T) {
 			}
 
 			tileLevel, tileIndex, _, nodeIndex := layout.NodeCoordsToTileAddress(0, entryIndex)
-			tileRaw, err := s.ReadTile(ctx, tileLevel, tileIndex, nodeIndex)
+			tileRaw, err := s.ReadTile(ctx, tileLevel, tileIndex, uint8(nodeIndex+1))
 			if err != nil {
 				t.Errorf("ReadTile got err: %v", err)
 			}
@@ -335,9 +438,9 @@ func TestEntryBundleRoundTrip(t *testing.T) {
 			if err != nil {
 				t.Errorf("Add got err: %v", err)
 			}
-			entryBundleRaw, err := s.ReadEntryBundle(ctx, entryIndex/256, entryIndex)
+			entryBundleRaw, err := s.ReadEntryBundle(ctx, entryIndex/256, layout.PartialTileSize(0, entryIndex, entryIndex+1))
 			if err != nil {
-				t.Errorf("ReadEntryBundle got err: %v", err)
+				t.Fatalf("ReadEntryBundle got err: %v", err)
 			}
 
 			bundle := api.EntryBundle{}
@@ -358,10 +461,14 @@ func TestEntryBundleRoundTrip(t *testing.T) {
 
 func newTestMySQLStorage(t *testing.T, ctx context.Context) *mysql.Storage {
 	t.Helper()
+	initDatabaseSchema(ctx)
 
-	s, err := mysql.New(ctx, testDB, tessera.WithCheckpointSigner(noteSigner))
+	s, err := mysql.New(ctx, testDB,
+		tessera.WithCheckpointSigner(noteSigner),
+		tessera.WithCheckpointInterval(time.Second),
+		tessera.WithBatching(128, 100*time.Millisecond))
 	if err != nil {
-		t.Errorf("Failed to create mysql.Storage: %v", err)
+		t.Fatalf("Failed to create mysql.Storage: %v", err)
 	}
 
 	return s

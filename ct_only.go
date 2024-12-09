@@ -69,6 +69,6 @@ func WithCTLayout() func(*options.StorageOptions) {
 	}
 }
 
-func ctEntriesPath(n, logSize uint64) string {
-	return fmt.Sprintf("tile/data/%s", layout.NWithSuffix(0, n, logSize))
+func ctEntriesPath(n uint64, p uint8) string {
+	return fmt.Sprintf("tile/data/%s", layout.NWithSuffix(0, n, p))
 }

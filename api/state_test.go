@@ -18,7 +18,9 @@ package api_test
 import (
 	"bytes"
 	"crypto/rand"
+	"crypto/sha256"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -44,7 +46,7 @@ func TestHashTile_MarshalTileRoundtrip(t *testing.T) {
 			tile := api.HashTile{Nodes: make([][]byte, 0, test.size)}
 			for i := 0; i < test.size; i++ {
 				// Fill in the leaf index
-				tile.Nodes = append(tile.Nodes, make([]byte, 32))
+				tile.Nodes = append(tile.Nodes, make([]byte, sha256.Size))
 				if _, err := rand.Read(tile.Nodes[i]); err != nil {
 					t.Error(err)
 				}
@@ -141,5 +143,21 @@ func TestLeafBundle_UnmarshalText(t *testing.T) {
 				t.Errorf("wantErr: %t, got %v", test.wantErr, err)
 			}
 		})
+	}
+}
+
+func BenchmarkLeafBundle_UnmarshalText(b *testing.B) {
+	bs := bytes.Buffer{}
+	for i := range 222 {
+		// Create leaves of different lengths for interest in the parsing / memory allocation
+		leafStr := strings.Repeat(fmt.Sprintf("Leaf %d", i), i%20)
+		_, _ = bs.Write(tessera.NewEntry([]byte(leafStr)).MarshalBundleData(uint64(i)))
+	}
+	rawBundle := bs.Bytes()
+	for i := 0; i < b.N; i++ {
+		tile := api.EntryBundle{}
+		if err := tile.UnmarshalText(rawBundle); err != nil {
+			b.Fatal(err)
+		}
 	}
 }

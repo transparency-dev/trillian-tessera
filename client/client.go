@@ -53,7 +53,7 @@ type CheckpointFetcherFunc func(ctx context.Context) ([]byte, error)
 // Note that the implementation of this MUST return (either directly or wrapped)
 // an os.ErrIsNotExist when the file referenced by path does not exist, e.g. a HTTP
 // based implementation MUST return this error when it receives a 404 StatusCode.
-type TileFetcherFunc func(ctx context.Context, level, index, logSize uint64) ([]byte, error)
+type TileFetcherFunc func(ctx context.Context, level, index uint64, p uint8) ([]byte, error)
 
 // EntryBundleFetcherFunc is the signature of a function which can fetch the raw data
 // for a given entry bundle.
@@ -61,7 +61,7 @@ type TileFetcherFunc func(ctx context.Context, level, index, logSize uint64) ([]
 // Note that the implementation of this MUST return (either directly or wrapped)
 // an os.ErrIsNotExist when the file referenced by path does not exist, e.g. a HTTP
 // based implementation MUST return this error when it receives a 404 StatusCode.
-type EntryBundleFetcherFunc func(ctx context.Context, bundleIndex, logSize uint64) ([]byte, error)
+type EntryBundleFetcherFunc func(ctx context.Context, bundleIndex uint64, p uint8) ([]byte, error)
 
 // ConsensusCheckpointFunc is a function which returns the largest checkpoint known which is
 // signed by logSigV and satisfies some consensus algorithm.
@@ -255,7 +255,7 @@ func (n *nodeCache) GetNode(ctx context.Context, id compact.NodeID) ([]byte, err
 	tKey := tileKey{tileLevel, tileIndex}
 	t, ok := n.tiles[tKey]
 	if !ok {
-		tileRaw, err := n.getTile(ctx, tileLevel, tileIndex, n.logSize)
+		tileRaw, err := n.getTile(ctx, tileLevel, tileIndex, layout.PartialTileSize(tileLevel, tileIndex, n.logSize))
 		if err != nil {
 			return nil, fmt.Errorf("failed to fetch tile: %w", err)
 		}
@@ -286,7 +286,7 @@ func (n *nodeCache) GetNode(ctx context.Context, id compact.NodeID) ([]byte, err
 // GetEntryBundle fetches the entry bundle at the given _tile index_.
 func GetEntryBundle(ctx context.Context, f EntryBundleFetcherFunc, i, logSize uint64) (api.EntryBundle, error) {
 	bundle := api.EntryBundle{}
-	sRaw, err := f(ctx, i, logSize)
+	sRaw, err := f(ctx, i, layout.PartialTileSize(0, i, logSize))
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return bundle, fmt.Errorf("leaf bundle at index %d not found: %v", i, err)

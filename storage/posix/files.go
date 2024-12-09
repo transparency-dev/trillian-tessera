@@ -39,6 +39,8 @@ const (
 	dirPerm  = 0o755
 	filePerm = 0o644
 	stateDir = ".state"
+
+	minCheckpointInterval = time.Second
 )
 
 // Storage implements storage functions for a POSIX filesystem.
@@ -64,6 +66,9 @@ type NewTreeFunc func(size uint64, root []byte) error
 // - create must only be set when first creating the log, and will create the directory structure and an empty checkpoint
 func New(ctx context.Context, path string, create bool, opts ...func(*options.StorageOptions)) (*Storage, error) {
 	opt := storage.ResolveStorageOptions(opts...)
+	if opt.CheckpointInterval < minCheckpointInterval {
+		return nil, fmt.Errorf("requested CheckpointInterval (%v) is less than minimum permitted %v", opt.CheckpointInterval, minCheckpointInterval)
+	}
 
 	r := &Storage{
 		path:        path,
@@ -148,12 +153,12 @@ func (s *Storage) ReadCheckpoint(_ context.Context) ([]byte, error) {
 }
 
 // ReadEntryBundle retrieves the Nth entries bundle for a log of the given size.
-func (s *Storage) ReadEntryBundle(_ context.Context, index, logSize uint64) ([]byte, error) {
-	return os.ReadFile(filepath.Join(s.path, s.entriesPath(index, logSize)))
+func (s *Storage) ReadEntryBundle(_ context.Context, index uint64, p uint8) ([]byte, error) {
+	return os.ReadFile(filepath.Join(s.path, s.entriesPath(index, p)))
 }
 
-func (s *Storage) ReadTile(_ context.Context, level, index, logSize uint64) ([]byte, error) {
-	return os.ReadFile(filepath.Join(s.path, layout.TilePath(level, index, logSize)))
+func (s *Storage) ReadTile(_ context.Context, level, index uint64, p uint8) ([]byte, error) {
+	return os.ReadFile(filepath.Join(s.path, layout.TilePath(level, index, p)))
 }
 
 // sequenceBatch writes the entries from the provided batch into the entry bundle files of the log.
@@ -194,7 +199,7 @@ func (s *Storage) sequenceBatch(ctx context.Context, entries []*tessera.Entry) e
 	bundleIndex, entriesInBundle := seq/uint64(256), seq%uint64(256)
 	if entriesInBundle > 0 {
 		// If the latest bundle is partial, we need to read the data it contains in for our newer, larger, bundle.
-		part, err := s.ReadEntryBundle(ctx, bundleIndex, s.curSize)
+		part, err := s.ReadEntryBundle(ctx, bundleIndex, uint8(s.curSize%layout.EntryBundleWidth))
 		if err != nil {
 			return err
 		}
@@ -203,7 +208,7 @@ func (s *Storage) sequenceBatch(ctx context.Context, entries []*tessera.Entry) e
 		}
 	}
 	writeBundle := func(bundleIndex uint64) error {
-		bf := filepath.Join(s.path, s.entriesPath(bundleIndex, newSize))
+		bf := filepath.Join(s.path, s.entriesPath(bundleIndex, uint8(newSize%layout.EntryBundleWidth)))
 		if err := os.MkdirAll(filepath.Dir(bf), dirPerm); err != nil {
 			return fmt.Errorf("failed to make entries directory structure: %w", err)
 		}
@@ -287,7 +292,7 @@ func (s *Storage) doIntegrate(ctx context.Context, fromSeq uint64, entries []sto
 func (s *Storage) readTiles(ctx context.Context, tileIDs []storage.TileID, treeSize uint64) ([]*api.HashTile, error) {
 	r := make([]*api.HashTile, 0, len(tileIDs))
 	for _, id := range tileIDs {
-		t, err := s.readTile(ctx, id.Level, id.Index, treeSize)
+		t, err := s.readTile(ctx, id.Level, id.Index, layout.PartialTileSize(id.Level, id.Index, treeSize))
 		if err != nil {
 			return nil, err
 		}
@@ -299,8 +304,8 @@ func (s *Storage) readTiles(ctx context.Context, tileIDs []storage.TileID, treeS
 // readTile returns the parsed tile at the given tile-level and tile-index.
 // If no complete tile exists at that location, it will attempt to find a
 // partial tile for the given tree size at that location.
-func (s *Storage) readTile(ctx context.Context, level, index, logSize uint64) (*api.HashTile, error) {
-	t, err := s.ReadTile(ctx, level, index, logSize)
+func (s *Storage) readTile(ctx context.Context, level, index uint64, p uint8) (*api.HashTile, error) {
+	t, err := s.ReadTile(ctx, level, index, p)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			// We'll signal to higher levels that it wasn't found by retuning a nil for this tile.
@@ -331,7 +336,7 @@ func (s *Storage) storeTile(_ context.Context, level, index, logSize uint64, til
 		return fmt.Errorf("failed to marshal tile: %w", err)
 	}
 
-	tPath := filepath.Join(s.path, layout.TilePath(level, index, logSize))
+	tPath := filepath.Join(s.path, layout.TilePath(level, index, layout.PartialTileSize(level, index, logSize)))
 	tDir := filepath.Dir(tPath)
 	if err := os.MkdirAll(tDir, dirPerm); err != nil {
 		return fmt.Errorf("failed to create directory %q: %w", tDir, err)

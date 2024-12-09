@@ -35,8 +35,8 @@ var ErrRetry = errors.New("retry")
 
 type fetcher interface {
 	ReadCheckpoint(ctx context.Context) ([]byte, error)
-	ReadTile(ctx context.Context, l, i, sz uint64) ([]byte, error)
-	ReadEntryBundle(ctx context.Context, i, sz uint64) ([]byte, error)
+	ReadTile(ctx context.Context, l, i uint64, p uint8) ([]byte, error)
+	ReadEntryBundle(ctx context.Context, i uint64, p uint8) ([]byte, error)
 }
 
 // newLogClientsFromFlags returns a fetcher and a writer that will read
@@ -110,14 +110,14 @@ func (rr *roundRobinFetcher) ReadCheckpoint(ctx context.Context) ([]byte, error)
 	return f.ReadCheckpoint(ctx)
 }
 
-func (rr *roundRobinFetcher) ReadTile(ctx context.Context, l, i, sz uint64) ([]byte, error) {
+func (rr *roundRobinFetcher) ReadTile(ctx context.Context, l, i uint64, p uint8) ([]byte, error) {
 	f := rr.next()
-	return f.ReadTile(ctx, l, i, sz)
+	return f.ReadTile(ctx, l, i, p)
 }
 
-func (rr *roundRobinFetcher) ReadEntryBundle(ctx context.Context, i, sz uint64) ([]byte, error) {
+func (rr *roundRobinFetcher) ReadEntryBundle(ctx context.Context, i uint64, p uint8) ([]byte, error) {
 	f := rr.next()
-	return f.ReadEntryBundle(ctx, i, sz)
+	return f.ReadEntryBundle(ctx, i, p)
 }
 
 func (rr *roundRobinFetcher) next() fetcher {

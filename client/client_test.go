@@ -76,8 +76,8 @@ func testLogFetcher(_ context.Context, p string) ([]byte, error) {
 	return os.ReadFile(path)
 }
 
-func testLogTileFetcher(ctx context.Context, l, i, s uint64) ([]byte, error) {
-	return testLogFetcher(ctx, layout.TilePath(l, i, s))
+func testLogTileFetcher(ctx context.Context, l, i uint64, p uint8) ([]byte, error) {
+	return testLogFetcher(ctx, layout.TilePath(l, i, p))
 }
 
 // fetchCheckpointShim allows fetcher requests for checkpoints to be intercepted.
@@ -309,7 +309,7 @@ func TestCheckConsistency(t *testing.T) {
 func TestNodeCacheHandlesInvalidRequest(t *testing.T) {
 	ctx := context.Background()
 	wantBytes := []byte("0123456789ABCDEF0123456789ABCDEF")
-	f := func(_ context.Context, _, _, _ uint64) ([]byte, error) {
+	f := func(_ context.Context, _, _ uint64, _ uint8) ([]byte, error) {
 		h := &api.HashTile{
 			Nodes: [][]byte{wantBytes},
 		}
@@ -341,5 +341,46 @@ func TestHandleZeroRoot(t *testing.T) {
 	}
 	if _, err := NewProofBuilder(context.Background(), zeroCP, testLogTileFetcher); err != nil {
 		t.Fatalf("NewProofBuilder: %v", err)
+	}
+}
+
+func TestGetEntryBundleAddressing(t *testing.T) {
+	for _, test := range []struct {
+		name                string
+		idx, logSize        uint64
+		wantPartialTileSize uint8
+	}{
+		{
+			name:                "works - partial tile",
+			idx:                 0,
+			logSize:             34,
+			wantPartialTileSize: 34,
+		},
+		{
+			name:                "works - full tile",
+			idx:                 1,
+			logSize:             256*2 + 45,
+			wantPartialTileSize: 0,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			gotIdx := uint64(0)
+			gotTileSize := uint8(0)
+			f := func(_ context.Context, i uint64, sz uint8) ([]byte, error) {
+				gotIdx = i
+				gotTileSize = sz
+				return []byte{}, nil
+			}
+			_, err := GetEntryBundle(context.Background(), f, test.idx, test.logSize)
+			if err != nil {
+				t.Fatalf("GetEntryBundle: %v", err)
+			}
+			if gotIdx != test.idx {
+				t.Errorf("f got idx %d, want %d", gotIdx, test.idx)
+			}
+			if gotTileSize != test.wantPartialTileSize {
+				t.Errorf("f got tileSize %d, want %d", gotTileSize, test.wantPartialTileSize)
+			}
+		})
 	}
 }

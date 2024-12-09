@@ -37,11 +37,13 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"sync/atomic"
 	"time"
 
 	"cloud.google.com/go/spanner"
 	"cloud.google.com/go/spanner/apiv1/spannerpb"
 	gcs "cloud.google.com/go/storage"
+	"github.com/globocom/go-buffer"
 	"github.com/google/go-cmp/cmp"
 	"github.com/transparency-dev/merkle/rfc6962"
 	tessera "github.com/transparency-dev/trillian-tessera"
@@ -57,9 +59,16 @@ import (
 )
 
 const (
-	entryBundleSize = 256
-	logContType     = "application/octet-stream"
-	ckptContType    = "text/plain; charset=utf-8"
+	// minCheckpointInterval is the shortest permitted interval between updating published checkpoints.
+	// GCS has a rate limit 1 update per second for individual objects, but we've observed that attempting
+	// to update at exactly that rate still results in the occasional refusal, so bake in a little wiggle
+	// room.
+	minCheckpointInterval = 1200 * time.Millisecond
+
+	logContType      = "application/octet-stream"
+	ckptContType     = "text/plain; charset=utf-8"
+	logCacheControl  = "max-age=604800,immutable"
+	ckptCacheControl = "no-cache"
 
 	DefaultPushbackMaxOutstanding = 4096
 	DefaultIntegrationSizeLimit   = 5 * 4096
@@ -81,7 +90,7 @@ type Storage struct {
 // objStore describes a type which can store and retrieve objects.
 type objStore interface {
 	getObject(ctx context.Context, obj string) ([]byte, int64, error)
-	setObject(ctx context.Context, obj string, data []byte, cond *gcs.Conditions, contType string) error
+	setObject(ctx context.Context, obj string, data []byte, cond *gcs.Conditions, contType string, cacheCtl string) error
 	lastModified(ctx context.Context, obj string) (time.Time, error)
 }
 
@@ -118,6 +127,9 @@ func New(ctx context.Context, cfg Config, opts ...func(*options.StorageOptions))
 	opt := storage.ResolveStorageOptions(opts...)
 	if opt.PushbackMaxOutstanding == 0 {
 		opt.PushbackMaxOutstanding = DefaultPushbackMaxOutstanding
+	}
+	if opt.CheckpointInterval < minCheckpointInterval {
+		return nil, fmt.Errorf("requested CheckpointInterval (%v) is less than minimum permitted %v", opt.CheckpointInterval, minCheckpointInterval)
 	}
 
 	c, err := gcs.NewClient(ctx, gcs.WithJSONReads())
@@ -201,12 +213,12 @@ func (s *Storage) ReadCheckpoint(ctx context.Context) ([]byte, error) {
 	return s.get(ctx, layout.CheckpointPath)
 }
 
-func (s *Storage) ReadTile(ctx context.Context, l, i, sz uint64) ([]byte, error) {
-	return s.get(ctx, layout.TilePath(l, i, sz))
+func (s *Storage) ReadTile(ctx context.Context, l, i uint64, p uint8) ([]byte, error) {
+	return s.get(ctx, layout.TilePath(l, i, p))
 }
 
-func (s *Storage) ReadEntryBundle(ctx context.Context, i, sz uint64) ([]byte, error) {
-	return s.get(ctx, s.entriesPath(i, sz))
+func (s *Storage) ReadEntryBundle(ctx context.Context, i uint64, p uint8) ([]byte, error) {
+	return s.get(ctx, s.entriesPath(i, p))
 }
 
 // get returns the requested object.
@@ -260,7 +272,7 @@ func (s *Storage) publishCheckpoint(ctx context.Context, minStaleness time.Durat
 		return fmt.Errorf("newCP: %v", err)
 	}
 
-	if err := s.objStore.setObject(ctx, layout.CheckpointPath, cpRaw, nil, ckptContType); err != nil {
+	if err := s.objStore.setObject(ctx, layout.CheckpointPath, cpRaw, nil, ckptContType, ckptCacheControl); err != nil {
 		return fmt.Errorf("writeCheckpoint: %v", err)
 	}
 	return nil
@@ -275,10 +287,10 @@ func (s *Storage) setTile(ctx context.Context, level, index, logSize uint64, til
 	if err != nil {
 		return err
 	}
-	tPath := layout.TilePath(level, index, logSize)
+	tPath := layout.TilePath(level, index, layout.PartialTileSize(level, index, logSize))
 	klog.V(2).Infof("StoreTile: %s (%d entries)", tPath, len(tile.Nodes))
 
-	return s.objStore.setObject(ctx, tPath, data, &gcs.Conditions{DoesNotExist: true}, logContType)
+	return s.objStore.setObject(ctx, tPath, data, &gcs.Conditions{DoesNotExist: true}, logContType, logCacheControl)
 }
 
 // getTiles returns the tiles with the given tile-coords for the specified log size.
@@ -291,7 +303,7 @@ func (s *Storage) getTiles(ctx context.Context, tileIDs []storage.TileID, logSiz
 		i := i
 		id := id
 		errG.Go(func() error {
-			objName := layout.TilePath(id.Level, id.Index, logSize)
+			objName := layout.TilePath(id.Level, id.Index, layout.PartialTileSize(id.Level, id.Index, logSize))
 			data, _, err := s.objStore.getObject(ctx, objName)
 			if err != nil {
 				if errors.Is(err, gcs.ErrObjectNotExist) {
@@ -316,11 +328,12 @@ func (s *Storage) getTiles(ctx context.Context, tileIDs []storage.TileID, logSiz
 
 }
 
-// getEntryBundle returns the serialised entry bundle at the location implied by the given index and treeSize.
+// getEntryBundle returns the serialised entry bundle at the location described by the given index and partial size.
+// A partial size of zero implies a full tile.
 //
 // Returns a wrapped os.ErrNotExist if the bundle does not exist.
-func (s *Storage) getEntryBundle(ctx context.Context, bundleIndex uint64, logSize uint64) ([]byte, error) {
-	objName := s.entriesPath(bundleIndex, logSize)
+func (s *Storage) getEntryBundle(ctx context.Context, bundleIndex uint64, p uint8) ([]byte, error) {
+	objName := s.entriesPath(bundleIndex, p)
 	data, _, err := s.objStore.getObject(ctx, objName)
 	if err != nil {
 		if errors.Is(err, gcs.ErrObjectNotExist) {
@@ -335,12 +348,12 @@ func (s *Storage) getEntryBundle(ctx context.Context, bundleIndex uint64, logSiz
 }
 
 // setEntryBundle idempotently stores the serialised entry bundle at the location implied by the bundleIndex and treeSize.
-func (s *Storage) setEntryBundle(ctx context.Context, bundleIndex uint64, logSize uint64, bundleRaw []byte) error {
-	objName := s.entriesPath(bundleIndex, logSize)
+func (s *Storage) setEntryBundle(ctx context.Context, bundleIndex uint64, p uint8, bundleRaw []byte) error {
+	objName := s.entriesPath(bundleIndex, p)
 	// Note that setObject does an idempotent interpretation of DoesNotExist - it only
 	// returns an error if the named object exists _and_ contains different data to what's
 	// passed in here.
-	if err := s.objStore.setObject(ctx, objName, bundleRaw, &gcs.Conditions{DoesNotExist: true}, logContType); err != nil {
+	if err := s.objStore.setObject(ctx, objName, bundleRaw, &gcs.Conditions{DoesNotExist: true}, logContType, logCacheControl); err != nil {
 		return fmt.Errorf("setObject(%q): %v", objName, err)
 
 	}
@@ -398,11 +411,11 @@ func (s *Storage) updateEntryBundles(ctx context.Context, fromSeq uint64, entrie
 	}
 
 	numAdded := uint64(0)
-	bundleIndex, entriesInBundle := fromSeq/entryBundleSize, fromSeq%entryBundleSize
+	bundleIndex, entriesInBundle := fromSeq/layout.EntryBundleWidth, fromSeq%layout.EntryBundleWidth
 	bundleWriter := &bytes.Buffer{}
 	if entriesInBundle > 0 {
 		// If the latest bundle is partial, we need to read the data it contains in for our newer, larger, bundle.
-		part, err := s.getEntryBundle(ctx, uint64(bundleIndex), uint64(entriesInBundle))
+		part, err := s.getEntryBundle(ctx, uint64(bundleIndex), uint8(entriesInBundle))
 		if err != nil {
 			return err
 		}
@@ -416,9 +429,9 @@ func (s *Storage) updateEntryBundles(ctx context.Context, fromSeq uint64, entrie
 
 	// goSetEntryBundle is a function which uses seqErr to spin off a go-routine to write out an entry bundle.
 	// It's used in the for loop below.
-	goSetEntryBundle := func(ctx context.Context, bundleIndex uint64, fromSeq uint64, bundleRaw []byte) {
+	goSetEntryBundle := func(ctx context.Context, bundleIndex uint64, p uint8, bundleRaw []byte) {
 		seqErr.Go(func() error {
-			if err := s.setEntryBundle(ctx, bundleIndex, fromSeq, bundleRaw); err != nil {
+			if err := s.setEntryBundle(ctx, bundleIndex, p, bundleRaw); err != nil {
 				return err
 			}
 			return nil
@@ -433,10 +446,10 @@ func (s *Storage) updateEntryBundles(ctx context.Context, fromSeq uint64, entrie
 		entriesInBundle++
 		fromSeq++
 		numAdded++
-		if entriesInBundle == entryBundleSize {
+		if entriesInBundle == layout.EntryBundleWidth {
 			//  This bundle is full, so we need to write it out...
 			klog.V(1).Infof("In-memory bundle idx %d is full, attempting write to GCS", bundleIndex)
-			goSetEntryBundle(ctx, bundleIndex, fromSeq, bundleWriter.Bytes())
+			goSetEntryBundle(ctx, bundleIndex, 0, bundleWriter.Bytes())
 			// ... and prepare the next entry bundle for any remaining entries in the batch
 			bundleIndex++
 			entriesInBundle = 0
@@ -449,7 +462,7 @@ func (s *Storage) updateEntryBundles(ctx context.Context, fromSeq uint64, entrie
 	// this needs writing out too.
 	if entriesInBundle > 0 {
 		klog.V(1).Infof("Attempting to write in-memory partial bundle idx %d.%d to GCS", bundleIndex, entriesInBundle)
-		goSetEntryBundle(ctx, bundleIndex, fromSeq, bundleWriter.Bytes())
+		goSetEntryBundle(ctx, bundleIndex, uint8(entriesInBundle), bundleWriter.Bytes())
 	}
 	return seqErr.Wait()
 }
@@ -737,7 +750,7 @@ func (s *gcsStorage) getObject(ctx context.Context, obj string) ([]byte, int64, 
 // Note that when preconditions are specified and are not met, an error will be returned *unless*
 // the currently stored data is bit-for-bit identical to the data to-be-written.
 // This is intended to provide idempotentency for writes.
-func (s *gcsStorage) setObject(ctx context.Context, objName string, data []byte, cond *gcs.Conditions, contType string) error {
+func (s *gcsStorage) setObject(ctx context.Context, objName string, data []byte, cond *gcs.Conditions, contType string, cacheCtl string) error {
 	bkt := s.gcsClient.Bucket(s.bucket)
 	obj := bkt.Object(objName)
 
@@ -749,6 +762,7 @@ func (s *gcsStorage) setObject(ctx context.Context, objName string, data []byte,
 		w = obj.If(*cond).NewWriter(ctx)
 	}
 	w.ObjectAttrs.ContentType = contType
+	w.ObjectAttrs.CacheControl = cacheCtl
 	if _, err := w.Write(data); err != nil {
 		return fmt.Errorf("failed to write object %q to bucket %q: %w", objName, s.bucket, err)
 	}
@@ -782,4 +796,171 @@ func (s *gcsStorage) lastModified(ctx context.Context, obj string) (time.Time, e
 		return time.Time{}, fmt.Errorf("failed to create reader for object %q in bucket %q: %w", obj, s.bucket, err)
 	}
 	return r.Attrs.LastModified, r.Close()
+}
+
+// NewDedupe returns wrapped Add func which will use Spanner to maintain a mapping of
+// previously seen entries and their assigned indices. Future calls with the same entry
+// will return the previously assigned index, as yet unseen entries will be passed to the provided
+// delegate function to have an index assigned.
+//
+// For performance reasons, the ID -> index associations returned by the delegate are buffered before
+// being flushed to Spanner. This can result in duplicates occuring in some circumstances, but in
+// general this should not be a problem.
+//
+// Note that the storage for this mapping is entirely separate and unconnected to the storage used for
+// maintaining the Merkle tree.
+//
+// This functionality is experimental!
+func NewDedupe(ctx context.Context, spannerDB string, delegate func(ctx context.Context, e *tessera.Entry) tessera.IndexFuture) (func(ctx context.Context, e *tessera.Entry) tessera.IndexFuture, error) {
+	/*
+	   Schema for reference:
+
+	   	CREATE TABLE IDSeq (
+	   	 id INT64 NOT NULL,
+	   	 h BYTES(MAX) NOT NULL,
+	   	 idx INT64 NOT NULL,
+	   	) PRIMARY KEY (id, h);
+	*/
+	dedupDB, err := spanner.NewClient(ctx, spannerDB)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to Spanner: %v", err)
+	}
+
+	r := &dedupStorage{
+		ctx:      ctx,
+		dbPool:   dedupDB,
+		delegate: delegate,
+	}
+
+	// TODO(al): Make these configurable
+	r.buf = buffer.New(
+		buffer.WithSize(64),
+		buffer.WithFlushInterval(200*time.Millisecond),
+		buffer.WithFlusher(buffer.FlusherFunc(r.flush)),
+		buffer.WithPushTimeout(15*time.Second),
+	)
+	go func(ctx context.Context) {
+		t := time.NewTicker(time.Second)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				klog.V(1).Infof("DEDUP: # Writes %d, # Lookups %d, # DB hits %v, # buffer Push discards %d", r.numWrites.Load(), r.numLookups.Load(), r.numDBDedups.Load(), r.numPushErrs.Load())
+			}
+		}
+	}(ctx)
+	return r.add, nil
+}
+
+type dedupStorage struct {
+	ctx      context.Context
+	dbPool   *spanner.Client
+	delegate func(ctx context.Context, e *tessera.Entry) tessera.IndexFuture
+
+	numLookups  atomic.Uint64
+	numWrites   atomic.Uint64
+	numDBDedups atomic.Uint64
+	numPushErrs atomic.Uint64
+
+	buf *buffer.Buffer
+}
+
+// index returns the index (if any) previously associated with the provided hash
+func (d *dedupStorage) index(ctx context.Context, h []byte) (*uint64, error) {
+	d.numLookups.Add(1)
+	var idx int64
+	if row, err := d.dbPool.Single().ReadRow(ctx, "IDSeq", spanner.Key{0, h}, []string{"idx"}); err != nil {
+		if c := spanner.ErrCode(err); c == codes.NotFound {
+			return nil, nil
+		}
+		return nil, err
+	} else {
+		if err := row.Column(0, &idx); err != nil {
+			return nil, fmt.Errorf("failed to read dedup index: %v", err)
+		}
+		idx := uint64(idx)
+		d.numDBDedups.Add(1)
+		return &idx, nil
+	}
+}
+
+// storeMappings stores the associations between the keys and IDs in a non-atomic fashion
+// (i.e. it does not store all or none in a transactional sense).
+//
+// Returns an error if one or more mappings cannot be stored.
+func (d *dedupStorage) storeMappings(ctx context.Context, entries []dedupeMapping) error {
+	m := make([]*spanner.MutationGroup, 0, len(entries))
+	for _, e := range entries {
+		m = append(m, &spanner.MutationGroup{
+			Mutations: []*spanner.Mutation{spanner.Insert("IDSeq", []string{"id", "h", "idx"}, []interface{}{0, e.ID, int64(e.Idx)})},
+		})
+	}
+
+	i := d.dbPool.BatchWrite(ctx, m)
+	return i.Do(func(r *spannerpb.BatchWriteResponse) error {
+		s := r.GetStatus()
+		if c := codes.Code(s.Code); c != codes.OK && c != codes.AlreadyExists {
+			return fmt.Errorf("failed to write dedup record: %v (%v)", s.GetMessage(), c)
+		}
+		return nil
+	})
+}
+
+// dedupeMapping represents an ID -> index mapping.
+type dedupeMapping struct {
+	ID  []byte
+	Idx uint64
+}
+
+// add adds the entry to the underlying delegate only if e isn't already known. In either case,
+// an IndexFuture will be returned that the client can use to get the sequence number of this entry.
+func (d *dedupStorage) add(ctx context.Context, e *tessera.Entry) tessera.IndexFuture {
+	idx, err := d.index(ctx, e.Identity())
+	if err != nil {
+		return func() (uint64, error) { return 0, err }
+	}
+	if idx != nil {
+		return func() (uint64, error) { return *idx, nil }
+	}
+
+	i, err := d.delegate(ctx, e)()
+	if err != nil {
+		return func() (uint64, error) { return 0, err }
+	}
+
+	err = d.enqueueMapping(ctx, e.Identity(), i)
+	return func() (uint64, error) {
+		return i, err
+	}
+}
+
+// enqueueMapping buffers the provided ID -> index mapping ready to be flushed to storage.
+func (d *dedupStorage) enqueueMapping(_ context.Context, h []byte, idx uint64) error {
+	err := d.buf.Push(dedupeMapping{ID: h, Idx: idx})
+	if err != nil {
+		d.numPushErrs.Add(1)
+		// This means there's pressure flushing dedup writes out, so discard this write.
+		if err != buffer.ErrTimeout {
+			return err
+		}
+	}
+	return nil
+}
+
+// flush writes enqueued mappings to storage.
+func (d *dedupStorage) flush(items []interface{}) {
+	entries := make([]dedupeMapping, len(items))
+	for i := range items {
+		entries[i] = items[i].(dedupeMapping)
+	}
+
+	ctx, c := context.WithTimeout(d.ctx, 15*time.Second)
+	defer c()
+
+	if err := d.storeMappings(ctx, entries); err != nil {
+		klog.Infof("Failed to flush dedup entries: %v", err)
+		return
+	}
+	d.numWrites.Add(uint64(len(entries)))
 }

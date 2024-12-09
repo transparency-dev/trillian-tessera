@@ -18,9 +18,11 @@ package main
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"os"
 	"time"
@@ -141,15 +143,19 @@ func configureTilesReadAPI(mux *http.ServeMux, storage *mysql.Storage) {
 	mux.HandleFunc("GET /checkpoint", func(w http.ResponseWriter, r *http.Request) {
 		checkpoint, err := storage.ReadCheckpoint(r.Context())
 		if err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
 			klog.Errorf("/checkpoint: %v", err)
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
-		if checkpoint == nil {
-			w.WriteHeader(http.StatusNotFound)
-			return
-		}
 
+		// Don't cache checkpoints as the endpoint refreshes regularly.
+		// A personality that wanted to _could_ set a small cache time here which was no higher
+		// than the checkpoint publish interval.
+		w.Header().Set("Cache-Control", "no-cache")
 		if _, err := w.Write(checkpoint); err != nil {
 			klog.Errorf("/checkpoint: %v", err)
 			return
@@ -157,7 +163,7 @@ func configureTilesReadAPI(mux *http.ServeMux, storage *mysql.Storage) {
 	})
 
 	mux.HandleFunc("GET /tile/{level}/{index...}", func(w http.ResponseWriter, r *http.Request) {
-		level, index, width, err := layout.ParseTileLevelIndexWidth(r.PathValue("level"), r.PathValue("index"))
+		level, index, p, err := layout.ParseTileLevelIndexPartial(r.PathValue("level"), r.PathValue("index"))
 		if err != nil {
 			w.WriteHeader(http.StatusBadRequest)
 			if _, werr := w.Write([]byte(fmt.Sprintf("Malformed URL: %s", err.Error()))); werr != nil {
@@ -165,15 +171,14 @@ func configureTilesReadAPI(mux *http.ServeMux, storage *mysql.Storage) {
 			}
 			return
 		}
-		impliedSize := (index*256 + width) << (level * 8)
-		tile, err := storage.ReadTile(r.Context(), level, index, impliedSize)
+		tile, err := storage.ReadTile(r.Context(), level, index, p)
 		if err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
 			klog.Errorf("/tile/{level}/{index...}: %v", err)
 			w.WriteHeader(http.StatusInternalServerError)
-			return
-		}
-		if tile == nil {
-			w.WriteHeader(http.StatusNotFound)
 			return
 		}
 
@@ -186,7 +191,7 @@ func configureTilesReadAPI(mux *http.ServeMux, storage *mysql.Storage) {
 	})
 
 	mux.HandleFunc("GET /tile/entries/{index...}", func(w http.ResponseWriter, r *http.Request) {
-		index, width, err := layout.ParseTileIndexWidth(r.PathValue("index"))
+		index, p, err := layout.ParseTileIndexPartial(r.PathValue("index"))
 		if err != nil {
 			w.WriteHeader(http.StatusBadRequest)
 			if _, werr := w.Write([]byte(fmt.Sprintf("Malformed URL: %s", err.Error()))); werr != nil {
@@ -195,7 +200,7 @@ func configureTilesReadAPI(mux *http.ServeMux, storage *mysql.Storage) {
 			return
 		}
 
-		entryBundle, err := storage.ReadEntryBundle(r.Context(), index, width)
+		entryBundle, err := storage.ReadEntryBundle(r.Context(), index, p)
 		if err != nil {
 			klog.Errorf("/tile/entries/{index...}: %v", err)
 			w.WriteHeader(http.StatusInternalServerError)
@@ -206,7 +211,7 @@ func configureTilesReadAPI(mux *http.ServeMux, storage *mysql.Storage) {
 			return
 		}
 
-		// TODO: Add immutable Cache-Control header.
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 
 		if _, err := w.Write(entryBundle); err != nil {
 			klog.Errorf("/tile/entries/{index...}: %v", err)

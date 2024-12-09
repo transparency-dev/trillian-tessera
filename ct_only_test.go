@@ -16,46 +16,41 @@ package tessera
 
 import (
 	"fmt"
-	"math"
 	"testing"
 )
 
 func TestCTEntriesPath(t *testing.T) {
 	for _, test := range []struct {
 		N        uint64
-		logSize  uint64
+		p        uint8
 		wantPath string
 	}{
 		{
 			N:        0,
-			logSize:  289,
 			wantPath: "tile/data/000",
 		},
 		{
 			N:        0,
-			logSize:  8,
+			p:        8,
 			wantPath: "tile/data/000.p/8",
 		}, {
 			N:        255,
-			logSize:  256 * 256,
 			wantPath: "tile/data/255",
 		}, {
 			N:        255,
-			logSize:  255*256 - 3,
+			p:        253,
 			wantPath: "tile/data/255.p/253",
 		}, {
 			N:        256,
-			logSize:  257 * 256,
 			wantPath: "tile/data/256",
 		}, {
 			N:        123456789000,
-			logSize:  math.MaxUint64,
 			wantPath: "tile/data/x123/x456/x789/000",
 		},
 	} {
 		desc := fmt.Sprintf("N %d", test.N)
 		t.Run(desc, func(t *testing.T) {
-			gotPath := ctEntriesPath(test.N, test.logSize)
+			gotPath := ctEntriesPath(test.N, test.p)
 			if gotPath != test.wantPath {
 				t.Errorf("got file %q want %q", gotPath, test.wantPath)
 			}

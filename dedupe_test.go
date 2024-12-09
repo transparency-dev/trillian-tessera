@@ -16,6 +16,7 @@ package tessera_test
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"sync"
 	"testing"
@@ -59,13 +60,15 @@ func TestDedupe(t *testing.T) {
 			dedupeAdd := tessera.InMemoryDedupe(delegate, 256)
 
 			// Add foo, bar, baz to prime the cache to make things interesting
-			dedupeAdd(ctx, tessera.NewEntry([]byte("foo")))
-			dedupeAdd(ctx, tessera.NewEntry([]byte("bar")))
-			dedupeAdd(ctx, tessera.NewEntry([]byte("baz")))
+			for _, s := range []string{"foo", "bar", "baz"} {
+				if _, err := dedupeAdd(ctx, tessera.NewEntry([]byte(s)))(); err != nil {
+					t.Fatalf("dedupeAdd(%q): %v", s, err)
+				}
+			}
 
 			idx, err := dedupeAdd(ctx, tessera.NewEntry([]byte(tC.newValue)))()
 			if err != nil {
-				t.Fatal(err)
+				t.Fatalf("dedupeAdd(%q): %v", tC.newValue, err)
 			}
 			if idx != tC.wantIdx {
 				t.Errorf("got != want (%d != %d)", idx, tC.wantIdx)
@@ -92,7 +95,7 @@ func BenchmarkDedupe(b *testing.B) {
 		for leafIndex := range 1024 {
 			wg.Add(1)
 			go func(index int) {
-				_, err := dedupeAdd(ctx, tessera.NewEntry([]byte(fmt.Sprintf("leaf with value %d", index%32))))()
+				_, err := dedupeAdd(ctx, tessera.NewEntry([]byte(fmt.Sprintf("leaf with value %d", index%sha256.Size))))()
 				if err != nil {
 					b.Error(err)
 				}
