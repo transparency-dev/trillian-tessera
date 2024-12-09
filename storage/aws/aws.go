@@ -164,7 +164,7 @@ func New(ctx context.Context, cfg Config, opts ...func(*options.StorageOptions))
 	// Kick off go-routine which handles the integration of entries.
 	go r.consumeEntriesTask(ctx)
 
-	// Kick off go-routing which handles the publication of checkpoints.
+	// Kick off go-routine which handles the publication of checkpoints.
 	go r.publishCheckpointTask(ctx, opt.CheckpointInterval)
 
 	return r, nil
