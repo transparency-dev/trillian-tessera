@@ -315,7 +315,7 @@ func (s *Storage) ReadEntryBundle(ctx context.Context, index uint64, p uint8) ([
 	}
 
 	if requestedSize > size {
-		return nil, os.ErrNotExist
+		return nil, fmt.Errorf("bundle with %d entries requested, but only %d available: %w", requestedSize, size, os.ErrNotExist)
 	}
 
 	return entryBundle, nil
