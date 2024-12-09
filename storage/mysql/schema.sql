@@ -54,7 +54,7 @@ CREATE TABLE IF NOT EXISTS `Subtree` (
 CREATE TABLE IF NOT EXISTS `TiledLeaves` (
   `tile_index` BIGINT UNSIGNED NOT NULL,
   -- size is the number of entries serialized into this leaf bundle.
-  `size`       INT UNSIGNED NOT NULL,
+  `size`       SMALLINT UNSIGNED NOT NULL,
   `data`       LONGBLOB NOT NULL,
   PRIMARY KEY(`tile_index`)
 );
