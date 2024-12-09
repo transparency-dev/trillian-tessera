@@ -347,7 +347,7 @@ func TestPublishCheckpoint(t *testing.T) {
 				t.Fatalf("storage.init: %v", err)
 			}
 			cpOld := []byte("bananas")
-			if err := m.setObject(ctx, layout.CheckpointPath, cpOld, nil, ""); err != nil {
+			if err := m.setObject(ctx, layout.CheckpointPath, cpOld, nil, "", ""); err != nil {
 				t.Fatalf("setObject(bananas): %v", err)
 			}
 			m.lMod = test.cpModifiedAt
@@ -394,7 +394,7 @@ func (m *memObjStore) getObject(_ context.Context, obj string) ([]byte, int64, e
 }
 
 // TODO(phboneff): add content type tests
-func (m *memObjStore) setObject(_ context.Context, obj string, data []byte, cond *gcs.Conditions, _ string) error {
+func (m *memObjStore) setObject(_ context.Context, obj string, data []byte, cond *gcs.Conditions, _, _ string) error {
 	m.Lock()
 	defer m.Unlock()
 
