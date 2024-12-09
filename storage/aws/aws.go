@@ -59,7 +59,6 @@ import (
 )
 
 const (
-	entryBundleSize       = 256
 	logContType           = "application/octet-stream"
 	ckptContType          = "text/plain; charset=utf-8"
 	minCheckpointInterval = time.Second
