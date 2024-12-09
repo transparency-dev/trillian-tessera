@@ -438,7 +438,7 @@ func TestEntryBundleRoundTrip(t *testing.T) {
 			if err != nil {
 				t.Errorf("Add got err: %v", err)
 			}
-			entryBundleRaw, err := s.ReadEntryBundle(ctx, entryIndex/256, uint8(entryIndex+1%layout.EntryBundleWidth))
+			entryBundleRaw, err := s.ReadEntryBundle(ctx, entryIndex/256, layout.PartialTileSize(0, entryIndex, entryIndex+1))
 			if err != nil {
 				t.Fatalf("ReadEntryBundle got err: %v", err)
 			}
