@@ -19,7 +19,7 @@
 -- on an indepentent timeframe to the internal updating of state.
 CREATE TABLE IF NOT EXISTS `Checkpoint` (
   -- id is expected to be always 0 to maintain a maximum of a single row.
-  `id`    INT UNSIGNED NOT NULL,
+  `id`    TINYINT UNSIGNED NOT NULL,
   -- note is the text signed by one or more keys in the checkpoint format. See https://c2sp.org/tlog-checkpoint and https://c2sp.org/signed-note.
   `note`  MEDIUMBLOB NOT NULL,
   -- published_at is the millisecond UNIX timestamp of when this row was written.
@@ -31,7 +31,7 @@ CREATE TABLE IF NOT EXISTS `Checkpoint` (
 -- This is not the same thing as a Checkpoint, which is a signed commitment to such a state.
 CREATE TABLE IF NOT EXISTS `TreeState` (
   -- id is expected to be always 0 to maintain a maximum of a single row.
-  `id`    INT UNSIGNED NOT NULL,
+  `id`    TINYINT UNSIGNED NOT NULL,
   -- size is the extent of the currently integrated tree.
   `size`  BIGINT UNSIGNED NOT NULL,
   -- root is the root hash of the tree at the size stored in `size`.
@@ -42,7 +42,7 @@ CREATE TABLE IF NOT EXISTS `TreeState` (
 -- "Subtree" table is an internal tile consisting of hashes. There is one row for each internal tile, and this is updated until it is completed, at which point it is immutable.
 CREATE TABLE IF NOT EXISTS `Subtree` (
   -- level is the level of the tile.
-  `level` INT UNSIGNED NOT NULL,
+  `level` TINYINT UNSIGNED NOT NULL,
   -- index is the index of the tile.
   `index` BIGINT UNSIGNED NOT NULL,
   -- nodes stores the hashes of the leaves.
