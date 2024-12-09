@@ -62,7 +62,7 @@ const (
 	entryBundleSize       = 256
 	logContType           = "application/octet-stream"
 	ckptContType          = "text/plain; charset=utf-8"
-	minCheckpointInterval = 1 * time.Second
+	minCheckpointInterval = time.Second
 
 	DefaultPushbackMaxOutstanding = 4096
 	DefaultIntegrationSizeLimit   = 5 * 4096
