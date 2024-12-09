@@ -221,7 +221,7 @@ func (m *memTileStore[T]) getTile(_ context.Context, id TileID, treeSize uint64)
 	m.RLock()
 	defer m.RUnlock()
 
-	k := layout.TilePath(id.Level, id.Index, treeSize)
+	k := layout.TilePath(id.Level, id.Index, layout.PartialTileSize(id.Level, id.Index, treeSize))
 	d := m.mem[k]
 	return d, nil
 }
@@ -232,7 +232,7 @@ func (m *memTileStore[T]) getTiles(_ context.Context, ids []TileID, treeSize uin
 
 	r := make([]*T, len(ids))
 	for i, id := range ids {
-		k := layout.TilePath(id.Level, id.Index, treeSize)
+		k := layout.TilePath(id.Level, id.Index, layout.PartialTileSize(id.Level, id.Index, treeSize))
 		klog.V(1).Infof("mem.getTile(%q, %d)", k, treeSize)
 		d, ok := m.mem[k]
 		if !ok {
@@ -247,7 +247,7 @@ func (m *memTileStore[T]) setTile(_ context.Context, id TileID, treeSize uint64,
 	m.Lock()
 	defer m.Unlock()
 
-	k := layout.TilePath(id.Level, id.Index, treeSize)
+	k := layout.TilePath(id.Level, id.Index, layout.PartialTileSize(id.Level, id.Index, treeSize))
 	klog.V(1).Infof("mem.setTile(%q, %d)", k, treeSize)
 	_, ok := m.mem[k]
 	if ok {

@@ -177,7 +177,7 @@ func newTileReadCache(getTiles func(ctx context.Context, tileIDs []TileID, treeS
 
 // Get returns a previously set tile and true, or, if no such tile is in the cache, attempt to fetch it.
 func (r *tileReadCache) Get(ctx context.Context, tileID TileID, treeSize uint64) (*populatedTile, error) {
-	k := layout.TilePath(uint64(tileID.Level), tileID.Index, treeSize)
+	k := layout.TilePath(uint64(tileID.Level), tileID.Index, layout.PartialTileSize(tileID.Level, tileID.Index, treeSize))
 	e, ok := r.entries[k]
 	if !ok {
 		klog.V(1).Infof("Readcache miss: %q", k)
@@ -207,7 +207,7 @@ func (r *tileReadCache) Prewarm(ctx context.Context, tileIDs []TileID, treeSize 
 		if err != nil {
 			return fmt.Errorf("failed to create fulltile: %v", err)
 		}
-		k := layout.TilePath(uint64(tileIDs[i].Level), tileIDs[i].Index, treeSize)
+		k := layout.TilePath(uint64(tileIDs[i].Level), tileIDs[i].Index, layout.PartialTileSize(tileIDs[i].Level, tileIDs[i].Index, treeSize))
 		r.entries[k] = e
 	}
 	return nil

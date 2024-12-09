@@ -159,7 +159,7 @@ func configureTilesReadAPI(mux *http.ServeMux, storage *mysql.Storage) {
 	})
 
 	mux.HandleFunc("GET /tile/{level}/{index...}", func(w http.ResponseWriter, r *http.Request) {
-		level, index, width, err := layout.ParseTileLevelIndexWidth(r.PathValue("level"), r.PathValue("index"))
+		level, index, p, err := layout.ParseTileLevelIndexPartial(r.PathValue("level"), r.PathValue("index"))
 		if err != nil {
 			w.WriteHeader(http.StatusBadRequest)
 			if _, werr := w.Write([]byte(fmt.Sprintf("Malformed URL: %s", err.Error()))); werr != nil {
@@ -167,8 +167,7 @@ func configureTilesReadAPI(mux *http.ServeMux, storage *mysql.Storage) {
 			}
 			return
 		}
-		inferredMinTreeSize := (index*256 + width) << (level * 8)
-		tile, err := storage.ReadTile(r.Context(), level, index, inferredMinTreeSize)
+		tile, err := storage.ReadTile(r.Context(), level, index, p)
 		if err != nil {
 			if errors.Is(err, fs.ErrNotExist) {
 				w.WriteHeader(http.StatusNotFound)
@@ -188,7 +187,7 @@ func configureTilesReadAPI(mux *http.ServeMux, storage *mysql.Storage) {
 	})
 
 	mux.HandleFunc("GET /tile/entries/{index...}", func(w http.ResponseWriter, r *http.Request) {
-		index, width, err := layout.ParseTileIndexWidth(r.PathValue("index"))
+		index, p, err := layout.ParseTileIndexPartial(r.PathValue("index"))
 		if err != nil {
 			w.WriteHeader(http.StatusBadRequest)
 			if _, werr := w.Write([]byte(fmt.Sprintf("Malformed URL: %s", err.Error()))); werr != nil {
@@ -197,7 +196,7 @@ func configureTilesReadAPI(mux *http.ServeMux, storage *mysql.Storage) {
 			return
 		}
 
-		entryBundle, err := storage.ReadEntryBundle(r.Context(), index, width)
+		entryBundle, err := storage.ReadEntryBundle(r.Context(), index, p)
 		if err != nil {
 			klog.Errorf("/tile/entries/{index...}: %v", err)
 			w.WriteHeader(http.StatusInternalServerError)

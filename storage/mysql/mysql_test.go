@@ -191,54 +191,55 @@ func TestGetTile(t *testing.T) {
 	}
 
 	for _, test := range []struct {
-		name                   string
-		level, index, treeSize uint64
-		wantEntries            int
-		wantNotFound           bool
+		name         string
+		level, index uint64
+		p            uint8
+		wantEntries  int
+		wantNotFound bool
 	}{
 		{
 			name:  "requested partial tile for a complete tile",
-			level: 0, index: 0, treeSize: 10,
+			level: 0, index: 0, p: 10,
 			wantEntries:  256,
 			wantNotFound: false,
 		},
 		{
 			name:  "too small but that's ok",
-			level: 0, index: 1, treeSize: uint64(treeSize) - 1,
+			level: 0, index: 1, p: layout.PartialTileSize(0, 1, uint64(treeSize-1)),
 			wantEntries:  2,
 			wantNotFound: false,
 		},
 		{
 			name:  "just right",
-			level: 0, index: 1, treeSize: uint64(treeSize),
+			level: 0, index: 1, p: layout.PartialTileSize(0, 1, uint64(treeSize)),
 			wantEntries:  2,
 			wantNotFound: false,
 		},
 		{
 			name:  "too big",
-			level: 0, index: 1, treeSize: uint64(treeSize + 1),
+			level: 0, index: 1, p: layout.PartialTileSize(0, 1, uint64(treeSize+1)),
 			wantNotFound: true,
 		},
 		{
 			name:  "level 1 too small",
-			level: 1, index: 0, treeSize: uint64(treeSize - 1),
+			level: 1, index: 0, p: layout.PartialTileSize(1, 0, uint64(treeSize-1)),
 			wantEntries:  1,
 			wantNotFound: false,
 		},
 		{
 			name:  "level 1 just right",
-			level: 1, index: 0, treeSize: uint64(treeSize),
+			level: 1, index: 0, p: layout.PartialTileSize(1, 0, uint64(treeSize)),
 			wantEntries:  1,
 			wantNotFound: false,
 		},
 		{
 			name:  "level 1 too big",
-			level: 1, index: 0, treeSize: 550,
+			level: 1, index: 0, p: layout.PartialTileSize(1, 0, 550),
 			wantNotFound: true,
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			tile, err := s.ReadTile(ctx, test.level, test.index, test.treeSize)
+			tile, err := s.ReadTile(ctx, test.level, test.index, test.p)
 			if err != nil {
 				if notFound, wantNotFound := errors.Is(err, fs.ErrNotExist), test.wantNotFound; notFound != wantNotFound {
 					t.Errorf("wantNotFound %v but notFound %v", wantNotFound, notFound)
@@ -261,20 +262,21 @@ func TestReadMissingTile(t *testing.T) {
 	s := newTestMySQLStorage(t, ctx)
 
 	for _, test := range []struct {
-		name                string
-		level, index, width uint64
+		name         string
+		level, index uint64
+		p            uint8
 	}{
 		{
 			name:  "0/0/0",
-			level: 0, index: 0, width: 0,
+			level: 0, index: 0, p: 0,
 		},
 		{
 			name:  "123/456/789",
-			level: 123, index: 456, width: 789,
+			level: 123, index: 456, p: 789 % layout.TileWidth,
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			tile, err := s.ReadTile(ctx, test.level, test.index, test.width)
+			tile, err := s.ReadTile(ctx, test.level, test.index, test.p)
 			if err != nil {
 				if errors.Is(err, fs.ErrNotExist) {
 					// this is success for this test
@@ -307,7 +309,7 @@ func TestReadMissingEntryBundle(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			entryBundle, err := s.ReadEntryBundle(ctx, test.index, test.index)
+			entryBundle, err := s.ReadEntryBundle(ctx, test.index, uint8(test.index%layout.TileWidth))
 			if err != nil {
 				if errors.Is(err, fs.ErrNotExist) {
 					// this is success for this test
@@ -387,7 +389,7 @@ func TestTileRoundTrip(t *testing.T) {
 			}
 
 			tileLevel, tileIndex, _, nodeIndex := layout.NodeCoordsToTileAddress(0, entryIndex)
-			tileRaw, err := s.ReadTile(ctx, tileLevel, tileIndex, nodeIndex+1)
+			tileRaw, err := s.ReadTile(ctx, tileLevel, tileIndex, uint8(nodeIndex+1))
 			if err != nil {
 				t.Errorf("ReadTile got err: %v", err)
 			}
@@ -436,7 +438,7 @@ func TestEntryBundleRoundTrip(t *testing.T) {
 			if err != nil {
 				t.Errorf("Add got err: %v", err)
 			}
-			entryBundleRaw, err := s.ReadEntryBundle(ctx, entryIndex/256, entryIndex)
+			entryBundleRaw, err := s.ReadEntryBundle(ctx, entryIndex/256, uint8(entryIndex%layout.TileWidth))
 			if err != nil {
 				t.Errorf("ReadEntryBundle got err: %v", err)
 			}
