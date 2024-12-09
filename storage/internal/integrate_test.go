@@ -170,9 +170,8 @@ func BenchmarkIntegrate(b *testing.B) {
 	m := newMemTileStore[api.HashTile]()
 
 	chunkSize := 200
-	numChunks := 256
 	seq := uint64(0)
-	for chunk := 0; chunk < numChunks; chunk++ {
+	for chunk := 0; chunk < b.N; chunk++ {
 		oldSeq := seq
 		c := make([]SequencedEntry, chunkSize)
 		for i := range c {
