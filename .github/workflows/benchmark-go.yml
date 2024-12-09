@@ -1,0 +1,36 @@
+name: Benchmark Go
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  # deployments permission to deploy GitHub pages website
+  deployments: write
+  # contents permission to update benchmark contents in gh-pages branch
+  contents: write
+  # allow posting comments to pull request
+  pull-requests: write
+
+jobs:
+  benchmark:
+    name: Performance regression check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v4
+        with:
+          go-version-file: go.mod
+      - name: Run benchmark
+        run: set -o pipefail; go test ./... -benchmem -run=^$ -bench . | tee output.txt
+      - name: Store benchmark result
+        uses: benchmark-action/github-action-benchmark@v1.20.4
+        with:
+          tool: 'go'
+          output-file-path: output.txt
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          auto-push: true
+          alert-threshold: "150%"
+          comment-on-alert: true
+          fail-on-alert: true
