@@ -10,8 +10,6 @@ permissions:
   deployments: write
   # contents permission to update benchmark contents in gh-pages branch
   contents: write
-  # allow posting comments to pull request
-  pull-requests: write
 
 jobs:
   benchmark:
@@ -37,5 +35,4 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           auto-push: true
           alert-threshold: "150%"
-          comment-on-alert: true
           fail-on-alert: true
