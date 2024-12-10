@@ -1,18 +1,11 @@
 name: Benchmark Go
 
 on:
-  push:
-    branches:
-      - main
   pull_request:
     branches:
       - main
 
 permissions:
-  # deployments permission to deploy GitHub pages website
-  deployments: write
-  # contents permission to update benchmark contents in gh-pages branch
-  contents: write
   # allow posting comments to pull request
   pull-requests: write
 
@@ -38,7 +31,6 @@ jobs:
           tool: 'go'
           output-file-path: output.txt
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          auto-push: true
           alert-threshold: "150%"
           fail-on-alert: true
           comment-on-alert: true # notify on PR if alert triggers
