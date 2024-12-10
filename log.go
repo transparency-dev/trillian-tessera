@@ -21,7 +21,6 @@ import (
 	"time"
 
 	f_log "github.com/transparency-dev/formats/log"
-	"github.com/transparency-dev/trillian-tessera/api/layout"
 	"github.com/transparency-dev/trillian-tessera/internal/options"
 	"golang.org/x/mod/sumdb/note"
 	"k8s.io/klog/v2"
@@ -29,7 +28,7 @@ import (
 
 const (
 	// DefaultBatchMaxSize is used by storage implementations if no WithBatching option is provided when instantiating it.
-	DefaultBatchMaxSize = layout.TileWidth
+	DefaultBatchMaxSize = 256
 	// DefaultBatchMaxAge is used by storage implementations if no WithBatching option is provided when instantiating it.
 	DefaultBatchMaxAge = 250 * time.Millisecond
 	// DefaultCheckpointInterval is used by storage implementations if no WithCheckpointInterval option is provided when instantiating it.

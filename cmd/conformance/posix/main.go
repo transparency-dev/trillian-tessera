@@ -30,7 +30,6 @@ import (
 	"golang.org/x/mod/sumdb/note"
 
 	tessera "github.com/transparency-dev/trillian-tessera"
-	"github.com/transparency-dev/trillian-tessera/api/layout"
 	"github.com/transparency-dev/trillian-tessera/storage/posix"
 	"k8s.io/klog/v2"
 )
@@ -59,11 +58,11 @@ func main() {
 	s, a := getSignersOrDie()
 
 	// Create the Tessera POSIX storage, using the directory from the --storage_dir flag
-	storage, err := posix.New(ctx, *storageDir, *initialise, tessera.WithCheckpointSigner(s, a...), tessera.WithBatching(layout.TileWidth, time.Second))
+	storage, err := posix.New(ctx, *storageDir, *initialise, tessera.WithCheckpointSigner(s, a...), tessera.WithBatching(256, time.Second))
 	if err != nil {
 		klog.Exitf("Failed to construct storage: %v", err)
 	}
-	dedupeAdd := tessera.InMemoryDedupe(storage.Add, layout.TileWidth)
+	dedupeAdd := tessera.InMemoryDedupe(storage.Add, 256)
 
 	// Define a handler for /add that accepts POST requests and adds the POST body to the log
 	http.HandleFunc("POST /add", func(w http.ResponseWriter, r *http.Request) {
