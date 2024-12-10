@@ -31,6 +31,7 @@ jobs:
           tool: 'go'
           output-file-path: output.txt
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          auto-push: false
           alert-threshold: "150%"
           fail-on-alert: true
           comment-on-alert: true # notify on PR if alert triggers
