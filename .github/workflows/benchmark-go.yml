@@ -18,12 +18,17 @@ jobs:
     name: Performance regression check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - name: Fetch Repo
+        uses: actions/checkout@v4
+
+      - name: Install Go
+        uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+
       - name: Run benchmark
         run: set -o pipefail; go test ./... -benchmem -run=^$ -bench . | tee output.txt
+
       - name: Store benchmark result
         uses: benchmark-action/github-action-benchmark@v1.20.4
         with:
