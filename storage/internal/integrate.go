@@ -251,7 +251,7 @@ func (tc *tileWriteCache) Err() error {
 // minImpliedTreeSize returns the smallest possible tree size implied by the existence of a tile
 // with the given ID.
 func minImpliedTreeSize(id TileID) uint64 {
-	return (id.Index * 256) << (id.Level * 8)
+	return (id.Index * layout.TileWidth) << (id.Level * 8)
 }
 
 // Visitor returns a function suitable for use with the compact.Range visitor pattern.
@@ -312,7 +312,7 @@ type populatedTile struct {
 func newPopulatedTile(h *api.HashTile) (*populatedTile, error) {
 	ft := &populatedTile{
 		inner:  make(map[compact.NodeID][]byte),
-		leaves: make([][]byte, 0, 256),
+		leaves: make([][]byte, 0, layout.TileWidth),
 	}
 
 	if h != nil {

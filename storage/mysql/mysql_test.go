@@ -200,7 +200,7 @@ func TestGetTile(t *testing.T) {
 		{
 			name:  "requested partial tile for a complete tile",
 			level: 0, index: 0, p: 10,
-			wantEntries:  256,
+			wantEntries:  layout.TileWidth,
 			wantNotFound: false,
 		},
 		{
@@ -438,7 +438,7 @@ func TestEntryBundleRoundTrip(t *testing.T) {
 			if err != nil {
 				t.Errorf("Add got err: %v", err)
 			}
-			entryBundleRaw, err := s.ReadEntryBundle(ctx, entryIndex/256, layout.PartialTileSize(0, entryIndex, entryIndex+1))
+			entryBundleRaw, err := s.ReadEntryBundle(ctx, entryIndex/layout.EntryBundleWidth, layout.PartialTileSize(0, entryIndex, entryIndex+1))
 			if err != nil {
 				t.Fatalf("ReadEntryBundle got err: %v", err)
 			}
@@ -451,7 +451,7 @@ func TestEntryBundleRoundTrip(t *testing.T) {
 			if len(gotEntries) == 0 {
 				t.Error("no entry found")
 			} else {
-				if !bytes.Equal(bundle.Entries[entryIndex%256], test.entry) {
+				if !bytes.Equal(bundle.Entries[entryIndex%layout.EntryBundleWidth], test.entry) {
 					t.Errorf("got entry %v want %v", bundle.Entries[0], test.entry)
 				}
 			}

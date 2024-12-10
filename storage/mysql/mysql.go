@@ -49,9 +49,8 @@ const (
 	selectTiledLeavesSQL             = "SELECT `size`, `data` FROM `TiledLeaves` WHERE `tile_index` = ?"
 	replaceTiledLeavesSQL            = "REPLACE INTO `TiledLeaves` (`tile_index`, `size`, `data`) VALUES (?, ?, ?)"
 
-	checkpointID    = 0
-	treeStateID     = 0
-	entryBundleSize = 256
+	checkpointID = 0
+	treeStateID  = 0
 
 	minCheckpointInterval = time.Second
 )
@@ -268,7 +267,7 @@ func (s *Storage) ReadTile(ctx context.Context, level, index uint64, p uint8) ([
 	numEntries := uint64(len(tile) / sha256.Size)
 	requestedEntries := uint64(p)
 	if requestedEntries == 0 {
-		requestedEntries = 256
+		requestedEntries = layout.TileWidth
 	}
 	if requestedEntries > numEntries {
 		// If the user has requested a size larger than we have, they can't have it
@@ -450,7 +449,7 @@ func (s *Storage) integrate(ctx context.Context, tx *sql.Tx, fromSeq uint64, ent
 	}
 
 	// Add sequenced entries to entry bundles.
-	bundleIndex, entriesInBundle := fromSeq/entryBundleSize, fromSeq%entryBundleSize
+	bundleIndex, entriesInBundle := fromSeq/layout.EntryBundleWidth, fromSeq%layout.EntryBundleWidth
 	bundleWriter := &bytes.Buffer{}
 
 	// If the latest bundle is partial, we need to read the data it contains in for our newer, larger, bundle.
@@ -482,7 +481,7 @@ func (s *Storage) integrate(ctx context.Context, tx *sql.Tx, fromSeq uint64, ent
 		entriesInBundle++
 
 		// This bundle is full, so we need to write it out.
-		if entriesInBundle == entryBundleSize {
+		if entriesInBundle == layout.EntryBundleWidth {
 			if err := s.writeEntryBundle(ctx, tx, bundleIndex, uint32(entriesInBundle), bundleWriter.Bytes()); err != nil {
 				return fmt.Errorf("writeEntryBundle: %w", err)
 			}

@@ -359,7 +359,7 @@ func TestGetEntryBundleAddressing(t *testing.T) {
 		{
 			name:                "works - full tile",
 			idx:                 1,
-			logSize:             256*2 + 45,
+			logSize:             layout.TileWidth*2 + 45,
 			wantPartialTileSize: 0,
 		},
 	} {
