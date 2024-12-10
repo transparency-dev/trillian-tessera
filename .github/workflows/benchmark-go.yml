@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - main
+  pull_request:
+    branches:
+      - main
 
 permissions:
   # deployments permission to deploy GitHub pages website
@@ -37,5 +40,6 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           auto-push: true
           alert-threshold: "150%"
-          comment-on-alert: true
           fail-on-alert: true
+          comment-on-alert: true # notify on PR if alert triggers
+          summary-always: true # always comment on PRs to leave job summary
