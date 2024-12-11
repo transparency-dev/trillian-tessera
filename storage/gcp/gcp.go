@@ -35,6 +35,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"os"
 	"sync/atomic"
@@ -282,14 +283,8 @@ func (s *Storage) publishCheckpoint(ctx context.Context, minStaleness time.Durat
 // setTile idempotently stores the provided tile at the location implied by the given level, index, and treeSize.
 //
 // The location to which the tile is written is defined by the tile layout spec.
-func (s *Storage) setTile(ctx context.Context, level, index, logSize uint64, tile *api.HashTile) error {
-	data, err := tile.MarshalText()
-	if err != nil {
-		return err
-	}
-	tPath := layout.TilePath(level, index, layout.PartialTileSize(level, index, logSize))
-	klog.V(2).Infof("StoreTile: %s (%d entries)", tPath, len(tile.Nodes))
-
+func (s *Storage) setTile(ctx context.Context, level, index uint64, partial uint8, data []byte) error {
+	tPath := layout.TilePath(level, index, partial)
 	return s.objStore.setObject(ctx, tPath, data, &gcs.Conditions{DoesNotExist: true}, logContType, logCacheControl)
 }
 
@@ -390,7 +385,11 @@ func (s *Storage) integrate(ctx context.Context, fromSeq uint64, entries []stora
 		for k, v := range tiles {
 			func(ctx context.Context, k storage.TileID, v *api.HashTile) {
 				errG.Go(func() error {
-					return s.setTile(ctx, uint64(k.Level), k.Index, newSize, v)
+					data, err := v.MarshalText()
+					if err != nil {
+						return err
+					}
+					return s.setTile(ctx, k.Level, k.Index, layout.PartialTileSize(k.Level, k.Index, newSize), data)
 				})
 			}(ctx, k, v)
 		}
@@ -963,4 +962,67 @@ func (d *dedupStorage) flush(items []interface{}) {
 		return
 	}
 	d.numWrites.Add(uint64(len(entries)))
+}
+
+// NewMigrationTarget creates a new POSIX storage for the MigrationTarget lifecycle mode.
+// - path is a directory in which the log should be stored
+// - create must only be set when first creating the log, and will create the directory structure and an empty checkpoint
+func NewMigrationTarget(ctx context.Context, cfg Config, opts ...func(*options.StorageOptions)) (*MigrationStorage, error) {
+	opt := storage.ResolveStorageOptions(opts...)
+	if opt.PushbackMaxOutstanding == 0 {
+		opt.PushbackMaxOutstanding = DefaultPushbackMaxOutstanding
+	}
+
+	c, err := gcs.NewClient(ctx, gcs.WithJSONReads())
+	if err != nil {
+		return nil, fmt.Errorf("failed to create GCS client: %v", err)
+	}
+
+	seq, err := newSpannerSequencer(ctx, cfg.Spanner, uint64(opt.PushbackMaxOutstanding))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Spanner sequencer: %v", err)
+	}
+
+	r := &Storage{
+		objStore: &gcsStorage{
+			gcsClient: c,
+			bucket:    cfg.Bucket,
+		},
+		sequencer:   seq,
+		newCP:       opt.NewCP,
+		entriesPath: opt.EntriesPath,
+	}
+
+	if err := r.init(ctx); err != nil {
+		return nil, fmt.Errorf("failed to initialise log storage: %v", err)
+	}
+
+	m := &MigrationStorage{
+		s:      r,
+		dbPool: seq.dbPool,
+	}
+	return m, nil
+}
+
+type MigrationStorage struct {
+	s      *Storage
+	dbPool *spanner.Client
+}
+
+func (m *MigrationStorage) SetTile(ctx context.Context, level, index uint64, partial uint8, tile []byte) error {
+	return m.s.setTile(ctx, index, level, partial, tile)
+}
+func (m *MigrationStorage) SetEntryBundle(ctx context.Context, index uint64, partial uint8, bundle []byte) error {
+	return m.s.setEntryBundle(ctx, index, partial, bundle)
+}
+func (m *MigrationStorage) SetState(ctx context.Context, treeSize uint64, rootHash []byte) error {
+	// Spanner doesn't support UINT64 types, so need to check for overflow here.
+	if treeSize > math.MaxInt64 {
+		return fmt.Errorf("treeSize %d is larger than int64 can contain", treeSize)
+	}
+	_, err := m.dbPool.Apply(ctx, []*spanner.Mutation{
+		spanner.Update("IntCoord", []string{"id", "seq", "rootHash"}, []interface{}{0, int64(treeSize), rootHash}),
+		spanner.Update("SeqCoord", []string{"id", "next"}, []interface{}{0, int64(treeSize)}),
+	})
+	return err
 }
