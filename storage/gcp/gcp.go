@@ -993,10 +993,6 @@ func NewMigrationTarget(ctx context.Context, cfg Config, opts ...func(*options.S
 		entriesPath: opt.EntriesPath,
 	}
 
-	if err := r.init(ctx); err != nil {
-		return nil, fmt.Errorf("failed to initialise log storage: %v", err)
-	}
-
 	m := &MigrationStorage{
 		s:      r,
 		dbPool: seq.dbPool,
