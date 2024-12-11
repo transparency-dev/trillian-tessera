@@ -19,8 +19,14 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
+	"io"
+	"net/http"
 	"net/url"
+	"strings"
 
+	tessera "github.com/transparency-dev/trillian-tessera"
+	"github.com/transparency-dev/trillian-tessera/api/layout"
 	"github.com/transparency-dev/trillian-tessera/client"
 	"github.com/transparency-dev/trillian-tessera/cmd/experimental/migrate/internal/migrate"
 	"github.com/transparency-dev/trillian-tessera/storage/posix"
@@ -46,14 +52,35 @@ func main() {
 	if err != nil {
 		klog.Exitf("Failed to create HTTP fetcher: %v", err)
 	}
+	// HACK CT:
+	readEntryBundle := func(ctx context.Context, i uint64, p uint8) ([]byte, error) {
+		up := strings.Replace(layout.EntriesPath(i, p), "entries", "data", 1)
+		reqURL, err := url.JoinPath(*sourceURL, up)
+		if err != nil {
+			return nil, err
+		}
+		req, err := http.NewRequestWithContext(ctx, "GET", reqURL, nil)
+		if err != nil {
+			return nil, err
+		}
+		rsp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return nil, err
+		}
+		defer rsp.Body.Close()
+		if rsp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("GET %q: %v", req.URL.Path, rsp.Status)
+		}
+		return io.ReadAll(rsp.Body)
+	}
 
 	// Construct a new Tessera POSIX MigrationTarget log storage.
-	st, err := posix.NewMigrationTarget(ctx, *storageDir)
+	st, err := posix.NewMigrationTarget(ctx, *storageDir, tessera.WithCTLayout())
 	if err != nil {
 		klog.Exitf("Failed to construct storage: %v", err)
 	}
 
-	if err := migrate.Migrate(context.Background(), *stateDB, src.ReadCheckpoint, src.ReadTile, src.ReadEntryBundle, st); err != nil {
+	if err := migrate.Migrate(context.Background(), *stateDB, src.ReadCheckpoint, src.ReadTile, readEntryBundle, st); err != nil {
 		klog.Exitf("Migrate failed: %v", err)
 	}
 }
