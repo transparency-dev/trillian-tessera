@@ -49,6 +49,13 @@ func init() {
 	})
 }
 
+func addCacheHeaders(value string, fs http.Handler) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Add("Cache-Control", value)
+		fs.ServeHTTP(w, r)
+	}
+}
+
 func main() {
 	klog.InitFlags(nil)
 	flag.Parse()
@@ -84,7 +91,10 @@ func main() {
 	})
 	// Proxy all GET requests to the filesystem as a lightweight file server.
 	// This makes it easier to test this implementation from another machine.
-	http.Handle("GET /", http.FileServer(http.Dir(*storageDir)))
+	fs := http.FileServer(http.Dir(*storageDir))
+	http.Handle("GET /checkpoint", addCacheHeaders("no-cache", fs))
+	http.Handle("GET /tile/", addCacheHeaders("public, max-age=31536000, immutable", fs))
+	http.Handle("GET /", fs)
 
 	// TODO(mhutchinson): Change the listen flag to just a port, or fix up this address formatting
 	klog.Infof("Environment variables useful for accessing this log:\n"+
