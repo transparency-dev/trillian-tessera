@@ -18,6 +18,8 @@ jobs:
     steps:
       - name: Check out the repository to the runner
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
       - name: Regenerate the log test data
         run: ./testdata/build_log.sh
       - name: Confirm there are no diffs
