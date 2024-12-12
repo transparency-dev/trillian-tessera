@@ -93,7 +93,7 @@ func main() {
 	// This makes it easier to test this implementation from another machine.
 	fs := http.FileServer(http.Dir(*storageDir))
 	http.Handle("GET /checkpoint", addCacheHeaders("no-cache", fs))
-	http.Handle("GET /tile/", addCacheHeaders("public, max-age=31536000, immutable", fs))
+	http.Handle("GET /tile/", addCacheHeaders("max-age=31536000, immutable", fs))
 	http.Handle("GET /", fs)
 
 	// TODO(mhutchinson): Change the listen flag to just a port, or fix up this address formatting
