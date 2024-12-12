@@ -182,7 +182,7 @@ func configureTilesReadAPI(mux *http.ServeMux, storage *mysql.Storage) {
 			return
 		}
 
-		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		w.Header().Set("Cache-Control", "max-age=31536000, immutable")
 
 		if _, err := w.Write(tile); err != nil {
 			klog.Errorf("/tile/{level}/{index...}: %v", err)
