@@ -70,13 +70,13 @@ func (c Entry) LeafData(idx uint64) []byte {
 		b.AddUint16(1 /* entry_type = precert_entry */)
 		b.AddBytes(c.IssuerKeyHash[:])
 		b.AddUint24LengthPrefixed(func(b *cryptobyte.Builder) {
-			b.AddBytes(c.Certificate)
+			b.AddBytes(c.Precertificate)
 		})
 	}
 	addExtensions(b, idx)
 	if c.IsPrecert {
 		b.AddUint24LengthPrefixed(func(b *cryptobyte.Builder) {
-			b.AddBytes(c.Precertificate)
+			b.AddBytes(c.PrecertSigningCert)
 		})
 	}
 	b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
@@ -105,7 +105,7 @@ func (e *Entry) MerkleTreeLeaf(idx uint64) []byte {
 		b.AddUint16(1 /* entry_type = precert_entry */)
 		b.AddBytes(e.IssuerKeyHash[:])
 		b.AddUint24LengthPrefixed(func(b *cryptobyte.Builder) {
-			b.AddBytes(e.Certificate)
+			b.AddBytes(e.Precertificate)
 		})
 	}
 	addExtensions(b, idx)
