@@ -2,6 +2,9 @@ name: 'Terragrunt format check'
 on:
   - pull_request
 
+permissions:
+  contents: read
+
 env:
   tf_version: '1.5.7'
   tg_version: '0.55.1'
