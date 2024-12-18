@@ -30,8 +30,10 @@ import (
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/api"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
+	"github.com/transparency-dev/trillian-tessera/internal/driver"
 	"github.com/transparency-dev/trillian-tessera/internal/options"
-	storage "github.com/transparency-dev/trillian-tessera/storage/internal"
+	"github.com/transparency-dev/trillian-tessera/storage"
+	i_storage "github.com/transparency-dev/trillian-tessera/storage/internal"
 	"k8s.io/klog/v2"
 )
 
@@ -48,7 +50,7 @@ const (
 type Storage struct {
 	mu    sync.Mutex
 	path  string
-	queue *storage.Queue
+	queue *i_storage.Queue
 
 	curSize uint64
 	newCP   options.NewCPFunc
@@ -64,10 +66,10 @@ type NewTreeFunc func(size uint64, root []byte) error
 // New creates a new POSIX storage.
 // - path is a directory in which the log should be stored
 // - create must only be set when first creating the log, and will create the directory structure and an empty checkpoint
-func New(ctx context.Context, path string, create bool, opts ...func(*options.StorageOptions)) (*Storage, error) {
-	opt := storage.ResolveStorageOptions(opts...)
+func New(ctx context.Context, path string, create bool, opts ...func(*options.StorageOptions)) (storage.Driver, error) {
+	opt := i_storage.ResolveStorageOptions(opts...)
 	if opt.CheckpointInterval < minCheckpointInterval {
-		return nil, fmt.Errorf("requested CheckpointInterval (%v) is less than minimum permitted %v", opt.CheckpointInterval, minCheckpointInterval)
+		return storage.Driver{}, fmt.Errorf("requested CheckpointInterval (%v) is less than minimum permitted %v", opt.CheckpointInterval, minCheckpointInterval)
 	}
 
 	r := &Storage{
@@ -77,9 +79,9 @@ func New(ctx context.Context, path string, create bool, opts ...func(*options.St
 		cpUpdated:   make(chan struct{}),
 	}
 	if err := r.initialise(create); err != nil {
-		return nil, err
+		return storage.Driver{}, err
 	}
-	r.queue = storage.NewQueue(ctx, opt.BatchMaxAge, opt.BatchMaxSize, r.sequenceBatch)
+	r.queue = i_storage.NewQueue(ctx, opt.BatchMaxAge, opt.BatchMaxSize, r.sequenceBatch)
 
 	go func(ctx context.Context, i time.Duration) {
 		t := time.NewTicker(i)
@@ -97,7 +99,16 @@ func New(ctx context.Context, path string, create bool, opts ...func(*options.St
 		}
 	}(ctx, opt.CheckpointInterval)
 
-	return r, nil
+	return storage.Driver{
+		Appenders: driver.Appenders{
+			Add: r.add,
+		},
+		Readers: driver.Readers{
+			ReadCheckpoint:  r.readCheckpoint,
+			ReadTile:        r.readTile,
+			ReadEntryBundle: r.readEntryBundle,
+		},
+	}, nil
 }
 
 // lockFile creates/opens a lock file at the specified path, and flocks it.
@@ -144,20 +155,20 @@ func lockFile(p string) (func() error, error) {
 // by this method have successfully evaluated. Terminating earlier than this will likely
 // mean that some of the entries added are not committed to by a checkpoint, and thus are
 // not considered to be in the log.
-func (s *Storage) Add(ctx context.Context, e *tessera.Entry) tessera.IndexFuture {
+func (s *Storage) add(ctx context.Context, e *tessera.Entry) tessera.IndexFuture {
 	return s.queue.Add(ctx, e)
 }
 
-func (s *Storage) ReadCheckpoint(_ context.Context) ([]byte, error) {
+func (s *Storage) readCheckpoint(_ context.Context) ([]byte, error) {
 	return os.ReadFile(filepath.Join(s.path, layout.CheckpointPath))
 }
 
 // ReadEntryBundle retrieves the Nth entries bundle for a log of the given size.
-func (s *Storage) ReadEntryBundle(_ context.Context, index uint64, p uint8) ([]byte, error) {
+func (s *Storage) readEntryBundle(_ context.Context, index uint64, p uint8) ([]byte, error) {
 	return os.ReadFile(filepath.Join(s.path, s.entriesPath(index, p)))
 }
 
-func (s *Storage) ReadTile(_ context.Context, level, index uint64, p uint8) ([]byte, error) {
+func (s *Storage) readTile(_ context.Context, level, index uint64, p uint8) ([]byte, error) {
 	return os.ReadFile(filepath.Join(s.path, layout.TilePath(level, index, p)))
 }
 
@@ -198,7 +209,7 @@ func (s *Storage) sequenceBatch(ctx context.Context, entries []*tessera.Entry) e
 	bundleIndex, entriesInBundle := seq/layout.EntryBundleWidth, seq%layout.EntryBundleWidth
 	if entriesInBundle > 0 {
 		// If the latest bundle is partial, we need to read the data it contains in for our newer, larger, bundle.
-		part, err := s.ReadEntryBundle(ctx, bundleIndex, uint8(s.curSize%layout.EntryBundleWidth))
+		part, err := s.readEntryBundle(ctx, bundleIndex, uint8(s.curSize%layout.EntryBundleWidth))
 		if err != nil {
 			return err
 		}
@@ -219,14 +230,14 @@ func (s *Storage) sequenceBatch(ctx context.Context, entries []*tessera.Entry) e
 		return nil
 	}
 
-	seqEntries := make([]storage.SequencedEntry, 0, len(entries))
+	seqEntries := make([]i_storage.SequencedEntry, 0, len(entries))
 	// Add new entries to the bundle
 	for i, e := range entries {
 		bundleData := e.MarshalBundleData(seq + uint64(i))
 		if _, err := currTile.Write(bundleData); err != nil {
 			return fmt.Errorf("failed to write entry %d to currTile: %v", i, err)
 		}
-		seqEntries = append(seqEntries, storage.SequencedEntry{
+		seqEntries = append(seqEntries, i_storage.SequencedEntry{
 			BundleData: bundleData,
 			LeafHash:   e.LeafHash(),
 		})
@@ -266,8 +277,8 @@ func (s *Storage) sequenceBatch(ctx context.Context, entries []*tessera.Entry) e
 }
 
 // doIntegrate handles integrating new entries into the log, and updating the tree state.
-func (s *Storage) doIntegrate(ctx context.Context, fromSeq uint64, entries []storage.SequencedEntry) error {
-	getTiles := func(ctx context.Context, tileIDs []storage.TileID, treeSize uint64) ([]*api.HashTile, error) {
+func (s *Storage) doIntegrate(ctx context.Context, fromSeq uint64, entries []i_storage.SequencedEntry) error {
+	getTiles := func(ctx context.Context, tileIDs []i_storage.TileID, treeSize uint64) ([]*api.HashTile, error) {
 		n, err := s.readTiles(ctx, tileIDs, treeSize)
 		if err != nil {
 			return nil, fmt.Errorf("getTiles: %w", err)
@@ -275,7 +286,7 @@ func (s *Storage) doIntegrate(ctx context.Context, fromSeq uint64, entries []sto
 		return n, nil
 	}
 
-	newSize, newRoot, tiles, err := storage.Integrate(ctx, getTiles, fromSeq, entries)
+	newSize, newRoot, tiles, err := i_storage.Integrate(ctx, getTiles, fromSeq, entries)
 	if err != nil {
 		klog.Errorf("Integrate: %v", err)
 		return fmt.Errorf("Integrate: %v", err)
@@ -294,10 +305,10 @@ func (s *Storage) doIntegrate(ctx context.Context, fromSeq uint64, entries []sto
 	return nil
 }
 
-func (s *Storage) readTiles(ctx context.Context, tileIDs []storage.TileID, treeSize uint64) ([]*api.HashTile, error) {
+func (s *Storage) readTiles(ctx context.Context, tileIDs []i_storage.TileID, treeSize uint64) ([]*api.HashTile, error) {
 	r := make([]*api.HashTile, 0, len(tileIDs))
 	for _, id := range tileIDs {
-		t, err := s.readTile(ctx, id.Level, id.Index, layout.PartialTileSize(id.Level, id.Index, treeSize))
+		t, err := s.readTileInternal(ctx, id.Level, id.Index, layout.PartialTileSize(id.Level, id.Index, treeSize))
 		if err != nil {
 			return nil, err
 		}
@@ -309,8 +320,8 @@ func (s *Storage) readTiles(ctx context.Context, tileIDs []storage.TileID, treeS
 // readTile returns the parsed tile at the given tile-level and tile-index.
 // If no complete tile exists at that location, it will attempt to find a
 // partial tile for the given tree size at that location.
-func (s *Storage) readTile(ctx context.Context, level, index uint64, p uint8) (*api.HashTile, error) {
-	t, err := s.ReadTile(ctx, level, index, p)
+func (s *Storage) readTileInternal(ctx context.Context, level, index uint64, p uint8) (*api.HashTile, error) {
+	t, err := s.readTile(ctx, level, index, p)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			// We'll signal to higher levels that it wasn't found by retuning a nil for this tile.

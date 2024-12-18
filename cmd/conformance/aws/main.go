@@ -28,6 +28,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	tessera "github.com/transparency-dev/trillian-tessera"
+	"github.com/transparency-dev/trillian-tessera/storage"
 	"github.com/transparency-dev/trillian-tessera/storage/aws"
 	"golang.org/x/mod/sumdb/note"
 	"golang.org/x/net/http2"
@@ -69,7 +70,7 @@ func main() {
 
 	// Create our Tessera storage backend:
 	awsCfg := storageConfigFromFlags()
-	storage, err := aws.New(ctx, awsCfg,
+	driver, err := aws.New(ctx, awsCfg,
 		tessera.WithCheckpointSigner(s, a...),
 		tessera.WithCheckpointInterval(*publishInterval),
 		tessera.WithBatching(1024, time.Second),
@@ -78,7 +79,7 @@ func main() {
 	if err != nil {
 		klog.Exitf("Failed to create new AWS storage: %v", err)
 	}
-	dedupeAdd := tessera.InMemoryDedupe(storage.Add, 256)
+	appender := storage.NewAppender(driver, tessera.InMemoryDedupe(256))
 
 	// Expose a HTTP handler for the conformance test writes.
 	// This should accept arbitrary bytes POSTed to /add, and return an ascii
@@ -90,7 +91,7 @@ func main() {
 			return
 		}
 
-		idx, err := dedupeAdd(r.Context(), tessera.NewEntry(b))()
+		idx, err := appender.Add(r.Context(), tessera.NewEntry(b))()
 		if err != nil {
 			if errors.Is(err, tessera.ErrPushback) {
 				w.Header().Add("Retry-After", "1")

@@ -78,7 +78,7 @@ All index numbers are contiguous and start from 0.
 
 ### Integration
 
-Integration is a background process that happens when a Tessera storage implementation has been created.
+Integration is a background process that happens when the Tessera storage object has been created.
 This process takes sequenced entries and merges them into the log.
 Once this process has been completed, a new entry will:
  - Be available via the read API at the index that was returned from sequencing
@@ -121,15 +121,13 @@ It is designed to efficiently serve logs that allow read access via the [tlog-ti
 The code you write that calls Tessera is referred to as a personality, because it tailors the generic library to your ecosystem.
 
 Before starting to write your own personality, it is strongly recommended that you have familiarized yourself with the provided personalities referenced in [Getting Started](#getting-started).
-When writing your Tessera personality, the biggest decision you need to make first is which of the native implementations to use:
+When writing your Tessera personality, the biggest decision you need to make first is which of the native drivers to use:
  *   [GCP](./storage/gcp/)
  *   [AWS](./storage/aws/)
  *   [MySQL](./storage/mysql/)
  *   [POSIX](./storage/posix/)
 
-Each of these implementations has a very similar API, but they have different characteristics.
-
-The easiest implementations to operate and to scale are the cloud implementations: GCP and AWS.
+The easiest drivers to operate and to scale are the cloud implementations: GCP and AWS.
 These are the recommended choice for the majority of users running in production.
 
 If you aren't using a cloud provider, then your options are MySQL and POSIX:
@@ -143,7 +141,7 @@ To get a sense of the rough performance you can expect from the different backen
 
 #### Setup
 
-Once you've picked a storage implementation, you can start writing your personality!
+Once you've picked a storage driver, you can start writing your personality!
 You'll need to import the Tessera library:
 ```shell
 # This imports the library at main.
@@ -153,7 +151,7 @@ go get github.com/transparency-dev/trillian-tessera@main
 
 #### Constructing the Storage Object
 
-Now you'll need to instantiate the storage object for the native implementation you are using:
+Now you'll need to instantiate the storage object for the native driver you are using:
 ```go
 import (
     "context"
@@ -167,10 +165,12 @@ import (
 
 func main() {
     // Choose one!
-    storage, err := aws.New(ctx, awsConfig)
-    storage, err := gcp.New(ctx, gcpConfig)
-    storage, err := mysql.New(ctx, db)
-    storage, err := posix.New(ctx, dir, doCreate)
+    driver, err := aws.New(ctx, awsConfig)
+    driver, err := gcp.New(ctx, gcpConfig)
+    driver, err := mysql.New(ctx, db)
+    driver, err := posix.New(ctx, dir, doCreate)
+
+    storage := storage.NewAppender(driver)
 }
 ```
 

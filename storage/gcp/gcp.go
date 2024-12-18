@@ -49,8 +49,10 @@ import (
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/api"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
+	"github.com/transparency-dev/trillian-tessera/internal/driver"
 	"github.com/transparency-dev/trillian-tessera/internal/options"
-	storage "github.com/transparency-dev/trillian-tessera/storage/internal"
+	"github.com/transparency-dev/trillian-tessera/storage"
+	i_storage "github.com/transparency-dev/trillian-tessera/storage/internal"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/iterator"
@@ -82,7 +84,7 @@ type Storage struct {
 	sequencer sequencer
 	objStore  objStore
 
-	queue *storage.Queue
+	queue *i_storage.Queue
 
 	cpUpdated chan struct{}
 }
@@ -112,7 +114,7 @@ type sequencer interface {
 // consumeFunc is the signature of a function which can consume entries from the sequencer and integrate
 // them into the log.
 // Returns the new rootHash once all passed entries have been integrated.
-type consumeFunc func(ctx context.Context, from uint64, entries []storage.SequencedEntry) ([]byte, error)
+type consumeFunc func(ctx context.Context, from uint64, entries []i_storage.SequencedEntry) ([]byte, error)
 
 // Config holds GCP project and resource configuration for a storage instance.
 type Config struct {
@@ -123,23 +125,23 @@ type Config struct {
 }
 
 // New creates a new instance of the GCP based Storage.
-func New(ctx context.Context, cfg Config, opts ...func(*options.StorageOptions)) (*Storage, error) {
-	opt := storage.ResolveStorageOptions(opts...)
+func New(ctx context.Context, cfg Config, opts ...func(*options.StorageOptions)) (storage.Driver, error) {
+	opt := i_storage.ResolveStorageOptions(opts...)
 	if opt.PushbackMaxOutstanding == 0 {
 		opt.PushbackMaxOutstanding = DefaultPushbackMaxOutstanding
 	}
 	if opt.CheckpointInterval < minCheckpointInterval {
-		return nil, fmt.Errorf("requested CheckpointInterval (%v) is less than minimum permitted %v", opt.CheckpointInterval, minCheckpointInterval)
+		return storage.Driver{}, fmt.Errorf("requested CheckpointInterval (%v) is less than minimum permitted %v", opt.CheckpointInterval, minCheckpointInterval)
 	}
 
 	c, err := gcs.NewClient(ctx, gcs.WithJSONReads())
 	if err != nil {
-		return nil, fmt.Errorf("failed to create GCS client: %v", err)
+		return storage.Driver{}, fmt.Errorf("failed to create GCS client: %v", err)
 	}
 
 	seq, err := newSpannerSequencer(ctx, cfg.Spanner, uint64(opt.PushbackMaxOutstanding))
 	if err != nil {
-		return nil, fmt.Errorf("failed to create Spanner sequencer: %v", err)
+		return storage.Driver{}, fmt.Errorf("failed to create Spanner sequencer: %v", err)
 	}
 
 	r := &Storage{
@@ -152,10 +154,10 @@ func New(ctx context.Context, cfg Config, opts ...func(*options.StorageOptions))
 		entriesPath: opt.EntriesPath,
 		cpUpdated:   make(chan struct{}),
 	}
-	r.queue = storage.NewQueue(ctx, opt.BatchMaxAge, opt.BatchMaxSize, r.sequencer.assignEntries)
+	r.queue = i_storage.NewQueue(ctx, opt.BatchMaxAge, opt.BatchMaxSize, r.sequencer.assignEntries)
 
 	if err := r.init(ctx); err != nil {
-		return nil, fmt.Errorf("failed to initialise log storage: %v", err)
+		return storage.Driver{}, fmt.Errorf("failed to initialise log storage: %v", err)
 	}
 
 	go func() {
@@ -201,23 +203,32 @@ func New(ctx context.Context, cfg Config, opts ...func(*options.StorageOptions))
 		}
 	}(ctx, opt.CheckpointInterval)
 
-	return r, nil
+	return storage.Driver{
+		Appenders: driver.Appenders{
+			Add: r.add,
+		},
+		Readers: driver.Readers{
+			ReadCheckpoint:  r.readCheckpoint,
+			ReadTile:        r.readTile,
+			ReadEntryBundle: r.readEntryBundle,
+		},
+	}, nil
 }
 
 // Add is the entrypoint for adding entries to a sequencing log.
-func (s *Storage) Add(ctx context.Context, e *tessera.Entry) tessera.IndexFuture {
+func (s *Storage) add(ctx context.Context, e *tessera.Entry) tessera.IndexFuture {
 	return s.queue.Add(ctx, e)
 }
 
-func (s *Storage) ReadCheckpoint(ctx context.Context) ([]byte, error) {
+func (s *Storage) readCheckpoint(ctx context.Context) ([]byte, error) {
 	return s.get(ctx, layout.CheckpointPath)
 }
 
-func (s *Storage) ReadTile(ctx context.Context, l, i uint64, p uint8) ([]byte, error) {
+func (s *Storage) readTile(ctx context.Context, l, i uint64, p uint8) ([]byte, error) {
 	return s.get(ctx, layout.TilePath(l, i, p))
 }
 
-func (s *Storage) ReadEntryBundle(ctx context.Context, i uint64, p uint8) ([]byte, error) {
+func (s *Storage) readEntryBundle(ctx context.Context, i uint64, p uint8) ([]byte, error) {
 	return s.get(ctx, s.entriesPath(i, p))
 }
 
@@ -296,7 +307,7 @@ func (s *Storage) setTile(ctx context.Context, level, index, logSize uint64, til
 // getTiles returns the tiles with the given tile-coords for the specified log size.
 //
 // Tiles are returned in the same order as they're requested, nils represent tiles which were not found.
-func (s *Storage) getTiles(ctx context.Context, tileIDs []storage.TileID, logSize uint64) ([]*api.HashTile, error) {
+func (s *Storage) getTiles(ctx context.Context, tileIDs []i_storage.TileID, logSize uint64) ([]*api.HashTile, error) {
 	r := make([]*api.HashTile, len(tileIDs))
 	errG := errgroup.Group{}
 	for i, id := range tileIDs {
@@ -361,7 +372,7 @@ func (s *Storage) setEntryBundle(ctx context.Context, bundleIndex uint64, p uint
 }
 
 // integrate incorporates the provided entries into the log starting at fromSeq.
-func (s *Storage) integrate(ctx context.Context, fromSeq uint64, entries []storage.SequencedEntry) ([]byte, error) {
+func (s *Storage) integrate(ctx context.Context, fromSeq uint64, entries []i_storage.SequencedEntry) ([]byte, error) {
 	var newRoot []byte
 
 	errG := errgroup.Group{}
@@ -374,7 +385,7 @@ func (s *Storage) integrate(ctx context.Context, fromSeq uint64, entries []stora
 	})
 
 	errG.Go(func() error {
-		getTiles := func(ctx context.Context, tileIDs []storage.TileID, treeSize uint64) ([]*api.HashTile, error) {
+		getTiles := func(ctx context.Context, tileIDs []i_storage.TileID, treeSize uint64) ([]*api.HashTile, error) {
 			n, err := s.getTiles(ctx, tileIDs, treeSize)
 			if err != nil {
 				return nil, fmt.Errorf("getTiles: %w", err)
@@ -382,13 +393,13 @@ func (s *Storage) integrate(ctx context.Context, fromSeq uint64, entries []stora
 			return n, nil
 		}
 
-		newSize, root, tiles, err := storage.Integrate(ctx, getTiles, fromSeq, entries)
+		newSize, root, tiles, err := i_storage.Integrate(ctx, getTiles, fromSeq, entries)
 		if err != nil {
 			return fmt.Errorf("Integrate: %v", err)
 		}
 		newRoot = root
 		for k, v := range tiles {
-			func(ctx context.Context, k storage.TileID, v *api.HashTile) {
+			func(ctx context.Context, k i_storage.TileID, v *api.HashTile) {
 				errG.Go(func() error {
 					return s.setTile(ctx, uint64(k.Level), k.Index, newSize, v)
 				})
@@ -405,7 +416,7 @@ func (s *Storage) integrate(ctx context.Context, fromSeq uint64, entries []stora
 // updateEntryBundles adds the entries being integrated into the entry bundles.
 //
 // The right-most bundle will be grown, if it's partial, and/or new bundles will be created as required.
-func (s *Storage) updateEntryBundles(ctx context.Context, fromSeq uint64, entries []storage.SequencedEntry) error {
+func (s *Storage) updateEntryBundles(ctx context.Context, fromSeq uint64, entries []i_storage.SequencedEntry) error {
 	if len(entries) == 0 {
 		return nil
 	}
@@ -577,11 +588,11 @@ func (s *spannerSequencer) assignEntries(ctx context.Context, entries []*tessera
 		}
 
 		next := uint64(next) // Shadow next with a uint64 version of the same value to save on casts.
-		sequencedEntries := make([]storage.SequencedEntry, len(entries))
+		sequencedEntries := make([]i_storage.SequencedEntry, len(entries))
 		// Assign provisional sequence numbers to entries.
 		// We need to do this here in order to support serialisations which include the log position.
 		for i, e := range entries {
-			sequencedEntries[i] = storage.SequencedEntry{
+			sequencedEntries[i] = i_storage.SequencedEntry{
 				BundleData: e.MarshalBundleData(next + uint64(i)),
 				LeafHash:   e.LeafHash(),
 			}
@@ -646,7 +657,7 @@ func (s *spannerSequencer) consumeEntries(ctx context.Context, limit uint64, f c
 		defer rows.Stop()
 
 		seqsConsumed := []int64{}
-		entries := make([]storage.SequencedEntry, 0, limit)
+		entries := make([]i_storage.SequencedEntry, 0, limit)
 		orderCheck := fromSeq
 		for {
 			row, err := rows.Next()
@@ -665,7 +676,7 @@ func (s *spannerSequencer) consumeEntries(ctx context.Context, limit uint64, f c
 			}
 
 			g := gob.NewDecoder(bytes.NewReader(vGob))
-			b := []storage.SequencedEntry{}
+			b := []i_storage.SequencedEntry{}
 			if err := g.Decode(&b); err != nil {
 				return fmt.Errorf("failed to deserialise v: %v", err)
 			}
@@ -811,7 +822,7 @@ func (s *gcsStorage) lastModified(ctx context.Context, obj string) (time.Time, e
 // maintaining the Merkle tree.
 //
 // This functionality is experimental!
-func NewDedupe(ctx context.Context, spannerDB string, delegate func(ctx context.Context, e *tessera.Entry) tessera.IndexFuture) (func(ctx context.Context, e *tessera.Entry) tessera.IndexFuture, error) {
+func NewDedupe(ctx context.Context, spannerDB string) (func(tessera.AddFn) tessera.AddFn, error) {
 	/*
 	   Schema for reference:
 
@@ -827,9 +838,8 @@ func NewDedupe(ctx context.Context, spannerDB string, delegate func(ctx context.
 	}
 
 	r := &dedupStorage{
-		ctx:      ctx,
-		dbPool:   dedupDB,
-		delegate: delegate,
+		ctx:    ctx,
+		dbPool: dedupDB,
 	}
 
 	// TODO(al): Make these configurable
@@ -850,7 +860,10 @@ func NewDedupe(ctx context.Context, spannerDB string, delegate func(ctx context.
 			}
 		}
 	}(ctx)
-	return r.add, nil
+	return func(af tessera.AddFn) tessera.AddFn {
+		r.delegate = af
+		return r.add
+	}, nil
 }
 
 type dedupStorage struct {

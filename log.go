@@ -15,6 +15,7 @@
 package tessera
 
 import (
+	"context"
 	"crypto/sha256"
 	"errors"
 	"fmt"
@@ -47,6 +48,8 @@ var ErrPushback = errors.New("too many unintegrated entries")
 // Implementations of this func are likely to be "futures", or a promise to return this data at
 // some point in the future, and as such will block when called if the data isn't yet available.
 type IndexFuture func() (uint64, error)
+
+type AddFn func(ctx context.Context, entry *Entry) IndexFuture
 
 // WithCheckpointSigner is an option for setting the note signer and verifier to use when creating and parsing checkpoints.
 //

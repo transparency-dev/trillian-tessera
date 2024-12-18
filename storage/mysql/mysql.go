@@ -32,8 +32,10 @@ import (
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/api"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
+	"github.com/transparency-dev/trillian-tessera/internal/driver"
 	options "github.com/transparency-dev/trillian-tessera/internal/options"
-	storage "github.com/transparency-dev/trillian-tessera/storage/internal"
+	"github.com/transparency-dev/trillian-tessera/storage"
+	i_storage "github.com/transparency-dev/trillian-tessera/storage/internal"
 	"k8s.io/klog/v2"
 )
 
@@ -58,7 +60,7 @@ const (
 // Storage is a MySQL-based storage implementation for Tessera.
 type Storage struct {
 	db    *sql.DB
-	queue *storage.Queue
+	queue *i_storage.Queue
 
 	newCheckpoint options.NewCPFunc
 
@@ -67,10 +69,10 @@ type Storage struct {
 
 // New creates a new instance of the MySQL-based Storage.
 // Note that `tessera.WithCheckpointSigner()` is mandatory in the `opts` argument.
-func New(ctx context.Context, db *sql.DB, opts ...func(*options.StorageOptions)) (*Storage, error) {
-	opt := storage.ResolveStorageOptions(opts...)
+func New(ctx context.Context, db *sql.DB, opts ...func(*options.StorageOptions)) (storage.Driver, error) {
+	opt := i_storage.ResolveStorageOptions(opts...)
 	if opt.CheckpointInterval < minCheckpointInterval {
-		return nil, fmt.Errorf("requested CheckpointInterval too low - %v < %v", opt.CheckpointInterval, minCheckpointInterval)
+		return storage.Driver{}, fmt.Errorf("requested CheckpointInterval too low - %v < %v", opt.CheckpointInterval, minCheckpointInterval)
 	}
 
 	s := &Storage{
@@ -80,16 +82,16 @@ func New(ctx context.Context, db *sql.DB, opts ...func(*options.StorageOptions))
 	}
 	if err := s.db.Ping(); err != nil {
 		klog.Errorf("Failed to ping database: %v", err)
-		return nil, err
+		return storage.Driver{}, err
 	}
 	if s.newCheckpoint == nil {
-		return nil, errors.New("tessera.WithCheckpointSigner must be provided in New()")
+		return storage.Driver{}, errors.New("tessera.WithCheckpointSigner must be provided in New()")
 	}
 
-	s.queue = storage.NewQueue(ctx, opt.BatchMaxAge, opt.BatchMaxSize, s.sequenceBatch)
+	s.queue = i_storage.NewQueue(ctx, opt.BatchMaxAge, opt.BatchMaxSize, s.sequenceBatch)
 
 	if err := s.maybeInitTree(ctx); err != nil {
-		return nil, fmt.Errorf("maybeInitTree: %v", err)
+		return storage.Driver{}, fmt.Errorf("maybeInitTree: %v", err)
 	}
 
 	go func(ctx context.Context, i time.Duration) {
@@ -107,7 +109,16 @@ func New(ctx context.Context, db *sql.DB, opts ...func(*options.StorageOptions))
 			}
 		}
 	}(ctx, opt.CheckpointInterval)
-	return s, nil
+	return storage.Driver{
+		Appenders: driver.Appenders{
+			Add: s.add,
+		},
+		Readers: driver.Readers{
+			ReadCheckpoint:  s.readCheckpoint,
+			ReadTile:        s.readTile,
+			ReadEntryBundle: s.readEntryBundle,
+		},
+	}, nil
 }
 
 // maybeInitTree will insert an initial "empty tree" row into the
@@ -150,9 +161,9 @@ func (s *Storage) maybeInitTree(ctx context.Context) error {
 	return nil
 }
 
-// ReadCheckpoint returns the latest stored checkpoint.
+// readCheckpoint returns the latest stored checkpoint.
 // If the checkpoint is not found, it returns os.ErrNotExist.
-func (s *Storage) ReadCheckpoint(ctx context.Context) ([]byte, error) {
+func (s *Storage) readCheckpoint(ctx context.Context) ([]byte, error) {
 	row := s.db.QueryRowContext(ctx, selectCheckpointByIDSQL, checkpointID)
 	if err := row.Err(); err != nil {
 		return nil, err
@@ -243,13 +254,13 @@ func (s *Storage) writeTreeState(ctx context.Context, tx *sql.Tx, size uint64, r
 	return nil
 }
 
-// ReadTile returns a full tile or a partial tile at the given level, index and treeSize.
+// readTile returns a full tile or a partial tile at the given level, index and treeSize.
 // If the tile is not found, it returns os.ErrNotExist.
 //
 // Note that if a partial tile is requested, but a larger tile is available, this
 // will return the largest tile available. This could be trimmed to return only the
 // number of entries specifically requested if this behaviour becomes problematic.
-func (s *Storage) ReadTile(ctx context.Context, level, index uint64, p uint8) ([]byte, error) {
+func (s *Storage) readTile(ctx context.Context, level, index uint64, p uint8) ([]byte, error) {
 	row := s.db.QueryRowContext(ctx, selectSubtreeByLevelAndIndexSQL, level, index)
 	if err := row.Err(); err != nil {
 		return nil, err
@@ -287,13 +298,13 @@ func (s *Storage) writeTile(ctx context.Context, tx *sql.Tx, level, index uint64
 	return nil
 }
 
-// ReadEntryBundle returns the log entries at the given index.
+// readEntryBundle returns the log entries at the given index.
 // If the entry bundle is not found, it returns os.ErrNotExist.
 //
 // Note that if a partial tile is requested, but a larger tile is available, this
 // will return the largest tile available. This could be trimmed to return only the
 // number of entries specifically requested if this behaviour becomes problematic.
-func (s *Storage) ReadEntryBundle(ctx context.Context, index uint64, p uint8) ([]byte, error) {
+func (s *Storage) readEntryBundle(ctx context.Context, index uint64, p uint8) ([]byte, error) {
 	row := s.db.QueryRowContext(ctx, selectTiledLeavesSQL, index)
 	if err := row.Err(); err != nil {
 		return nil, err
@@ -329,8 +340,8 @@ func (s *Storage) writeEntryBundle(ctx context.Context, tx *sql.Tx, index uint64
 	return nil
 }
 
-// Add is the entrypoint for adding entries to a sequencing log.
-func (s *Storage) Add(ctx context.Context, entry *tessera.Entry) tessera.IndexFuture {
+// add is the entrypoint for adding entries to a sequencing log.
+func (s *Storage) add(ctx context.Context, entry *tessera.Entry) tessera.IndexFuture {
 	return s.queue.Add(ctx, entry)
 }
 
@@ -388,7 +399,7 @@ func (s *Storage) sequenceBatch(ctx context.Context, entries []*tessera.Entry) e
 
 // integrate incorporates the provided entries into the log starting at fromSeq.
 func (s *Storage) integrate(ctx context.Context, tx *sql.Tx, fromSeq uint64, entries []*tessera.Entry) error {
-	getTiles := func(ctx context.Context, tileIDs []storage.TileID, treeSize uint64) ([]*api.HashTile, error) {
+	getTiles := func(ctx context.Context, tileIDs []i_storage.TileID, treeSize uint64) ([]*api.HashTile, error) {
 		hashTiles := make([]*api.HashTile, len(tileIDs))
 		if len(tileIDs) == 0 {
 			return hashTiles, nil
@@ -438,11 +449,11 @@ func (s *Storage) integrate(ctx context.Context, tx *sql.Tx, fromSeq uint64, ent
 		return hashTiles, nil
 	}
 
-	sequencedEntries := make([]storage.SequencedEntry, len(entries))
+	sequencedEntries := make([]i_storage.SequencedEntry, len(entries))
 	// Assign provisional sequence numbers to entries.
 	// We need to do this here in order to support serialisations which include the log position.
 	for i, e := range entries {
-		sequencedEntries[i] = storage.SequencedEntry{
+		sequencedEntries[i] = i_storage.SequencedEntry{
 			BundleData: e.MarshalBundleData(fromSeq + uint64(i)),
 			LeafHash:   e.LeafHash(),
 		}
@@ -501,7 +512,7 @@ func (s *Storage) integrate(ctx context.Context, tx *sql.Tx, fromSeq uint64, ent
 		}
 	}
 
-	newSize, newRoot, tiles, err := storage.Integrate(ctx, getTiles, fromSeq, sequencedEntries)
+	newSize, newRoot, tiles, err := i_storage.Integrate(ctx, getTiles, fromSeq, sequencedEntries)
 	if err != nil {
 		return fmt.Errorf("tb.Integrate: %v", err)
 	}

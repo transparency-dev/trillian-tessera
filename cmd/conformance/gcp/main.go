@@ -25,6 +25,7 @@ import (
 	"time"
 
 	tessera "github.com/transparency-dev/trillian-tessera"
+	"github.com/transparency-dev/trillian-tessera/storage"
 	"github.com/transparency-dev/trillian-tessera/storage/gcp"
 	"golang.org/x/mod/sumdb/note"
 	"golang.org/x/net/http2"
@@ -57,7 +58,7 @@ func main() {
 
 	// Create our Tessera storage backend:
 	gcpCfg := storageConfigFromFlags()
-	storage, err := gcp.New(ctx, gcpCfg,
+	driver, err := gcp.New(ctx, gcpCfg,
 		tessera.WithCheckpointSigner(s, a...),
 		tessera.WithCheckpointInterval(10*time.Second),
 		tessera.WithBatching(1024, time.Second),
@@ -67,17 +68,18 @@ func main() {
 		klog.Exitf("Failed to create new GCP storage: %v", err)
 	}
 
-	// Handle dedup configuration
-	addDelegate := storage.Add
-
+	dedups := make([]func(tessera.AddFn) tessera.AddFn, 0, 2)
+	dedups = append(dedups, tessera.InMemoryDedupe(256))
 	// PersistentDedup is currently experimental, so there's no terraform or documentation yet!
 	if *persistentDedup {
-		addDelegate, err = gcp.NewDedupe(ctx, fmt.Sprintf("%s_dedup", *spanner), addDelegate)
+		fn, err := gcp.NewDedupe(ctx, fmt.Sprintf("%s_dedup", *spanner))
 		if err != nil {
 			klog.Exitf("Failed to create new GCP dedupe: %v", err)
 		}
+		dedups = append(dedups, fn)
 	}
-	dedupeAdd := tessera.InMemoryDedupe(addDelegate, 256)
+
+	storage := storage.NewAppender(driver, dedups...)
 
 	// Expose a HTTP handler for the conformance test writes.
 	// This should accept arbitrary bytes POSTed to /add, and return an ascii
@@ -89,7 +91,7 @@ func main() {
 			return
 		}
 
-		idx, err := dedupeAdd(r.Context(), tessera.NewEntry(b))()
+		idx, err := storage.Add(r.Context(), tessera.NewEntry(b))()
 		if err != nil {
 			if errors.Is(err, tessera.ErrPushback) {
 				w.Header().Add("Retry-After", "1")

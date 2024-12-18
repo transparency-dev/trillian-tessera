@@ -57,7 +57,7 @@ func TestDedupe(t *testing.T) {
 					return thisIdx, nil
 				}
 			}
-			dedupeAdd := tessera.InMemoryDedupe(delegate, 256)
+			dedupeAdd := tessera.InMemoryDedupe(256)(delegate)
 
 			// Add foo, bar, baz to prime the cache to make things interesting
 			for _, s := range []string{"foo", "bar", "baz"} {
@@ -89,7 +89,7 @@ func BenchmarkDedupe(b *testing.B) {
 				return thisIdx, nil
 			}
 		}
-		dedupeAdd := tessera.InMemoryDedupe(delegate, 256)
+		dedupeAdd := tessera.InMemoryDedupe(256)(delegate)
 		wg := &sync.WaitGroup{}
 		// Loop to create a bunch of leaves in parallel to test lock contention
 		for leafIndex := range 1024 {

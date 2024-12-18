@@ -35,16 +35,18 @@ import (
 // When using this with a persistent dedupe, the persistent layer should be the delegate of this
 // InMemoryDedupe. This allows recent duplicates to be deduplicated in memory, reducing the need to
 // make calls to a persistent storage.
-func InMemoryDedupe(delegate func(ctx context.Context, e *Entry) IndexFuture, size uint) func(context.Context, *Entry) IndexFuture {
-	c, err := lru.New[string, func() IndexFuture](int(size))
-	if err != nil {
-		panic(fmt.Errorf("lru.New(%d): %v", size, err))
+func InMemoryDedupe(size uint) func(AddFn) AddFn {
+	return func(af AddFn) AddFn {
+		c, err := lru.New[string, func() IndexFuture](int(size))
+		if err != nil {
+			panic(fmt.Errorf("lru.New(%d): %v", size, err))
+		}
+		dedupe := &inMemoryDedupe{
+			delegate: af,
+			cache:    c,
+		}
+		return dedupe.add
 	}
-	dedupe := &inMemoryDedupe{
-		delegate: delegate,
-		cache:    c,
-	}
-	return dedupe.add
 }
 
 type inMemoryDedupe struct {
