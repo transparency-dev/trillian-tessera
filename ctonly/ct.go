@@ -45,13 +45,16 @@ import (
 
 // Entry represents a CT log entry.
 type Entry struct {
-	Timestamp          uint64
-	IsPrecert          bool
-	Certificate        []byte
-	Precertificate     []byte
-	PrecertSigningCert []byte
-	IssuerKeyHash      []byte
-	FingerprintsChain  [][32]byte
+	Timestamp uint64
+	IsPrecert bool
+	// Certificate holds different things depending on whether the entry represents a Certificate or a Precertificate submission:
+	//   - IsPrecert == false: the bytes here are the x509 certificate submitted for logging.
+	//   - IsPrecert == true: the bytes here are the TBS certificate extracted from the submitted precert.
+	Certificate []byte
+	// Precertificate holds the precertificate to be logged, only used when IsPrecert is true.
+	Precertificate    []byte
+	IssuerKeyHash     []byte
+	FingerprintsChain [][32]byte
 }
 
 // LeafData returns the data which should be added to an entry bundle for this entry.
@@ -70,13 +73,14 @@ func (c Entry) LeafData(idx uint64) []byte {
 		b.AddUint16(1 /* entry_type = precert_entry */)
 		b.AddBytes(c.IssuerKeyHash[:])
 		b.AddUint24LengthPrefixed(func(b *cryptobyte.Builder) {
-			b.AddBytes(c.Precertificate)
+			// Note that this is really the TBS extracted from the submitted precertificate.
+			b.AddBytes(c.Certificate)
 		})
 	}
 	addExtensions(b, idx)
 	if c.IsPrecert {
 		b.AddUint24LengthPrefixed(func(b *cryptobyte.Builder) {
-			b.AddBytes(c.PrecertSigningCert)
+			b.AddBytes(c.Precertificate)
 		})
 	}
 	b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
@@ -105,7 +109,8 @@ func (e *Entry) MerkleTreeLeaf(idx uint64) []byte {
 		b.AddUint16(1 /* entry_type = precert_entry */)
 		b.AddBytes(e.IssuerKeyHash[:])
 		b.AddUint24LengthPrefixed(func(b *cryptobyte.Builder) {
-			b.AddBytes(e.Precertificate)
+			// Note that this is really the TBS extracted from the submitted precertificate.
+			b.AddBytes(e.Certificate)
 		})
 	}
 	addExtensions(b, idx)
