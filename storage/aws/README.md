@@ -66,9 +66,9 @@ However, given that it's based on services which are compatible with MySQL and
 S3 protocols, it's possible that it will work with other non-AWS-based backends
 which are compatible with these protocols.
 
-Given the vast array of combinations of backend implementations and versions, we
-can't offer anything more than a "best effort" level of support for using this storage
-implementation outside of AWS.
+Given the vast array of combinations of backend implementations and versions,
+using this storage implementation outside of AWS isn't officially supported, although
+there may be folks who can help with issues in the Transparency-Dev slack.
 
 Similarly, PRs raised against it relating to its use outside of AWS are unlikely to 
 be accepted unless it's shown that they have no detremental effect to the implementation's
