@@ -899,5 +899,6 @@ Qu80vNj7tiOe0lkdc8hwZK9YxavT0+FTP++vU6DUKvpEOr1+VGTk3IBXKSX9AHz5xXRgAQAA`
 	g, _ := base64.StdEncoding.DecodeString(d)
 	r, _ := gzip.NewReader(bytes.NewReader(g))
 	t, _ := io.ReadAll(r)
-	klog.Infof("Running in non-AWS mode: here be dragons!\n%s", t)
+	klog.Infof("Running in non-AWS mode - see storage/aws/README.md for more details.")
+	klog.Infof("Here be dragons!\n%s", t)
 }
