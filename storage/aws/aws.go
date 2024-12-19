@@ -30,8 +30,10 @@ package aws
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"database/sql"
+	"encoding/base64"
 	"encoding/gob"
 	"errors"
 	"fmt"
@@ -150,6 +152,8 @@ func New(ctx context.Context, cfg Config, opts ...func(*options.StorageOptions))
 			return nil, fmt.Errorf("failed to load default AWS configuration: %v", err)
 		}
 		cfg.SDKConfig = &sdkConfig
+	} else {
+		printDragonsWarning()
 	}
 	c := s3.NewFromConfig(*cfg.SDKConfig, cfg.S3Options)
 
@@ -886,4 +890,14 @@ func (s *s3Storage) lastModified(ctx context.Context, obj string) (time.Time, er
 	}
 
 	return *r.LastModified, r.Body.Close()
+}
+
+func printDragonsWarning() {
+	d := `H4sIAFZYZGcAA01QMQ7EIAzbeYXV5UCqkq1bf2IFtpNuPalj334hFQdkwLGNAwBzyXnKitOiqTYj
+B7ZGplWEwZhZqxZ1aKuswcD0AA4GXPUhI0MEpSd5Ow09vJ+m6rVtF6m0GDccYXDZEdp9N/g1H9Pf
+Qu80vNj7tiOe0lkdc8hwZK9YxavT0+FTP++vU6DUKvpEOr1+VGTk3IBXKSX9AHz5xXRgAQAA`
+	g, _ := base64.StdEncoding.DecodeString(d)
+	r, _ := gzip.NewReader(bytes.NewReader(g))
+	t, _ := io.ReadAll(r)
+	klog.Infof("Running in non-AWS mode: here be dragons!\n%s", t)
 }
