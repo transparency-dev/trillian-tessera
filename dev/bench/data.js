@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1734532774882,
+  "lastUpdate": 1734632921623,
   "repoUrl": "https://github.com/transparency-dev/trillian-tessera",
   "entries": {
     "Benchmark": [
@@ -2400,6 +2400,126 @@ window.BENCHMARK_DATA = {
             "value": 3437,
             "unit": "allocs/op",
             "extra": "4154 times\n4 procs"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "al@google.com",
+            "name": "Al Cutter",
+            "username": "AlCutter"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "2cf2e08b77648337b980592f0957e104ed55f627",
+          "message": "Open AWS storage to being used with non-AWS MySQL and S3 services (#428)",
+          "timestamp": "2024-12-19T18:27:19Z",
+          "tree_id": "fe51c53990ef020a70359f056f752b7cc508a82b",
+          "url": "https://github.com/transparency-dev/trillian-tessera/commit/2cf2e08b77648337b980592f0957e104ed55f627"
+        },
+        "date": 1734632920699,
+        "tool": "go",
+        "benches": [
+          {
+            "name": "BenchmarkDedupe",
+            "value": 4915906,
+            "unit": "ns/op\t  704734 B/op\t   19718 allocs/op",
+            "extra": "285 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDedupe - ns/op",
+            "value": 4915906,
+            "unit": "ns/op",
+            "extra": "285 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDedupe - B/op",
+            "value": 704734,
+            "unit": "B/op",
+            "extra": "285 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDedupe - allocs/op",
+            "value": 19718,
+            "unit": "allocs/op",
+            "extra": "285 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLeafBundle_UnmarshalText",
+            "value": 2085,
+            "unit": "ns/op\t    6528 B/op\t       1 allocs/op",
+            "extra": "585652 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLeafBundle_UnmarshalText - ns/op",
+            "value": 2085,
+            "unit": "ns/op",
+            "extra": "585652 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLeafBundle_UnmarshalText - B/op",
+            "value": 6528,
+            "unit": "B/op",
+            "extra": "585652 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLeafBundle_UnmarshalText - allocs/op",
+            "value": 1,
+            "unit": "allocs/op",
+            "extra": "585652 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkCheckpointUnsafe",
+            "value": 116.3,
+            "unit": "ns/op\t     112 B/op\t       3 allocs/op",
+            "extra": "10371332 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkCheckpointUnsafe - ns/op",
+            "value": 116.3,
+            "unit": "ns/op",
+            "extra": "10371332 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkCheckpointUnsafe - B/op",
+            "value": 112,
+            "unit": "B/op",
+            "extra": "10371332 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkCheckpointUnsafe - allocs/op",
+            "value": 3,
+            "unit": "allocs/op",
+            "extra": "10371332 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkIntegrate",
+            "value": 361154,
+            "unit": "ns/op\t  298004 B/op\t    3435 allocs/op",
+            "extra": "3856 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkIntegrate - ns/op",
+            "value": 361154,
+            "unit": "ns/op",
+            "extra": "3856 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkIntegrate - B/op",
+            "value": 298004,
+            "unit": "B/op",
+            "extra": "3856 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkIntegrate - allocs/op",
+            "value": 3435,
+            "unit": "allocs/op",
+            "extra": "3856 times\n4 procs"
           }
         ]
       }
