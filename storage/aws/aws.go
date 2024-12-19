@@ -110,10 +110,16 @@ type consumeFunc func(ctx context.Context, from uint64, entries []storage.Sequen
 
 // Config holds AWS project and resource configuration for a storage instance.
 type Config struct {
-	// SDKConfig is an optional AWS config to use when configuring service clients, e.g. S3.
-	// If nil, the value from config.LoadDefaultConfig() will be used.
+	// SDKConfig is an optional AWS config to use when configuring service clients, e.g. to
+	// use non-AWS S3 or MySQL services.
+	//
+	// If nil, the value from config.LoadDefaultConfig() will be used - this is the only
+	// supported configuration.
 	SDKConfig *aws.Config
 	// S3Options is an optional function which can be used to configure the S3 library.
+	// This is primarily useful when configuring the use of non-AWS S3 or MySQL services.
+	//
+	// If nil, the default options will be used - this is the only supported configuration.
 	S3Options func(*s3.Options)
 	// Bucket is the name of the S3 bucket to use for storing log state.
 	Bucket string
