@@ -24,6 +24,9 @@ import (
 	"net/http"
 	"time"
 
+	aaws "github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/storage/aws"
 	"golang.org/x/mod/sumdb/note"
@@ -42,6 +45,9 @@ var (
 	dbPassword        = flag.String("db_password", "", "AuroraDB user")
 	dbMaxConns        = flag.Int("db_max_conns", 0, "Maximum connections to the database, defaults to 0, i.e unlimited")
 	dbMaxIdle         = flag.Int("db_max_idle_conns", 2, "Maximum idle database connections in the connection pool, defaults to 2")
+	s3Endpoint        = flag.String("s3_endpoint", "", "Endpoint for custom non-AWS S3 service")
+	s3AccessKeyID     = flag.String("s3_access_key", "", "Access key ID for custom non-AWS S3 service")
+	s3SecretAccessKey = flag.String("s3_secret", "", "Secret access key for custom non-AWS S3 service")
 	signer            = flag.String("signer", "", "Note signer to use to sign checkpoints")
 	publishInterval   = flag.Duration("publish_interval", 3*time.Second, "How frequently to publish updated checkpoints")
 	additionalSigners = []string{}
@@ -138,8 +144,27 @@ func storageConfigFromFlags() aws.Config {
 		*dbUser, *dbPassword, dbEndpoint, *dbName,
 	)
 
+	// Configure to use MinIO Server
+	var awsConfig *aaws.Config
+	var s3Opts func(o *s3.Options)
+	if *s3Endpoint != "" {
+		const defaultRegion = "us-east-1"
+		s3Opts = func(o *s3.Options) {
+			o.BaseEndpoint = aaws.String(*s3Endpoint)
+			o.Credentials = credentials.NewStaticCredentialsProvider(*s3AccessKeyID, *s3SecretAccessKey, "")
+			o.Region = defaultRegion
+			o.UsePathStyle = true
+		}
+
+		awsConfig = &aaws.Config{
+			Region: defaultRegion,
+		}
+	}
+
 	return aws.Config{
 		Bucket:       *bucket,
+		SDKConfig:    awsConfig,
+		S3Options:    s3Opts,
 		DSN:          dsn,
 		MaxOpenConns: *dbMaxConns,
 		MaxIdleConns: *dbMaxIdle,

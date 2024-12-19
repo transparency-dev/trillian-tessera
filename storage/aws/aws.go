@@ -30,8 +30,10 @@ package aws
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"database/sql"
+	"encoding/base64"
 	"encoding/gob"
 	"errors"
 	"fmt"
@@ -110,6 +112,17 @@ type consumeFunc func(ctx context.Context, from uint64, entries []storage.Sequen
 
 // Config holds AWS project and resource configuration for a storage instance.
 type Config struct {
+	// SDKConfig is an optional AWS config to use when configuring service clients, e.g. to
+	// use non-AWS S3 or MySQL services.
+	//
+	// If nil, the value from config.LoadDefaultConfig() will be used - this is the only
+	// supported configuration.
+	SDKConfig *aws.Config
+	// S3Options is an optional function which can be used to configure the S3 library.
+	// This is primarily useful when configuring the use of non-AWS S3 or MySQL services.
+	//
+	// If nil, the default options will be used - this is the only supported configuration.
+	S3Options func(*s3.Options)
 	// Bucket is the name of the S3 bucket to use for storing log state.
 	Bucket string
 	// DSN is the DSN of the MySQL instance to use.
@@ -133,11 +146,16 @@ func New(ctx context.Context, cfg Config, opts ...func(*options.StorageOptions))
 		return nil, fmt.Errorf("requested CheckpointInterval (%v) is less than minimum permitted %v", opt.CheckpointInterval, minCheckpointInterval)
 	}
 
-	sdkConfig, err := config.LoadDefaultConfig(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load default AWS configuration: %v", err)
+	if cfg.SDKConfig == nil {
+		sdkConfig, err := config.LoadDefaultConfig(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load default AWS configuration: %v", err)
+		}
+		cfg.SDKConfig = &sdkConfig
+	} else {
+		printDragonsWarning()
 	}
-	c := s3.NewFromConfig(sdkConfig)
+	c := s3.NewFromConfig(*cfg.SDKConfig, cfg.S3Options)
 
 	seq, err := newMySQLSequencer(ctx, cfg.DSN, uint64(opt.PushbackMaxOutstanding), cfg.MaxOpenConns, cfg.MaxIdleConns)
 	if err != nil {
@@ -872,4 +890,15 @@ func (s *s3Storage) lastModified(ctx context.Context, obj string) (time.Time, er
 	}
 
 	return *r.LastModified, r.Body.Close()
+}
+
+func printDragonsWarning() {
+	d := `H4sIAFZYZGcAA01QMQ7EIAzbeYXV5UCqkq1bf2IFtpNuPalj334hFQdkwLGNAwBzyXnKitOiqTYj
+B7ZGplWEwZhZqxZ1aKuswcD0AA4GXPUhI0MEpSd5Ow09vJ+m6rVtF6m0GDccYXDZEdp9N/g1H9Pf
+Qu80vNj7tiOe0lkdc8hwZK9YxavT0+FTP++vU6DUKvpEOr1+VGTk3IBXKSX9AHz5xXRgAQAA`
+	g, _ := base64.StdEncoding.DecodeString(d)
+	r, _ := gzip.NewReader(bytes.NewReader(g))
+	t, _ := io.ReadAll(r)
+	klog.Infof("Running in non-AWS mode - see storage/aws/README.md for more details.")
+	klog.Infof("Here be dragons!\n%s", t)
 }
