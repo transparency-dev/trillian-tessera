@@ -58,6 +58,22 @@ Two experimental implementations have been tested which uses either Aurora MySQL
 or a local bbolt database to store the `<identity_hash>` --> `sequence` mapping.
 They work well, but call for further stress testing and cost analysis.
 
+## Compatibility
+
+This storage implementation is intended to be used with AWS services.
+
+However, given that it's based on services which are compatible with MySQL and
+S3 protocols, it's possible that it will work with other non-AWS-based backends
+which are compatible with these protocols.
+
+Given the vast array of combinations of backend implementations and versions, we
+can't offer anything more than a "best effort" level of support for using this storage
+implementation outside of AWS.
+
+Similarly, PRs raised against it relating to its use outside of AWS are unlikely to 
+be accepted unless it's shown that they have no detremental effect to the implementation's
+performance on AWS.
+
 ### Alternatives considered
 
 Other transactional storage systems are available on AWS, e.g. Redshift, RDS or

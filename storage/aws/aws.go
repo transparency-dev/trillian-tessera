@@ -110,6 +110,11 @@ type consumeFunc func(ctx context.Context, from uint64, entries []storage.Sequen
 
 // Config holds AWS project and resource configuration for a storage instance.
 type Config struct {
+	// SDKConfig is an optional AWS config to use when configuring service clients, e.g. S3.
+	// If nil, the value from config.LoadDefaultConfig() will be used.
+	SDKConfig *aws.Config
+	// S3Options is an optional function which can be used to configure the S3 library.
+	S3Options func(*s3.Options)
 	// Bucket is the name of the S3 bucket to use for storing log state.
 	Bucket string
 	// DSN is the DSN of the MySQL instance to use.
@@ -133,11 +138,14 @@ func New(ctx context.Context, cfg Config, opts ...func(*options.StorageOptions))
 		return nil, fmt.Errorf("requested CheckpointInterval (%v) is less than minimum permitted %v", opt.CheckpointInterval, minCheckpointInterval)
 	}
 
-	sdkConfig, err := config.LoadDefaultConfig(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load default AWS configuration: %v", err)
+	if cfg.SDKConfig == nil {
+		sdkConfig, err := config.LoadDefaultConfig(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load default AWS configuration: %v", err)
+		}
+		cfg.SDKConfig = &sdkConfig
 	}
-	c := s3.NewFromConfig(sdkConfig)
+	c := s3.NewFromConfig(*cfg.SDKConfig, cfg.S3Options)
 
 	seq, err := newMySQLSequencer(ctx, cfg.DSN, uint64(opt.PushbackMaxOutstanding), cfg.MaxOpenConns, cfg.MaxIdleConns)
 	if err != nil {
