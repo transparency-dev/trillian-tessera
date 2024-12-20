@@ -147,11 +147,15 @@ func New(ctx context.Context, cfg Config, opts ...func(*options.StorageOptions))
 	}
 
 	if cfg.SDKConfig == nil {
+		// We're running on AWS so use the SDK's default config which will will handle credentials etc.
 		sdkConfig, err := config.LoadDefaultConfig(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load default AWS configuration: %v", err)
 		}
 		cfg.SDKConfig = &sdkConfig
+		// We need a non-nil options func to pass in to s3.NewFromConfig below or it'll panic, so
+		// we'll use a "do nothing" placeholder.
+		cfg.S3Options = func(_ *s3.Options) {}
 	} else {
 		printDragonsWarning()
 	}
