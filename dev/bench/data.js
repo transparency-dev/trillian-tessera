@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1736161903968,
+  "lastUpdate": 1736256656066,
   "repoUrl": "https://github.com/transparency-dev/trillian-tessera",
   "entries": {
     "Benchmark": [
@@ -3000,6 +3000,126 @@ window.BENCHMARK_DATA = {
             "value": 3440,
             "unit": "allocs/op",
             "extra": "3955 times\n4 procs"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "49699333+dependabot[bot]@users.noreply.github.com",
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "3af7a0ee376f033780dacff6d44cba08faf87cf5",
+          "message": "Bump the all-go-deps group with 2 updates (#434)\n\nBumps the all-go-deps group with 2 updates: [golang.org/x/crypto](https://github.com/golang/crypto) and [golang.org/x/net](https://github.com/golang/net).\r\n\r\n\r\nUpdates `golang.org/x/crypto` from 0.31.0 to 0.32.0\r\n- [Commits](https://github.com/golang/crypto/compare/v0.31.0...v0.32.0)\r\n\r\nUpdates `golang.org/x/net` from 0.33.0 to 0.34.0\r\n- [Commits](https://github.com/golang/net/compare/v0.33.0...v0.34.0)\r\n\r\n---\r\nupdated-dependencies:\r\n- dependency-name: golang.org/x/crypto\r\n  dependency-type: direct:production\r\n  update-type: version-update:semver-minor\r\n  dependency-group: all-go-deps\r\n- dependency-name: golang.org/x/net\r\n  dependency-type: direct:production\r\n  update-type: version-update:semver-minor\r\n  dependency-group: all-go-deps\r\n...\r\n\r\nSigned-off-by: dependabot[bot] <support@github.com>\r\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
+          "timestamp": "2025-01-07T13:29:31Z",
+          "tree_id": "215199fa6cd72ee4bc792bfffd56a137d5439eca",
+          "url": "https://github.com/transparency-dev/trillian-tessera/commit/3af7a0ee376f033780dacff6d44cba08faf87cf5"
+        },
+        "date": 1736256655089,
+        "tool": "go",
+        "benches": [
+          {
+            "name": "BenchmarkDedupe",
+            "value": 4447925,
+            "unit": "ns/op\t  700881 B/op\t   19678 allocs/op",
+            "extra": "273 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDedupe - ns/op",
+            "value": 4447925,
+            "unit": "ns/op",
+            "extra": "273 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDedupe - B/op",
+            "value": 700881,
+            "unit": "B/op",
+            "extra": "273 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDedupe - allocs/op",
+            "value": 19678,
+            "unit": "allocs/op",
+            "extra": "273 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLeafBundle_UnmarshalText",
+            "value": 7400,
+            "unit": "ns/op\t    6528 B/op\t       1 allocs/op",
+            "extra": "202981 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLeafBundle_UnmarshalText - ns/op",
+            "value": 7400,
+            "unit": "ns/op",
+            "extra": "202981 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLeafBundle_UnmarshalText - B/op",
+            "value": 6528,
+            "unit": "B/op",
+            "extra": "202981 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLeafBundle_UnmarshalText - allocs/op",
+            "value": 1,
+            "unit": "allocs/op",
+            "extra": "202981 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkCheckpointUnsafe",
+            "value": 120,
+            "unit": "ns/op\t     112 B/op\t       3 allocs/op",
+            "extra": "10208613 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkCheckpointUnsafe - ns/op",
+            "value": 120,
+            "unit": "ns/op",
+            "extra": "10208613 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkCheckpointUnsafe - B/op",
+            "value": 112,
+            "unit": "B/op",
+            "extra": "10208613 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkCheckpointUnsafe - allocs/op",
+            "value": 3,
+            "unit": "allocs/op",
+            "extra": "10208613 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkIntegrate",
+            "value": 355078,
+            "unit": "ns/op\t  298309 B/op\t    3438 allocs/op",
+            "extra": "3890 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkIntegrate - ns/op",
+            "value": 355078,
+            "unit": "ns/op",
+            "extra": "3890 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkIntegrate - B/op",
+            "value": 298309,
+            "unit": "B/op",
+            "extra": "3890 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkIntegrate - allocs/op",
+            "value": 3438,
+            "unit": "allocs/op",
+            "extra": "3890 times\n4 procs"
           }
         ]
       }
