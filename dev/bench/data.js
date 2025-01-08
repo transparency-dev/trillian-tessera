@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1736256656066,
+  "lastUpdate": 1736341453156,
   "repoUrl": "https://github.com/transparency-dev/trillian-tessera",
   "entries": {
     "Benchmark": [
@@ -3120,6 +3120,126 @@ window.BENCHMARK_DATA = {
             "value": 3438,
             "unit": "allocs/op",
             "extra": "3890 times\n4 procs"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "mhutchinson@gmail.com",
+            "name": "Martin Hutchinson",
+            "username": "mhutchinson"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "2edef5836737da9f2fc707061f6dfdee91a01173",
+          "message": "[Architecture] Switch over to a common impl with separate drivers (#433)\n\nThe functionality is the same, but now all personalities have a common wrapper around a driver instead of having separate implementations directly in their hand.\r\n\r\nThe big advantage of the main API being this shape is that Tessera now \"feels\" like a single API, with drivers to bind it to different environments. This is more similar to canonical usage of sql/db package, which many go developers are familiar with.\r\n\r\nAnother advantage realized in this change is that deduplication is now folded into the core Appender object, instead of functionally floating around alongside it and needing to be handled by the personalities.",
+          "timestamp": "2025-01-08T13:02:49Z",
+          "tree_id": "6b8598bc7d612b005281abeb867626b92ffa3302",
+          "url": "https://github.com/transparency-dev/trillian-tessera/commit/2edef5836737da9f2fc707061f6dfdee91a01173"
+        },
+        "date": 1736341451807,
+        "tool": "go",
+        "benches": [
+          {
+            "name": "BenchmarkDedupe",
+            "value": 4432382,
+            "unit": "ns/op\t  699657 B/op\t   19665 allocs/op",
+            "extra": "266 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDedupe - ns/op",
+            "value": 4432382,
+            "unit": "ns/op",
+            "extra": "266 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDedupe - B/op",
+            "value": 699657,
+            "unit": "B/op",
+            "extra": "266 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDedupe - allocs/op",
+            "value": 19665,
+            "unit": "allocs/op",
+            "extra": "266 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLeafBundle_UnmarshalText",
+            "value": 8088,
+            "unit": "ns/op\t    6529 B/op\t       1 allocs/op",
+            "extra": "140977 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLeafBundle_UnmarshalText - ns/op",
+            "value": 8088,
+            "unit": "ns/op",
+            "extra": "140977 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLeafBundle_UnmarshalText - B/op",
+            "value": 6529,
+            "unit": "B/op",
+            "extra": "140977 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLeafBundle_UnmarshalText - allocs/op",
+            "value": 1,
+            "unit": "allocs/op",
+            "extra": "140977 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkCheckpointUnsafe",
+            "value": 118.6,
+            "unit": "ns/op\t     112 B/op\t       3 allocs/op",
+            "extra": "10272558 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkCheckpointUnsafe - ns/op",
+            "value": 118.6,
+            "unit": "ns/op",
+            "extra": "10272558 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkCheckpointUnsafe - B/op",
+            "value": 112,
+            "unit": "B/op",
+            "extra": "10272558 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkCheckpointUnsafe - allocs/op",
+            "value": 3,
+            "unit": "allocs/op",
+            "extra": "10272558 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkIntegrate",
+            "value": 366946,
+            "unit": "ns/op\t  297615 B/op\t    3432 allocs/op",
+            "extra": "3751 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkIntegrate - ns/op",
+            "value": 366946,
+            "unit": "ns/op",
+            "extra": "3751 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkIntegrate - B/op",
+            "value": 297615,
+            "unit": "B/op",
+            "extra": "3751 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkIntegrate - allocs/op",
+            "value": 3432,
+            "unit": "allocs/op",
+            "extra": "3751 times\n4 procs"
           }
         ]
       }
