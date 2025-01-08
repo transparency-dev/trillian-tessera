@@ -44,30 +44,17 @@ type LogReader interface {
 	ReadEntryBundle(ctx context.Context, index uint64, p uint8) ([]byte, error)
 }
 
-// Appender allows new entries to be added to the log, and the contents of the log to be read.
-type Appender interface {
-	// Add adds a new entry to be sequenced.
-	// This method quickly returns an IndexFuture, which will return the index assigned
-	// to the new leaf. Until this is returned, the leaf is not durably added to the log,
-	// and terminating the process may lead to this leaf being lost.
-	// Once the future resolves and returns an index, the leaf is durably sequenced and will
-	// be preserved even in the process terminates.
-	//
-	// Once a leaf is sequenced, it will be integrated into the tree soon (generally single digit
-	// seconds). Until it is integrated, clients of the log will not be able to verifiably access
-	// this value. Personalities that require blocking until the leaf is integrated can use the
-	// IntegrationAwaiter to wrap the call to this method.
-	Add(ctx context.Context, entry *Entry) IndexFuture
-}
-
 // NewAppender returns an Appender, which allows a personality to incrementally append new
 // leaves to the log and to read from it.
 //
 // decorators provides a list of optional constructor functions that will return decorators
 // that wrap the base appender. This can be used to provide deduplication. Decorators will be
 // called in-order, and the last in the chain will be the base appender.
-func NewAppender(d Driver, decorators ...func(AddFn) AddFn) (Appender, LogReader, error) {
-	a, ok := d.(Appender)
+func NewAppender(d Driver, decorators ...func(AddFn) AddFn) (AddFn, LogReader, error) {
+	type appender interface {
+		Add(ctx context.Context, entry *Entry) IndexFuture
+	}
+	a, ok := d.(appender)
 	if !ok {
 		return nil, nil, fmt.Errorf("driver %T does not implement Appender", d)
 	}
@@ -79,18 +66,7 @@ func NewAppender(d Driver, decorators ...func(AddFn) AddFn) (Appender, LogReader
 	if err != nil {
 		return nil, nil, err
 	}
-	return appender{
-		add: add,
-	}, reader, nil
-}
-
-type appender struct {
-	LogReader
-	add AddFn
-}
-
-func (a appender) Add(ctx context.Context, entry *Entry) IndexFuture {
-	return a.add(ctx, entry)
+	return add, reader, nil
 }
 
 func newLogReader(d Driver) (LogReader, error) {

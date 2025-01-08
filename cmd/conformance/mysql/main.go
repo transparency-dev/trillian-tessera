@@ -70,7 +70,7 @@ func main() {
 		klog.Exitf("Failed to create new MySQL storage: %v", err)
 	}
 
-	appender, reader, err := tessera.NewAppender(driver, tessera.InMemoryDedupe(256))
+	addFn, reader, err := tessera.NewAppender(driver, tessera.InMemoryDedupe(256))
 	if err != nil {
 		klog.Exit(err)
 	}
@@ -82,7 +82,7 @@ func main() {
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
-		idx, err := appender.Add(r.Context(), tessera.NewEntry(b))()
+		idx, err := addFn(r.Context(), tessera.NewEntry(b))()
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			_, _ = w.Write([]byte(err.Error()))

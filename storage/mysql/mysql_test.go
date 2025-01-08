@@ -169,7 +169,7 @@ func TestNew(t *testing.T) {
 
 func TestGetTile(t *testing.T) {
 	ctx := context.Background()
-	s, r := newTestMySQLStorage(t, ctx)
+	addFn, r := newTestMySQLStorage(t, ctx)
 
 	awaiter := tessera.NewIntegrationAwaiter(ctx, r.ReadCheckpoint, 10*time.Millisecond)
 
@@ -179,7 +179,7 @@ func TestGetTile(t *testing.T) {
 	for i := range treeSize {
 		wg.Go(
 			func() error {
-				_, _, err := awaiter.Await(ctx, s.Add(ctx, tessera.NewEntry([]byte(fmt.Sprintf("TestGetTile %d", i)))))
+				_, _, err := awaiter.Await(ctx, addFn(ctx, tessera.NewEntry([]byte(fmt.Sprintf("TestGetTile %d", i)))))
 				if err != nil {
 					return fmt.Errorf("failed to prep test with entry: %v", err)
 				}
@@ -327,7 +327,7 @@ func TestReadMissingEntryBundle(t *testing.T) {
 func TestParallelAdd(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	s, _ := newTestMySQLStorage(t, ctx)
+	addFn, _ := newTestMySQLStorage(t, ctx)
 
 	for _, test := range []struct {
 		name  string
@@ -350,7 +350,7 @@ func TestParallelAdd(t *testing.T) {
 			eG := errgroup.Group{}
 			for i := 0; i < 1024; i++ {
 				eG.Go(func() error {
-					_, err := s.Add(ctx, tessera.NewEntry(test.entry))()
+					_, err := addFn(ctx, tessera.NewEntry(test.entry))()
 					return err
 				})
 			}
@@ -363,7 +363,7 @@ func TestParallelAdd(t *testing.T) {
 
 func TestTileRoundTrip(t *testing.T) {
 	ctx := context.Background()
-	s, r := newTestMySQLStorage(t, ctx)
+	addFn, r := newTestMySQLStorage(t, ctx)
 
 	for _, test := range []struct {
 		name  string
@@ -383,7 +383,7 @@ func TestTileRoundTrip(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			entryIndex, err := s.Add(ctx, tessera.NewEntry(test.entry))()
+			entryIndex, err := addFn(ctx, tessera.NewEntry(test.entry))()
 			if err != nil {
 				t.Errorf("Add got err: %v", err)
 			}
@@ -414,7 +414,7 @@ func TestTileRoundTrip(t *testing.T) {
 
 func TestEntryBundleRoundTrip(t *testing.T) {
 	ctx := context.Background()
-	s, r := newTestMySQLStorage(t, ctx)
+	addFn, r := newTestMySQLStorage(t, ctx)
 
 	for _, test := range []struct {
 		name  string
@@ -434,7 +434,7 @@ func TestEntryBundleRoundTrip(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			entryIndex, err := s.Add(ctx, tessera.NewEntry(test.entry))()
+			entryIndex, err := addFn(ctx, tessera.NewEntry(test.entry))()
 			if err != nil {
 				t.Errorf("Add got err: %v", err)
 			}
@@ -459,7 +459,7 @@ func TestEntryBundleRoundTrip(t *testing.T) {
 	}
 }
 
-func newTestMySQLStorage(t *testing.T, ctx context.Context) (tessera.Appender, tessera.LogReader) {
+func newTestMySQLStorage(t *testing.T, ctx context.Context) (tessera.AddFn, tessera.LogReader) {
 	t.Helper()
 	initDatabaseSchema(ctx)
 

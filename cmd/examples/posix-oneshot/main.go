@@ -95,7 +95,7 @@ func main() {
 	if err != nil {
 		klog.Exitf("Failed to construct storage: %v", err)
 	}
-	a, r, err := tessera.NewAppender(driver)
+	addFn, r, err := tessera.NewAppender(driver)
 	if err != nil {
 		klog.Exit(err)
 	}
@@ -113,7 +113,7 @@ func main() {
 			klog.Exitf("Failed to read entry file %q: %q", fp, err)
 		}
 
-		f := a.Add(ctx, tessera.NewEntry(b))
+		f := addFn(ctx, tessera.NewEntry(b))
 		indexFutures = append(indexFutures, entryInfo{name: fp, f: f})
 	}
 

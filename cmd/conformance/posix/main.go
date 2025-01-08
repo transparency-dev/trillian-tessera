@@ -69,7 +69,7 @@ func main() {
 	if err != nil {
 		klog.Exitf("Failed to construct storage: %v", err)
 	}
-	appender, _, err := tessera.NewAppender(driver, tessera.InMemoryDedupe(256))
+	addFn, _, err := tessera.NewAppender(driver, tessera.InMemoryDedupe(256))
 	if err != nil {
 		klog.Exit(err)
 	}
@@ -81,7 +81,7 @@ func main() {
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
-		idx, err := appender.Add(r.Context(), tessera.NewEntry(b))()
+		idx, err := addFn(r.Context(), tessera.NewEntry(b))()
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			_, _ = w.Write([]byte(err.Error()))
