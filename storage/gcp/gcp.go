@@ -50,7 +50,7 @@ import (
 	"github.com/transparency-dev/trillian-tessera/api"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
 	"github.com/transparency-dev/trillian-tessera/internal/options"
-	i_storage "github.com/transparency-dev/trillian-tessera/storage/internal"
+	"github.com/transparency-dev/trillian-tessera/storage/internal"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/iterator"
@@ -82,7 +82,7 @@ type Storage struct {
 	sequencer sequencer
 	objStore  objStore
 
-	queue *i_storage.Queue
+	queue *storage.Queue
 
 	cpUpdated chan struct{}
 }
@@ -112,7 +112,7 @@ type sequencer interface {
 // consumeFunc is the signature of a function which can consume entries from the sequencer and integrate
 // them into the log.
 // Returns the new rootHash once all passed entries have been integrated.
-type consumeFunc func(ctx context.Context, from uint64, entries []i_storage.SequencedEntry) ([]byte, error)
+type consumeFunc func(ctx context.Context, from uint64, entries []storage.SequencedEntry) ([]byte, error)
 
 // Config holds GCP project and resource configuration for a storage instance.
 type Config struct {
@@ -124,7 +124,7 @@ type Config struct {
 
 // New creates a new instance of the GCP based Storage.
 func New(ctx context.Context, cfg Config, opts ...func(*options.StorageOptions)) (tessera.Driver, error) {
-	opt := i_storage.ResolveStorageOptions(opts...)
+	opt := storage.ResolveStorageOptions(opts...)
 	if opt.PushbackMaxOutstanding == 0 {
 		opt.PushbackMaxOutstanding = DefaultPushbackMaxOutstanding
 	}
@@ -152,7 +152,7 @@ func New(ctx context.Context, cfg Config, opts ...func(*options.StorageOptions))
 		entriesPath: opt.EntriesPath,
 		cpUpdated:   make(chan struct{}),
 	}
-	r.queue = i_storage.NewQueue(ctx, opt.BatchMaxAge, opt.BatchMaxSize, r.sequencer.assignEntries)
+	r.queue = storage.NewQueue(ctx, opt.BatchMaxAge, opt.BatchMaxSize, r.sequencer.assignEntries)
 
 	if err := r.init(ctx); err != nil {
 		return nil, fmt.Errorf("failed to initialise log storage: %v", err)
@@ -296,7 +296,7 @@ func (s *Storage) setTile(ctx context.Context, level, index, logSize uint64, til
 // getTiles returns the tiles with the given tile-coords for the specified log size.
 //
 // Tiles are returned in the same order as they're requested, nils represent tiles which were not found.
-func (s *Storage) getTiles(ctx context.Context, tileIDs []i_storage.TileID, logSize uint64) ([]*api.HashTile, error) {
+func (s *Storage) getTiles(ctx context.Context, tileIDs []storage.TileID, logSize uint64) ([]*api.HashTile, error) {
 	r := make([]*api.HashTile, len(tileIDs))
 	errG := errgroup.Group{}
 	for i, id := range tileIDs {
@@ -361,7 +361,7 @@ func (s *Storage) setEntryBundle(ctx context.Context, bundleIndex uint64, p uint
 }
 
 // integrate incorporates the provided entries into the log starting at fromSeq.
-func (s *Storage) integrate(ctx context.Context, fromSeq uint64, entries []i_storage.SequencedEntry) ([]byte, error) {
+func (s *Storage) integrate(ctx context.Context, fromSeq uint64, entries []storage.SequencedEntry) ([]byte, error) {
 	var newRoot []byte
 
 	errG := errgroup.Group{}
@@ -374,7 +374,7 @@ func (s *Storage) integrate(ctx context.Context, fromSeq uint64, entries []i_sto
 	})
 
 	errG.Go(func() error {
-		getTiles := func(ctx context.Context, tileIDs []i_storage.TileID, treeSize uint64) ([]*api.HashTile, error) {
+		getTiles := func(ctx context.Context, tileIDs []storage.TileID, treeSize uint64) ([]*api.HashTile, error) {
 			n, err := s.getTiles(ctx, tileIDs, treeSize)
 			if err != nil {
 				return nil, fmt.Errorf("getTiles: %w", err)
@@ -382,13 +382,13 @@ func (s *Storage) integrate(ctx context.Context, fromSeq uint64, entries []i_sto
 			return n, nil
 		}
 
-		newSize, root, tiles, err := i_storage.Integrate(ctx, getTiles, fromSeq, entries)
+		newSize, root, tiles, err := storage.Integrate(ctx, getTiles, fromSeq, entries)
 		if err != nil {
 			return fmt.Errorf("Integrate: %v", err)
 		}
 		newRoot = root
 		for k, v := range tiles {
-			func(ctx context.Context, k i_storage.TileID, v *api.HashTile) {
+			func(ctx context.Context, k storage.TileID, v *api.HashTile) {
 				errG.Go(func() error {
 					return s.setTile(ctx, uint64(k.Level), k.Index, newSize, v)
 				})
@@ -405,7 +405,7 @@ func (s *Storage) integrate(ctx context.Context, fromSeq uint64, entries []i_sto
 // updateEntryBundles adds the entries being integrated into the entry bundles.
 //
 // The right-most bundle will be grown, if it's partial, and/or new bundles will be created as required.
-func (s *Storage) updateEntryBundles(ctx context.Context, fromSeq uint64, entries []i_storage.SequencedEntry) error {
+func (s *Storage) updateEntryBundles(ctx context.Context, fromSeq uint64, entries []storage.SequencedEntry) error {
 	if len(entries) == 0 {
 		return nil
 	}
@@ -577,11 +577,11 @@ func (s *spannerSequencer) assignEntries(ctx context.Context, entries []*tessera
 		}
 
 		next := uint64(next) // Shadow next with a uint64 version of the same value to save on casts.
-		sequencedEntries := make([]i_storage.SequencedEntry, len(entries))
+		sequencedEntries := make([]storage.SequencedEntry, len(entries))
 		// Assign provisional sequence numbers to entries.
 		// We need to do this here in order to support serialisations which include the log position.
 		for i, e := range entries {
-			sequencedEntries[i] = i_storage.SequencedEntry{
+			sequencedEntries[i] = storage.SequencedEntry{
 				BundleData: e.MarshalBundleData(next + uint64(i)),
 				LeafHash:   e.LeafHash(),
 			}
@@ -646,7 +646,7 @@ func (s *spannerSequencer) consumeEntries(ctx context.Context, limit uint64, f c
 		defer rows.Stop()
 
 		seqsConsumed := []int64{}
-		entries := make([]i_storage.SequencedEntry, 0, limit)
+		entries := make([]storage.SequencedEntry, 0, limit)
 		orderCheck := fromSeq
 		for {
 			row, err := rows.Next()
@@ -665,7 +665,7 @@ func (s *spannerSequencer) consumeEntries(ctx context.Context, limit uint64, f c
 			}
 
 			g := gob.NewDecoder(bytes.NewReader(vGob))
-			b := []i_storage.SequencedEntry{}
+			b := []storage.SequencedEntry{}
 			if err := g.Decode(&b); err != nil {
 				return fmt.Errorf("failed to deserialise v: %v", err)
 			}
