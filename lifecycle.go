@@ -12,12 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package storage
+package tessera
 
 import (
 	"context"
-
-	tessera "github.com/transparency-dev/trillian-tessera"
 )
 
 // LogReader provides read-only access to the log.
@@ -59,8 +57,8 @@ type Appender interface {
 	// Once a leaf is sequenced, it will be integrated into the tree soon (generally single digit
 	// seconds). Until it is integrated, clients of the log will not be able to verifiably access
 	// this value. Personalities that require blocking until the leaf is integrated can use the
-	// tessera.IntegrationAwaiter to wrap the call to this method.
-	Add(ctx context.Context, entry *tessera.Entry) tessera.IndexFuture
+	// IntegrationAwaiter to wrap the call to this method.
+	Add(ctx context.Context, entry *Entry) IndexFuture
 }
 
 // NewAppender returns an Appender, which allows a personality to incrementally append new
@@ -69,7 +67,7 @@ type Appender interface {
 // decorators provides a list of optional constructor functions that will return decorators
 // that wrap the base appender. This can be used to provide deduplication. Decorators will be
 // called in-order, and the last in the chain will be the base appender.
-func NewAppender(d tessera.Driver, decorators ...func(tessera.AddFn) tessera.AddFn) Appender {
+func NewAppender(d Driver, decorators ...func(AddFn) AddFn) Appender {
 	a, ok := d.(Appender)
 	if !ok {
 		panic("driver does not implement Appender")
@@ -86,14 +84,14 @@ func NewAppender(d tessera.Driver, decorators ...func(tessera.AddFn) tessera.Add
 
 type appender struct {
 	LogReader
-	add tessera.AddFn
+	add AddFn
 }
 
-func (a appender) Add(ctx context.Context, entry *tessera.Entry) tessera.IndexFuture {
+func (a appender) Add(ctx context.Context, entry *Entry) IndexFuture {
 	return a.add(ctx, entry)
 }
 
-func newLogReader(d tessera.Driver) LogReader {
+func newLogReader(d Driver) LogReader {
 	s, ok := d.(LogReader)
 	if !ok {
 		panic("driver does not implement LogReader")

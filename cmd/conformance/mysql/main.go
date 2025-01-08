@@ -29,7 +29,6 @@ import (
 
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
-	"github.com/transparency-dev/trillian-tessera/storage"
 	"github.com/transparency-dev/trillian-tessera/storage/mysql"
 	"golang.org/x/mod/sumdb/note"
 	"k8s.io/klog/v2"
@@ -71,7 +70,7 @@ func main() {
 		klog.Exitf("Failed to create new MySQL storage: %v", err)
 	}
 
-	appender := storage.NewAppender(driver, tessera.InMemoryDedupe(256))
+	appender := tessera.NewAppender(driver, tessera.InMemoryDedupe(256))
 	// Set up the handlers for the tlog-tiles GET methods, and a custom handler for HTTP POSTs to /add
 	configureTilesReadAPI(http.DefaultServeMux, appender)
 	http.HandleFunc("POST /add", func(w http.ResponseWriter, r *http.Request) {
@@ -140,7 +139,7 @@ func createSignerOrDie(s string) note.Signer {
 // routing the requests to the mysql storage.
 // This method could be moved into the storage API as it's likely this will be
 // the same for any implementation of a personality based on MySQL.
-func configureTilesReadAPI(mux *http.ServeMux, appender storage.Appender) {
+func configureTilesReadAPI(mux *http.ServeMux, appender tessera.Appender) {
 	mux.HandleFunc("GET /checkpoint", func(w http.ResponseWriter, r *http.Request) {
 		checkpoint, err := appender.ReadCheckpoint(r.Context())
 		if err != nil {

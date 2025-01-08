@@ -25,7 +25,6 @@ import (
 	"time"
 
 	tessera "github.com/transparency-dev/trillian-tessera"
-	"github.com/transparency-dev/trillian-tessera/storage"
 	"github.com/transparency-dev/trillian-tessera/storage/gcp"
 	"golang.org/x/mod/sumdb/note"
 	"golang.org/x/net/http2"
@@ -79,7 +78,7 @@ func main() {
 		dedups = append(dedups, fn)
 	}
 
-	storage := storage.NewAppender(driver, dedups...)
+	storage := tessera.NewAppender(driver, dedups...)
 
 	// Expose a HTTP handler for the conformance test writes.
 	// This should accept arbitrary bytes POSTed to /add, and return an ascii

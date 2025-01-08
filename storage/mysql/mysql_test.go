@@ -37,7 +37,6 @@ import (
 	"github.com/transparency-dev/trillian-tessera/api"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
 	options "github.com/transparency-dev/trillian-tessera/internal/options"
-	"github.com/transparency-dev/trillian-tessera/storage"
 	"github.com/transparency-dev/trillian-tessera/storage/mysql"
 	"golang.org/x/mod/sumdb/note"
 	"golang.org/x/sync/errgroup"
@@ -460,7 +459,7 @@ func TestEntryBundleRoundTrip(t *testing.T) {
 	}
 }
 
-func newTestMySQLStorage(t *testing.T, ctx context.Context) storage.Appender {
+func newTestMySQLStorage(t *testing.T, ctx context.Context) tessera.Appender {
 	t.Helper()
 	initDatabaseSchema(ctx)
 
@@ -472,6 +471,6 @@ func newTestMySQLStorage(t *testing.T, ctx context.Context) storage.Appender {
 		t.Fatalf("Failed to create mysql.Storage: %v", err)
 	}
 
-	a := storage.NewAppender(s)
+	a := tessera.NewAppender(s)
 	return a
 }
