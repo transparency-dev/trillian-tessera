@@ -205,19 +205,19 @@ func New(ctx context.Context, cfg Config, opts ...func(*options.StorageOptions))
 }
 
 // Add is the entrypoint for adding entries to a sequencing log.
-func (s *Storage) add(ctx context.Context, e *tessera.Entry) tessera.IndexFuture {
+func (s *Storage) Add(ctx context.Context, e *tessera.Entry) tessera.IndexFuture {
 	return s.queue.Add(ctx, e)
 }
 
-func (s *Storage) readCheckpoint(ctx context.Context) ([]byte, error) {
+func (s *Storage) ReadCheckpoint(ctx context.Context) ([]byte, error) {
 	return s.get(ctx, layout.CheckpointPath)
 }
 
-func (s *Storage) readTile(ctx context.Context, l, i uint64, p uint8) ([]byte, error) {
+func (s *Storage) ReadTile(ctx context.Context, l, i uint64, p uint8) ([]byte, error) {
 	return s.get(ctx, layout.TilePath(l, i, p))
 }
 
-func (s *Storage) readEntryBundle(ctx context.Context, i uint64, p uint8) ([]byte, error) {
+func (s *Storage) ReadEntryBundle(ctx context.Context, i uint64, p uint8) ([]byte, error) {
 	return s.get(ctx, s.entriesPath(i, p))
 }
 

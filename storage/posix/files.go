@@ -144,20 +144,20 @@ func lockFile(p string) (func() error, error) {
 // by this method have successfully evaluated. Terminating earlier than this will likely
 // mean that some of the entries added are not committed to by a checkpoint, and thus are
 // not considered to be in the log.
-func (s *Storage) add(ctx context.Context, e *tessera.Entry) tessera.IndexFuture {
+func (s *Storage) Add(ctx context.Context, e *tessera.Entry) tessera.IndexFuture {
 	return s.queue.Add(ctx, e)
 }
 
-func (s *Storage) readCheckpoint(_ context.Context) ([]byte, error) {
+func (s *Storage) ReadCheckpoint(_ context.Context) ([]byte, error) {
 	return os.ReadFile(filepath.Join(s.path, layout.CheckpointPath))
 }
 
 // ReadEntryBundle retrieves the Nth entries bundle for a log of the given size.
-func (s *Storage) readEntryBundle(_ context.Context, index uint64, p uint8) ([]byte, error) {
+func (s *Storage) ReadEntryBundle(_ context.Context, index uint64, p uint8) ([]byte, error) {
 	return os.ReadFile(filepath.Join(s.path, s.entriesPath(index, p)))
 }
 
-func (s *Storage) readTile(_ context.Context, level, index uint64, p uint8) ([]byte, error) {
+func (s *Storage) ReadTile(_ context.Context, level, index uint64, p uint8) ([]byte, error) {
 	return os.ReadFile(filepath.Join(s.path, layout.TilePath(level, index, p)))
 }
 
@@ -198,7 +198,7 @@ func (s *Storage) sequenceBatch(ctx context.Context, entries []*tessera.Entry) e
 	bundleIndex, entriesInBundle := seq/layout.EntryBundleWidth, seq%layout.EntryBundleWidth
 	if entriesInBundle > 0 {
 		// If the latest bundle is partial, we need to read the data it contains in for our newer, larger, bundle.
-		part, err := s.readEntryBundle(ctx, bundleIndex, uint8(s.curSize%layout.EntryBundleWidth))
+		part, err := s.ReadEntryBundle(ctx, bundleIndex, uint8(s.curSize%layout.EntryBundleWidth))
 		if err != nil {
 			return err
 		}
@@ -310,7 +310,7 @@ func (s *Storage) readTiles(ctx context.Context, tileIDs []i_storage.TileID, tre
 // If no complete tile exists at that location, it will attempt to find a
 // partial tile for the given tree size at that location.
 func (s *Storage) readTileInternal(ctx context.Context, level, index uint64, p uint8) (*api.HashTile, error) {
-	t, err := s.readTile(ctx, level, index, p)
+	t, err := s.ReadTile(ctx, level, index, p)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			// We'll signal to higher levels that it wasn't found by retuning a nil for this tile.
