@@ -43,6 +43,9 @@ const (
 // in an appropriate manner (e.g. for HTTP services, return a 503 with a Retry-After header).
 var ErrPushback = errors.New("too many unintegrated entries")
 
+// Driver is the implementation-specific parts of Tessera. No methods are on here as this is not for public use.
+type Driver interface{}
+
 // IndexFuture is the signature of a function which can return an assigned index or error.
 //
 // Implementations of this func are likely to be "futures", or a promise to return this data at

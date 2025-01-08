@@ -49,9 +49,7 @@ import (
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/api"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
-	"github.com/transparency-dev/trillian-tessera/internal/driver"
 	"github.com/transparency-dev/trillian-tessera/internal/options"
-	"github.com/transparency-dev/trillian-tessera/storage"
 	i_storage "github.com/transparency-dev/trillian-tessera/storage/internal"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/api/googleapi"
@@ -125,23 +123,23 @@ type Config struct {
 }
 
 // New creates a new instance of the GCP based Storage.
-func New(ctx context.Context, cfg Config, opts ...func(*options.StorageOptions)) (storage.Driver, error) {
+func New(ctx context.Context, cfg Config, opts ...func(*options.StorageOptions)) (tessera.Driver, error) {
 	opt := i_storage.ResolveStorageOptions(opts...)
 	if opt.PushbackMaxOutstanding == 0 {
 		opt.PushbackMaxOutstanding = DefaultPushbackMaxOutstanding
 	}
 	if opt.CheckpointInterval < minCheckpointInterval {
-		return storage.Driver{}, fmt.Errorf("requested CheckpointInterval (%v) is less than minimum permitted %v", opt.CheckpointInterval, minCheckpointInterval)
+		return nil, fmt.Errorf("requested CheckpointInterval (%v) is less than minimum permitted %v", opt.CheckpointInterval, minCheckpointInterval)
 	}
 
 	c, err := gcs.NewClient(ctx, gcs.WithJSONReads())
 	if err != nil {
-		return storage.Driver{}, fmt.Errorf("failed to create GCS client: %v", err)
+		return nil, fmt.Errorf("failed to create GCS client: %v", err)
 	}
 
 	seq, err := newSpannerSequencer(ctx, cfg.Spanner, uint64(opt.PushbackMaxOutstanding))
 	if err != nil {
-		return storage.Driver{}, fmt.Errorf("failed to create Spanner sequencer: %v", err)
+		return nil, fmt.Errorf("failed to create Spanner sequencer: %v", err)
 	}
 
 	r := &Storage{
@@ -157,7 +155,7 @@ func New(ctx context.Context, cfg Config, opts ...func(*options.StorageOptions))
 	r.queue = i_storage.NewQueue(ctx, opt.BatchMaxAge, opt.BatchMaxSize, r.sequencer.assignEntries)
 
 	if err := r.init(ctx); err != nil {
-		return storage.Driver{}, fmt.Errorf("failed to initialise log storage: %v", err)
+		return nil, fmt.Errorf("failed to initialise log storage: %v", err)
 	}
 
 	go func() {
@@ -203,16 +201,7 @@ func New(ctx context.Context, cfg Config, opts ...func(*options.StorageOptions))
 		}
 	}(ctx, opt.CheckpointInterval)
 
-	return storage.Driver{
-		Appenders: driver.Appenders{
-			Add: r.add,
-		},
-		Readers: driver.Readers{
-			ReadCheckpoint:  r.readCheckpoint,
-			ReadTile:        r.readTile,
-			ReadEntryBundle: r.readEntryBundle,
-		},
-	}, nil
+	return r, nil
 }
 
 // Add is the entrypoint for adding entries to a sequencing log.

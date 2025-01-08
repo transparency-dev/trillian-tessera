@@ -52,9 +52,7 @@ import (
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/api"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
-	"github.com/transparency-dev/trillian-tessera/internal/driver"
 	"github.com/transparency-dev/trillian-tessera/internal/options"
-	"github.com/transparency-dev/trillian-tessera/storage"
 	i_storage "github.com/transparency-dev/trillian-tessera/storage/internal"
 	"golang.org/x/sync/errgroup"
 	"k8s.io/klog/v2"
@@ -139,20 +137,20 @@ type Config struct {
 //
 // Storage instances created via this c'tor will participate in integrating newly sequenced entries into the log
 // and periodically publishing a new checkpoint which commits to the state of the tree.
-func New(ctx context.Context, cfg Config, opts ...func(*options.StorageOptions)) (storage.Driver, error) {
+func New(ctx context.Context, cfg Config, opts ...func(*options.StorageOptions)) (tessera.Driver, error) {
 	opt := i_storage.ResolveStorageOptions(opts...)
 	if opt.PushbackMaxOutstanding == 0 {
 		opt.PushbackMaxOutstanding = DefaultPushbackMaxOutstanding
 	}
 	if opt.CheckpointInterval < minCheckpointInterval {
-		return storage.Driver{}, fmt.Errorf("requested CheckpointInterval (%v) is less than minimum permitted %v", opt.CheckpointInterval, minCheckpointInterval)
+		return nil, fmt.Errorf("requested CheckpointInterval (%v) is less than minimum permitted %v", opt.CheckpointInterval, minCheckpointInterval)
 	}
 
 	if cfg.SDKConfig == nil {
 		// We're running on AWS so use the SDK's default config which will will handle credentials etc.
 		sdkConfig, err := config.LoadDefaultConfig(ctx)
 		if err != nil {
-			return storage.Driver{}, fmt.Errorf("failed to load default AWS configuration: %v", err)
+			return nil, fmt.Errorf("failed to load default AWS configuration: %v", err)
 		}
 		cfg.SDKConfig = &sdkConfig
 		// We need a non-nil options func to pass in to s3.NewFromConfig below or it'll panic, so
@@ -165,7 +163,7 @@ func New(ctx context.Context, cfg Config, opts ...func(*options.StorageOptions))
 
 	seq, err := newMySQLSequencer(ctx, cfg.DSN, uint64(opt.PushbackMaxOutstanding), cfg.MaxOpenConns, cfg.MaxIdleConns)
 	if err != nil {
-		return storage.Driver{}, fmt.Errorf("failed to create MySQL sequencer: %v", err)
+		return nil, fmt.Errorf("failed to create MySQL sequencer: %v", err)
 	}
 
 	r := &Storage{
@@ -181,7 +179,7 @@ func New(ctx context.Context, cfg Config, opts ...func(*options.StorageOptions))
 	r.queue = i_storage.NewQueue(ctx, opt.BatchMaxAge, opt.BatchMaxSize, r.sequencer.assignEntries)
 
 	if err := r.init(ctx); err != nil {
-		return storage.Driver{}, fmt.Errorf("failed to initialise log storage: %v", err)
+		return nil, fmt.Errorf("failed to initialise log storage: %v", err)
 	}
 
 	// Kick off go-routine which handles the integration of entries.
@@ -190,16 +188,7 @@ func New(ctx context.Context, cfg Config, opts ...func(*options.StorageOptions))
 	// Kick off go-routine which handles the publication of checkpoints.
 	go r.publishCheckpointTask(ctx, opt.CheckpointInterval)
 
-	return storage.Driver{
-		Appenders: driver.Appenders{
-			Add: r.add,
-		},
-		Readers: driver.Readers{
-			ReadCheckpoint:  r.readCheckpoint,
-			ReadTile:        r.readTile,
-			ReadEntryBundle: r.readEntryBundle,
-		},
-	}, nil
+	return r, nil
 }
 
 // sequenceEntriesTask periodically integrates newly sequenced entries.

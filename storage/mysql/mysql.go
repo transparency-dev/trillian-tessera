@@ -32,9 +32,7 @@ import (
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/api"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
-	"github.com/transparency-dev/trillian-tessera/internal/driver"
 	options "github.com/transparency-dev/trillian-tessera/internal/options"
-	"github.com/transparency-dev/trillian-tessera/storage"
 	i_storage "github.com/transparency-dev/trillian-tessera/storage/internal"
 	"k8s.io/klog/v2"
 )
@@ -69,10 +67,10 @@ type Storage struct {
 
 // New creates a new instance of the MySQL-based Storage.
 // Note that `tessera.WithCheckpointSigner()` is mandatory in the `opts` argument.
-func New(ctx context.Context, db *sql.DB, opts ...func(*options.StorageOptions)) (storage.Driver, error) {
+func New(ctx context.Context, db *sql.DB, opts ...func(*options.StorageOptions)) (tessera.Driver, error) {
 	opt := i_storage.ResolveStorageOptions(opts...)
 	if opt.CheckpointInterval < minCheckpointInterval {
-		return storage.Driver{}, fmt.Errorf("requested CheckpointInterval too low - %v < %v", opt.CheckpointInterval, minCheckpointInterval)
+		return nil, fmt.Errorf("requested CheckpointInterval too low - %v < %v", opt.CheckpointInterval, minCheckpointInterval)
 	}
 
 	s := &Storage{
@@ -82,16 +80,16 @@ func New(ctx context.Context, db *sql.DB, opts ...func(*options.StorageOptions))
 	}
 	if err := s.db.Ping(); err != nil {
 		klog.Errorf("Failed to ping database: %v", err)
-		return storage.Driver{}, err
+		return nil, err
 	}
 	if s.newCheckpoint == nil {
-		return storage.Driver{}, errors.New("tessera.WithCheckpointSigner must be provided in New()")
+		return nil, errors.New("tessera.WithCheckpointSigner must be provided in New()")
 	}
 
 	s.queue = i_storage.NewQueue(ctx, opt.BatchMaxAge, opt.BatchMaxSize, s.sequenceBatch)
 
 	if err := s.maybeInitTree(ctx); err != nil {
-		return storage.Driver{}, fmt.Errorf("maybeInitTree: %v", err)
+		return nil, fmt.Errorf("maybeInitTree: %v", err)
 	}
 
 	go func(ctx context.Context, i time.Duration) {
@@ -109,16 +107,7 @@ func New(ctx context.Context, db *sql.DB, opts ...func(*options.StorageOptions))
 			}
 		}
 	}(ctx, opt.CheckpointInterval)
-	return storage.Driver{
-		Appenders: driver.Appenders{
-			Add: s.add,
-		},
-		Readers: driver.Readers{
-			ReadCheckpoint:  s.readCheckpoint,
-			ReadTile:        s.readTile,
-			ReadEntryBundle: s.readEntryBundle,
-		},
-	}, nil
+	return s, nil
 }
 
 // maybeInitTree will insert an initial "empty tree" row into the

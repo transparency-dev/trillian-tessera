@@ -30,9 +30,7 @@ import (
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/api"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
-	"github.com/transparency-dev/trillian-tessera/internal/driver"
 	"github.com/transparency-dev/trillian-tessera/internal/options"
-	"github.com/transparency-dev/trillian-tessera/storage"
 	i_storage "github.com/transparency-dev/trillian-tessera/storage/internal"
 	"k8s.io/klog/v2"
 )
@@ -66,10 +64,10 @@ type NewTreeFunc func(size uint64, root []byte) error
 // New creates a new POSIX storage.
 // - path is a directory in which the log should be stored
 // - create must only be set when first creating the log, and will create the directory structure and an empty checkpoint
-func New(ctx context.Context, path string, create bool, opts ...func(*options.StorageOptions)) (storage.Driver, error) {
+func New(ctx context.Context, path string, create bool, opts ...func(*options.StorageOptions)) (tessera.Driver, error) {
 	opt := i_storage.ResolveStorageOptions(opts...)
 	if opt.CheckpointInterval < minCheckpointInterval {
-		return storage.Driver{}, fmt.Errorf("requested CheckpointInterval (%v) is less than minimum permitted %v", opt.CheckpointInterval, minCheckpointInterval)
+		return nil, fmt.Errorf("requested CheckpointInterval (%v) is less than minimum permitted %v", opt.CheckpointInterval, minCheckpointInterval)
 	}
 
 	r := &Storage{
@@ -79,7 +77,7 @@ func New(ctx context.Context, path string, create bool, opts ...func(*options.St
 		cpUpdated:   make(chan struct{}),
 	}
 	if err := r.initialise(create); err != nil {
-		return storage.Driver{}, err
+		return nil, err
 	}
 	r.queue = i_storage.NewQueue(ctx, opt.BatchMaxAge, opt.BatchMaxSize, r.sequenceBatch)
 
@@ -99,16 +97,7 @@ func New(ctx context.Context, path string, create bool, opts ...func(*options.St
 		}
 	}(ctx, opt.CheckpointInterval)
 
-	return storage.Driver{
-		Appenders: driver.Appenders{
-			Add: r.add,
-		},
-		Readers: driver.Readers{
-			ReadCheckpoint:  r.readCheckpoint,
-			ReadTile:        r.readTile,
-			ReadEntryBundle: r.readEntryBundle,
-		},
-	}, nil
+	return r, nil
 }
 
 // lockFile creates/opens a lock file at the specified path, and flocks it.

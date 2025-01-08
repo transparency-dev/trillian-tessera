@@ -18,23 +18,12 @@ import (
 	"context"
 
 	tessera "github.com/transparency-dev/trillian-tessera"
-	"github.com/transparency-dev/trillian-tessera/internal/driver"
 )
 
-// Driver is an envelope containing implementations of the lower level operations used in Tessera.
-// Personalities are not able to use any of the contents of this object directly, because the types
-// for all of the sub-structs are defined in an internal directory. This is intentional.
-//
-// Expected usage it to acquire a Driver and then pass it to one of the New* lifecycle creators below.
-type Driver struct {
-	Readers   driver.Readers
-	Appenders driver.Appenders
-}
-
 // LogReader provides read-only access to the log.
-type LogReader struct {
+type LogReader interface {
 	// ReadCheckpoint returns the latest checkpoint available.
-	ReadCheckpoint func(ctx context.Context) ([]byte, error)
+	ReadCheckpoint(ctx context.Context) ([]byte, error)
 
 	// ReadTile returns the raw marshalled tile at the given coordinates, if it exists.
 	// The expected usage for this method is to derive the parameters from a tree size
@@ -48,16 +37,16 @@ type LogReader struct {
 	// for size 2, then asking for a partial tile of 1 may lead to some implementations
 	// returning not found, some may return a tile with 1 leaf, and some may return a tile
 	// with more leaves.
-	ReadTile func(ctx context.Context, level, index uint64, p uint8) ([]byte, error)
+	ReadTile(ctx context.Context, level, index uint64, p uint8) ([]byte, error)
 
 	// ReadEntryBundle returns the raw marshalled leaf bundle at the given coordinates, if
 	// it exists.
 	// The expected usage and corresponding behaviours are similar to ReadTile.
-	ReadEntryBundle func(ctx context.Context, index uint64, p uint8) ([]byte, error)
+	ReadEntryBundle(ctx context.Context, index uint64, p uint8) ([]byte, error)
 }
 
 // Appender allows new entries to be added to the log, and the contents of the log to be read.
-type Appender struct {
+type Appender interface {
 	LogReader
 
 	// Add adds a new entry to be sequenced.
@@ -71,7 +60,7 @@ type Appender struct {
 	// seconds). Until it is integrated, clients of the log will not be able to verifiably access
 	// this value. Personalities that require blocking until the leaf is integrated can use the
 	// tessera.IntegrationAwaiter to wrap the call to this method.
-	Add tessera.AddFn
+	Add(ctx context.Context, entry *tessera.Entry) tessera.IndexFuture
 }
 
 // NewAppender returns an Appender, which allows a personality to incrementally append new
@@ -80,21 +69,34 @@ type Appender struct {
 // decorators provides a list of optional constructor functions that will return decorators
 // that wrap the base appender. This can be used to provide deduplication. Decorators will be
 // called in-order, and the last in the chain will be the base appender.
-func NewAppender(d Driver, decorators ...func(tessera.AddFn) tessera.AddFn) Appender {
-	add := d.Appenders.Add
+func NewAppender(d tessera.Driver, decorators ...func(tessera.AddFn) tessera.AddFn) Appender {
+	a, ok := d.(Appender)
+	if !ok {
+		panic("driver does not implement Appender")
+	}
+	add := a.Add
 	for i := len(decorators) - 1; i > 0; i++ {
 		add = decorators[i](add)
 	}
-	return Appender{
+	return appender{
 		LogReader: newLogReader(d),
-		Add:       add,
+		add:       add,
 	}
 }
 
-func newLogReader(d Driver) LogReader {
-	return LogReader{
-		ReadCheckpoint:  d.Readers.ReadCheckpoint,
-		ReadTile:        d.Readers.ReadTile,
-		ReadEntryBundle: d.Readers.ReadEntryBundle,
+type appender struct {
+	LogReader
+	add tessera.AddFn
+}
+
+func (a appender) Add(ctx context.Context, entry *tessera.Entry) tessera.IndexFuture {
+	return a.add(ctx, entry)
+}
+
+func newLogReader(d tessera.Driver) LogReader {
+	s, ok := d.(LogReader)
+	if !ok {
+		panic("driver does not implement LogReader")
 	}
+	return s
 }
