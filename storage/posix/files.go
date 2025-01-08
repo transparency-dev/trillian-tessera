@@ -297,7 +297,7 @@ func (s *Storage) doIntegrate(ctx context.Context, fromSeq uint64, entries []sto
 func (s *Storage) readTiles(ctx context.Context, tileIDs []storage.TileID, treeSize uint64) ([]*api.HashTile, error) {
 	r := make([]*api.HashTile, 0, len(tileIDs))
 	for _, id := range tileIDs {
-		t, err := s.readTileInternal(ctx, id.Level, id.Index, layout.PartialTileSize(id.Level, id.Index, treeSize))
+		t, err := s.readTile(ctx, id.Level, id.Index, layout.PartialTileSize(id.Level, id.Index, treeSize))
 		if err != nil {
 			return nil, err
 		}
@@ -309,7 +309,7 @@ func (s *Storage) readTiles(ctx context.Context, tileIDs []storage.TileID, treeS
 // readTile returns the parsed tile at the given tile-level and tile-index.
 // If no complete tile exists at that location, it will attempt to find a
 // partial tile for the given tree size at that location.
-func (s *Storage) readTileInternal(ctx context.Context, level, index uint64, p uint8) (*api.HashTile, error) {
+func (s *Storage) readTile(ctx context.Context, level, index uint64, p uint8) (*api.HashTile, error) {
 	t, err := s.ReadTile(ctx, level, index, p)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {

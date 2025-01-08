@@ -243,7 +243,7 @@ func (s *Storage) writeTreeState(ctx context.Context, tx *sql.Tx, size uint64, r
 	return nil
 }
 
-// readTile returns a full tile or a partial tile at the given level, index and treeSize.
+// ReadTile returns a full tile or a partial tile at the given level, index and treeSize.
 // If the tile is not found, it returns os.ErrNotExist.
 //
 // Note that if a partial tile is requested, but a larger tile is available, this
@@ -287,7 +287,7 @@ func (s *Storage) writeTile(ctx context.Context, tx *sql.Tx, level, index uint64
 	return nil
 }
 
-// readEntryBundle returns the log entries at the given index.
+// ReadEntryBundle returns the log entries at the given index.
 // If the entry bundle is not found, it returns os.ErrNotExist.
 //
 // Note that if a partial tile is requested, but a larger tile is available, this
@@ -329,7 +329,7 @@ func (s *Storage) writeEntryBundle(ctx context.Context, tx *sql.Tx, index uint64
 	return nil
 }
 
-// add is the entrypoint for adding entries to a sequencing log.
+// Add is the entrypoint for adding entries to a sequencing log.
 func (s *Storage) Add(ctx context.Context, entry *tessera.Entry) tessera.IndexFuture {
 	return s.queue.Add(ctx, entry)
 }
