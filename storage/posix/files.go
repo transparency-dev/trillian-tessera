@@ -207,16 +207,7 @@ func (s *Storage) sequenceBatch(ctx context.Context, entries []*tessera.Entry) e
 		}
 	}
 	writeBundle := func(bundleIndex uint64, partialSize uint8) error {
-		bf := filepath.Join(s.path, s.entriesPath(bundleIndex, partialSize))
-		if err := os.MkdirAll(filepath.Dir(bf), dirPerm); err != nil {
-			return fmt.Errorf("failed to make entries directory structure: %w", err)
-		}
-		if err := createExclusive(bf, currTile.Bytes()); err != nil {
-			if !errors.Is(err, os.ErrExist) {
-				return err
-			}
-		}
-		return nil
+		return s.writeBundle(ctx, bundleIndex, partialSize, currTile.Bytes())
 	}
 
 	seqEntries := make([]storage.SequencedEntry, 0, len(entries))
@@ -330,7 +321,7 @@ func (s *Storage) readTile(ctx context.Context, level, index uint64, p uint8) (*
 // Fully populated tiles are stored at the path corresponding to the level &
 // index parameters, partially populated (i.e. right-hand edge) tiles are
 // stored with a .xx suffix where xx is the number of "tile leaves" in hex.
-func (s *Storage) storeTile(_ context.Context, level, index, logSize uint64, tile *api.HashTile) error {
+func (s *Storage) storeTile(ctx context.Context, level, index, logSize uint64, tile *api.HashTile) error {
 	tileSize := uint64(len(tile.Nodes))
 	klog.V(2).Infof("StoreTile: level %d index %x ts: %x", level, index, tileSize)
 	if tileSize == 0 || tileSize > layout.TileWidth {
@@ -341,7 +332,11 @@ func (s *Storage) storeTile(_ context.Context, level, index, logSize uint64, til
 		return fmt.Errorf("failed to marshal tile: %w", err)
 	}
 
-	tPath := filepath.Join(s.path, layout.TilePath(level, index, layout.PartialTileSize(level, index, logSize)))
+	return s.writeTile(ctx, level, index, layout.PartialTileSize(level, index, logSize), t)
+}
+
+func (s *Storage) writeTile(_ context.Context, level, index uint64, partial uint8, t []byte) error {
+	tPath := filepath.Join(s.path, layout.TilePath(level, index, partial))
 	tDir := filepath.Dir(tPath)
 	if err := os.MkdirAll(tDir, dirPerm); err != nil {
 		return fmt.Errorf("failed to create directory %q: %w", tDir, err)
@@ -351,7 +346,7 @@ func (s *Storage) storeTile(_ context.Context, level, index, logSize uint64, til
 		return err
 	}
 
-	if tileSize == layout.TileWidth {
+	if partial == 0 {
 		partials, err := filepath.Glob(fmt.Sprintf("%s.p/*", tPath))
 		if err != nil {
 			return fmt.Errorf("failed to list partial tiles for clean up; %w", err)
@@ -373,6 +368,20 @@ func (s *Storage) storeTile(_ context.Context, level, index, logSize uint64, til
 		}
 	}
 
+	return nil
+}
+
+// writeBundle takes care of writing out the serialised entry bundle file.
+func (s *Storage) writeBundle(_ context.Context, index uint64, partial uint8, bundle []byte) error {
+	bf := filepath.Join(s.path, s.entriesPath(index, partial))
+	if err := os.MkdirAll(filepath.Dir(bf), dirPerm); err != nil {
+		return fmt.Errorf("failed to make entries directory structure: %w", err)
+	}
+	if err := createExclusive(bf, bundle); err != nil {
+		if !errors.Is(err, os.ErrExist) {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -496,4 +505,53 @@ func createExclusive(f string, d []byte) error {
 		return err
 	}
 	return nil
+}
+
+// NewMigrationTarget creates a new POSIX storage for the MigrationTarget lifecycle mode.
+// - path is a directory in which the log should be stored
+// - create must only be set when first creating the log, and will create the directory structure and an empty checkpoint
+func NewMigrationTarget(ctx context.Context, path string, opts ...func(*options.StorageOptions)) (*MigrationStorage, error) {
+	opt := storage.ResolveStorageOptions(opts...)
+
+	r := &MigrationStorage{
+		s: &Storage{
+			path:        path,
+			entriesPath: opt.EntriesPath,
+		},
+	}
+	klog.Infof("Initializing directory for POSIX log at %q", r.s.path)
+	if err := os.MkdirAll(filepath.Join(r.s.path, stateDir), dirPerm); err != nil {
+		return nil, fmt.Errorf("failed to create log directory: %q", err)
+	}
+
+	return r, nil
+}
+
+type MigrationStorage struct {
+	s *Storage
+}
+
+func (m *MigrationStorage) SetTile(ctx context.Context, level, index uint64, partial uint8, tile []byte) error {
+	return m.s.writeTile(ctx, index, level, partial, tile)
+}
+func (m *MigrationStorage) SetEntryBundle(ctx context.Context, index uint64, partial uint8, bundle []byte) error {
+	return m.s.writeBundle(ctx, index, partial, bundle)
+}
+func (m *MigrationStorage) SetState(ctx context.Context, treeSize uint64, rootHash []byte) error {
+	// Double locking:
+	// - The mutex `Lock()` ensures that multiple concurrent calls to this function within a task are serialised.
+	// - The POSIX `lockForTreeUpdate()` ensures that distinct tasks are serialised.
+	m.s.mu.Lock()
+	unlock, err := lockFile(filepath.Join(m.s.path, stateDir, "treeState.lock"))
+	if err != nil {
+		panic(err)
+	}
+	defer func() {
+		if err := unlock(); err != nil {
+			panic(err)
+		}
+		m.s.mu.Unlock()
+	}()
+
+	return m.s.writeTreeState(treeSize, rootHash)
 }

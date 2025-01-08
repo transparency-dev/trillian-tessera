@@ -228,7 +228,11 @@ func TestTileRoundtrip(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			wantTile := makeTile(t, test.tileSize)
-			if err := s.setTile(ctx, test.level, test.index, test.logSize, wantTile); err != nil {
+			tRaw, err := wantTile.MarshalText()
+			if err != nil {
+				t.Fatalf("Failed to marshal tile: %v", err)
+			}
+			if err := s.setTile(ctx, test.level, test.index, layout.PartialTileSize(test.level, test.index, test.logSize), tRaw); err != nil {
 				t.Fatalf("setTile: %v", err)
 			}
 
