@@ -169,9 +169,9 @@ func TestNew(t *testing.T) {
 
 func TestGetTile(t *testing.T) {
 	ctx := context.Background()
-	s := newTestMySQLStorage(t, ctx)
+	s, r := newTestMySQLStorage(t, ctx)
 
-	awaiter := tessera.NewIntegrationAwaiter(ctx, s.ReadCheckpoint, 10*time.Millisecond)
+	awaiter := tessera.NewIntegrationAwaiter(ctx, r.ReadCheckpoint, 10*time.Millisecond)
 
 	treeSize := 258
 
@@ -239,7 +239,7 @@ func TestGetTile(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			tile, err := s.ReadTile(ctx, test.level, test.index, test.p)
+			tile, err := r.ReadTile(ctx, test.level, test.index, test.p)
 			if err != nil {
 				if notFound, wantNotFound := errors.Is(err, fs.ErrNotExist), test.wantNotFound; notFound != wantNotFound {
 					t.Errorf("wantNotFound %v but notFound %v", wantNotFound, notFound)
@@ -259,7 +259,7 @@ func TestGetTile(t *testing.T) {
 
 func TestReadMissingTile(t *testing.T) {
 	ctx := context.Background()
-	s := newTestMySQLStorage(t, ctx)
+	_, r := newTestMySQLStorage(t, ctx)
 
 	for _, test := range []struct {
 		name         string
@@ -276,7 +276,7 @@ func TestReadMissingTile(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			tile, err := s.ReadTile(ctx, test.level, test.index, test.p)
+			tile, err := r.ReadTile(ctx, test.level, test.index, test.p)
 			if err != nil {
 				if errors.Is(err, fs.ErrNotExist) {
 					// this is success for this test
@@ -293,7 +293,7 @@ func TestReadMissingTile(t *testing.T) {
 
 func TestReadMissingEntryBundle(t *testing.T) {
 	ctx := context.Background()
-	s := newTestMySQLStorage(t, ctx)
+	_, r := newTestMySQLStorage(t, ctx)
 
 	for _, test := range []struct {
 		name  string
@@ -309,7 +309,7 @@ func TestReadMissingEntryBundle(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			entryBundle, err := s.ReadEntryBundle(ctx, test.index, uint8(test.index%layout.TileWidth))
+			entryBundle, err := r.ReadEntryBundle(ctx, test.index, uint8(test.index%layout.TileWidth))
 			if err != nil {
 				if errors.Is(err, fs.ErrNotExist) {
 					// this is success for this test
@@ -327,7 +327,7 @@ func TestReadMissingEntryBundle(t *testing.T) {
 func TestParallelAdd(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	s := newTestMySQLStorage(t, ctx)
+	s, _ := newTestMySQLStorage(t, ctx)
 
 	for _, test := range []struct {
 		name  string
@@ -363,7 +363,7 @@ func TestParallelAdd(t *testing.T) {
 
 func TestTileRoundTrip(t *testing.T) {
 	ctx := context.Background()
-	s := newTestMySQLStorage(t, ctx)
+	s, r := newTestMySQLStorage(t, ctx)
 
 	for _, test := range []struct {
 		name  string
@@ -389,7 +389,7 @@ func TestTileRoundTrip(t *testing.T) {
 			}
 
 			tileLevel, tileIndex, _, nodeIndex := layout.NodeCoordsToTileAddress(0, entryIndex)
-			tileRaw, err := s.ReadTile(ctx, tileLevel, tileIndex, uint8(nodeIndex+1))
+			tileRaw, err := r.ReadTile(ctx, tileLevel, tileIndex, uint8(nodeIndex+1))
 			if err != nil {
 				t.Errorf("ReadTile got err: %v", err)
 			}
@@ -414,7 +414,7 @@ func TestTileRoundTrip(t *testing.T) {
 
 func TestEntryBundleRoundTrip(t *testing.T) {
 	ctx := context.Background()
-	s := newTestMySQLStorage(t, ctx)
+	s, r := newTestMySQLStorage(t, ctx)
 
 	for _, test := range []struct {
 		name  string
@@ -438,7 +438,7 @@ func TestEntryBundleRoundTrip(t *testing.T) {
 			if err != nil {
 				t.Errorf("Add got err: %v", err)
 			}
-			entryBundleRaw, err := s.ReadEntryBundle(ctx, entryIndex/layout.EntryBundleWidth, layout.PartialTileSize(0, entryIndex, entryIndex+1))
+			entryBundleRaw, err := r.ReadEntryBundle(ctx, entryIndex/layout.EntryBundleWidth, layout.PartialTileSize(0, entryIndex, entryIndex+1))
 			if err != nil {
 				t.Fatalf("ReadEntryBundle got err: %v", err)
 			}
@@ -459,7 +459,7 @@ func TestEntryBundleRoundTrip(t *testing.T) {
 	}
 }
 
-func newTestMySQLStorage(t *testing.T, ctx context.Context) tessera.Appender {
+func newTestMySQLStorage(t *testing.T, ctx context.Context) (tessera.Appender, tessera.LogReader) {
 	t.Helper()
 	initDatabaseSchema(ctx)
 
@@ -471,6 +471,9 @@ func newTestMySQLStorage(t *testing.T, ctx context.Context) tessera.Appender {
 		t.Fatalf("Failed to create mysql.Storage: %v", err)
 	}
 
-	a := tessera.NewAppender(s)
-	return a
+	a, r, err := tessera.NewAppender(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return a, r
 }

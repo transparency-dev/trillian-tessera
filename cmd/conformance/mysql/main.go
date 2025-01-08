@@ -70,9 +70,12 @@ func main() {
 		klog.Exitf("Failed to create new MySQL storage: %v", err)
 	}
 
-	appender := tessera.NewAppender(driver, tessera.InMemoryDedupe(256))
+	appender, reader, err := tessera.NewAppender(driver, tessera.InMemoryDedupe(256))
+	if err != nil {
+		klog.Exit(err)
+	}
 	// Set up the handlers for the tlog-tiles GET methods, and a custom handler for HTTP POSTs to /add
-	configureTilesReadAPI(http.DefaultServeMux, appender)
+	configureTilesReadAPI(http.DefaultServeMux, reader)
 	http.HandleFunc("POST /add", func(w http.ResponseWriter, r *http.Request) {
 		b, err := io.ReadAll(r.Body)
 		if err != nil {
@@ -139,9 +142,9 @@ func createSignerOrDie(s string) note.Signer {
 // routing the requests to the mysql storage.
 // This method could be moved into the storage API as it's likely this will be
 // the same for any implementation of a personality based on MySQL.
-func configureTilesReadAPI(mux *http.ServeMux, appender tessera.Appender) {
+func configureTilesReadAPI(mux *http.ServeMux, reader tessera.LogReader) {
 	mux.HandleFunc("GET /checkpoint", func(w http.ResponseWriter, r *http.Request) {
-		checkpoint, err := appender.ReadCheckpoint(r.Context())
+		checkpoint, err := reader.ReadCheckpoint(r.Context())
 		if err != nil {
 			if errors.Is(err, fs.ErrNotExist) {
 				w.WriteHeader(http.StatusNotFound)
@@ -171,7 +174,7 @@ func configureTilesReadAPI(mux *http.ServeMux, appender tessera.Appender) {
 			}
 			return
 		}
-		tile, err := appender.ReadTile(r.Context(), level, index, p)
+		tile, err := reader.ReadTile(r.Context(), level, index, p)
 		if err != nil {
 			if errors.Is(err, fs.ErrNotExist) {
 				w.WriteHeader(http.StatusNotFound)
@@ -200,7 +203,7 @@ func configureTilesReadAPI(mux *http.ServeMux, appender tessera.Appender) {
 			return
 		}
 
-		entryBundle, err := appender.ReadEntryBundle(r.Context(), index, p)
+		entryBundle, err := reader.ReadEntryBundle(r.Context(), index, p)
 		if err != nil {
 			klog.Errorf("/tile/entries/{index...}: %v", err)
 			w.WriteHeader(http.StatusInternalServerError)

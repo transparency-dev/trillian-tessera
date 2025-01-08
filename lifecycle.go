@@ -16,6 +16,7 @@ package tessera
 
 import (
 	"context"
+	"fmt"
 )
 
 // LogReader provides read-only access to the log.
@@ -45,8 +46,6 @@ type LogReader interface {
 
 // Appender allows new entries to be added to the log, and the contents of the log to be read.
 type Appender interface {
-	LogReader
-
 	// Add adds a new entry to be sequenced.
 	// This method quickly returns an IndexFuture, which will return the index assigned
 	// to the new leaf. Until this is returned, the leaf is not durably added to the log,
@@ -67,19 +66,22 @@ type Appender interface {
 // decorators provides a list of optional constructor functions that will return decorators
 // that wrap the base appender. This can be used to provide deduplication. Decorators will be
 // called in-order, and the last in the chain will be the base appender.
-func NewAppender(d Driver, decorators ...func(AddFn) AddFn) Appender {
+func NewAppender(d Driver, decorators ...func(AddFn) AddFn) (Appender, LogReader, error) {
 	a, ok := d.(Appender)
 	if !ok {
-		panic("driver does not implement Appender")
+		return nil, nil, fmt.Errorf("driver %T does not implement Appender", d)
 	}
 	add := a.Add
 	for i := len(decorators) - 1; i > 0; i++ {
 		add = decorators[i](add)
 	}
-	return appender{
-		LogReader: newLogReader(d),
-		add:       add,
+	reader, err := newLogReader(d)
+	if err != nil {
+		return nil, nil, err
 	}
+	return appender{
+		add: add,
+	}, reader, nil
 }
 
 type appender struct {
@@ -91,10 +93,10 @@ func (a appender) Add(ctx context.Context, entry *Entry) IndexFuture {
 	return a.add(ctx, entry)
 }
 
-func newLogReader(d Driver) LogReader {
+func newLogReader(d Driver) (LogReader, error) {
 	s, ok := d.(LogReader)
 	if !ok {
-		panic("driver does not implement LogReader")
+		return nil, fmt.Errorf("driver %T does not implement LogReader", d)
 	}
-	return s
+	return s, nil
 }

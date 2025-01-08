@@ -78,7 +78,10 @@ func main() {
 		dedups = append(dedups, fn)
 	}
 
-	storage := tessera.NewAppender(driver, dedups...)
+	appender, _, err := tessera.NewAppender(driver, dedups...)
+	if err != nil {
+		klog.Exit(err)
+	}
 
 	// Expose a HTTP handler for the conformance test writes.
 	// This should accept arbitrary bytes POSTed to /add, and return an ascii
@@ -90,7 +93,7 @@ func main() {
 			return
 		}
 
-		idx, err := storage.Add(r.Context(), tessera.NewEntry(b))()
+		idx, err := appender.Add(r.Context(), tessera.NewEntry(b))()
 		if err != nil {
 			if errors.Is(err, tessera.ErrPushback) {
 				w.Header().Add("Retry-After", "1")

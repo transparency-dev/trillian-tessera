@@ -95,11 +95,14 @@ func main() {
 	if err != nil {
 		klog.Exitf("Failed to construct storage: %v", err)
 	}
-	st := tessera.NewAppender(driver)
+	a, r, err := tessera.NewAppender(driver)
+	if err != nil {
+		klog.Exit(err)
+	}
 
 	// We don't want to exit until our entries have been integrated into the tree, so we'll use Tessera's
 	// IntegrationAwaiter to help with that.
-	await := tessera.NewIntegrationAwaiter(ctx, st.ReadCheckpoint, time.Second)
+	await := tessera.NewIntegrationAwaiter(ctx, r.ReadCheckpoint, time.Second)
 
 	// Add each of the leaves in order, and store the futures in a slice
 	// that we will check once all leaves are sent to storage.
@@ -110,7 +113,7 @@ func main() {
 			klog.Exitf("Failed to read entry file %q: %q", fp, err)
 		}
 
-		f := st.Add(ctx, tessera.NewEntry(b))
+		f := a.Add(ctx, tessera.NewEntry(b))
 		indexFutures = append(indexFutures, entryInfo{name: fp, f: f})
 	}
 

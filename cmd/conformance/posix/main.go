@@ -69,7 +69,10 @@ func main() {
 	if err != nil {
 		klog.Exitf("Failed to construct storage: %v", err)
 	}
-	appender := tessera.NewAppender(driver, tessera.InMemoryDedupe(256))
+	appender, _, err := tessera.NewAppender(driver, tessera.InMemoryDedupe(256))
+	if err != nil {
+		klog.Exit(err)
+	}
 
 	// Define a handler for /add that accepts POST requests and adds the POST body to the log
 	http.HandleFunc("POST /add", func(w http.ResponseWriter, r *http.Request) {

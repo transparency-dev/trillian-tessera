@@ -78,7 +78,10 @@ func main() {
 	if err != nil {
 		klog.Exitf("Failed to create new AWS storage: %v", err)
 	}
-	appender := tessera.NewAppender(driver, tessera.InMemoryDedupe(256))
+	appender, _, err := tessera.NewAppender(driver, tessera.InMemoryDedupe(256))
+	if err != nil {
+		klog.Exit(err)
+	}
 
 	// Expose a HTTP handler for the conformance test writes.
 	// This should accept arbitrary bytes POSTed to /add, and return an ascii
