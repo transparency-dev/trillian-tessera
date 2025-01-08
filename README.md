@@ -170,7 +170,7 @@ func main() {
     driver, err := mysql.New(ctx, db)
     driver, err := posix.New(ctx, dir, doCreate)
 
-    storage := storage.NewAppender(driver)
+    addFn, reader, err := storage.NewAppender(driver)
 }
 ```
 
