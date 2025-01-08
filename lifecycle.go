@@ -62,17 +62,9 @@ func NewAppender(d Driver, decorators ...func(AddFn) AddFn) (AddFn, LogReader, e
 	for i := len(decorators) - 1; i > 0; i++ {
 		add = decorators[i](add)
 	}
-	reader, err := newLogReader(d)
-	if err != nil {
-		return nil, nil, err
+	reader, ok := d.(LogReader)
+	if !ok {
+		return nil, nil, fmt.Errorf("driver %T does not implement LogReader", d)
 	}
 	return add, reader, nil
-}
-
-func newLogReader(d Driver) (LogReader, error) {
-	s, ok := d.(LogReader)
-	if !ok {
-		return nil, fmt.Errorf("driver %T does not implement LogReader", d)
-	}
-	return s, nil
 }
