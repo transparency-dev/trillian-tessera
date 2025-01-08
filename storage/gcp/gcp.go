@@ -50,7 +50,7 @@ import (
 	"github.com/transparency-dev/trillian-tessera/api"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
 	"github.com/transparency-dev/trillian-tessera/internal/options"
-	storage "github.com/transparency-dev/trillian-tessera/storage/internal"
+	"github.com/transparency-dev/trillian-tessera/storage/internal"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/iterator"
@@ -123,7 +123,7 @@ type Config struct {
 }
 
 // New creates a new instance of the GCP based Storage.
-func New(ctx context.Context, cfg Config, opts ...func(*options.StorageOptions)) (*Storage, error) {
+func New(ctx context.Context, cfg Config, opts ...func(*options.StorageOptions)) (tessera.Driver, error) {
 	opt := storage.ResolveStorageOptions(opts...)
 	if opt.PushbackMaxOutstanding == 0 {
 		opt.PushbackMaxOutstanding = DefaultPushbackMaxOutstanding
@@ -811,7 +811,7 @@ func (s *gcsStorage) lastModified(ctx context.Context, obj string) (time.Time, e
 // maintaining the Merkle tree.
 //
 // This functionality is experimental!
-func NewDedupe(ctx context.Context, spannerDB string, delegate func(ctx context.Context, e *tessera.Entry) tessera.IndexFuture) (func(ctx context.Context, e *tessera.Entry) tessera.IndexFuture, error) {
+func NewDedupe(ctx context.Context, spannerDB string) (func(tessera.AddFn) tessera.AddFn, error) {
 	/*
 	   Schema for reference:
 
@@ -827,9 +827,8 @@ func NewDedupe(ctx context.Context, spannerDB string, delegate func(ctx context.
 	}
 
 	r := &dedupStorage{
-		ctx:      ctx,
-		dbPool:   dedupDB,
-		delegate: delegate,
+		ctx:    ctx,
+		dbPool: dedupDB,
 	}
 
 	// TODO(al): Make these configurable
@@ -850,7 +849,10 @@ func NewDedupe(ctx context.Context, spannerDB string, delegate func(ctx context.
 			}
 		}
 	}(ctx)
-	return r.add, nil
+	return func(af tessera.AddFn) tessera.AddFn {
+		r.delegate = af
+		return r.add
+	}, nil
 }
 
 type dedupStorage struct {

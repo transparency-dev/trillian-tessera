@@ -69,7 +69,7 @@ func main() {
 
 	// Create our Tessera storage backend:
 	awsCfg := storageConfigFromFlags()
-	storage, err := aws.New(ctx, awsCfg,
+	driver, err := aws.New(ctx, awsCfg,
 		tessera.WithCheckpointSigner(s, a...),
 		tessera.WithCheckpointInterval(*publishInterval),
 		tessera.WithBatching(1024, time.Second),
@@ -78,7 +78,10 @@ func main() {
 	if err != nil {
 		klog.Exitf("Failed to create new AWS storage: %v", err)
 	}
-	dedupeAdd := tessera.InMemoryDedupe(storage.Add, 256)
+	addFn, _, err := tessera.NewAppender(driver, tessera.InMemoryDedupe(256))
+	if err != nil {
+		klog.Exit(err)
+	}
 
 	// Expose a HTTP handler for the conformance test writes.
 	// This should accept arbitrary bytes POSTed to /add, and return an ascii
@@ -90,7 +93,7 @@ func main() {
 			return
 		}
 
-		idx, err := dedupeAdd(r.Context(), tessera.NewEntry(b))()
+		idx, err := addFn(r.Context(), tessera.NewEntry(b))()
 		if err != nil {
 			if errors.Is(err, tessera.ErrPushback) {
 				w.Header().Add("Retry-After", "1")

@@ -15,6 +15,7 @@
 package tessera
 
 import (
+	"context"
 	"crypto/sha256"
 	"errors"
 	"fmt"
@@ -42,11 +43,27 @@ const (
 // in an appropriate manner (e.g. for HTTP services, return a 503 with a Retry-After header).
 var ErrPushback = errors.New("too many unintegrated entries")
 
+// Driver is the implementation-specific parts of Tessera. No methods are on here as this is not for public use.
+type Driver interface{}
+
 // IndexFuture is the signature of a function which can return an assigned index or error.
 //
 // Implementations of this func are likely to be "futures", or a promise to return this data at
 // some point in the future, and as such will block when called if the data isn't yet available.
 type IndexFuture func() (uint64, error)
+
+// Add adds a new entry to be sequenced.
+// This method quickly returns an IndexFuture, which will return the index assigned
+// to the new leaf. Until this is returned, the leaf is not durably added to the log,
+// and terminating the process may lead to this leaf being lost.
+// Once the future resolves and returns an index, the leaf is durably sequenced and will
+// be preserved even in the process terminates.
+//
+// Once a leaf is sequenced, it will be integrated into the tree soon (generally single digit
+// seconds). Until it is integrated, clients of the log will not be able to verifiably access
+// this value. Personalities that require blocking until the leaf is integrated can use the
+// IntegrationAwaiter to wrap the call to this method.
+type AddFn func(ctx context.Context, entry *Entry) IndexFuture
 
 // WithCheckpointSigner is an option for setting the note signer and verifier to use when creating and parsing checkpoints.
 //

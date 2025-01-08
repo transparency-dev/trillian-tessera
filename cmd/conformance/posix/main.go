@@ -65,11 +65,14 @@ func main() {
 	s, a := getSignersOrDie()
 
 	// Create the Tessera POSIX storage, using the directory from the --storage_dir flag
-	storage, err := posix.New(ctx, *storageDir, *initialise, tessera.WithCheckpointSigner(s, a...), tessera.WithBatching(256, time.Second))
+	driver, err := posix.New(ctx, *storageDir, *initialise, tessera.WithCheckpointSigner(s, a...), tessera.WithBatching(256, time.Second))
 	if err != nil {
 		klog.Exitf("Failed to construct storage: %v", err)
 	}
-	dedupeAdd := tessera.InMemoryDedupe(storage.Add, 256)
+	addFn, _, err := tessera.NewAppender(driver, tessera.InMemoryDedupe(256))
+	if err != nil {
+		klog.Exit(err)
+	}
 
 	// Define a handler for /add that accepts POST requests and adds the POST body to the log
 	http.HandleFunc("POST /add", func(w http.ResponseWriter, r *http.Request) {
@@ -78,7 +81,7 @@ func main() {
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
-		idx, err := dedupeAdd(r.Context(), tessera.NewEntry(b))()
+		idx, err := addFn(r.Context(), tessera.NewEntry(b))()
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			_, _ = w.Write([]byte(err.Error()))

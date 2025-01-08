@@ -85,7 +85,7 @@ func main() {
 	// The options provide the checkpoint signer & verifier, and batch options.
 	// In this case, we want to create a single batch containing all of the leaves being added in order to
 	// add all of these leaves without creating any intermediate checkpoints.
-	st, err := posix.New(
+	driver, err := posix.New(
 		ctx,
 		*storageDir,
 		*initialise,
@@ -95,10 +95,14 @@ func main() {
 	if err != nil {
 		klog.Exitf("Failed to construct storage: %v", err)
 	}
+	addFn, r, err := tessera.NewAppender(driver)
+	if err != nil {
+		klog.Exit(err)
+	}
 
 	// We don't want to exit until our entries have been integrated into the tree, so we'll use Tessera's
 	// IntegrationAwaiter to help with that.
-	await := tessera.NewIntegrationAwaiter(ctx, st.ReadCheckpoint, time.Second)
+	await := tessera.NewIntegrationAwaiter(ctx, r.ReadCheckpoint, time.Second)
 
 	// Add each of the leaves in order, and store the futures in a slice
 	// that we will check once all leaves are sent to storage.
@@ -109,7 +113,7 @@ func main() {
 			klog.Exitf("Failed to read entry file %q: %q", fp, err)
 		}
 
-		f := st.Add(ctx, tessera.NewEntry(b))
+		f := addFn(ctx, tessera.NewEntry(b))
 		indexFutures = append(indexFutures, entryInfo{name: fp, f: f})
 	}
 
