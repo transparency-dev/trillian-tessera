@@ -130,14 +130,11 @@ func TestIntegrate(t *testing.T) {
 	seq := uint64(0)
 	for chunk := 0; chunk < numChunks; chunk++ {
 		oldSeq := seq
-		c := make([]SequencedEntry, chunkSize)
+		c := make([][]byte, chunkSize)
 		for i := range c {
 			leaf := []byte{byte(seq)}
 			entry := tessera.NewEntry(leaf)
-			c[i] = SequencedEntry{
-				BundleData: entry.MarshalBundleData(seq),
-				LeafHash:   entry.LeafHash(),
-			}
+			c[i] = entry.LeafHash()
 			if err := cr.Append(rfc6962.DefaultHasher.HashLeaf(leaf), nil); err != nil {
 				t.Fatalf("compact Append: %v", err)
 			}
@@ -173,14 +170,11 @@ func BenchmarkIntegrate(b *testing.B) {
 	seq := uint64(0)
 	for chunk := 0; chunk < b.N; chunk++ {
 		oldSeq := seq
-		c := make([]SequencedEntry, chunkSize)
+		c := make([][]byte, chunkSize)
 		for i := range c {
 			leaf := []byte{byte(seq)}
 			entry := tessera.NewEntry(leaf)
-			c[i] = SequencedEntry{
-				BundleData: entry.MarshalBundleData(seq),
-				LeafHash:   entry.LeafHash(),
-			}
+			c[i] = entry.LeafHash()
 			seq++
 		}
 		_, _, gotTiles, err := Integrate(ctx, m.getTiles, oldSeq, c)
