@@ -50,7 +50,7 @@ import (
 	"github.com/transparency-dev/trillian-tessera/api"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
 	"github.com/transparency-dev/trillian-tessera/internal/options"
-	"github.com/transparency-dev/trillian-tessera/storage/internal"
+	storage "github.com/transparency-dev/trillian-tessera/storage/internal"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/iterator"
@@ -173,7 +173,7 @@ func New(ctx context.Context, cfg Config, opts ...func(*options.StorageOptions))
 				cctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 				defer cancel()
 
-				if _, err := r.sequencer.consumeEntries(cctx, DefaultIntegrationSizeLimit, r.integrate, false); err != nil {
+				if _, err := r.sequencer.consumeEntries(cctx, DefaultIntegrationSizeLimit, r.appendEntries, false); err != nil {
 					klog.Errorf("integrate: %v", err)
 					return
 				}
@@ -239,7 +239,7 @@ func (s *Storage) init(ctx context.Context) error {
 			// framework which prevents the tree from rolling backwards or otherwise forking).
 			cctx, c := context.WithTimeout(ctx, 10*time.Second)
 			defer c()
-			if _, err := s.sequencer.consumeEntries(cctx, DefaultIntegrationSizeLimit, s.integrate, true); err != nil {
+			if _, err := s.sequencer.consumeEntries(cctx, DefaultIntegrationSizeLimit, s.appendEntries, true); err != nil {
 				return fmt.Errorf("forced integrate: %v", err)
 			}
 			select {
@@ -282,14 +282,8 @@ func (s *Storage) publishCheckpoint(ctx context.Context, minStaleness time.Durat
 // setTile idempotently stores the provided tile at the location implied by the given level, index, and treeSize.
 //
 // The location to which the tile is written is defined by the tile layout spec.
-func (s *Storage) setTile(ctx context.Context, level, index, logSize uint64, tile *api.HashTile) error {
-	data, err := tile.MarshalText()
-	if err != nil {
-		return err
-	}
-	tPath := layout.TilePath(level, index, layout.PartialTileSize(level, index, logSize))
-	klog.V(2).Infof("StoreTile: %s (%d entries)", tPath, len(tile.Nodes))
-
+func (s *Storage) setTile(ctx context.Context, level, index uint64, partial uint8, data []byte) error {
+	tPath := layout.TilePath(level, index, partial)
 	return s.objStore.setObject(ctx, tPath, data, &gcs.Conditions{DoesNotExist: true}, logContType, logCacheControl)
 }
 
@@ -360,8 +354,8 @@ func (s *Storage) setEntryBundle(ctx context.Context, bundleIndex uint64, p uint
 	return nil
 }
 
-// integrate incorporates the provided entries into the log starting at fromSeq.
-func (s *Storage) integrate(ctx context.Context, fromSeq uint64, entries []storage.SequencedEntry) ([]byte, error) {
+// appendEntries incorporates the provided entries into the log starting at fromSeq.
+func (s *Storage) appendEntries(ctx context.Context, fromSeq uint64, entries []storage.SequencedEntry) ([]byte, error) {
 	var newRoot []byte
 
 	errG := errgroup.Group{}
@@ -374,36 +368,55 @@ func (s *Storage) integrate(ctx context.Context, fromSeq uint64, entries []stora
 	})
 
 	errG.Go(func() error {
-		getTiles := func(ctx context.Context, tileIDs []storage.TileID, treeSize uint64) ([]*api.HashTile, error) {
-			n, err := s.getTiles(ctx, tileIDs, treeSize)
-			if err != nil {
-				return nil, fmt.Errorf("getTiles: %w", err)
-			}
-			return n, nil
-		}
-
 		lh := make([][]byte, len(entries))
 		for i, e := range entries {
 			lh[i] = e.LeafHash
 		}
-		newSize, root, tiles, err := storage.Integrate(ctx, getTiles, fromSeq, lh)
+		r, err := s.integrate(ctx, fromSeq, lh)
 		if err != nil {
-			return fmt.Errorf("Integrate: %v", err)
+			return fmt.Errorf("integrate: %v", err)
 		}
-		newRoot = root
-		for k, v := range tiles {
-			func(ctx context.Context, k storage.TileID, v *api.HashTile) {
-				errG.Go(func() error {
-					return s.setTile(ctx, uint64(k.Level), k.Index, newSize, v)
-				})
-			}(ctx, k, v)
-		}
-		klog.Infof("New tree: %d, %x", newSize, newRoot)
-
+		newRoot = r
 		return nil
 	})
+	if err := errG.Wait(); err != nil {
+		return nil, err
+	}
+	return newRoot, nil
+}
 
-	return newRoot, errG.Wait()
+// integrate adds the provided leaf hashes to the merkle tree, starting at the provided location.
+func (s *Storage) integrate(ctx context.Context, fromSeq uint64, lh [][]byte) ([]byte, error) {
+	errG := errgroup.Group{}
+	getTiles := func(ctx context.Context, tileIDs []storage.TileID, treeSize uint64) ([]*api.HashTile, error) {
+		n, err := s.getTiles(ctx, tileIDs, treeSize)
+		if err != nil {
+			return nil, fmt.Errorf("getTiles: %w", err)
+		}
+		return n, nil
+	}
+
+	newSize, newRoot, tiles, err := storage.Integrate(ctx, getTiles, fromSeq, lh)
+	if err != nil {
+		return nil, fmt.Errorf("Integrate: %v", err)
+	}
+	for k, v := range tiles {
+		func(ctx context.Context, k storage.TileID, v *api.HashTile) {
+			errG.Go(func() error {
+				data, err := v.MarshalText()
+				if err != nil {
+					return err
+				}
+				return s.setTile(ctx, k.Level, k.Index, layout.PartialTileSize(k.Level, k.Index, newSize), data)
+			})
+		}(ctx, k, v)
+	}
+	if err := errG.Wait(); err != nil {
+		return nil, err
+	}
+	klog.Infof("New tree: %d, %x", newSize, newRoot)
+
+	return newRoot, nil
 }
 
 // updateEntryBundles adds the entries being integrated into the entry bundles.
