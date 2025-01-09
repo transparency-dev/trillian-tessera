@@ -185,7 +185,10 @@ func (s *Storage) sequenceBatch(ctx context.Context, entries []*tessera.Entry) e
 
 	size, _, err := s.readTreeState()
 	if err != nil {
-		return err
+		if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		size = 0
 	}
 	s.curSize = size
 	klog.V(1).Infof("Sequencing from %d", s.curSize)
@@ -207,16 +210,7 @@ func (s *Storage) sequenceBatch(ctx context.Context, entries []*tessera.Entry) e
 		}
 	}
 	writeBundle := func(bundleIndex uint64, partialSize uint8) error {
-		bf := filepath.Join(s.path, s.entriesPath(bundleIndex, partialSize))
-		if err := os.MkdirAll(filepath.Dir(bf), dirPerm); err != nil {
-			return fmt.Errorf("failed to make entries directory structure: %w", err)
-		}
-		if err := createExclusive(bf, currTile.Bytes()); err != nil {
-			if !errors.Is(err, os.ErrExist) {
-				return err
-			}
-		}
-		return nil
+		return s.writeBundle(ctx, bundleIndex, partialSize, currTile.Bytes())
 	}
 
 	leafHashes := make([][]byte, 0, len(entries))
@@ -327,7 +321,7 @@ func (s *Storage) readTile(ctx context.Context, level, index uint64, p uint8) (*
 // Fully populated tiles are stored at the path corresponding to the level &
 // index parameters, partially populated (i.e. right-hand edge) tiles are
 // stored with a .xx suffix where xx is the number of "tile leaves" in hex.
-func (s *Storage) storeTile(_ context.Context, level, index, logSize uint64, tile *api.HashTile) error {
+func (s *Storage) storeTile(ctx context.Context, level, index, logSize uint64, tile *api.HashTile) error {
 	tileSize := uint64(len(tile.Nodes))
 	klog.V(2).Infof("StoreTile: level %d index %x ts: %x", level, index, tileSize)
 	if tileSize == 0 || tileSize > layout.TileWidth {
@@ -338,7 +332,11 @@ func (s *Storage) storeTile(_ context.Context, level, index, logSize uint64, til
 		return fmt.Errorf("failed to marshal tile: %w", err)
 	}
 
-	tPath := filepath.Join(s.path, layout.TilePath(level, index, layout.PartialTileSize(level, index, logSize)))
+	return s.writeTile(ctx, level, index, layout.PartialTileSize(level, index, logSize), t)
+}
+
+func (s *Storage) writeTile(_ context.Context, level, index uint64, partial uint8, t []byte) error {
+	tPath := filepath.Join(s.path, layout.TilePath(level, index, partial))
 	tDir := filepath.Dir(tPath)
 	if err := os.MkdirAll(tDir, dirPerm); err != nil {
 		return fmt.Errorf("failed to create directory %q: %w", tDir, err)
@@ -348,7 +346,7 @@ func (s *Storage) storeTile(_ context.Context, level, index, logSize uint64, til
 		return err
 	}
 
-	if tileSize == layout.TileWidth {
+	if partial == 0 {
 		partials, err := filepath.Glob(fmt.Sprintf("%s.p/*", tPath))
 		if err != nil {
 			return fmt.Errorf("failed to list partial tiles for clean up; %w", err)
@@ -370,6 +368,20 @@ func (s *Storage) storeTile(_ context.Context, level, index, logSize uint64, til
 		}
 	}
 
+	return nil
+}
+
+// writeBundle takes care of writing out the serialised entry bundle file.
+func (s *Storage) writeBundle(_ context.Context, index uint64, partial uint8, bundle []byte) error {
+	bf := filepath.Join(s.path, s.entriesPath(index, partial))
+	if err := os.MkdirAll(filepath.Dir(bf), dirPerm); err != nil {
+		return fmt.Errorf("failed to make entries directory structure: %w", err)
+	}
+	if err := createExclusive(bf, bundle); err != nil {
+		if !errors.Is(err, os.ErrExist) {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -428,7 +440,7 @@ func (s *Storage) readTreeState() (uint64, []byte, error) {
 	p := filepath.Join(s.path, stateDir, "treeState")
 	raw, err := os.ReadFile(p)
 	if err != nil {
-		return 0, nil, fmt.Errorf("ReadFile(%q): %v", p, err)
+		return 0, nil, fmt.Errorf("ReadFile(%q): %w", p, err)
 	}
 	ts := &treeState{}
 	if err := json.Unmarshal(raw, ts); err != nil {
