@@ -501,7 +501,11 @@ func (s *Storage) integrate(ctx context.Context, tx *sql.Tx, fromSeq uint64, ent
 		}
 	}
 
-	newSize, newRoot, tiles, err := storage.Integrate(ctx, getTiles, fromSeq, sequencedEntries)
+	lh := make([][]byte, len(sequencedEntries))
+	for i, e := range sequencedEntries {
+		lh[i] = e.LeafHash
+	}
+	newSize, newRoot, tiles, err := storage.Integrate(ctx, getTiles, fromSeq, lh)
 	if err != nil {
 		return fmt.Errorf("tb.Integrate: %v", err)
 	}
