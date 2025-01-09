@@ -1,6 +1,8 @@
 module github.com/transparency-dev/trillian-tessera
 
-go 1.22.7
+go 1.22.0
+
+toolchain go1.22.10
 
 require (
 	cloud.google.com/go/spanner v1.73.0
