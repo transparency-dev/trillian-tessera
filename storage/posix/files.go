@@ -31,7 +31,7 @@ import (
 	"github.com/transparency-dev/trillian-tessera/api"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
 	"github.com/transparency-dev/trillian-tessera/internal/options"
-	"github.com/transparency-dev/trillian-tessera/storage/internal"
+	storage "github.com/transparency-dev/trillian-tessera/storage/internal"
 	"k8s.io/klog/v2"
 )
 
@@ -219,17 +219,14 @@ func (s *Storage) sequenceBatch(ctx context.Context, entries []*tessera.Entry) e
 		return nil
 	}
 
-	seqEntries := make([]storage.SequencedEntry, 0, len(entries))
+	leafHashes := make([][]byte, 0, len(entries))
 	// Add new entries to the bundle
 	for i, e := range entries {
 		bundleData := e.MarshalBundleData(seq + uint64(i))
 		if _, err := currTile.Write(bundleData); err != nil {
 			return fmt.Errorf("failed to write entry %d to currTile: %v", i, err)
 		}
-		seqEntries = append(seqEntries, storage.SequencedEntry{
-			BundleData: bundleData,
-			LeafHash:   e.LeafHash(),
-		})
+		leafHashes = append(leafHashes, e.LeafHash())
 
 		entriesInBundle++
 		if entriesInBundle == layout.EntryBundleWidth {
@@ -258,15 +255,15 @@ func (s *Storage) sequenceBatch(ctx context.Context, entries []*tessera.Entry) e
 	}
 
 	// For simplicity, in-line the integration of these new entries into the Merkle structure too.
-	if err := s.doIntegrate(ctx, seq, seqEntries); err != nil {
+	if err := s.doIntegrate(ctx, seq, leafHashes); err != nil {
 		klog.Errorf("Integrate failed: %v", err)
 		return err
 	}
 	return nil
 }
 
-// doIntegrate handles integrating new entries into the log, and updating the tree state.
-func (s *Storage) doIntegrate(ctx context.Context, fromSeq uint64, entries []storage.SequencedEntry) error {
+// doIntegrate handles integrating new leaf hashes into the log, and updating the tree state.
+func (s *Storage) doIntegrate(ctx context.Context, fromSeq uint64, leafHashes [][]byte) error {
 	getTiles := func(ctx context.Context, tileIDs []storage.TileID, treeSize uint64) ([]*api.HashTile, error) {
 		n, err := s.readTiles(ctx, tileIDs, treeSize)
 		if err != nil {
@@ -275,7 +272,7 @@ func (s *Storage) doIntegrate(ctx context.Context, fromSeq uint64, entries []sto
 		return n, nil
 	}
 
-	newSize, newRoot, tiles, err := storage.Integrate(ctx, getTiles, fromSeq, entries)
+	newSize, newRoot, tiles, err := storage.Integrate(ctx, getTiles, fromSeq, leafHashes)
 	if err != nil {
 		klog.Errorf("Integrate: %v", err)
 		return fmt.Errorf("Integrate: %v", err)

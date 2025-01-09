@@ -382,7 +382,11 @@ func (s *Storage) integrate(ctx context.Context, fromSeq uint64, entries []stora
 			return n, nil
 		}
 
-		newSize, root, tiles, err := storage.Integrate(ctx, getTiles, fromSeq, entries)
+		lh := make([][]byte, len(entries))
+		for i, e := range entries {
+			lh[i] = e.LeafHash
+		}
+		newSize, root, tiles, err := storage.Integrate(ctx, getTiles, fromSeq, lh)
 		if err != nil {
 			return fmt.Errorf("Integrate: %v", err)
 		}

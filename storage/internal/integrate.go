@@ -36,9 +36,9 @@ type SequencedEntry struct {
 	LeafHash []byte
 }
 
-func Integrate(ctx context.Context, getTiles func(ctx context.Context, tileIDs []TileID, treeSize uint64) ([]*api.HashTile, error), fromSize uint64, entries []SequencedEntry) (newSize uint64, rootHash []byte, tiles map[TileID]*api.HashTile, err error) {
+func Integrate(ctx context.Context, getTiles func(ctx context.Context, tileIDs []TileID, treeSize uint64) ([]*api.HashTile, error), fromSize uint64, leafHashes [][]byte) (newSize uint64, rootHash []byte, tiles map[TileID]*api.HashTile, err error) {
 	tb := newTreeBuilder(getTiles)
-	return tb.integrate(ctx, fromSize, entries)
+	return tb.integrate(ctx, fromSize, leafHashes)
 }
 
 // getPopulatedTileFunc is the signature of a function which can return a fully populated tile for the given tile coords.
@@ -98,7 +98,7 @@ func (t *treeBuilder) newRange(ctx context.Context, treeSize uint64) (*compact.R
 	return t.rf.NewRange(0, treeSize, hashes)
 }
 
-func (t *treeBuilder) integrate(ctx context.Context, fromSize uint64, entries []SequencedEntry) (newSize uint64, rootHash []byte, tiles map[TileID]*api.HashTile, err error) {
+func (t *treeBuilder) integrate(ctx context.Context, fromSize uint64, leafHashes [][]byte) (newSize uint64, rootHash []byte, tiles map[TileID]*api.HashTile, err error) {
 	baseRange, err := t.newRange(ctx, fromSize)
 	if err != nil {
 		return 0, nil, nil, fmt.Errorf("failed to create range covering existing log: %w", err)
@@ -109,7 +109,7 @@ func (t *treeBuilder) integrate(ctx context.Context, fromSize uint64, entries []
 	if err != nil {
 		return 0, nil, nil, fmt.Errorf("invalid log state, unable to recalculate root: %w", err)
 	}
-	if len(entries) == 0 {
+	if len(leafHashes) == 0 {
 		klog.V(1).Infof("Nothing to do.")
 		// C2SP.org/log-tiles says all Merkle operations are those from RFC6962, we need to override
 		// the root of the empty tree to match (compact.Range will return an empty slice).
@@ -125,9 +125,9 @@ func (t *treeBuilder) integrate(ctx context.Context, fromSize uint64, entries []
 	newRange := t.rf.NewEmptyRange(fromSize)
 	tc := newTileWriteCache(fromSize, t.readCache.Get)
 	visitor := tc.Visitor(ctx)
-	for _, e := range entries {
+	for _, e := range leafHashes {
 		// Update range and set nodes
-		if err := newRange.Append(e.LeafHash, visitor); err != nil {
+		if err := newRange.Append(e, visitor); err != nil {
 			return 0, nil, nil, fmt.Errorf("newRange.Append(): %v", err)
 		}
 
