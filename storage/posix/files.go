@@ -623,7 +623,7 @@ func (m *MigrationStorage) fetchLeafHashes(ctx context.Context, from, to, source
 		}
 		b, err := m.s.ReadEntryBundle(ctx, idx, p)
 		if err != nil {
-			return nil, fmt.Errorf("ReadEntryBundle(%d.%p): %v", idx, p, err)
+			return nil, fmt.Errorf("ReadEntryBundle(%d.%d): %v", idx, p, err)
 		}
 
 		eb := &api.EntryBundle{}
