@@ -398,8 +398,10 @@ func (s *Storage) initialise(create bool) error {
 		if err := s.writeTreeState(0, rfc6962.DefaultHasher.EmptyRoot()); err != nil {
 			return fmt.Errorf("failed to write tree-state checkpoint: %v", err)
 		}
-		if err := s.publishCheckpoint(0); err != nil {
-			return fmt.Errorf("failed to publish checkpoint: %v", err)
+		if s.newCP != nil {
+			if err := s.publishCheckpoint(0); err != nil {
+				return fmt.Errorf("failed to publish checkpoint: %v", err)
+			}
 		}
 	}
 	curSize, _, err := s.readTreeState()
@@ -505,4 +507,138 @@ func createExclusive(f string, d []byte) error {
 		return err
 	}
 	return nil
+}
+
+// NewMigrationTarget creates a new POSIX storage for the MigrationTarget lifecycle mode.
+// - path is a directory in which the log should be stored
+// - create must only be set when first creating the log, and will create the directory structure and an empty checkpoint
+func NewMigrationTarget(ctx context.Context, path string, create bool, opts ...func(*options.StorageOptions)) (*MigrationStorage, error) {
+	opt := storage.ResolveStorageOptions(opts...)
+
+	r := &MigrationStorage{
+		s: Storage{
+			path:        path,
+			entriesPath: opt.EntriesPath,
+		},
+	}
+	if err := r.s.initialise(create); err != nil {
+		return nil, err
+	}
+	return r, nil
+}
+
+type MigrationStorage struct {
+	s Storage
+}
+
+func (m *MigrationStorage) AwaitIntegration(ctx context.Context, sourceSize uint64, sourceRoot []byte) error {
+	t := time.NewTicker(time.Second)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-t.C:
+		}
+		if err := m.buildTree(ctx, sourceSize); err != nil {
+			klog.Warningf("buildTree: %v", err)
+		}
+		s, r, err := m.s.readTreeState()
+		if err != nil {
+			klog.Warningf("readTreeState: %v", err)
+		}
+		if s == sourceSize {
+			if !bytes.Equal(r, sourceRoot) {
+				return fmt.Errorf("integrated tree at size %d has root %x, but source at size %d has root %x", s, r, sourceSize, sourceRoot)
+			}
+			return nil
+		}
+	}
+}
+
+func (m *MigrationStorage) SetEntryBundle(ctx context.Context, index uint64, partial uint8, bundle []byte) error {
+	return m.s.writeBundle(ctx, index, partial, bundle)
+}
+
+func (m *MigrationStorage) Size(_ context.Context) (uint64, error) {
+	s, _, err := m.s.readTreeState()
+	return s, err
+}
+
+func (m *MigrationStorage) buildTree(ctx context.Context, targetSize uint64) error {
+	// Double locking:
+	// - The mutex `Lock()` ensures that multiple concurrent calls to this function within a task are serialised.
+	// - The POSIX `lockForTreeUpdate()` ensures that distinct tasks are serialised.
+	m.s.mu.Lock()
+	unlock, err := lockFile(filepath.Join(m.s.path, stateDir, "treeState.lock"))
+	if err != nil {
+		panic(err)
+	}
+	defer func() {
+		if err := unlock(); err != nil {
+			panic(err)
+		}
+		m.s.mu.Unlock()
+	}()
+
+	size, _, err := m.s.readTreeState()
+	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		size = 0
+	}
+	m.s.curSize = size
+	klog.V(1).Infof("Building from %d", m.s.curSize)
+
+	lh, err := m.fetchLeafHashes(ctx, size, targetSize, targetSize)
+	if err != nil {
+		return fmt.Errorf("fetchLeafHashes(%d, %d): %v", size, targetSize, err)
+	}
+
+	if err := m.s.doIntegrate(ctx, size, lh); err != nil {
+		return fmt.Errorf("doIntegrate(%d, ...): %v", size, err)
+	}
+
+	return nil
+}
+
+func (m *MigrationStorage) fetchLeafHashes(ctx context.Context, from, to, sourceSize uint64) ([][]byte, error) {
+	const maxBundles = 300
+
+	r, err := layout.Range(from, to, sourceSize)
+	if err != nil {
+		return nil, fmt.Errorf("layout.Range: %v", err)
+	}
+
+	lh := make([][]byte, 0, maxBundles)
+	n := 0
+	for idx := r.StartIndex; idx <= r.EndIndex; idx++ {
+		var p uint8
+		switch idx {
+		case r.StartIndex:
+			p = r.StartPartial
+		case r.EndIndex:
+			p = r.EndPartial
+		}
+		b, err := m.s.ReadEntryBundle(ctx, idx, p)
+		if err != nil {
+			return nil, fmt.Errorf("ReadEntryBundle(%d.%p): %v", idx, p, err)
+		}
+
+		eb := &api.EntryBundle{}
+		if err := eb.UnmarshalText(b); err != nil {
+			return nil, fmt.Errorf("unmarshal bundle index %d: %v", idx, err)
+		}
+		for _, e := range eb.Entries {
+			h := rfc6962.DefaultHasher.HashLeaf(e)
+			lh = append(lh, h[:])
+		}
+		n++
+		if n >= maxBundles {
+			break
+		}
+	}
+	return lh, nil
+
 }
