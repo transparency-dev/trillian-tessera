@@ -66,7 +66,7 @@ func main() {
 	}
 
 	// Create our Tessera storage backend:
-	st, err := posix.NewMigrationTarget(ctx, *storageDir, *initialise, tessera.WithCTLayout())
+	st, err := posix.NewMigrationTarget(ctx, *storageDir, *initialise, internal.BundleHasher, tessera.WithCTLayout())
 	if err != nil {
 		klog.Exitf("Failed to create new GCP storage: %v", err)
 	}

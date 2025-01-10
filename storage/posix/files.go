@@ -509,10 +509,14 @@ func createExclusive(f string, d []byte) error {
 	return nil
 }
 
+// BundleHasherFunc is the signature of a function which knows how to parse an entry bundle and calculate leaf hashes for its entries.
+type BundleHasherFunc func(entryBundle []byte) (LeafHashes [][]byte, err error)
+
 // NewMigrationTarget creates a new POSIX storage for the MigrationTarget lifecycle mode.
 // - path is a directory in which the log should be stored
 // - create must only be set when first creating the log, and will create the directory structure and an empty checkpoint
-func NewMigrationTarget(ctx context.Context, path string, create bool, opts ...func(*options.StorageOptions)) (*MigrationStorage, error) {
+// - bundleHasher knows how to parse the provided entry bundle, and returns a slice of leaf hashes for the entries it contains.
+func NewMigrationTarget(ctx context.Context, path string, create bool, bundleHasher BundleHasherFunc, opts ...func(*options.StorageOptions)) (*MigrationStorage, error) {
 	opt := storage.ResolveStorageOptions(opts...)
 
 	r := &MigrationStorage{
@@ -520,6 +524,7 @@ func NewMigrationTarget(ctx context.Context, path string, create bool, opts ...f
 			path:        path,
 			entriesPath: opt.EntriesPath,
 		},
+		bundleHasher: bundleHasher,
 	}
 	if err := r.s.initialise(create); err != nil {
 		return nil, err
@@ -528,7 +533,8 @@ func NewMigrationTarget(ctx context.Context, path string, create bool, opts ...f
 }
 
 type MigrationStorage struct {
-	s Storage
+	s            Storage
+	bundleHasher BundleHasherFunc
 }
 
 func (m *MigrationStorage) AwaitIntegration(ctx context.Context, sourceSize uint64, sourceRoot []byte) error {
@@ -626,14 +632,11 @@ func (m *MigrationStorage) fetchLeafHashes(ctx context.Context, from, to, source
 			return nil, fmt.Errorf("ReadEntryBundle(%d.%d): %v", idx, p, err)
 		}
 
-		eb := &api.EntryBundle{}
-		if err := eb.UnmarshalText(b); err != nil {
-			return nil, fmt.Errorf("unmarshal bundle index %d: %v", idx, err)
+		bh, err := m.bundleHasher(b)
+		if err != nil {
+			return nil, fmt.Errorf("bundleHasherFunc for bundle index %d: %v", idx, err)
 		}
-		for _, e := range eb.Entries {
-			h := rfc6962.DefaultHasher.HashLeaf(e)
-			lh = append(lh, h[:])
-		}
+		lh = append(lh, bh...)
 		n++
 		if n >= maxBundles {
 			break
