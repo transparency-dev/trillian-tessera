@@ -17,6 +17,8 @@ package layout
 import (
 	"fmt"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestEntriesPathForLogIndex(t *testing.T) {
@@ -302,6 +304,81 @@ func TestParseTileLevelIndexPartial(t *testing.T) {
 			gotErr := err != nil
 			if gotErr != test.wantErr {
 				t.Errorf("got err %v want %v", gotErr, test.wantErr)
+			}
+		})
+	}
+}
+
+func TestRange(t *testing.T) {
+	for _, test := range []struct {
+		from, N, treeSize uint64
+		desc              string
+		want              RangeInfo
+		wantErr           bool
+	}{
+		{
+			desc:     "from beyond extent",
+			from:     10,
+			N:        1,
+			treeSize: 5,
+			wantErr:  true,
+		}, {
+			desc:     "range end beyond extent",
+			from:     3,
+			N:        100,
+			treeSize: 5,
+			wantErr:  true,
+		}, {
+			desc:     "empty range",
+			from:     1,
+			N:        0,
+			treeSize: 2,
+			wantErr:  true,
+		}, {
+			desc:     "ok: full first bundle",
+			from:     0,
+			N:        256,
+			treeSize: 257,
+			want:     RangeInfo{},
+		}, {
+			desc:     "ok: entire single (partial) bundle",
+			from:     20,
+			N:        90,
+			treeSize: 111,
+			want:     RangeInfo{StartIndex: 0, StartFirst: 20, StartPartial: 111, EndN: 90, EndIndex: 0, EndPartial: 111},
+		}, {
+			desc:     "ok: slice from single bundle with initial offset",
+			from:     20,
+			N:        90,
+			treeSize: 1 << 20,
+			want:     RangeInfo{StartIndex: 0, StartFirst: 20, EndN: 90, EndIndex: 0},
+		}, {
+			desc:     "ok: multiple bundles, first is full, last is truncated",
+			from:     0,
+			N:        4*256 + 42,
+			treeSize: 1 << 20,
+			want:     RangeInfo{StartIndex: 0, StartFirst: 0, EndN: 42, EndIndex: 4},
+		}, {
+			desc:     "ok: multiple bundles, first is offset, last is truncated",
+			from:     2,
+			N:        4*256 + 4,
+			treeSize: 1 << 20,
+			want:     RangeInfo{StartIndex: 0, StartFirst: 2, EndN: 4 + 2, EndIndex: 4},
+		}, {
+			desc:     "ok: offset and trucated from single bundle in middle of tree",
+			from:     8*256 + 66,
+			N:        4,
+			treeSize: 1 << 20,
+			want:     RangeInfo{StartIndex: 8, StartFirst: 66, EndN: 4, EndIndex: 8},
+		},
+	} {
+		t.Run(fmt.Sprintf("%d->%d", test.from, test.N), func(t *testing.T) {
+			got, err := Range(test.from, test.N, test.treeSize)
+			if gotErr := err != nil; gotErr != test.wantErr {
+				t.Fatalf("got error: %q, want error: %t", err, test.wantErr)
+			}
+			if d := cmp.Diff(got, test.want); d != "" {
+				t.Fatalf("got results with diff:\n%s", d)
 			}
 		})
 	}

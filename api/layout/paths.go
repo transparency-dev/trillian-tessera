@@ -40,6 +40,54 @@ func EntriesPathForLogIndex(seq, logSize uint64) string {
 	return EntriesPath(seq/EntryBundleWidth, PartialTileSize(0, seq, logSize))
 }
 
+// RangeInfo represents a range of entries/hashes across one or more entry bundles/tiles.
+type RangeInfo struct {
+	// StartIndex is the index of the first entry bundle the range touches.
+	StartIndex uint64
+	// StartPartial is non-zero if the bundle at StartIndex is expected to be partial.
+	StartPartial uint8
+	// StartFirst is the index of the first entry in the StartIndex bundle to be used.
+	StartFirst uint8
+
+	// EndIndex is the index of the final entry bundle containing part of the range.
+	EndIndex uint64
+	// EndPartial is non-zero if the bundle at EndIndex is expected to be partial.
+	EndPartial uint8
+	// EndN is the number of entries from the EndIndex bundle to be used. Zero means "all".
+	EndN uint8
+}
+
+// Range calculates which bundles, and elements contained within, are necessary to cover the
+// provided [from, from+N) range of entries.
+//
+// If N=0, an empty slice will be returned.
+// If [from, from+N) are covered within a single bundle, a single BundleSlice will be returned.
+// Otherwise two BundleSlices will be returned: the first will contain information about the
+// first bundle of the range, and the second information about the final bundle.
+func Range(from, N, treeSize uint64) (RangeInfo, error) {
+	endInc := from + N - 1
+	switch {
+	case N == 0:
+		return RangeInfo{}, fmt.Errorf("empty range")
+	case endInc >= treeSize:
+		return RangeInfo{}, fmt.Errorf("range [%d, %d) is beyond treeSize (%d)", from, endInc, treeSize)
+	}
+
+	r := RangeInfo{
+		StartIndex: from / EntryBundleWidth,
+		StartFirst: uint8(from % EntryBundleWidth),
+		EndIndex:   endInc / EntryBundleWidth,
+		EndN:       uint8((endInc)%EntryBundleWidth) + 1,
+	}
+	if r.StartIndex == r.EndIndex {
+		r.EndN = r.EndN - r.StartFirst
+	}
+	r.StartPartial = PartialTileSize(0, r.StartIndex, treeSize)
+	r.EndPartial = PartialTileSize(0, r.EndIndex, treeSize)
+
+	return r, nil
+}
+
 // NWithSuffix returns a tiles-spec "N" path, with a partial suffix if p > 0.
 func NWithSuffix(l, n uint64, p uint8) string {
 	suffix := ""
