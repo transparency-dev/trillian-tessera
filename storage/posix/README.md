@@ -33,7 +33,7 @@ of actions we can avoid corrupt or partially written files being part of the tre
 
 1. Leaves are submitted by the binary built using Tessera via a call the storage's `Add` func.
 1. The storage library batches these entries up, and, after a configurable period of time has elapsed
-   or the batch reaches a configurable size threshold, the batch is sequenced and integrated into the tree:
+   or the batch reaches a configurable size threshold, the batch is sequenced and appended to the tree:
    1. An advisory lock is taken on `.state/treeState.lock` file.
       This helps prevent multiple frontends from stepping on each other, but isn't necesary for safety.
    1. Flushed entries are assigned contiguous sequence numbers, and written out into entry bundle files.

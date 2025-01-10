@@ -41,7 +41,7 @@ This table is used to coordinate integration of sequenced batches in the `Seq` t
    1. selects next from `SeqCoord` with for update ← this blocks other FE from writing their pools, but only for a short duration.
    1. Inserts batch of entries into `Seq` with key `SeqCoord.next`
    1. Update `SeqCoord` with `next+=len(batch)`
-1. Integrators periodically integrate new sequenced entries into the tree:
+1. Newly sequenced entries are periodically appended to the tree:
    In a transaction:
    1. select `seq` from `IntCoord` with for update ← this blocks other integrators from proceeding.
    1. Select one or more consecutive batches from `Seq` for update, starting at `IntCoord.seq`
