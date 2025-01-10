@@ -33,7 +33,7 @@ import (
 	"github.com/transparency-dev/trillian-tessera/api"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
 	options "github.com/transparency-dev/trillian-tessera/internal/options"
-	"github.com/transparency-dev/trillian-tessera/storage/internal"
+	storage "github.com/transparency-dev/trillian-tessera/storage/internal"
 	"k8s.io/klog/v2"
 )
 
@@ -371,7 +371,7 @@ func (s *Storage) sequenceBatch(ctx context.Context, entries []*tessera.Entry) e
 	}
 
 	// Integrate the new entries into the entry bundle (TiledLeaves table) and tile (Subtree table).
-	if err := s.integrate(ctx, tx, state.size, entries); err != nil {
+	if err := s.appendEntries(ctx, tx, state.size, entries); err != nil {
 		return fmt.Errorf("failed to integrate: %w", err)
 	}
 
@@ -386,57 +386,8 @@ func (s *Storage) sequenceBatch(ctx context.Context, entries []*tessera.Entry) e
 	return err
 }
 
-// integrate incorporates the provided entries into the log starting at fromSeq.
-func (s *Storage) integrate(ctx context.Context, tx *sql.Tx, fromSeq uint64, entries []*tessera.Entry) error {
-	getTiles := func(ctx context.Context, tileIDs []storage.TileID, treeSize uint64) ([]*api.HashTile, error) {
-		hashTiles := make([]*api.HashTile, len(tileIDs))
-		if len(tileIDs) == 0 {
-			return hashTiles, nil
-		}
-
-		// Build the SQL and args to fetch the hash tiles.
-		var sql strings.Builder
-		args := make([]any, 0, len(tileIDs)*2)
-		for i, id := range tileIDs {
-			if i != 0 {
-				sql.WriteString(" UNION ALL ")
-			}
-			_, err := sql.WriteString(selectSubtreeByLevelAndIndexSQL)
-			if err != nil {
-				return nil, err
-			}
-			args = append(args, id.Level, id.Index)
-		}
-
-		rows, err := tx.QueryContext(ctx, sql.String(), args...)
-		if err != nil {
-			return nil, fmt.Errorf("failed to query the hash tiles with SQL (%s): %w", sql.String(), err)
-		}
-		defer func() {
-			if err := rows.Close(); err != nil {
-				klog.Warningf("Failed to close the rows: %v", err)
-			}
-		}()
-
-		i := 0
-		for rows.Next() {
-			var tile []byte
-			if err := rows.Scan(&tile); err != nil {
-				return nil, fmt.Errorf("scan subtree tile: %w", err)
-			}
-			t := &api.HashTile{}
-			if err := t.UnmarshalText(tile); err != nil {
-				return nil, fmt.Errorf("unmarshal tile: %w", err)
-			}
-			hashTiles[i] = t
-			i++
-		}
-		if err = rows.Err(); err != nil {
-			return nil, fmt.Errorf("rows error while fetching subtrees: %w", err)
-		}
-
-		return hashTiles, nil
-	}
+// appendEntries incorporates the provided entries into the log starting at fromSeq.
+func (s *Storage) appendEntries(ctx context.Context, tx *sql.Tx, fromSeq uint64, entries []*tessera.Entry) error {
 
 	sequencedEntries := make([]storage.SequencedEntry, len(entries))
 	// Assign provisional sequence numbers to entries.
@@ -505,24 +456,86 @@ func (s *Storage) integrate(ctx context.Context, tx *sql.Tx, fromSeq uint64, ent
 	for i, e := range sequencedEntries {
 		lh[i] = e.LeafHash
 	}
-	newSize, newRoot, tiles, err := storage.Integrate(ctx, getTiles, fromSeq, lh)
+	newSize, newRoot, err := s.integrate(ctx, tx, fromSeq, lh)
 	if err != nil {
-		return fmt.Errorf("tb.Integrate: %v", err)
-	}
-	for k, v := range tiles {
-		nodes, err := v.MarshalText()
-		if err != nil {
-			return err
-		}
-
-		if err := s.writeTile(ctx, tx, uint64(k.Level), k.Index, nodes); err != nil {
-			return fmt.Errorf("failed to set tile(%v): %w", k, err)
-		}
+		return fmt.Errorf("integrate: %v", err)
 	}
 
 	// Write new tree state.
 	if err := s.writeTreeState(ctx, tx, newSize, newRoot); err != nil {
 		return fmt.Errorf("writeCheckpoint: %w", err)
 	}
+
+	klog.Infof("New tree: %d, %x", newSize, newRoot)
 	return nil
+}
+
+// integrate adds the provided leaf hashes to the merkle tree, starting at the provided location.
+func (s *Storage) integrate(ctx context.Context, tx *sql.Tx, fromSeq uint64, lh [][]byte) (uint64, []byte, error) {
+	getTiles := func(ctx context.Context, tileIDs []storage.TileID, treeSize uint64) ([]*api.HashTile, error) {
+		hashTiles := make([]*api.HashTile, len(tileIDs))
+		if len(tileIDs) == 0 {
+			return hashTiles, nil
+		}
+
+		// Build the SQL and args to fetch the hash tiles.
+		var sql strings.Builder
+		args := make([]any, 0, len(tileIDs)*2)
+		for i, id := range tileIDs {
+			if i != 0 {
+				sql.WriteString(" UNION ALL ")
+			}
+			_, err := sql.WriteString(selectSubtreeByLevelAndIndexSQL)
+			if err != nil {
+				return nil, err
+			}
+			args = append(args, id.Level, id.Index)
+		}
+
+		rows, err := tx.QueryContext(ctx, sql.String(), args...)
+		if err != nil {
+			return nil, fmt.Errorf("failed to query the hash tiles with SQL (%s): %w", sql.String(), err)
+		}
+		defer func() {
+			if err := rows.Close(); err != nil {
+				klog.Warningf("Failed to close the rows: %v", err)
+			}
+		}()
+
+		i := 0
+		for rows.Next() {
+			var tile []byte
+			if err := rows.Scan(&tile); err != nil {
+				return nil, fmt.Errorf("scan subtree tile: %w", err)
+			}
+			t := &api.HashTile{}
+			if err := t.UnmarshalText(tile); err != nil {
+				return nil, fmt.Errorf("unmarshal tile: %w", err)
+			}
+			hashTiles[i] = t
+			i++
+		}
+		if err = rows.Err(); err != nil {
+			return nil, fmt.Errorf("rows error while fetching subtrees: %w", err)
+		}
+
+		return hashTiles, nil
+	}
+
+	newSize, newRoot, tiles, err := storage.Integrate(ctx, getTiles, fromSeq, lh)
+	if err != nil {
+		return 0, nil, fmt.Errorf("storage.Integrate: %v", err)
+	}
+	for k, v := range tiles {
+		nodes, err := v.MarshalText()
+		if err != nil {
+			return 0, nil, err
+		}
+
+		if err := s.writeTile(ctx, tx, uint64(k.Level), k.Index, nodes); err != nil {
+			return 0, nil, fmt.Errorf("failed to set tile(%v): %w", k, err)
+		}
+	}
+
+	return newSize, newRoot, nil
 }

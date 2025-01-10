@@ -53,7 +53,7 @@ import (
 	"github.com/transparency-dev/trillian-tessera/api"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
 	"github.com/transparency-dev/trillian-tessera/internal/options"
-	"github.com/transparency-dev/trillian-tessera/storage/internal"
+	storage "github.com/transparency-dev/trillian-tessera/storage/internal"
 	"golang.org/x/sync/errgroup"
 	"k8s.io/klog/v2"
 
@@ -209,7 +209,7 @@ func (s *Storage) consumeEntriesTask(ctx context.Context) {
 			cctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 			defer cancel()
 
-			if _, err := s.sequencer.consumeEntries(cctx, DefaultIntegrationSizeLimit, s.integrate, false); err != nil {
+			if _, err := s.sequencer.consumeEntries(cctx, DefaultIntegrationSizeLimit, s.appendEntries, false); err != nil {
 				klog.Errorf("integrate: %v", err)
 				return
 			}
@@ -278,7 +278,7 @@ func (s *Storage) init(ctx context.Context) error {
 			// framework which prevents the tree from rolling backwards or otherwise forking).
 			cctx, c := context.WithTimeout(ctx, 10*time.Second)
 			defer c()
-			if _, err := s.sequencer.consumeEntries(cctx, DefaultIntegrationSizeLimit, s.integrate, true); err != nil {
+			if _, err := s.sequencer.consumeEntries(cctx, DefaultIntegrationSizeLimit, s.appendEntries, true); err != nil {
 				return fmt.Errorf("forced integrate: %v", err)
 			}
 			select {
@@ -404,19 +404,11 @@ func (s *Storage) setEntryBundle(ctx context.Context, bundleIndex uint64, p uint
 	return nil
 }
 
-// integrate incorporates the provided entries into the log starting at fromSeq.
+// appendEntries incorporates the provided entries into the log starting at fromSeq.
 //
 // Returns the new root hash of the log with the entries added.
-func (s *Storage) integrate(ctx context.Context, fromSeq uint64, entries []storage.SequencedEntry) ([]byte, error) {
+func (s *Storage) appendEntries(ctx context.Context, fromSeq uint64, entries []storage.SequencedEntry) ([]byte, error) {
 	var newRoot []byte
-
-	getTiles := func(ctx context.Context, tileIDs []storage.TileID, treeSize uint64) ([]*api.HashTile, error) {
-		n, err := s.getTiles(ctx, tileIDs, treeSize)
-		if err != nil {
-			return nil, fmt.Errorf("getTiles: %w", err)
-		}
-		return n, nil
-	}
 
 	errG := errgroup.Group{}
 
@@ -432,25 +424,45 @@ func (s *Storage) integrate(ctx context.Context, fromSeq uint64, entries []stora
 		for i, e := range entries {
 			lh[i] = e.LeafHash
 		}
-		newSize, root, tiles, err := storage.Integrate(ctx, getTiles, fromSeq, lh)
+		r, err := s.integrate(ctx, fromSeq, lh)
 		if err != nil {
-			return fmt.Errorf("Integrate: %v", err)
+			return fmt.Errorf("integrate: %v", err)
 		}
-		newRoot = root
-		for k, v := range tiles {
-			func(ctx context.Context, k storage.TileID, v *api.HashTile) {
-				errG.Go(func() error {
-					return s.setTile(ctx, uint64(k.Level), k.Index, newSize, v)
-				})
-			}(ctx, k, v)
-		}
-		klog.Infof("New tree: %d, %x", newSize, newRoot)
-
+		newRoot = r
 		return nil
 	})
 
 	err := errG.Wait()
 	return newRoot, err
+}
+
+// integrate adds the provided leaf hashes to the merkle tree, starting at the provided location.
+func (s *Storage) integrate(ctx context.Context, fromSeq uint64, lh [][]byte) ([]byte, error) {
+	getTiles := func(ctx context.Context, tileIDs []storage.TileID, treeSize uint64) ([]*api.HashTile, error) {
+		n, err := s.getTiles(ctx, tileIDs, treeSize)
+		if err != nil {
+			return nil, fmt.Errorf("getTiles: %w", err)
+		}
+		return n, nil
+	}
+
+	newSize, newRoot, tiles, err := storage.Integrate(ctx, getTiles, fromSeq, lh)
+	if err != nil {
+		return nil, fmt.Errorf("Integrate: %v", err)
+	}
+	errG := errgroup.Group{}
+	for k, v := range tiles {
+		func(ctx context.Context, k storage.TileID, v *api.HashTile) {
+			errG.Go(func() error {
+				return s.setTile(ctx, uint64(k.Level), k.Index, newSize, v)
+			})
+		}(ctx, k, v)
+	}
+	if err := errG.Wait(); err != nil {
+		return nil, err
+	}
+	klog.Infof("New tree: %d, %x", newSize, newRoot)
+	return newRoot, nil
 }
 
 // updateEntryBundles adds the entries being integrated into the entry bundles.
