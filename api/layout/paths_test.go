@@ -339,7 +339,7 @@ func TestRange(t *testing.T) {
 			from:     0,
 			N:        256,
 			treeSize: 257,
-			want:     []RangeInfo{},
+			want:     []RangeInfo{{N: 256}},
 		}, {
 			desc:     "ok: entire single (partial) bundle",
 			from:     20,
@@ -374,7 +374,7 @@ func TestRange(t *testing.T) {
 				{Index: 1, Partial: 0, First: 0, N: 256},
 				{Index: 2, Partial: 0, First: 0, N: 256},
 				{Index: 3, Partial: 0, First: 0, N: 256},
-				{Index: 4, Partial: 0, First: 0, N: 4},
+				{Index: 4, Partial: 0, First: 0, N: 6},
 			},
 		}, {
 			desc:     "ok: offset and trucated from single bundle in middle of tree",
@@ -392,10 +392,12 @@ func TestRange(t *testing.T) {
 				return
 			}
 
-			for i, gotInfo := range gotI {
+			i := 0
+			for gotInfo := range gotI {
 				if d := cmp.Diff(test.want[i], gotInfo); d != "" {
 					t.Fatalf("got results[%d] with diff:\n%s", i, d)
 				}
+				i++
 			}
 		})
 	}
