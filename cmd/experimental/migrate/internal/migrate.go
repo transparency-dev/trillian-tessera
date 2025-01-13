@@ -143,15 +143,9 @@ func (m *copier) populateWork(from, treeSize uint64) {
 		klog.Exitf("Range(%d, %d): %v", from, treeSize-from, err)
 	}
 
-	for idx := r.StartIndex; idx <= r.EndIndex; idx++ {
-		var p uint8
-		switch idx {
-		case r.StartIndex:
-			p = r.StartPartial
-		case r.EndIndex:
-			p = r.EndPartial
-		}
-		m.todo <- bundle{Index: idx, Partial: p}
+	for r.Next() {
+		ri := r.RangeInfo()
+		m.todo <- bundle{Index: ri.Index, Partial: ri.Partial}
 		m.bundlesToMigrate++
 	}
 }

@@ -619,24 +619,18 @@ func (m *MigrationStorage) fetchLeafHashes(ctx context.Context, from, to, source
 
 	lh := make([][]byte, 0, maxBundles)
 	n := 0
-	for idx := r.StartIndex; idx <= r.EndIndex; idx++ {
-		var p uint8
-		switch idx {
-		case r.StartIndex:
-			p = r.StartPartial
-		case r.EndIndex:
-			p = r.EndPartial
-		}
-		b, err := m.s.ReadEntryBundle(ctx, idx, p)
+	for r.Next() {
+		ri := r.RangeInfo()
+		b, err := m.s.ReadEntryBundle(ctx, ri.Index, ri.Partial)
 		if err != nil {
-			return nil, fmt.Errorf("ReadEntryBundle(%d.%d): %v", idx, p, err)
+			return nil, fmt.Errorf("ReadEntryBundle(%d.%d): %v", ri.Index, ri.Partial, err)
 		}
 
 		bh, err := m.bundleHasher(b)
 		if err != nil {
-			return nil, fmt.Errorf("bundleHasherFunc for bundle index %d: %v", idx, err)
+			return nil, fmt.Errorf("bundleHasherFunc for bundle index %d: %v", ri.Index, err)
 		}
-		lh = append(lh, bh...)
+		lh = append(lh, bh[ri.First:ri.First+ri.N]...)
 		n++
 		if n >= maxBundles {
 			break

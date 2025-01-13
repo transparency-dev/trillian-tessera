@@ -40,52 +40,128 @@ func EntriesPathForLogIndex(seq, logSize uint64) string {
 	return EntriesPath(seq/EntryBundleWidth, PartialTileSize(0, seq, logSize))
 }
 
-// RangeInfo represents a range of entries/hashes across one or more entry bundles/tiles.
-type RangeInfo struct {
-	// StartIndex is the index of the first entry bundle the range touches.
-	StartIndex uint64
-	// StartPartial is non-zero if the bundle at StartIndex is expected to be partial.
-	StartPartial uint8
-	// StartFirst is the index of the first entry in the StartIndex bundle to be used.
-	StartFirst uint8
-
-	// EndIndex is the index of the final entry bundle containing part of the range.
-	EndIndex uint64
-	// EndPartial is non-zero if the bundle at EndIndex is expected to be partial.
-	EndPartial uint8
-	// EndN is the number of entries from the EndIndex bundle to be used. Zero means "all".
-	EndN uint8
-}
-
-// Range calculates which bundles, and elements contained within, are necessary to cover the
-// provided [from, from+N) range of entries.
+// Range calculates the addresses of bundles, and elements contained within, that are necessary to
+// cover the provided [from, from+N) range of entries, and returns an interator which provides
+// this information for a single bundle at a time.
 //
-// If N=0, an empty slice will be returned.
-// If [from, from+N) are covered within a single bundle, a single BundleSlice will be returned.
-// Otherwise two BundleSlices will be returned: the first will contain information about the
-// first bundle of the range, and the second information about the final bundle.
-func Range(from, N, treeSize uint64) (RangeInfo, error) {
+// There are several corner-cases this function deals with, where the requested range:
+// - is spread across multiple bundles; "start" bundle, zero or more "middle" bundles of size 256; zero or one "end" bundles which may be full or partial.
+// - is entirely contained within a single bundle.
+// - may not start or end aligned with bundle boundaries.
+//
+// The comments on this func and the RangeInfo struct below refer to entries and entry bundles, but
+// because tiles and entry bundles are the same width, this function works for ranges across either.
+func Range(from, N, treeSize uint64) (RangeIterator, error) {
 	endInc := from + N - 1
 	switch {
 	case N == 0:
-		return RangeInfo{}, fmt.Errorf("empty range")
+		return RangeIterator{}, fmt.Errorf("empty range")
 	case endInc >= treeSize:
-		return RangeInfo{}, fmt.Errorf("range [%d, %d) is beyond treeSize (%d)", from, endInc, treeSize)
+		return RangeIterator{}, fmt.Errorf("range [%d, %d) is beyond treeSize (%d)", from, endInc, treeSize)
 	}
 
-	r := RangeInfo{
-		StartIndex: from / EntryBundleWidth,
-		StartFirst: uint8(from % EntryBundleWidth),
-		EndIndex:   endInc / EntryBundleWidth,
-		EndN:       uint8((endInc)%EntryBundleWidth) + 1,
+	r := RangeIterator{
+		currentIndex: (from / EntryBundleWidth) - 1,
+		startIndex:   from / EntryBundleWidth,
+		startFirst:   int(from % EntryBundleWidth),
+		endIndex:     endInc / EntryBundleWidth,
+		endN:         int((endInc)%EntryBundleWidth) + 1,
 	}
-	if r.StartIndex == r.EndIndex {
-		r.EndN = r.EndN - r.StartFirst
+	if r.startIndex == r.endIndex {
+		r.endN = r.endN - r.startFirst
 	}
-	r.StartPartial = PartialTileSize(0, r.StartIndex, treeSize)
-	r.EndPartial = PartialTileSize(0, r.EndIndex, treeSize)
+	r.startPartial = PartialTileSize(0, r.startIndex, treeSize)
+	r.endPartial = PartialTileSize(0, r.endIndex, treeSize)
 
 	return r, nil
+}
+
+// RangeIterator iterates over information about consecutive bundles which cover a defined range of entries.
+//
+// This info is accessed by repeated calls to RangeInfo, e.g.:
+// myRange := Range(from, to, size)
+//
+//	for myRange.Next() {
+//	  ... = myRange.RangeInfo()
+//	}
+type RangeIterator struct {
+	// startIndex is the index of the first bundle the range touches.
+	startIndex uint64
+	// startPartial is the expected size of the bundle found at StartIndex.
+	// If zero, a full bundle is expected to be present.
+	//
+	startPartial uint8
+	// startFirst is the index of the first entry in the `startIndex` bundle to be used.
+	//
+	// Once the bundle at `startIndex[.p/startPartial]` has been fetched, the leading
+	// `startFirst` entries should be discarded.
+	startFirst int
+
+	// endIndex is the index of the final entry bundle containing part of the range.
+	endIndex uint64
+	// endPartial is non-zero if the bundle at endIndex is expected to be partial.
+	endPartial uint8
+	// endN is the number of entries from the endIndex bundle to be used. Zero means "all".
+	endN int
+
+	// currentIndex tracks the current position through the range of bundles as Next() is
+	// called.
+	currentIndex uint64
+}
+
+// Next returns true if (further) range information is available via calls to the RangeInfo func.
+//
+// TODO(al): Consider making this an interator when we bump to 1.23.
+func (r *RangeIterator) Next() bool {
+	if r.currentIndex >= r.endIndex {
+		return false
+	}
+	r.currentIndex++
+	return true
+}
+
+// RangeInfo returns parameters for the next bundle in the underlying range:
+//   - Bundle index and partial size, these should be used to calculate the bundle address
+//   - first:last positions for elements within the bundle - these should be used directly
+//     to trim the slice of entries from the bundle down to the correct subset.
+//   - ok - false if there are no more bundles to fetch, true otherwise.
+//
+// RangeInfo must only be called if Next() returns true, otherwise it will panic.
+//
+// Note that as per the tlog-tile spec, a log is at liberty to garbage collect
+// partial bundles once the corresponding full bundle is written, so if a partial bundle is
+// indicated, but not found, the caller should attempt to fetch the full bundle instead.
+func (r RangeIterator) RangeInfo() RangeInfo {
+	if r.currentIndex > r.endIndex {
+		panic(fmt.Sprintf("RangeInfo called, but all data has been returned."))
+	}
+
+	ret := RangeInfo{
+		Index: r.currentIndex,
+		N:     EntryBundleWidth,
+	}
+	switch ret.Index {
+	case r.startIndex:
+		ret.Partial, ret.First = r.startPartial, r.startFirst
+		if ret.Index == r.endIndex {
+			ret.N = r.endN
+		}
+	case r.endIndex:
+		ret.Partial, ret.N = r.endPartial, r.endN
+	}
+	return ret
+}
+
+// RangeInfo describes a specific range of elements within a particular bundle/tile.
+type RangeInfo struct {
+	// Index is the index of the entry bundle/tile in the tree.
+	Index uint64
+	// Partial is the partial size of the bundle/tile, or zero if a full bundle/tile is expected.
+	Partial uint8
+	// First is the offset into the entries contained by the bundle/tile at which the range starts.
+	First int
+	// N is the number of entries, starting at First, which are covered by the range.
+	N int
 }
 
 // NWithSuffix returns a tiles-spec "N" path, with a partial suffix if p > 0.

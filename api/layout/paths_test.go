@@ -313,7 +313,7 @@ func TestRange(t *testing.T) {
 	for _, test := range []struct {
 		from, N, treeSize uint64
 		desc              string
-		want              RangeInfo
+		want              []RangeInfo
 		wantErr           bool
 	}{
 		{
@@ -339,46 +339,64 @@ func TestRange(t *testing.T) {
 			from:     0,
 			N:        256,
 			treeSize: 257,
-			want:     RangeInfo{},
+			want:     []RangeInfo{},
 		}, {
 			desc:     "ok: entire single (partial) bundle",
 			from:     20,
 			N:        90,
 			treeSize: 111,
-			want:     RangeInfo{StartIndex: 0, StartFirst: 20, StartPartial: 111, EndN: 90, EndIndex: 0, EndPartial: 111},
+			want:     []RangeInfo{{Index: 0, Partial: 111, First: 20, N: 90}},
 		}, {
 			desc:     "ok: slice from single bundle with initial offset",
 			from:     20,
 			N:        90,
 			treeSize: 1 << 20,
-			want:     RangeInfo{StartIndex: 0, StartFirst: 20, EndN: 90, EndIndex: 0},
+			want:     []RangeInfo{{Index: 0, Partial: 0, First: 20, N: 90}},
 		}, {
 			desc:     "ok: multiple bundles, first is full, last is truncated",
 			from:     0,
 			N:        4*256 + 42,
 			treeSize: 1 << 20,
-			want:     RangeInfo{StartIndex: 0, StartFirst: 0, EndN: 42, EndIndex: 4},
+			want: []RangeInfo{
+				{Index: 0, Partial: 0, First: 0, N: 256},
+				{Index: 1, Partial: 0, First: 0, N: 256},
+				{Index: 2, Partial: 0, First: 0, N: 256},
+				{Index: 3, Partial: 0, First: 0, N: 256},
+				{Index: 4, Partial: 0, First: 0, N: 42},
+			},
 		}, {
 			desc:     "ok: multiple bundles, first is offset, last is truncated",
 			from:     2,
 			N:        4*256 + 4,
 			treeSize: 1 << 20,
-			want:     RangeInfo{StartIndex: 0, StartFirst: 2, EndN: 4 + 2, EndIndex: 4},
+			want: []RangeInfo{
+				{Index: 0, Partial: 0, First: 2, N: 256 - 2},
+				{Index: 1, Partial: 0, First: 0, N: 256},
+				{Index: 2, Partial: 0, First: 0, N: 256},
+				{Index: 3, Partial: 0, First: 0, N: 256},
+				{Index: 4, Partial: 0, First: 0, N: 4},
+			},
 		}, {
 			desc:     "ok: offset and trucated from single bundle in middle of tree",
 			from:     8*256 + 66,
 			N:        4,
 			treeSize: 1 << 20,
-			want:     RangeInfo{StartIndex: 8, StartFirst: 66, EndN: 4, EndIndex: 8},
+			want:     []RangeInfo{{Index: 8, Partial: 0, First: 66, N: 4}},
 		},
 	} {
-		t.Run(fmt.Sprintf("%d->%d", test.from, test.N), func(t *testing.T) {
+		t.Run(test.desc, func(t *testing.T) {
 			got, err := Range(test.from, test.N, test.treeSize)
 			if gotErr := err != nil; gotErr != test.wantErr {
 				t.Fatalf("got error: %q, want error: %t", err, test.wantErr)
+			} else if test.wantErr {
+				return
 			}
-			if d := cmp.Diff(got, test.want); d != "" {
-				t.Fatalf("got results with diff:\n%s", d)
+
+			for i := 0; got.Next(); i++ {
+				gotInfo := got.RangeInfo()
+				if d := cmp.Diff(test.want[i], gotInfo); d != "" {
+					t.Fatalf("got results[%d] with diff:\n%s", i, d)
+				}
 			}
 		})
 	}
