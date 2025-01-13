@@ -41,12 +41,24 @@ into any other API, this strategy will lose a lot of the read scaling that Tesse
 
 ## Status
 
-Tessera is under active development, with the [alpha](https://github.com/orgs/transparency-dev/projects/2/views/3) milestone coming soon. 
-Users of GCP, MySQL, and POSIX are welcome to try the relevant [Getting Started](#getting-started) guide.
+Tessera is under active development, with an [alpha release](https://github.com/transparency-dev/trillian-tessera/releases/tag/v0.1.0) available now. 
+Users of GCP, AWS, MySQL, and POSIX are welcome to try the relevant [Getting Started](#getting-started) guide.
 
 ## Roadmap
 
-Alpha expected by Q4 2024, and production ready in the first half of 2025.
+Beta in Q1 2025, and production ready around mid 2025.
+
+|  #  | Step                                                      | Status |
+| :-: | --------------------------------------------------------- | :----: |
+|  1  | Drivers for GCP, AWS, MySQL, and POSIX                    |   ✅   |
+|  2  | [tlog-tiles API][] support                                |   ✅   |
+|  3  | Example code and terraform scripts for easy onboarding    |   ✅   |
+|  4  | Stable API                                                |   ⚠️   |
+|  5  | Data migration between releases                           |   ⚠️   |
+|  6  | Data migration between drivers                            |   ⚠️   |
+|  7  | Witness support                                           |   ⚠️   |
+|  8  | Production ready                                          |   ❌   |
+|  N  | Fancy features (to be expanded upon later)                |   ❌   |
 
 ### What’s happening to Trillian v1?
 
