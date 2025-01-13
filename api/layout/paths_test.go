@@ -385,15 +385,14 @@ func TestRange(t *testing.T) {
 		},
 	} {
 		t.Run(test.desc, func(t *testing.T) {
-			got, err := Range(test.from, test.N, test.treeSize)
+			gotI, err := Range(test.from, test.N, test.treeSize)
 			if gotErr := err != nil; gotErr != test.wantErr {
 				t.Fatalf("got error: %q, want error: %t", err, test.wantErr)
 			} else if test.wantErr {
 				return
 			}
 
-			for i := 0; got.Next(); i++ {
-				gotInfo := got.RangeInfo()
+			for i, gotInfo := range gotI {
 				if d := cmp.Diff(test.want[i], gotInfo); d != "" {
 					t.Fatalf("got results[%d] with diff:\n%s", i, d)
 				}

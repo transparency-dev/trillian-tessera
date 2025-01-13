@@ -21,6 +21,7 @@ package layout
 
 import (
 	"fmt"
+	"iter"
 	"math"
 	"strconv"
 	"strings"
@@ -51,21 +52,20 @@ func EntriesPathForLogIndex(seq, logSize uint64) string {
 //
 // The comments on this func and the RangeInfo struct below refer to entries and entry bundles, but
 // because tiles and entry bundles are the same width, this function works for ranges across either.
-func Range(from, N, treeSize uint64) (RangeIterator, error) {
+func Range(from, N, treeSize uint64) (iter.Seq[RangeInfo], error) {
 	endInc := from + N - 1
 	switch {
 	case N == 0:
-		return RangeIterator{}, fmt.Errorf("empty range")
+		return nil, fmt.Errorf("empty range")
 	case endInc >= treeSize:
-		return RangeIterator{}, fmt.Errorf("range [%d, %d) is beyond treeSize (%d)", from, endInc, treeSize)
+		return nil, fmt.Errorf("range [%d, %d) is beyond treeSize (%d)", from, endInc, treeSize)
 	}
 
-	r := RangeIterator{
-		currentIndex: (from / EntryBundleWidth) - 1,
-		startIndex:   from / EntryBundleWidth,
-		startFirst:   int(from % EntryBundleWidth),
-		endIndex:     endInc / EntryBundleWidth,
-		endN:         int((endInc)%EntryBundleWidth) + 1,
+	r := rangeIterator{
+		startIndex: from / EntryBundleWidth,
+		startFirst: int(from % EntryBundleWidth),
+		endIndex:   endInc / EntryBundleWidth,
+		endN:       int((endInc)%EntryBundleWidth) + 1,
 	}
 	if r.startIndex == r.endIndex {
 		r.endN = r.endN - r.startFirst
@@ -73,10 +73,10 @@ func Range(from, N, treeSize uint64) (RangeIterator, error) {
 	r.startPartial = PartialTileSize(0, r.startIndex, treeSize)
 	r.endPartial = PartialTileSize(0, r.endIndex, treeSize)
 
-	return r, nil
+	return r.iterate, nil
 }
 
-// RangeIterator iterates over information about consecutive bundles which cover a defined range of entries.
+// rangeIterator iterates over information about consecutive bundles which cover a defined range of entries.
 //
 // This info is accessed by repeated calls to RangeInfo, e.g.:
 // myRange := Range(from, to, size)
@@ -84,7 +84,7 @@ func Range(from, N, treeSize uint64) (RangeIterator, error) {
 //	for myRange.Next() {
 //	  ... = myRange.RangeInfo()
 //	}
-type RangeIterator struct {
+type rangeIterator struct {
 	// startIndex is the index of the first bundle the range touches.
 	startIndex uint64
 	// startPartial is the expected size of the bundle found at StartIndex.
@@ -103,24 +103,9 @@ type RangeIterator struct {
 	endPartial uint8
 	// endN is the number of entries from the endIndex bundle to be used. Zero means "all".
 	endN int
-
-	// currentIndex tracks the current position through the range of bundles as Next() is
-	// called.
-	currentIndex uint64
 }
 
-// Next returns true if (further) range information is available via calls to the RangeInfo func.
-//
-// TODO(al): Consider making this an interator when we bump to 1.23.
-func (r *RangeIterator) Next() bool {
-	if r.currentIndex >= r.endIndex {
-		return false
-	}
-	r.currentIndex++
-	return true
-}
-
-// RangeInfo returns parameters for the next bundle in the underlying range:
+// iterate returns an iterator over parameters for the bundle(s) in the underlying range:
 //   - Bundle index and partial size, these should be used to calculate the bundle address
 //   - first:last positions for elements within the bundle - these should be used directly
 //     to trim the slice of entries from the bundle down to the correct subset.
@@ -131,13 +116,20 @@ func (r *RangeIterator) Next() bool {
 // Note that as per the tlog-tile spec, a log is at liberty to garbage collect
 // partial bundles once the corresponding full bundle is written, so if a partial bundle is
 // indicated, but not found, the caller should attempt to fetch the full bundle instead.
-func (r RangeIterator) RangeInfo() RangeInfo {
-	if r.currentIndex > r.endIndex {
+func (r rangeIterator) iterate(yield func(RangeInfo) bool) {
+	for idx := r.startIndex; idx <= r.endIndex; idx++ {
+		if !yield(r.at(idx)) {
+			return
+		}
+	}
+}
+
+func (r *rangeIterator) at(idx uint64) RangeInfo {
+	if idx > r.endIndex {
 		panic(fmt.Sprintf("RangeInfo called, but all data has been returned."))
 	}
-
 	ret := RangeInfo{
-		Index: r.currentIndex,
+		Index: idx,
 		N:     EntryBundleWidth,
 	}
 	switch ret.Index {

@@ -619,8 +619,7 @@ func (m *MigrationStorage) fetchLeafHashes(ctx context.Context, from, to, source
 
 	lh := make([][]byte, 0, maxBundles)
 	n := 0
-	for r.Next() {
-		ri := r.RangeInfo()
+	for ri := range r {
 		b, err := m.s.ReadEntryBundle(ctx, ri.Index, ri.Partial)
 		if err != nil {
 			return nil, fmt.Errorf("ReadEntryBundle(%d.%d): %v", ri.Index, ri.Partial, err)
