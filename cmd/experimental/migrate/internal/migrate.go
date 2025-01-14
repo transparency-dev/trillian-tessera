@@ -139,15 +139,16 @@ func Migrate(ctx context.Context, numWorkers int, sourceSize uint64, sourceRoot 
 		if err != nil {
 			return fmt.Errorf("migration failed: %v", err)
 		}
-		if !bytes.Equal(root, sourceRoot) {
-			return fmt.Errorf("migration completed, but local root hash %x != source root hash %x", targetRoot, sourceRoot)
-		}
 		root = r
 		return nil
 	})
 
 	if err := eg.Wait(); err != nil {
 		return fmt.Errorf("migration failed: %v", err)
+	}
+
+	if !bytes.Equal(root, sourceRoot) {
+		return fmt.Errorf("migration completed, but local root hash %x != source root hash %x", targetRoot, sourceRoot)
 	}
 
 	klog.Infof("Migration successful.")
