@@ -55,15 +55,24 @@ type bundle struct {
 }
 
 // MigrationStorage describes the required functionality from the target storage driver.
+//
+// It's expected that the implementation of this interface will attempt to integrate the entry bundles
+// being set as soon as is reasonably possible. It's up to the implementation whether that's done as a
+// background task, or is in-line with the call to AwaitIntegration.
 type MigrationStorage interface {
 	// SetEntryBundle is called to store the provided entry bundle bytes at the given coordinates.
+	//
+	// Implementations SHOULD treat calls to this function as being idempotent - i.e. attempts to set a previously
+	// set entry bundle should succeed if the bundle data are identical.
+	//
+	// This will be called as many times as necessary to set all entry bundles being migrated, quite likely in parallel.
 	SetEntryBundle(ctx context.Context, index uint64, partial uint8, bundle []byte) error
 	// AwaitIntegration should block until the storage driver has received and integrated all outstanding entry bundles implied by sourceSize,
 	// and return the locally calculated root hash.
 	// An error should be returned if there is a problem integrating.
 	AwaitIntegration(ctx context.Context, sourceSize uint64) ([]byte, error)
-	// Size returns the current integrated size of the local tree.
-	Size(ctx context.Context) (uint64, error)
+	// State returns the current integrated size and root hash of the local tree.
+	State(ctx context.Context) (uint64, []byte, error)
 }
 
 // Migrate starts the work of copying sourceSize entries from the source to the target log.
@@ -76,7 +85,6 @@ type MigrationStorage interface {
 func Migrate(ctx context.Context, numWorkers int, sourceSize uint64, sourceRoot []byte, getEntries client.EntryBundleFetcherFunc, storage MigrationStorage) error {
 	klog.Infof("Starting migration; source size %d root %x", sourceSize, sourceRoot)
 
-	// TODO store state & resume
 	m := &copier{
 		storage:    storage,
 		sourceSize: sourceSize,
@@ -86,7 +94,7 @@ func Migrate(ctx context.Context, numWorkers int, sourceSize uint64, sourceRoot 
 	}
 
 	// init
-	targetSize, err := m.storage.Size(ctx)
+	targetSize, targetRoot, err := m.storage.State(ctx)
 	if err != nil {
 		return fmt.Errorf("Size: %v", err)
 	}
@@ -94,6 +102,9 @@ func Migrate(ctx context.Context, numWorkers int, sourceSize uint64, sourceRoot 
 		return fmt.Errorf("Target size %d > source size %d", targetSize, sourceSize)
 	}
 	if targetSize == sourceSize {
+		if !bytes.Equal(targetRoot, sourceRoot) {
+			return fmt.Errorf("migration completed, but local root hash %x != source root hash %x", targetRoot, sourceRoot)
+		}
 		return nil
 	}
 
@@ -106,7 +117,7 @@ func Migrate(ctx context.Context, numWorkers int, sourceSize uint64, sourceRoot 
 			time.Sleep(time.Second)
 			bn := m.bundlesMigrated.Load()
 			bnp := float64(bn*100) / float64(bundlesToMigrate)
-			s, err := m.storage.Size(ctx)
+			s, _, err := m.storage.State(ctx)
 			if err != nil {
 				klog.Warningf("Size: %v", err)
 			}
@@ -128,10 +139,10 @@ func Migrate(ctx context.Context, numWorkers int, sourceSize uint64, sourceRoot 
 
 	root, err := m.storage.AwaitIntegration(ctx, sourceSize)
 	if err != nil {
-		klog.Exitf("Migration failed: %v", err)
+		return fmt.Errorf("Migration failed: %v", err)
 	}
 	if !bytes.Equal(root, sourceRoot) {
-		klog.Exitf("Migration completed, but local root hash %x != source root hash %x", root, sourceRoot)
+		return fmt.Errorf("migration completed, but local root hash %x != source root hash %x", targetRoot, sourceRoot)
 	}
 	klog.Infof("Migration successful.")
 	return nil

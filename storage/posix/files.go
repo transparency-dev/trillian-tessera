@@ -563,9 +563,8 @@ func (m *MigrationStorage) SetEntryBundle(ctx context.Context, index uint64, par
 	return m.s.writeBundle(ctx, index, partial, bundle)
 }
 
-func (m *MigrationStorage) Size(_ context.Context) (uint64, error) {
-	s, _, err := m.s.readTreeState()
-	return s, err
+func (m *MigrationStorage) State(_ context.Context) (uint64, []byte, error) {
+	return m.s.readTreeState()
 }
 
 func (m *MigrationStorage) buildTree(ctx context.Context, targetSize uint64) error {
