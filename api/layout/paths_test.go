@@ -314,7 +314,6 @@ func TestRange(t *testing.T) {
 		from, N, treeSize uint64
 		desc              string
 		want              []RangeInfo
-		wantErr           bool
 	}{
 		{
 			desc:     "from beyond extent",

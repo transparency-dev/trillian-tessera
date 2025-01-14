@@ -98,6 +98,8 @@ func Migrate(ctx context.Context, numWorkers int, sourceSize uint64, sourceRoot 
 	if targetSize == sourceSize {
 		return nil
 	}
+
+	m.bundlesToMigrate = (sourceSize / layout.EntryBundleWidth) - (targetSize / layout.EntryBundleWidth) + 1
 	go m.populateWork(targetSize, sourceSize)
 
 	// Print stats
@@ -142,11 +144,9 @@ func Migrate(ctx context.Context, numWorkers int, sourceSize uint64, sourceRoot 
 func (m *copier) populateWork(from, treeSize uint64) {
 	klog.Infof("Spans for entry range [%d, %d)", from, treeSize)
 	defer close(m.todo)
-	defer klog.Infof("total bundles to fetch %d", m.bundlesToMigrate)
 
 	for ri := range layout.Range(from, treeSize-from, treeSize) {
 		m.todo <- bundle{Index: ri.Index, Partial: ri.Partial}
-		m.bundlesToMigrate++
 	}
 }
 
