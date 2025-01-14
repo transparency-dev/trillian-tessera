@@ -21,6 +21,7 @@ package layout
 
 import (
 	"fmt"
+	"iter"
 	"math"
 	"strconv"
 	"strings"
@@ -38,6 +39,71 @@ const (
 // would contain fewer than 256 entries.
 func EntriesPathForLogIndex(seq, logSize uint64) string {
 	return EntriesPath(seq/EntryBundleWidth, PartialTileSize(0, seq, logSize))
+}
+
+// Range returns an iterator over a list of RangeInfo structs which describe the bundles/tiles
+// necessary to cover the specified range of individual entries/hashes `[from, min(from+N, treeSize) )`.
+//
+// If from >= treeSize or N == 0, the returned iterator will yield no elements.
+func Range(from, N, treeSize uint64) iter.Seq[RangeInfo] {
+	return func(yield func(RangeInfo) bool) {
+		// Range is empty if we're entirely beyond the extent of the tree, or we've been asked for zero items.
+		if from >= treeSize || N == 0 {
+			return
+		}
+		// Truncate range at size of tree if necessary.
+		if from+N > treeSize {
+			N = treeSize - from
+		}
+
+		endInc := from + N - 1
+		sIndex := from / EntryBundleWidth
+		eIndex := endInc / EntryBundleWidth
+
+		for idx := sIndex; idx <= eIndex; idx++ {
+			ri := RangeInfo{
+				Index: idx,
+				N:     EntryBundleWidth,
+			}
+
+			switch ri.Index {
+			case sIndex:
+				ri.Partial = PartialTileSize(0, sIndex, treeSize)
+				ri.First = uint(from % EntryBundleWidth)
+				ri.N = uint(EntryBundleWidth) - ri.First
+
+				// Handle corner-case where the range is entirely contained in first bundle, if applicable:
+				if ri.Index == eIndex {
+					ri.N = uint((endInc)%EntryBundleWidth) - ri.First + 1
+				}
+			case eIndex:
+				ri.Partial = PartialTileSize(0, eIndex, treeSize)
+				ri.N = uint((endInc)%EntryBundleWidth) + 1
+			}
+
+			if !yield(ri) {
+				return
+			}
+		}
+	}
+}
+
+// RangeInfo describes a specific range of elements within a particular bundle/tile.
+//
+// Usage:
+//
+//	bundleRaw, ... := fetchBundle(..., ri.Index, ri.Partial")
+//	bundle, ... := parseBundle(bundleRaw)
+//	elements := bundle.Entries[ri.First : ri.First+ri.N]
+type RangeInfo struct {
+	// Index is the index of the entry bundle/tile in the tree.
+	Index uint64
+	// Partial is the partial size of the bundle/tile, or zero if a full bundle/tile is expected.
+	Partial uint8
+	// First is the offset into the entries contained by the bundle/tile at which the range starts.
+	First uint
+	// N is the number of entries, starting at First, which are covered by the range.
+	N uint
 }
 
 // NWithSuffix returns a tiles-spec "N" path, with a partial suffix if p > 0.

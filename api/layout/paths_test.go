@@ -17,6 +17,8 @@ package layout
 import (
 	"fmt"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestEntriesPathForLogIndex(t *testing.T) {
@@ -302,6 +304,92 @@ func TestParseTileLevelIndexPartial(t *testing.T) {
 			gotErr := err != nil
 			if gotErr != test.wantErr {
 				t.Errorf("got err %v want %v", gotErr, test.wantErr)
+			}
+		})
+	}
+}
+
+func TestRange(t *testing.T) {
+	for _, test := range []struct {
+		from, N, treeSize uint64
+		desc              string
+		want              []RangeInfo
+	}{
+		{
+			desc:     "from beyond extent",
+			from:     10,
+			N:        1,
+			treeSize: 5,
+			want:     []RangeInfo{},
+		}, {
+			desc:     "range end beyond extent",
+			from:     3,
+			N:        100,
+			treeSize: 5,
+			want:     []RangeInfo{{Index: 0, First: 3, N: 5 - 3, Partial: 5}},
+		}, {
+			desc:     "empty range",
+			from:     1,
+			N:        0,
+			treeSize: 2,
+			want:     []RangeInfo{},
+		}, {
+			desc:     "ok: full first bundle",
+			from:     0,
+			N:        256,
+			treeSize: 257,
+			want:     []RangeInfo{{N: 256}},
+		}, {
+			desc:     "ok: entire single (partial) bundle",
+			from:     20,
+			N:        90,
+			treeSize: 111,
+			want:     []RangeInfo{{Index: 0, Partial: 111, First: 20, N: 90}},
+		}, {
+			desc:     "ok: slice from single bundle with initial offset",
+			from:     20,
+			N:        90,
+			treeSize: 1 << 20,
+			want:     []RangeInfo{{Index: 0, Partial: 0, First: 20, N: 90}},
+		}, {
+			desc:     "ok: multiple bundles, first is full, last is truncated",
+			from:     0,
+			N:        4*256 + 42,
+			treeSize: 1 << 20,
+			want: []RangeInfo{
+				{Index: 0, Partial: 0, First: 0, N: 256},
+				{Index: 1, Partial: 0, First: 0, N: 256},
+				{Index: 2, Partial: 0, First: 0, N: 256},
+				{Index: 3, Partial: 0, First: 0, N: 256},
+				{Index: 4, Partial: 0, First: 0, N: 42},
+			},
+		}, {
+			desc:     "ok: multiple bundles, first is offset, last is truncated",
+			from:     2,
+			N:        4*256 + 4,
+			treeSize: 1 << 20,
+			want: []RangeInfo{
+				{Index: 0, Partial: 0, First: 2, N: 256 - 2},
+				{Index: 1, Partial: 0, First: 0, N: 256},
+				{Index: 2, Partial: 0, First: 0, N: 256},
+				{Index: 3, Partial: 0, First: 0, N: 256},
+				{Index: 4, Partial: 0, First: 0, N: 6},
+			},
+		}, {
+			desc:     "ok: offset and trucated from single bundle in middle of tree",
+			from:     8*256 + 66,
+			N:        4,
+			treeSize: 1 << 20,
+			want:     []RangeInfo{{Index: 8, Partial: 0, First: 66, N: 4}},
+		},
+	} {
+		t.Run(test.desc, func(t *testing.T) {
+			i := 0
+			for gotInfo := range Range(test.from, test.N, test.treeSize) {
+				if d := cmp.Diff(test.want[i], gotInfo); d != "" {
+					t.Fatalf("got results[%d] with diff:\n%s", i, d)
+				}
+				i++
 			}
 		})
 	}

@@ -398,8 +398,10 @@ func (s *Storage) initialise(create bool) error {
 		if err := s.writeTreeState(0, rfc6962.DefaultHasher.EmptyRoot()); err != nil {
 			return fmt.Errorf("failed to write tree-state checkpoint: %v", err)
 		}
-		if err := s.publishCheckpoint(0); err != nil {
-			return fmt.Errorf("failed to publish checkpoint: %v", err)
+		if s.newCP != nil {
+			if err := s.publishCheckpoint(0); err != nil {
+				return fmt.Errorf("failed to publish checkpoint: %v", err)
+			}
 		}
 	}
 	curSize, _, err := s.readTreeState()
@@ -505,4 +507,125 @@ func createExclusive(f string, d []byte) error {
 		return err
 	}
 	return nil
+}
+
+// BundleHasherFunc is the signature of a function which knows how to parse an entry bundle and calculate leaf hashes for its entries.
+type BundleHasherFunc func(entryBundle []byte) (LeafHashes [][]byte, err error)
+
+// NewMigrationTarget creates a new POSIX storage for the MigrationTarget lifecycle mode.
+// - path is a directory in which the log should be stored
+// - create must only be set when first creating the log, and will create the directory structure and an empty checkpoint
+// - bundleHasher knows how to parse the provided entry bundle, and returns a slice of leaf hashes for the entries it contains.
+func NewMigrationTarget(ctx context.Context, path string, create bool, bundleHasher BundleHasherFunc, opts ...func(*options.StorageOptions)) (*MigrationStorage, error) {
+	opt := storage.ResolveStorageOptions(opts...)
+
+	r := &MigrationStorage{
+		s: Storage{
+			path:        path,
+			entriesPath: opt.EntriesPath,
+		},
+		bundleHasher: bundleHasher,
+	}
+	if err := r.s.initialise(create); err != nil {
+		return nil, err
+	}
+	return r, nil
+}
+
+type MigrationStorage struct {
+	s            Storage
+	bundleHasher BundleHasherFunc
+}
+
+func (m *MigrationStorage) AwaitIntegration(ctx context.Context, sourceSize uint64) ([]byte, error) {
+	t := time.NewTicker(time.Second)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-t.C:
+		}
+		if err := m.buildTree(ctx, sourceSize); err != nil {
+			klog.Warningf("buildTree: %v", err)
+		}
+		s, r, err := m.s.readTreeState()
+		if err != nil {
+			klog.Warningf("readTreeState: %v", err)
+		}
+		if s == sourceSize {
+			return r, nil
+		}
+	}
+}
+
+func (m *MigrationStorage) SetEntryBundle(ctx context.Context, index uint64, partial uint8, bundle []byte) error {
+	return m.s.writeBundle(ctx, index, partial, bundle)
+}
+
+func (m *MigrationStorage) State(_ context.Context) (uint64, []byte, error) {
+	return m.s.readTreeState()
+}
+
+func (m *MigrationStorage) buildTree(ctx context.Context, targetSize uint64) error {
+	// Double locking:
+	// - The mutex `Lock()` ensures that multiple concurrent calls to this function within a task are serialised.
+	// - The POSIX `lockForTreeUpdate()` ensures that distinct tasks are serialised.
+	m.s.mu.Lock()
+	unlock, err := lockFile(filepath.Join(m.s.path, stateDir, "treeState.lock"))
+	if err != nil {
+		panic(err)
+	}
+	defer func() {
+		if err := unlock(); err != nil {
+			panic(err)
+		}
+		m.s.mu.Unlock()
+	}()
+
+	size, _, err := m.s.readTreeState()
+	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		size = 0
+	}
+	m.s.curSize = size
+	klog.V(1).Infof("Building from %d", m.s.curSize)
+
+	lh, err := m.fetchLeafHashes(ctx, size, targetSize, targetSize)
+	if err != nil {
+		return fmt.Errorf("fetchLeafHashes(%d, %d): %v", size, targetSize, err)
+	}
+
+	if err := m.s.doIntegrate(ctx, size, lh); err != nil {
+		return fmt.Errorf("doIntegrate(%d, ...): %v", size, err)
+	}
+
+	return nil
+}
+
+func (m *MigrationStorage) fetchLeafHashes(ctx context.Context, from, to, sourceSize uint64) ([][]byte, error) {
+	const maxBundles = 300
+
+	lh := make([][]byte, 0, maxBundles)
+	n := 0
+	for ri := range layout.Range(from, to, sourceSize) {
+		b, err := m.s.ReadEntryBundle(ctx, ri.Index, ri.Partial)
+		if err != nil {
+			return nil, fmt.Errorf("ReadEntryBundle(%d.%d): %v", ri.Index, ri.Partial, err)
+		}
+
+		bh, err := m.bundleHasher(b)
+		if err != nil {
+			return nil, fmt.Errorf("bundleHasherFunc for bundle index %d: %v", ri.Index, err)
+		}
+		lh = append(lh, bh[ri.First:ri.First+ri.N]...)
+		n++
+		if n >= maxBundles {
+			break
+		}
+	}
+	return lh, nil
+
 }
