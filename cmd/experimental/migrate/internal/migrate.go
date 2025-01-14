@@ -15,6 +15,7 @@
 package internal
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"sync/atomic"
@@ -59,9 +60,10 @@ type bundle struct {
 type MigrationStorage interface {
 	// SetEntryBundle is called to store the provided entry bundle bytes at the given coordinates.
 	SetEntryBundle(ctx context.Context, index uint64, partial uint8, bundle []byte) error
-	// AwaitIntegration should block until the storage driver has received and integrated all outstanding entry bundles implied by sourceSize.
-	// An error should be returned if there is a problem integrating, or if the root hash of the local tree at size sourceSize does not match sourceRoot.
-	AwaitIntegration(ctx context.Context, sourceSize uint64, sourceRoot []byte) error
+	// AwaitIntegration should block until the storage driver has received and integrated all outstanding entry bundles implied by sourceSize,
+	// and return the locally calculated root hash.
+	// An error should be returned if there is a problem integrating.
+	AwaitIntegration(ctx context.Context, sourceSize uint64) ([]byte, error)
 	// Size returns the current integrated size of the local tree.
 	Size(ctx context.Context) (uint64, error)
 }
@@ -124,8 +126,12 @@ func Migrate(ctx context.Context, numWorkers int, sourceSize uint64, sourceRoot 
 		return fmt.Errorf("migrate failed to copy resources: %v", err)
 	}
 
-	if err := m.storage.AwaitIntegration(ctx, sourceSize, sourceRoot); err != nil {
+	root, err := m.storage.AwaitIntegration(ctx, sourceSize)
+	if err != nil {
 		klog.Exitf("Migration failed: %v", err)
+	}
+	if !bytes.Equal(root, sourceRoot) {
+		klog.Exitf("Migration completed, but local root hash %x != source root hash %x", root, sourceRoot)
 	}
 	klog.Infof("Migration successful.")
 	return nil

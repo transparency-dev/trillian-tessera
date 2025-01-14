@@ -537,13 +537,13 @@ type MigrationStorage struct {
 	bundleHasher BundleHasherFunc
 }
 
-func (m *MigrationStorage) AwaitIntegration(ctx context.Context, sourceSize uint64, sourceRoot []byte) error {
+func (m *MigrationStorage) AwaitIntegration(ctx context.Context, sourceSize uint64) ([]byte, error) {
 	t := time.NewTicker(time.Second)
 	defer t.Stop()
 	for {
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return nil, ctx.Err()
 		case <-t.C:
 		}
 		if err := m.buildTree(ctx, sourceSize); err != nil {
@@ -554,10 +554,7 @@ func (m *MigrationStorage) AwaitIntegration(ctx context.Context, sourceSize uint
 			klog.Warningf("readTreeState: %v", err)
 		}
 		if s == sourceSize {
-			if !bytes.Equal(r, sourceRoot) {
-				return fmt.Errorf("integrated tree at size %d has root %x, but source at size %d has root %x", s, r, sourceSize, sourceRoot)
-			}
-			return nil
+			return r, nil
 		}
 	}
 }
