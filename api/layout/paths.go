@@ -44,7 +44,7 @@ func EntriesPathForLogIndex(seq, logSize uint64) string {
 // Range returns an iterator over a list of RangeInfo structs which describe the bundles/tiles
 // necessary to cover the specified range of individual entries/hashes `[from, min(from+N, treeSize) )`.
 //
-// If from >= treeSize or N == 0, the returned iterator will yeild no elements.
+// If from >= treeSize or N == 0, the returned iterator will yield no elements.
 func Range(from, N, treeSize uint64) iter.Seq[RangeInfo] {
 	return func(yield func(RangeInfo) bool) {
 		// Range is empty if we're entirely beyond the extent of the tree, or we've been asked for zero items.
