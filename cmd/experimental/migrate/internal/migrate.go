@@ -44,8 +44,6 @@ type copier struct {
 	// todo contains work items to be completed.
 	todo chan bundle
 
-	// bundlesToMigrate is the total number of entry bundles which need to be copied.
-	bundlesToMigrate uint64
 	// bundlesMigrated is the number of entry bundles migrated so far.
 	bundlesMigrated atomic.Uint64
 }
@@ -99,7 +97,7 @@ func Migrate(ctx context.Context, numWorkers int, sourceSize uint64, sourceRoot 
 		return nil
 	}
 
-	m.bundlesToMigrate = (sourceSize / layout.EntryBundleWidth) - (targetSize / layout.EntryBundleWidth) + 1
+	bundlesToMigrate := (sourceSize / layout.EntryBundleWidth) - (targetSize / layout.EntryBundleWidth) + 1
 	go m.populateWork(targetSize, sourceSize)
 
 	// Print stats
@@ -107,7 +105,7 @@ func Migrate(ctx context.Context, numWorkers int, sourceSize uint64, sourceRoot 
 		for {
 			time.Sleep(time.Second)
 			bn := m.bundlesMigrated.Load()
-			bnp := float64(bn*100) / float64(m.bundlesToMigrate)
+			bnp := float64(bn*100) / float64(bundlesToMigrate)
 			s, err := m.storage.Size(ctx)
 			if err != nil {
 				klog.Warningf("Size: %v", err)
