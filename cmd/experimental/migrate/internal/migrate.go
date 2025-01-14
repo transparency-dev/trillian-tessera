@@ -133,17 +133,23 @@ func Migrate(ctx context.Context, numWorkers int, sourceSize uint64, sourceRoot 
 			return m.migrateWorker(ctx)
 		})
 	}
-	if err := eg.Wait(); err != nil {
-		return fmt.Errorf("migrate failed to copy resources: %v", err)
-	}
+	var root []byte
+	eg.Go(func() error {
+		r, err := m.storage.AwaitIntegration(ctx, sourceSize)
+		if err != nil {
+			return fmt.Errorf("Migration failed: %v", err)
+		}
+		if !bytes.Equal(root, sourceRoot) {
+			return fmt.Errorf("migration completed, but local root hash %x != source root hash %x", targetRoot, sourceRoot)
+		}
+		root = r
+		return nil
+	})
 
-	root, err := m.storage.AwaitIntegration(ctx, sourceSize)
-	if err != nil {
+	if err := eg.Wait(); err != nil {
 		return fmt.Errorf("Migration failed: %v", err)
 	}
-	if !bytes.Equal(root, sourceRoot) {
-		return fmt.Errorf("migration completed, but local root hash %x != source root hash %x", targetRoot, sourceRoot)
-	}
+
 	klog.Infof("Migration successful.")
 	return nil
 }
