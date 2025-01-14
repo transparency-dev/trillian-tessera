@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1736863418733,
+  "lastUpdate": 1736870491142,
   "repoUrl": "https://github.com/transparency-dev/trillian-tessera",
   "entries": {
     "Benchmark": [
@@ -4440,6 +4440,126 @@ window.BENCHMARK_DATA = {
             "value": 3037,
             "unit": "allocs/op",
             "extra": "4003 times\n4 procs"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "49699333+dependabot[bot]@users.noreply.github.com",
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "c883591a4cf040738bd0f58ace3d1d8bcfd677dc",
+          "message": "Bump the all-gha-deps group with 2 updates (#446)\n\nBumps the all-gha-deps group with 2 updates: [github/codeql-action](https://github.com/github/codeql-action) and [actions/upload-artifact](https://github.com/actions/upload-artifact).\r\n\r\n\r\nUpdates `github/codeql-action` from 3.28.0 to 3.28.1\r\n- [Release notes](https://github.com/github/codeql-action/releases)\r\n- [Changelog](https://github.com/github/codeql-action/blob/main/CHANGELOG.md)\r\n- [Commits](https://github.com/github/codeql-action/compare/48ab28a6f5dbc2a99bf1e0131198dd8f1df78169...b6a472f63d85b9c78a3ac5e89422239fc15e9b3c)\r\n\r\nUpdates `actions/upload-artifact` from 4.5.0 to 4.6.0\r\n- [Release notes](https://github.com/actions/upload-artifact/releases)\r\n- [Commits](https://github.com/actions/upload-artifact/compare/6f51ac03b9356f520e9adb1b1b7802705f340c2b...65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08)\r\n\r\n---\r\nupdated-dependencies:\r\n- dependency-name: github/codeql-action\r\n  dependency-type: direct:production\r\n  update-type: version-update:semver-patch\r\n  dependency-group: all-gha-deps\r\n- dependency-name: actions/upload-artifact\r\n  dependency-type: direct:production\r\n  update-type: version-update:semver-minor\r\n  dependency-group: all-gha-deps\r\n...\r\n\r\nSigned-off-by: dependabot[bot] <support@github.com>\r\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
+          "timestamp": "2025-01-14T16:00:39Z",
+          "tree_id": "61e1c821034597a9e866ba46d812239f292143d0",
+          "url": "https://github.com/transparency-dev/trillian-tessera/commit/c883591a4cf040738bd0f58ace3d1d8bcfd677dc"
+        },
+        "date": 1736870490252,
+        "tool": "go",
+        "benches": [
+          {
+            "name": "BenchmarkDedupe",
+            "value": 5329169,
+            "unit": "ns/op\t  701226 B/op\t   19680 allocs/op",
+            "extra": "232 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDedupe - ns/op",
+            "value": 5329169,
+            "unit": "ns/op",
+            "extra": "232 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDedupe - B/op",
+            "value": 701226,
+            "unit": "B/op",
+            "extra": "232 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDedupe - allocs/op",
+            "value": 19680,
+            "unit": "allocs/op",
+            "extra": "232 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLeafBundle_UnmarshalText",
+            "value": 7192,
+            "unit": "ns/op\t    6528 B/op\t       1 allocs/op",
+            "extra": "210364 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLeafBundle_UnmarshalText - ns/op",
+            "value": 7192,
+            "unit": "ns/op",
+            "extra": "210364 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLeafBundle_UnmarshalText - B/op",
+            "value": 6528,
+            "unit": "B/op",
+            "extra": "210364 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLeafBundle_UnmarshalText - allocs/op",
+            "value": 1,
+            "unit": "allocs/op",
+            "extra": "210364 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkCheckpointUnsafe",
+            "value": 116.9,
+            "unit": "ns/op\t     112 B/op\t       3 allocs/op",
+            "extra": "10254630 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkCheckpointUnsafe - ns/op",
+            "value": 116.9,
+            "unit": "ns/op",
+            "extra": "10254630 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkCheckpointUnsafe - B/op",
+            "value": 112,
+            "unit": "B/op",
+            "extra": "10254630 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkCheckpointUnsafe - allocs/op",
+            "value": 3,
+            "unit": "allocs/op",
+            "extra": "10254630 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkIntegrate",
+            "value": 344561,
+            "unit": "ns/op\t  290216 B/op\t    3033 allocs/op",
+            "extra": "3685 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkIntegrate - ns/op",
+            "value": 344561,
+            "unit": "ns/op",
+            "extra": "3685 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkIntegrate - B/op",
+            "value": 290216,
+            "unit": "B/op",
+            "extra": "3685 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkIntegrate - allocs/op",
+            "value": 3033,
+            "unit": "allocs/op",
+            "extra": "3685 times\n4 procs"
           }
         ]
       }
