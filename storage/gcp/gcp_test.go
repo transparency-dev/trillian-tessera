@@ -371,7 +371,6 @@ func TestPublishCheckpoint(t *testing.T) {
 			}
 		})
 	}
-
 }
 
 type memObjStore struct {
