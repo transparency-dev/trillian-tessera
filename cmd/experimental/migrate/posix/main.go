@@ -24,7 +24,6 @@ import (
 	"strconv"
 	"strings"
 
-	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/client"
 	"github.com/transparency-dev/trillian-tessera/cmd/experimental/migrate/internal"
 	"github.com/transparency-dev/trillian-tessera/storage/posix"
@@ -66,9 +65,9 @@ func main() {
 	}
 
 	// Create our Tessera storage backend:
-	st, err := posix.NewMigrationTarget(ctx, *storageDir, *initialise, internal.BundleHasher, tessera.WithCTLayout())
+	st, err := posix.NewMigrationTarget(ctx, *storageDir, *initialise, internal.BundleHasher)
 	if err != nil {
-		klog.Exitf("Failed to create new GCP storage: %v", err)
+		klog.Exitf("Failed to create new POSIX storage: %v", err)
 	}
 
 	if err := internal.Migrate(context.Background(), *numWorkers, sourceSize, sourceRoot, src.ReadEntryBundle, st); err != nil {
