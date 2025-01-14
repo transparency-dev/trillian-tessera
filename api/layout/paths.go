@@ -41,108 +41,60 @@ func EntriesPathForLogIndex(seq, logSize uint64) string {
 	return EntriesPath(seq/EntryBundleWidth, PartialTileSize(0, seq, logSize))
 }
 
-// Range calculates the addresses of bundles, and elements contained within, that are necessary to
-// cover the provided [from, from+N) range of entries, and returns an interator which provides
-// this information for a single bundle at a time.
+// Range returns an iterator over a list of RangeInfo structs which describe the bundles/tiles
+// necessary to cover the specified range of individual entries/hashes `[from, min(from+N, treeSize) )`.
 //
-// There are several corner-cases this function deals with, where the requested range:
-// - is spread across multiple bundles; "start" bundle, zero or more "middle" bundles of size 256; zero or one "end" bundles which may be full or partial.
-// - is entirely contained within a single bundle.
-// - may not start or end aligned with bundle boundaries.
-//
-// The comments on this func and the RangeInfo struct below refer to entries and entry bundles, but
-// because tiles and entry bundles are the same width, this function works for ranges across either.
-func Range(from, N, treeSize uint64) (iter.Seq[RangeInfo], error) {
-	endInc := from + N - 1
-	switch {
-	case N == 0:
-		return nil, fmt.Errorf("empty range")
-	case endInc >= treeSize:
-		return nil, fmt.Errorf("range [%d, %d) is beyond treeSize (%d)", from, endInc, treeSize)
-	}
-
-	r := rangeIterator{
-		startIndex: from / EntryBundleWidth,
-		startFirst: uint(from % EntryBundleWidth),
-		endIndex:   endInc / EntryBundleWidth,
-		endN:       uint((endInc)%EntryBundleWidth) + 1,
-	}
-	if r.startIndex == r.endIndex {
-		r.endN = r.endN - r.startFirst
-	}
-	r.startPartial = PartialTileSize(0, r.startIndex, treeSize)
-	r.endPartial = PartialTileSize(0, r.endIndex, treeSize)
-
-	return r.iterate, nil
-}
-
-// rangeIterator iterates over information about consecutive bundles which cover a defined range of entries.
-//
-// This info is accessed by repeated calls to RangeInfo, e.g.:
-// myRange := Range(from, to, size)
-//
-//	for myRange.Next() {
-//	  ... = myRange.RangeInfo()
-//	}
-type rangeIterator struct {
-	// startIndex is the index of the first bundle the range touches.
-	startIndex uint64
-	// startPartial is the expected size of the bundle found at StartIndex.
-	// If zero, a full bundle is expected to be present.
-	startPartial uint8
-	// startFirst is the index of the first entry in the `startIndex` bundle to be used.
-	//
-	// Once the bundle at `startIndex[.p/startPartial]` has been fetched, the leading
-	// `startFirst` entries should be discarded.
-	startFirst uint
-
-	// endIndex is the index of the final entry bundle containing part of the range.
-	endIndex uint64
-	// endPartial is non-zero if the bundle at endIndex is expected to be partial.
-	endPartial uint8
-	// endN is the number of entries from the endIndex bundle to be used. Zero means "all".
-	endN uint
-}
-
-// iterate returns an iterator over parameters for the bundle(s) in the underlying range:
-//   - Bundle index and partial size, these should be used to calculate the bundle address
-//   - first:last positions for elements within the bundle - these should be used directly
-//     to trim the slice of entries from the bundle down to the correct subset.
-//   - ok - false if there are no more bundles to fetch, true otherwise.
-//
-// RangeInfo must only be called if Next() returns true, otherwise it will panic.
-//
-// Note that as per the tlog-tile spec, a log is at liberty to garbage collect
-// partial bundles once the corresponding full bundle is written, so if a partial bundle is
-// indicated, but not found, the caller should attempt to fetch the full bundle instead.
-func (r rangeIterator) iterate(yield func(RangeInfo) bool) {
-	for idx := r.startIndex; idx <= r.endIndex; idx++ {
-		ri := RangeInfo{
-			Index: idx,
-			N:     EntryBundleWidth,
-		}
-		switch ri.Index {
-		case r.startIndex:
-			ri.Partial, ri.First = r.startPartial, r.startFirst
-			if ri.Index == r.endIndex {
-				ri.N = r.endN
-			} else if ri.First > 0 {
-				w := uint(ri.Partial)
-				if w == 0 {
-					w = EntryBundleWidth
-				}
-				ri.N = uint(w - ri.First)
-			}
-		case r.endIndex:
-			ri.Partial, ri.N = r.endPartial, r.endN
-		}
-		if !yield(ri) {
+// If from >= treeSize or N == 0, the returned iterator will yeild no elements.
+func Range(from, N, treeSize uint64) iter.Seq[RangeInfo] {
+	return func(yield func(RangeInfo) bool) {
+		// Range is empty if we're entirely beyond the extent of the tree, or we've been asked for zero items.
+		if from >= treeSize || N == 0 {
 			return
+		}
+		// Truncate range at size of tree if necessary.
+		if from+N > treeSize {
+			N = treeSize - from
+		}
+
+		endInc := from + N - 1
+		sIndex := from / EntryBundleWidth
+		eIndex := endInc / EntryBundleWidth
+
+		for idx := sIndex; idx <= eIndex; idx++ {
+			ri := RangeInfo{
+				Index: idx,
+				N:     EntryBundleWidth,
+			}
+
+			switch ri.Index {
+			case sIndex:
+				ri.Partial = PartialTileSize(0, sIndex, treeSize)
+				ri.First = uint(from % EntryBundleWidth)
+				ri.N = uint(EntryBundleWidth) - ri.First
+
+				// Handle corner-case where the range is entirely contained in first bundle, if applicable:
+				if ri.Index == eIndex {
+					ri.N = uint((endInc)%EntryBundleWidth) - ri.First + 1
+				}
+			case eIndex:
+				ri.Partial = PartialTileSize(0, eIndex, treeSize)
+				ri.N = uint((endInc)%EntryBundleWidth) + 1
+			}
+
+			if !yield(ri) {
+				return
+			}
 		}
 	}
 }
 
 // RangeInfo describes a specific range of elements within a particular bundle/tile.
+//
+// Usage:
+//
+//	bundleRaw, ... := fetchBundle(..., ri.Index, ri.Partial")
+//	bundle, ... := parseBundle(bundleRaw)
+//	elements := bundle.Entries[ri.First : ri.First+ri.N]
 type RangeInfo struct {
 	// Index is the index of the entry bundle/tile in the tree.
 	Index uint64

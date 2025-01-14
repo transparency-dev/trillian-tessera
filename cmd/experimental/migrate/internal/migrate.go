@@ -138,12 +138,7 @@ func (m *copier) populateWork(from, treeSize uint64) {
 	defer close(m.todo)
 	defer klog.Infof("total bundles to fetch %d", m.bundlesToMigrate)
 
-	r, err := layout.Range(from, treeSize-from, treeSize)
-	if err != nil {
-		klog.Exitf("Range(%d, %d): %v", from, treeSize-from, err)
-	}
-
-	for ri := range r {
+	for ri := range layout.Range(from, treeSize-from, treeSize) {
 		m.todo <- bundle{Index: ri.Index, Partial: ri.Partial}
 		m.bundlesToMigrate++
 	}

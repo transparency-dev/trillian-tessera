@@ -321,19 +321,19 @@ func TestRange(t *testing.T) {
 			from:     10,
 			N:        1,
 			treeSize: 5,
-			wantErr:  true,
+			want:     []RangeInfo{},
 		}, {
 			desc:     "range end beyond extent",
 			from:     3,
 			N:        100,
 			treeSize: 5,
-			wantErr:  true,
+			want:     []RangeInfo{{Index: 0, First: 3, N: 5 - 3, Partial: 5}},
 		}, {
 			desc:     "empty range",
 			from:     1,
 			N:        0,
 			treeSize: 2,
-			wantErr:  true,
+			want:     []RangeInfo{},
 		}, {
 			desc:     "ok: full first bundle",
 			from:     0,
@@ -385,15 +385,8 @@ func TestRange(t *testing.T) {
 		},
 	} {
 		t.Run(test.desc, func(t *testing.T) {
-			gotI, err := Range(test.from, test.N, test.treeSize)
-			if gotErr := err != nil; gotErr != test.wantErr {
-				t.Fatalf("got error: %q, want error: %t", err, test.wantErr)
-			} else if test.wantErr {
-				return
-			}
-
 			i := 0
-			for gotInfo := range gotI {
+			for gotInfo := range Range(test.from, test.N, test.treeSize) {
 				if d := cmp.Diff(test.want[i], gotInfo); d != "" {
 					t.Fatalf("got results[%d] with diff:\n%s", i, d)
 				}

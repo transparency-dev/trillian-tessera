@@ -612,14 +612,9 @@ func (m *MigrationStorage) buildTree(ctx context.Context, targetSize uint64) err
 func (m *MigrationStorage) fetchLeafHashes(ctx context.Context, from, to, sourceSize uint64) ([][]byte, error) {
 	const maxBundles = 300
 
-	r, err := layout.Range(from, to, sourceSize)
-	if err != nil {
-		return nil, fmt.Errorf("layout.Range: %v", err)
-	}
-
 	lh := make([][]byte, 0, maxBundles)
 	n := 0
-	for ri := range r {
+	for ri := range layout.Range(from, to, sourceSize) {
 		b, err := m.s.ReadEntryBundle(ctx, ri.Index, ri.Partial)
 		if err != nil {
 			return nil, fmt.Errorf("ReadEntryBundle(%d.%d): %v", ri.Index, ri.Partial, err)
