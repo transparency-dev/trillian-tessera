@@ -96,10 +96,10 @@ func Migrate(ctx context.Context, numWorkers int, sourceSize uint64, sourceRoot 
 	// init
 	targetSize, targetRoot, err := m.storage.State(ctx)
 	if err != nil {
-		return fmt.Errorf("Size: %v", err)
+		return fmt.Errorf("size: %v", err)
 	}
 	if targetSize > sourceSize {
-		return fmt.Errorf("Target size %d > source size %d", targetSize, sourceSize)
+		return fmt.Errorf("target size %d > source size %d", targetSize, sourceSize)
 	}
 	if targetSize == sourceSize {
 		if !bytes.Equal(targetRoot, sourceRoot) {
@@ -133,17 +133,24 @@ func Migrate(ctx context.Context, numWorkers int, sourceSize uint64, sourceRoot 
 			return m.migrateWorker(ctx)
 		})
 	}
+	var root []byte
+	eg.Go(func() error {
+		r, err := m.storage.AwaitIntegration(ctx, sourceSize)
+		if err != nil {
+			return fmt.Errorf("migration failed: %v", err)
+		}
+		root = r
+		return nil
+	})
+
 	if err := eg.Wait(); err != nil {
-		return fmt.Errorf("migrate failed to copy resources: %v", err)
+		return fmt.Errorf("migration failed: %v", err)
 	}
 
-	root, err := m.storage.AwaitIntegration(ctx, sourceSize)
-	if err != nil {
-		return fmt.Errorf("Migration failed: %v", err)
-	}
 	if !bytes.Equal(root, sourceRoot) {
 		return fmt.Errorf("migration completed, but local root hash %x != source root hash %x", targetRoot, sourceRoot)
 	}
+
 	klog.Infof("Migration successful.")
 	return nil
 }

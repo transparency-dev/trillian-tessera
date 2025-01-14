@@ -37,6 +37,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -982,4 +983,176 @@ func (d *dedupStorage) flush(items []interface{}) {
 		return
 	}
 	d.numWrites.Add(uint64(len(entries)))
+}
+
+// BundleHasherFunc is the signature of a function which knows how to parse an entry bundle and calculate leaf hashes for its entries.
+type BundleHasherFunc func(entryBundle []byte) (LeafHashes [][]byte, err error)
+
+// NewMigrationTarget creates a new GCP storage for the MigrationTarget lifecycle mode.
+func NewMigrationTarget(ctx context.Context, cfg Config, bundleHasher BundleHasherFunc, opts ...func(*options.StorageOptions)) (*MigrationStorage, error) {
+	opt := storage.ResolveStorageOptions(opts...)
+	if opt.PushbackMaxOutstanding == 0 {
+		opt.PushbackMaxOutstanding = DefaultPushbackMaxOutstanding
+	}
+
+	c, err := gcs.NewClient(ctx, gcs.WithJSONReads())
+	if err != nil {
+		return nil, fmt.Errorf("failed to create GCS client: %v", err)
+	}
+
+	seq, err := newSpannerSequencer(ctx, cfg.Spanner, uint64(opt.PushbackMaxOutstanding))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Spanner sequencer: %v", err)
+	}
+
+	r := &Storage{
+		objStore: &gcsStorage{
+			gcsClient: c,
+			bucket:    cfg.Bucket,
+		},
+		sequencer:   seq,
+		newCP:       opt.NewCP,
+		entriesPath: opt.EntriesPath,
+	}
+
+	m := &MigrationStorage{
+		s:            r,
+		dbPool:       seq.dbPool,
+		bundleHasher: bundleHasher,
+	}
+
+	return m, nil
+}
+
+type MigrationStorage struct {
+	s            *Storage
+	dbPool       *spanner.Client
+	bundleHasher BundleHasherFunc
+}
+
+func (m *MigrationStorage) AwaitIntegration(ctx context.Context, sourceSize uint64) ([]byte, error) {
+	t := time.NewTicker(time.Second)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-t.C:
+			from, _, err := m.s.sequencer.currentTree(ctx)
+			if err != nil && !errors.Is(err, os.ErrNotExist) {
+				klog.Warningf("readTreeState: %v", err)
+				continue
+			}
+			klog.Infof("Integrate from %d (Target %d)", from, sourceSize)
+			newSize, newRoot, err := m.buildTree(ctx, sourceSize)
+			if err != nil {
+				klog.Warningf("integrate: %v", err)
+			}
+			if newSize == sourceSize {
+				klog.Infof("Integrated to %d with roothash %x", newSize, newRoot)
+				return newRoot, nil
+			}
+		}
+	}
+}
+
+func (m *MigrationStorage) SetEntryBundle(ctx context.Context, index uint64, partial uint8, bundle []byte) error {
+	return m.s.setEntryBundle(ctx, index, partial, bundle)
+}
+
+func (m *MigrationStorage) State(ctx context.Context) (uint64, []byte, error) {
+	return m.s.sequencer.currentTree(ctx)
+}
+
+func (m *MigrationStorage) fetchLeafHashes(ctx context.Context, from, to, sourceSize uint64) ([][]byte, error) {
+	// TODO(al): Make this configurable.
+	const maxBundles = 300
+
+	toBeAdded := sync.Map{}
+	eg := errgroup.Group{}
+	n := 0
+	for ri := range layout.Range(from, to, sourceSize) {
+		eg.Go(func() error {
+			b, err := m.s.ReadEntryBundle(ctx, ri.Index, ri.Partial)
+			if err != nil {
+				return fmt.Errorf("ReadEntryBundle(%d.%d): %v", ri.Index, ri.Partial, err)
+			}
+
+			bh, err := m.bundleHasher(b)
+			if err != nil {
+				return fmt.Errorf("bundleHasherFunc for bundle index %d: %v", ri.Index, err)
+			}
+			toBeAdded.Store(ri.Index, bh[ri.First:ri.First+ri.N])
+			return nil
+		})
+		n++
+		if n >= maxBundles {
+			break
+		}
+	}
+	if err := eg.Wait(); err != nil {
+		return nil, err
+	}
+
+	lh := make([][]byte, 0, maxBundles)
+	for i := from / layout.EntryBundleWidth; ; i++ {
+		v, ok := toBeAdded.LoadAndDelete(i)
+		if !ok {
+			break
+		}
+		bh := v.([][]byte)
+		lh = append(lh, bh...)
+	}
+
+	return lh, nil
+}
+
+func (m *MigrationStorage) buildTree(ctx context.Context, sourceSize uint64) (uint64, []byte, error) {
+	var newSize uint64
+	var newRoot []byte
+
+	_, err := m.dbPool.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
+		// Figure out which is the starting index of sequenced entries to start consuming from.
+		row, err := txn.ReadRowWithOptions(ctx, "IntCoord", spanner.Key{0}, []string{"seq", "rootHash"}, &spanner.ReadOptions{LockHint: spannerpb.ReadRequest_LOCK_HINT_EXCLUSIVE})
+		if err != nil {
+			return err
+		}
+		var fromSeq int64 // Spanner doesn't support uint64
+		var rootHash []byte
+		if err := row.Columns(&fromSeq, &rootHash); err != nil {
+			return fmt.Errorf("failed to read integration coordination info: %v", err)
+		}
+
+		from := uint64(fromSeq)
+		klog.V(1).Infof("Integrating from %d", from)
+		lh, err := m.fetchLeafHashes(ctx, from, sourceSize, sourceSize)
+		if err != nil {
+			return fmt.Errorf("fetchLeafHashes(%d, %d, %d): %v", from, sourceSize, sourceSize, err)
+		}
+
+		if len(lh) == 0 {
+			klog.Infof("Integrate: nothing to do, nothing done")
+			return nil
+		}
+
+		added := uint64(len(lh))
+		klog.Infof("Integrate: adding %d entries to existing tree size %d", len(lh), from)
+		newRoot, err = m.s.integrate(ctx, from, lh)
+		if err != nil {
+			klog.Warningf("integrate failed: %v", err)
+			return fmt.Errorf("Integrate failed: %v", err)
+		}
+		newSize = from + added
+		klog.Infof("Integrate: added %d entries", added)
+
+		// integration was successful, so we can update our coordination row
+		m := make([]*spanner.Mutation, 0)
+		m = append(m, spanner.Update("IntCoord", []string{"id", "seq", "rootHash"}, []interface{}{0, int64(from + added), newRoot}))
+		return txn.BufferWrite(m)
+	})
+
+	if err != nil {
+		return 0, nil, err
+	}
+	return newSize, newRoot, nil
 }
