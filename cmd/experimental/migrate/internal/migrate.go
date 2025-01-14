@@ -82,7 +82,7 @@ func Migrate(ctx context.Context, numWorkers int, sourceSize uint64, sourceRoot 
 		sourceSize: sourceSize,
 		sourceRoot: sourceRoot,
 		getEntries: getEntries,
-		todo:       make(chan bundle, numWorkers*2),
+		todo:       make(chan bundle, numWorkers),
 	}
 
 	// init
