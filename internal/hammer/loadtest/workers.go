@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package main
+package loadtest
 
 import (
 	"context"
@@ -31,6 +31,14 @@ import (
 // The data to be written is provided, and the implementation must return the sequence
 // number at which this data will be found in the log, or an error.
 type LeafWriter func(ctx context.Context, data []byte) (uint64, error)
+
+type LogReader interface {
+	ReadCheckpoint(ctx context.Context) ([]byte, error)
+
+	ReadTile(ctx context.Context, l, i uint64, p uint8) ([]byte, error)
+
+	ReadEntryBundle(ctx context.Context, i uint64, p uint8) ([]byte, error)
+}
 
 // NewLeafReader creates a LeafReader.
 // The next function provides a strategy for which leaves will be read.
@@ -153,20 +161,20 @@ func MonotonicallyIncreasingNextLeaf() func(uint64) uint64 {
 	}
 }
 
-// leafTime records the time at which a leaf was assigned the given index.
+// LeafTime records the time at which a leaf was assigned the given index.
 //
 // This is used when sampling leaves which are added in order to later calculate
 // how long it took to for them to become integrated.
-type leafTime struct {
-	idx        uint64
-	queuedAt   time.Time
-	assignedAt time.Time
+type LeafTime struct {
+	Index      uint64
+	QueuedAt   time.Time
+	AssignedAt time.Time
 }
 
 // NewLogWriter creates a LogWriter.
 // u is the URL of the write endpoint for the log.
 // gen is a function that generates new leaves to add.
-func NewLogWriter(writer LeafWriter, gen func() []byte, throttle <-chan bool, errChan chan<- error, leafSampleChan chan<- leafTime) *LogWriter {
+func NewLogWriter(writer LeafWriter, gen func() []byte, throttle <-chan bool, errChan chan<- error, leafSampleChan chan<- LeafTime) *LogWriter {
 	return &LogWriter{
 		writer:   writer,
 		gen:      gen,
@@ -182,7 +190,7 @@ type LogWriter struct {
 	gen      func() []byte
 	throttle <-chan bool
 	errChan  chan<- error
-	leafChan chan<- leafTime
+	leafChan chan<- LeafTime
 	cancel   func()
 }
 
@@ -199,13 +207,13 @@ func (w *LogWriter) Run(ctx context.Context) {
 		case <-w.throttle:
 		}
 		newLeaf := w.gen()
-		lt := leafTime{queuedAt: time.Now()}
+		lt := LeafTime{QueuedAt: time.Now()}
 		index, err := w.writer(ctx, newLeaf)
 		if err != nil {
 			w.errChan <- fmt.Errorf("failed to create request: %w", err)
 			continue
 		}
-		lt.idx, lt.assignedAt = index, time.Now()
+		lt.Index, lt.AssignedAt = index, time.Now()
 		// See if we can send a leaf sample
 		select {
 		// TODO: we might want to count dropped samples, and/or make sampling a bit more statistical.

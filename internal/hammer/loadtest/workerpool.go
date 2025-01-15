@@ -12,40 +12,42 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package main
+package loadtest
 
 import "context"
 
-type worker interface {
+type Worker interface {
 	Run(ctx context.Context)
 	Kill()
 }
 
+// NewWorkerPool creates a simple pool of workers.
+//
 // This works well enough for the simple task we ask of it at the moment.
 // If we find ourselves adding more features to this, consider swapping it
 // for a library such as https://github.com/alitto/pond.
-func newWorkerPool(factory func() worker) workerPool {
-	workers := make([]worker, 0)
-	pool := workerPool{
+func NewWorkerPool(factory func() Worker) WorkerPool {
+	workers := make([]Worker, 0)
+	pool := WorkerPool{
 		workers: workers,
 		factory: factory,
 	}
 	return pool
 }
 
-// workerPool contains a collection of _running_ workers.
-type workerPool struct {
-	workers []worker
-	factory func() worker
+// WorkerPool contains a collection of _running_ workers.
+type WorkerPool struct {
+	workers []Worker
+	factory func() Worker
 }
 
-func (p *workerPool) Grow(ctx context.Context) {
+func (p *WorkerPool) Grow(ctx context.Context) {
 	w := p.factory()
 	p.workers = append(p.workers, w)
 	go w.Run(ctx)
 }
 
-func (p *workerPool) Shrink(ctx context.Context) {
+func (p *WorkerPool) Shrink(ctx context.Context) {
 	if len(p.workers) == 0 {
 		return
 	}
@@ -54,6 +56,6 @@ func (p *workerPool) Shrink(ctx context.Context) {
 	w.Kill()
 }
 
-func (p *workerPool) Size() int {
+func (p *WorkerPool) Size() int {
 	return len(p.workers)
 }
