@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package main
+package loadtest
 
 import (
 	"bytes"
@@ -39,16 +39,23 @@ type fetcher interface {
 	ReadEntryBundle(ctx context.Context, i uint64, p uint8) ([]byte, error)
 }
 
-// newLogClientsFromFlags returns a fetcher and a writer that will read
+type ClientOpts struct {
+	BearerToken      string
+	BearerTokenWrite string
+
+	Client *http.Client
+}
+
+// NewLogClients returns a fetcher and a writer that will read
 // and write leaves to all logs in the `log_url` flag set.
-func newLogClientsFromFlags() (*roundRobinFetcher, *roundRobinLeafWriter) {
-	if len(logURL) == 0 {
-		klog.Exitf("--log_url must be provided")
+func NewLogClients(readLogs, writeLogs []string, opts ClientOpts) (LogReader, LeafWriter, error) {
+	if len(readLogs) == 0 {
+		return nil, nil, fmt.Errorf("URL(s) for reading log must be provided")
 	}
 
-	if len(writeLogURL) == 0 {
+	if len(writeLogs) == 0 {
 		// If no write_log_url is provided, then default it to log_url
-		writeLogURL = logURL
+		writeLogs = readLogs
 	}
 
 	rootUrlOrDie := func(s string) *url.URL {
@@ -64,30 +71,30 @@ func newLogClientsFromFlags() (*roundRobinFetcher, *roundRobinLeafWriter) {
 	}
 
 	fetchers := []fetcher{}
-	for _, s := range logURL {
-		fetchers = append(fetchers, newFetcher(rootUrlOrDie(s)))
+	for _, s := range readLogs {
+		fetchers = append(fetchers, newFetcher(rootUrlOrDie(s), opts.BearerToken))
 	}
 	writers := []httpLeafWriter{}
-	for _, s := range writeLogURL {
+	for _, s := range writeLogs {
 		addURL, err := rootUrlOrDie(s).Parse("add")
 		if err != nil {
-			klog.Exitf("Failed to create add URL: %v", err)
+			return nil, nil, fmt.Errorf("failed to create add URL: %v", err)
 		}
-		writers = append(writers, httpLeafWriter{u: addURL})
+		writers = append(writers, newHttpLeafWriter(opts.Client, addURL, opts.BearerTokenWrite))
 	}
-	return &roundRobinFetcher{f: fetchers}, &roundRobinLeafWriter{ws: writers}
+	return &roundRobinFetcher{f: fetchers}, (&roundRobinLeafWriter{ws: writers}).Write, nil
 }
 
 // newFetcher creates a Fetcher for the log at the given root location.
-func newFetcher(root *url.URL) fetcher {
+func newFetcher(root *url.URL, bearerToken string) fetcher {
 	switch root.Scheme {
 	case "http", "https":
 		c, err := client.NewHTTPFetcher(root, nil)
 		if err != nil {
 			klog.Exitf("NewHTTPFetcher: %v", err)
 		}
-		if *bearerToken != "" {
-			c.SetAuthorizationHeader(fmt.Sprintf("Bearer %s", *bearerToken))
+		if bearerToken != "" {
+			c.SetAuthorizationHeader(fmt.Sprintf("Bearer %s", bearerToken))
 		}
 		return c
 	case "file":
@@ -130,8 +137,18 @@ func (rr *roundRobinFetcher) next() fetcher {
 	return f
 }
 
+func newHttpLeafWriter(hc *http.Client, u *url.URL, bearerToken string) httpLeafWriter {
+	return httpLeafWriter{
+		hc:          hc,
+		u:           u,
+		bearerToken: bearerToken,
+	}
+}
+
 type httpLeafWriter struct {
-	u *url.URL
+	hc          *http.Client
+	u           *url.URL
+	bearerToken string
 }
 
 func (w httpLeafWriter) Write(ctx context.Context, newLeaf []byte) (uint64, error) {
@@ -139,10 +156,10 @@ func (w httpLeafWriter) Write(ctx context.Context, newLeaf []byte) (uint64, erro
 	if err != nil {
 		return 0, fmt.Errorf("failed to create request: %v", err)
 	}
-	if *bearerTokenWrite != "" {
-		req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", *bearerTokenWrite))
+	if w.bearerToken != "" {
+		req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", w.bearerToken))
 	}
-	resp, err := hc.Do(req.WithContext(ctx))
+	resp, err := w.hc.Do(req.WithContext(ctx))
 	if err != nil {
 		return 0, fmt.Errorf("failed to write leaf: %v", err)
 	}

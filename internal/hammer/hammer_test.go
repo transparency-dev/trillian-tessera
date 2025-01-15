@@ -19,6 +19,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/transparency-dev/trillian-tessera/internal/hammer/loadtest"
 )
 
 func TestLeafGenerator(t *testing.T) {
@@ -52,10 +54,10 @@ func TestHammerAnalyser_Stats(t *testing.T) {
 
 	baseTime := time.Now().Add(-1 * time.Minute)
 	for i := 0; i < 10; i++ {
-		ha.seqLeafChan <- leafTime{
-			idx:        uint64(i),
-			queuedAt:   baseTime,
-			assignedAt: baseTime.Add(time.Duration(i) * time.Second),
+		ha.seqLeafChan <- loadtest.LeafTime{
+			Index:      uint64(i),
+			QueuedAt:   baseTime,
+			AssignedAt: baseTime.Add(time.Duration(i) * time.Second),
 		}
 	}
 	treeSize.setSize(10)

@@ -30,6 +30,7 @@ import (
 
 	movingaverage "github.com/RobinUS2/golang-moving-average"
 	"github.com/transparency-dev/trillian-tessera/client"
+	"github.com/transparency-dev/trillian-tessera/internal/hammer/loadtest"
 	"golang.org/x/mod/sumdb/note"
 	"golang.org/x/net/http2"
 
@@ -99,7 +100,14 @@ func main() {
 		klog.Exitf("failed to create verifier: %v", err)
 	}
 
-	f, w := newLogClientsFromFlags()
+	f, w, err := loadtest.NewLogClients(logURL, writeLogURL, loadtest.ClientOpts{
+		Client:           hc,
+		BearerToken:      *bearerToken,
+		BearerTokenWrite: *bearerTokenWrite,
+	})
+	if err != nil {
+		klog.Exit(err)
+	}
 
 	var cpRaw []byte
 	cons := client.UnilateralConsensus(f.ReadCheckpoint)
@@ -118,7 +126,7 @@ func main() {
 	go ha.errorLoop(ctx)
 
 	gen := newLeafGenerator(tracker.LatestConsistent.Size, *leafMinSize, *dupChance)
-	hammer := NewHammer(&tracker, f.ReadEntryBundle, w.Write, gen, ha.seqLeafChan, ha.errChan)
+	hammer := NewHammer(&tracker, f.ReadEntryBundle, w, gen, ha.seqLeafChan, ha.errChan)
 
 	exitCode := 0
 	if *leafWriteGoal > 0 {
@@ -169,17 +177,19 @@ func main() {
 	os.Exit(exitCode)
 }
 
-func NewHammer(tracker *client.LogStateTracker, f client.EntryBundleFetcherFunc, w LeafWriter, gen func() []byte, seqLeafChan chan<- leafTime, errChan chan<- error) *Hammer {
+func NewHammer(tracker *client.LogStateTracker, f client.EntryBundleFetcherFunc, w loadtest.LeafWriter, gen func() []byte, seqLeafChan chan<- loadtest.LeafTime, errChan chan<- error) *Hammer {
 	readThrottle := NewThrottle(*maxReadOpsPerSecond)
 	writeThrottle := NewThrottle(*maxWriteOpsPerSecond)
 
-	randomReaders := newWorkerPool(func() worker {
-		return NewLeafReader(tracker, f, RandomNextLeaf(), readThrottle.tokenChan, errChan)
+	randomReaders := loadtest.NewWorkerPool(func() loadtest.Worker {
+		return loadtest.NewLeafReader(tracker, f, loadtest.RandomNextLeaf(), readThrottle.tokenChan, errChan)
 	})
-	fullReaders := newWorkerPool(func() worker {
-		return NewLeafReader(tracker, f, MonotonicallyIncreasingNextLeaf(), readThrottle.tokenChan, errChan)
+	fullReaders := loadtest.NewWorkerPool(func() loadtest.Worker {
+		return loadtest.NewLeafReader(tracker, f, loadtest.MonotonicallyIncreasingNextLeaf(), readThrottle.tokenChan, errChan)
 	})
-	writers := newWorkerPool(func() worker { return NewLogWriter(w, gen, writeThrottle.tokenChan, errChan, seqLeafChan) })
+	writers := loadtest.NewWorkerPool(func() loadtest.Worker {
+		return loadtest.NewLogWriter(w, gen, writeThrottle.tokenChan, errChan, seqLeafChan)
+	})
 
 	return &Hammer{
 		randomReaders: randomReaders,
@@ -195,9 +205,9 @@ func NewHammer(tracker *client.LogStateTracker, f client.EntryBundleFetcherFunc,
 // of write and read operations. The work of analysing the results of hammering should
 // live outside of this class.
 type Hammer struct {
-	randomReaders workerPool
-	fullReaders   workerPool
-	writers       workerPool
+	randomReaders loadtest.WorkerPool
+	fullReaders   loadtest.WorkerPool
+	writers       loadtest.WorkerPool
 	readThrottle  *Throttle
 	writeThrottle *Throttle
 	tracker       *client.LogStateTracker
@@ -246,7 +256,7 @@ func (h *Hammer) updateCheckpointLoop(ctx context.Context) {
 }
 
 func newHammerAnalyser(treeSizeFn func() uint64) *HammerAnalyser {
-	leafSampleChan := make(chan leafTime, 100)
+	leafSampleChan := make(chan loadtest.LeafTime, 100)
 	errChan := make(chan error, 20)
 	return &HammerAnalyser{
 		treeSizeFn:      treeSizeFn,
@@ -260,7 +270,7 @@ func newHammerAnalyser(treeSizeFn func() uint64) *HammerAnalyser {
 // HammerAnalyser is responsible for measuring and interpreting the result of hammering.
 type HammerAnalyser struct {
 	treeSizeFn  func() uint64
-	seqLeafChan chan leafTime
+	seqLeafChan chan loadtest.LeafTime
 	errChan     chan error
 
 	queueTime       *movingaverage.ConcurrentMovingAverage
@@ -284,7 +294,7 @@ func (a *HammerAnalyser) updateStatsLoop(ctx context.Context) {
 		totalLatency := time.Duration(0)
 		queueLatency := time.Duration(0)
 		numLeaves := 0
-		var sample *leafTime
+		var sample *loadtest.LeafTime
 	ReadLoop:
 		for {
 			if sample == nil {
@@ -302,16 +312,16 @@ func (a *HammerAnalyser) updateStatsLoop(ctx context.Context) {
 			// either the current checkpoint or "now":
 			// - leaves with indices beyond the tree size we're considering are not integrated yet, so we can't calculate their TTI
 			// - leaves which were queued before "now", but not assigned by "now" should also be ignored as they don't fall into this epoch (and would contribute a -ve latency if they were included).
-			if sample.idx >= newSize || sample.assignedAt.After(now) {
+			if sample.Index >= newSize || sample.AssignedAt.After(now) {
 				break
 			}
-			queueLatency += sample.assignedAt.Sub(sample.queuedAt)
+			queueLatency += sample.AssignedAt.Sub(sample.QueuedAt)
 			// totalLatency is skewed towards being higher than perhaps it may technically be by:
 			// - the tick interval of this goroutine,
 			// - the tick interval of the goroutine which updates the LogStateTracker,
 			// - any latency in writes to the log becoming visible for reads.
 			// But it's probably good enough for now.
-			totalLatency += now.Sub(sample.queuedAt)
+			totalLatency += now.Sub(sample.QueuedAt)
 
 			numLeaves++
 			sample = nil
@@ -343,7 +353,7 @@ func (a *HammerAnalyser) errorLoop(ctx context.Context) {
 
 			}
 		case err := <-a.errChan:
-			if errors.Is(err, ErrRetry) {
+			if errors.Is(err, loadtest.ErrRetry) {
 				pbCount++
 				continue
 			}
