@@ -48,14 +48,14 @@ type ClientOpts struct {
 
 // NewLogClients returns a fetcher and a writer that will read
 // and write leaves to all logs in the `log_url` flag set.
-func NewLogClients(readLogs, writeLogs []string, opts ClientOpts) (LogReader, LeafWriter, error) {
-	if len(readLogs) == 0 {
+func NewLogClients(readLogURLs, writeLogURLs []string, opts ClientOpts) (LogReader, LeafWriter, error) {
+	if len(readLogURLs) == 0 {
 		return nil, nil, fmt.Errorf("URL(s) for reading log must be provided")
 	}
 
-	if len(writeLogs) == 0 {
+	if len(writeLogURLs) == 0 {
 		// If no write_log_url is provided, then default it to log_url
-		writeLogs = readLogs
+		writeLogURLs = readLogURLs
 	}
 
 	rootUrlOrDie := func(s string) *url.URL {
@@ -71,16 +71,16 @@ func NewLogClients(readLogs, writeLogs []string, opts ClientOpts) (LogReader, Le
 	}
 
 	fetchers := []fetcher{}
-	for _, s := range readLogs {
+	for _, s := range readLogURLs {
 		fetchers = append(fetchers, newFetcher(rootUrlOrDie(s), opts.BearerToken))
 	}
 	writers := []httpLeafWriter{}
-	for _, s := range writeLogs {
+	for _, s := range writeLogURLs {
 		addURL, err := rootUrlOrDie(s).Parse("add")
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to create add URL: %v", err)
 		}
-		writers = append(writers, newHttpLeafWriter(opts.Client, addURL, opts.BearerTokenWrite))
+		writers = append(writers, newHTTPLeafWriter(opts.Client, addURL, opts.BearerTokenWrite))
 	}
 	return &roundRobinFetcher{f: fetchers}, (&roundRobinLeafWriter{ws: writers}).Write, nil
 }
@@ -137,7 +137,7 @@ func (rr *roundRobinFetcher) next() fetcher {
 	return f
 }
 
-func newHttpLeafWriter(hc *http.Client, u *url.URL, bearerToken string) httpLeafWriter {
+func newHTTPLeafWriter(hc *http.Client, u *url.URL, bearerToken string) httpLeafWriter {
 	return httpLeafWriter{
 		hc:          hc,
 		u:           u,
