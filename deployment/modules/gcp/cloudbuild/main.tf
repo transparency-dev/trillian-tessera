@@ -123,6 +123,7 @@ resource "google_cloudbuild_trigger" "docker" {
         export TESSERA_SIGNER=$(cat /workspace/key.sec)
         export TESSERA_CLOUD_RUN_DOCKER_IMAGE=unused,
         terragrunt output --raw conformance_url > /workspace/conformance_url
+        terragrunt output --raw conformance_bucket_name > /workspace/conformance_bucket_name
       EOT
       wait_for = ["terraform_apply_conformance_ci"]
     }
@@ -147,7 +148,7 @@ resource "google_cloudbuild_trigger" "docker" {
         apt update && apt install -y retry
         retry -t 5 -d 15 --until=success go run ./internal/hammer \
             --log_public_key=$(cat /workspace/key.pub) \
-            --log_url=https://storage.googleapis.com/trillian-tessera-ci-conformance-bucket/ \
+            --log_url=https://storage.googleapis.com/$(cat /workspace/conformance_bucket_name)/ \
             --write_log_url="$(cat /workspace/conformance_url)" \
             -v=1 \
             --show_ui=false \
