@@ -162,29 +162,6 @@ resource "google_cloudbuild_trigger" "docker" {
       EOT
       wait_for = ["terraform_outputs", "generate_keys", "access"]
     }
-    ## Destroy the deployment/live/gcp/conformance/ci terragrunt config.
-    ## This will tear down the conformance infrastructure we brought up
-    ## above.
-    step {
-      id     = "terraform_destroy_conformance_ci"
-      name   = "alpine/terragrunt:1.9.8"
-      script = <<EOT
-        terragrunt --terragrunt-non-interactive --terragrunt-no-color destroy -auto-approve -no-color 2>&1
-      EOT
-      dir    = "deployment/live/gcp/conformance/ci"
-      env = [
-        "TESSERA_SIGNER=unused",
-        "TESSERA_CLOUD_RUN_DOCKER_IMAGE=${local.conformance_gcp_docker_image}:latest",
-        "TESSERA_CLOUD_RUN_SERVICE_ACCOUNT=cloudrun-ci-sa@trillian-tessera.iam.gserviceaccount.com",
-        "TESSERA_READER=serviceAccount:cloudbuild-prod-sa@trillian-tessera.iam.gserviceaccount.com",
-        "TESSERA_WRITER=serviceAccount:cloudbuild-prod-sa@trillian-tessera.iam.gserviceaccount.com",
-        "GOOGLE_PROJECT=${var.project_id}",
-        "TF_IN_AUTOMATION=1",
-        "TF_INPUT=false",
-        "TF_VAR_project_id=${var.project_id}"
-      ]
-      wait_for = ["hammer"]
-    }
 
     options {
       logging      = "CLOUD_LOGGING_ONLY"
