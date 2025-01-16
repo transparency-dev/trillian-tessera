@@ -63,11 +63,6 @@ resource "google_spanner_instance" "log_spanner" {
 resource "google_spanner_database" "log_db" {
   instance = google_spanner_instance.log_spanner.name
   name     = "${var.base_name}-db"
-  ddl = [
-    "CREATE TABLE SeqCoord (id INT64 NOT NULL, next INT64 NOT NULL,) PRIMARY KEY (id)",
-    "CREATE TABLE Seq (id INT64 NOT NULL, seq INT64 NOT NULL, v BYTES(MAX),) PRIMARY KEY (id, seq)",
-    "CREATE TABLE IntCoord (id INT64 NOT NULL, seq INT64 NOT NULL, rootHash BYTES(32)) PRIMARY KEY (id)",
-  ]
 
   deletion_protection = !var.ephemeral
 }
@@ -75,7 +70,7 @@ resource "google_spanner_database" "log_db" {
 resource "google_spanner_database_iam_binding" "database" {
   instance = google_spanner_instance.log_spanner.name
   database = google_spanner_database.log_db.name
-  role     = "roles/spanner.databaseUser"
+  role     = "roles/spanner.databaseAdmin"
 
   members = var.log_writer_members
 }

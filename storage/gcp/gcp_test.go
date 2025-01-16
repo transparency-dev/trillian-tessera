@@ -26,8 +26,8 @@ import (
 	"testing"
 	"time"
 
+	"cloud.google.com/go/spanner"
 	"cloud.google.com/go/spanner/spannertest"
-	"cloud.google.com/go/spanner/spansql"
 	gcs "cloud.google.com/go/storage"
 	"github.com/google/go-cmp/cmp"
 	tessera "github.com/transparency-dev/trillian-tessera"
@@ -43,18 +43,9 @@ func newSpannerDB(t *testing.T) func() {
 		t.Fatalf("Failed to set up test spanner: %v", err)
 	}
 	os.Setenv("SPANNER_EMULATOR_HOST", srv.Addr)
-	dml, err := spansql.ParseDDL("", `
-			CREATE TABLE SeqCoord (id INT64 NOT NULL, next INT64 NOT NULL,) PRIMARY KEY (id); 
-			CREATE TABLE Seq (id INT64 NOT NULL, seq INT64 NOT NULL, v BYTES(MAX),) PRIMARY KEY (id, seq); 
-			CREATE TABLE IntCoord (id INT64 NOT NULL, seq INT64 NOT NULL, rootHash BYTES(32) NOT NULL,) PRIMARY KEY (id); 
-	`)
 	if err != nil {
 		t.Fatalf("Invalid DDL: %v", err)
 	}
-	if err := srv.UpdateDDL(dml); err != nil {
-		t.Fatalf("Failed to create schema in test spanner: %v", err)
-	}
-
 	return srv.Close
 
 }
@@ -191,6 +182,49 @@ func TestSpannerSequencerRoundTrip(t *testing.T) {
 	}
 	if !more {
 		t.Errorf("more: false, expected true")
+	}
+}
+
+func TestCheckDataCompatibility(t *testing.T) {
+	ctx := context.Background()
+	close := newSpannerDB(t)
+	defer close()
+
+	s, err := newSpannerSequencer(ctx, "projects/p/instances/i/databases/d", 1000)
+	if err != nil {
+		t.Fatalf("newSpannerSequencer: %v", err)
+	}
+
+	for _, test := range []struct {
+		desc    string
+		dbV     int64
+		wantErr bool
+	}{
+		{
+			desc: "versions match",
+			dbV:  SchemaCompatibilityVersion,
+		},
+		{
+			desc:    "data < library",
+			dbV:     SchemaCompatibilityVersion + 1,
+			wantErr: true,
+		},
+		{
+			desc:    "data > library",
+			dbV:     SchemaCompatibilityVersion - 1,
+			wantErr: true,
+		},
+	} {
+		t.Run(test.desc, func(t *testing.T) {
+			if _, err := s.dbPool.Apply(ctx, []*spanner.Mutation{spanner.InsertOrUpdate("Tessera", []string{"id", "compatibilityVersion"}, []interface{}{0, test.dbV})}); err != nil {
+				t.Fatalf("Failed for force schema version to %d: %v", test.dbV, err)
+			}
+
+			err := s.checkDataCompatibility(ctx)
+			if gotErr := err != nil; test.wantErr != gotErr {
+				t.Fatalf("checkDataCompatibility: %v, wantErr %t", err, test.wantErr)
+			}
+		})
 	}
 }
 
