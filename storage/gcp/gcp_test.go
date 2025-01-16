@@ -28,7 +28,6 @@ import (
 
 	"cloud.google.com/go/spanner"
 	"cloud.google.com/go/spanner/spannertest"
-	"cloud.google.com/go/spanner/spansql"
 	gcs "cloud.google.com/go/storage"
 	"github.com/google/go-cmp/cmp"
 	tessera "github.com/transparency-dev/trillian-tessera"
@@ -44,19 +43,9 @@ func newSpannerDB(t *testing.T) func() {
 		t.Fatalf("Failed to set up test spanner: %v", err)
 	}
 	os.Setenv("SPANNER_EMULATOR_HOST", srv.Addr)
-	dml, err := spansql.ParseDDL("", `
-			CREATE TABLE Tessera (id INT64 NOT NULL, compatibilityVersion INT64 NOT NULL) PRIMARY KEY (id);
-			CREATE TABLE SeqCoord (id INT64 NOT NULL, next INT64 NOT NULL,) PRIMARY KEY (id); 
-			CREATE TABLE Seq (id INT64 NOT NULL, seq INT64 NOT NULL, v BYTES(MAX),) PRIMARY KEY (id, seq); 
-			CREATE TABLE IntCoord (id INT64 NOT NULL, seq INT64 NOT NULL, rootHash BYTES(32) NOT NULL,) PRIMARY KEY (id); 
-	`)
 	if err != nil {
 		t.Fatalf("Invalid DDL: %v", err)
 	}
-	if err := srv.UpdateDDL(dml); err != nil {
-		t.Fatalf("Failed to create schema in test spanner: %v", err)
-	}
-
 	return srv.Close
 
 }

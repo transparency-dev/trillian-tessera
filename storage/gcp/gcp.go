@@ -42,7 +42,10 @@ import (
 	"time"
 
 	"cloud.google.com/go/spanner"
+	database "cloud.google.com/go/spanner/admin/database/apiv1"
+	adminpb "cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	"cloud.google.com/go/spanner/apiv1/spannerpb"
+
 	gcs "cloud.google.com/go/storage"
 	"github.com/globocom/go-buffer"
 	"github.com/google/go-cmp/cmp"
@@ -512,7 +515,7 @@ func newSpannerSequencer(ctx context.Context, spannerDB string, maxOutstanding u
 		dbPool:         dbPool,
 		maxOutstanding: maxOutstanding,
 	}
-	if err := r.initDB(ctx); err != nil {
+	if err := r.initDB(ctx, spannerDB); err != nil {
 		return nil, fmt.Errorf("failed to initDB: %v", err)
 	}
 	if err := r.checkDataCompatibility(ctx); err != nil {
@@ -534,33 +537,28 @@ func newSpannerSequencer(ctx context.Context, spannerDB string, maxOutstanding u
 //   - IntCoord
 //     This table coordinates integration of the batches of entries stored in
 //     Seq into the committed tree state.
-//
-// The database and schema should be created externally, e.g. by terraform.
-func (s *spannerSequencer) initDB(ctx context.Context) error {
+func (s *spannerSequencer) initDB(ctx context.Context, spannerDB string) error {
+	adminClient, err := database.NewDatabaseAdminClient(ctx)
+	if err != nil {
+		return err
+	}
+	defer adminClient.Close()
 
-	/* Schema for reference:
-	CREATE TABLE Tessera (
-		id INT64 NOT NULL,
-		compatibilityVersion INT64 NOT NULL,
-	) PRIMARY KEY (id);
-
-	CREATE TABLE SeqCoord (
-	 id INT64 NOT NULL,
-	 next INT64 NOT NULL,
-	) PRIMARY KEY (id);
-
-	CREATE TABLE Seq (
-		id INT64 NOT NULL,
-		seq INT64 NOT NULL,
-		v BYTES(MAX),
-	) PRIMARY KEY (id, seq);
-
-	CREATE TABLE IntCoord (
-		id INT64 NOT NULL,
-		seq INT64 NOT NULL,
-		rootHash BYTES(32) NOT NULL,
-	) PRIMARY KEY (id);
-	*/
+	op, err := adminClient.UpdateDatabaseDdl(ctx, &adminpb.UpdateDatabaseDdlRequest{
+		Database: spannerDB,
+		Statements: []string{
+			"CREATE TABLE IF NOT EXISTS Tessera (id INT64 NOT NULL, compatibilityVersion INT64 NOT NULL) PRIMARY KEY (id)",
+			"CREATE TABLE IF NOT EXISTS SeqCoord (id INT64 NOT NULL, next INT64 NOT NULL,) PRIMARY KEY (id)",
+			"CREATE TABLE IF NOT EXISTS Seq (id INT64 NOT NULL, seq INT64 NOT NULL, v BYTES(MAX),) PRIMARY KEY (id, seq)",
+			"CREATE TABLE IF NOT EXISTS IntCoord (id INT64 NOT NULL, seq INT64 NOT NULL, rootHash BYTES(32)) PRIMARY KEY (id)",
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create tables: %v", err)
+	}
+	if err := op.Wait(ctx); err != nil {
+		return err
+	}
 
 	// Set default values for a newly initialised schema - these rows being present are a precondition for
 	// sequencing and integration to occur.
