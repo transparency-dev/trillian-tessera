@@ -73,6 +73,15 @@ const (
 
 	DefaultPushbackMaxOutstanding = 4096
 	DefaultIntegrationSizeLimit   = 5 * 4096
+
+	// SchemaCompatibilityVersion represents the expected version (e.g. layout & serialisation) of stored data.
+	//
+	// A binary built with a given version of the Tessera library is compatible with stored data created by a different version
+	// of the library if and only if this value is the same as the compatibilityVersion stored in the Tessera table.
+	//
+	// NOTE: if changing this version, you need to consider whether end-users are going to update their schema instances to be
+	// compatible with the new format, and provide a means to do it if so.
+	SchemaCompatibilityVersion = 1
 )
 
 // Storage is a GCP based storage implementation for Tessera.
@@ -506,6 +515,9 @@ func newSpannerSequencer(ctx context.Context, spannerDB string, maxOutstanding u
 	if err := r.initDB(ctx); err != nil {
 		return nil, fmt.Errorf("failed to initDB: %v", err)
 	}
+	if err := r.checkDataCompatibility(ctx); err != nil {
+		return nil, fmt.Errorf("schema is not compatible with this version of the Tessera library: %v", err)
+	}
 	return r, nil
 }
 
@@ -527,6 +539,11 @@ func newSpannerSequencer(ctx context.Context, spannerDB string, maxOutstanding u
 func (s *spannerSequencer) initDB(ctx context.Context) error {
 
 	/* Schema for reference:
+	CREATE TABLE Tessera (
+		id INT64 NOT NULL,
+		compatibilityVersion INT64 NOT NULL,
+	) PRIMARY KEY (id);
+
 	CREATE TABLE SeqCoord (
 	 id INT64 NOT NULL,
 	 next INT64 NOT NULL,
@@ -549,11 +566,32 @@ func (s *spannerSequencer) initDB(ctx context.Context) error {
 	// sequencing and integration to occur.
 	// Note that this will only succeed if no row exists, so there's no danger
 	// of "resetting" an existing log.
+	if _, err := s.dbPool.Apply(ctx, []*spanner.Mutation{spanner.Insert("Tessera", []string{"id", "compatibilityVersion"}, []interface{}{0, SchemaCompatibilityVersion})}); err != nil && spanner.ErrCode(err) != codes.AlreadyExists {
+		return err
+	}
 	if _, err := s.dbPool.Apply(ctx, []*spanner.Mutation{spanner.Insert("SeqCoord", []string{"id", "next"}, []interface{}{0, 0})}); err != nil && spanner.ErrCode(err) != codes.AlreadyExists {
 		return err
 	}
 	if _, err := s.dbPool.Apply(ctx, []*spanner.Mutation{spanner.Insert("IntCoord", []string{"id", "seq", "rootHash"}, []interface{}{0, 0, rfc6962.DefaultHasher.EmptyRoot()})}); err != nil && spanner.ErrCode(err) != codes.AlreadyExists {
 		return err
+	}
+	return nil
+}
+
+// checkDataCompatibility compares the Tessera library SchemaCompatibilityVersion with the one stored in the
+// database, and returns an error if they are not identical.
+func (s *spannerSequencer) checkDataCompatibility(ctx context.Context) error {
+	row, err := s.dbPool.Single().ReadRow(ctx, "Tessera", spanner.Key{0}, []string{"compatibilityVersion"})
+	if err != nil {
+		return fmt.Errorf("failed to read schema compatibilityVersion: %v", err)
+	}
+	var compat int64
+	if err := row.Columns(&compat); err != nil {
+		return fmt.Errorf("failed to scan schema compatibilityVersion: %v", err)
+	}
+
+	if compat != SchemaCompatibilityVersion {
+		return fmt.Errorf("schema compatibilityVersion (%d) != library compatibilityVersion (%d)", compat, SchemaCompatibilityVersion)
 	}
 	return nil
 }
