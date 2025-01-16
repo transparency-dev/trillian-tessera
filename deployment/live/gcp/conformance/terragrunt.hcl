@@ -7,6 +7,7 @@ locals {
   project_id               = get_env("GOOGLE_PROJECT")
   location                 = get_env("GOOGLE_REGION", "us-central1")
   base_name                = get_env("TESSERA_BASE_NAME", "${local.env}-conformance")
+  state_bucket_name        = "${local.base_name}"
   server_docker_image      = get_env("TESSERA_CLOUD_RUN_DOCKER_IMAGE")
   signer                   = get_env("TESSERA_SIGNER")
   tessera_reader           = get_env("TESSERA_READER", "")
@@ -22,7 +23,7 @@ remote_state {
   config = {
     project  = local.project_id
     location = local.location
-    bucket   = "${local.project_id}-${local.base_name}-terraform-state"
+    bucket   = "${local.project_id}-${local.state_bucket_name}-terraform-state"
     prefix   = "${local.env}/terraform.tfstate"
 
     gcs_bucket_labels = {
