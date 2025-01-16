@@ -70,7 +70,7 @@ resource "google_spanner_database" "log_db" {
 resource "google_spanner_database_iam_binding" "database" {
   instance = google_spanner_instance.log_spanner.name
   database = google_spanner_database.log_db.name
-  role     = "roles/spanner.databaseUser"
+  role     = "roles/spanner.databaseAdmin"
 
   members = var.log_writer_members
 }
