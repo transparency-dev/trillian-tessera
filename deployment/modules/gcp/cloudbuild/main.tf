@@ -20,7 +20,7 @@ locals {
 }
 
 resource "google_cloudbuild_trigger" "docker" {
-  name            = "build-docker-${var.env}"
+  name            = "GCP-integration-test-${var.env}"
   service_account = "projects/${var.project_id}/serviceAccounts/${var.service_account}"
   location        = var.region
 
