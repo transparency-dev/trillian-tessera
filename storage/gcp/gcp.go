@@ -852,7 +852,7 @@ func (s *gcsStorage) lastModified(ctx context.Context, obj string) (time.Time, e
 	return r.Attrs.LastModified, r.Close()
 }
 
-// NewDedupe returns wrapped Add func which will use Spanner to maintain a mapping of
+// NewDedupDecorator returns wrapped Add func which will use Spanner to maintain a mapping of
 // previously seen entries and their assigned indices. Future calls with the same entry
 // will return the previously assigned index, as yet unseen entries will be passed to the provided
 // delegate function to have an index assigned.
@@ -865,7 +865,7 @@ func (s *gcsStorage) lastModified(ctx context.Context, obj string) (time.Time, e
 // maintaining the Merkle tree.
 //
 // This functionality is experimental!
-func NewDedupe(ctx context.Context, spannerDB string) (func(tessera.AddFn) tessera.AddFn, error) {
+func NewDedupDecorator(ctx context.Context, spannerDB string) (func(tessera.AddFn) tessera.AddFn, error) {
 	/*
 	   Schema for reference:
 

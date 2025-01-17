@@ -71,7 +71,7 @@ func main() {
 	dedups = append(dedups, tessera.InMemoryDedupe(256))
 	// PersistentDedup is currently experimental, so there's no terraform or documentation yet!
 	if *persistentDedup {
-		fn, err := gcp.NewDedupe(ctx, fmt.Sprintf("%s_dedup", *spanner))
+		fn, err := gcp.NewDedupDecorator(ctx, fmt.Sprintf("%s_dedup", *spanner))
 		if err != nil {
 			klog.Exitf("Failed to create new GCP dedupe: %v", err)
 		}
