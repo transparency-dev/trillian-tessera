@@ -66,6 +66,9 @@ type IndexFuture func() (uint64, error)
 type AddFn func(ctx context.Context, entry *Entry) IndexFuture
 
 // WithCheckpointSigner is an option for setting the note signer and verifier to use when creating and parsing checkpoints.
+// This option is mandatory for creating logs where the checkpoint is signed locally, e.g. in
+// the Appender mode. This does not need to be provided where the storage will be used to mirror
+// other logs.
 //
 // A primary signer must be provided:
 // - the primary signer is the "canonical" signing identity which should be used when creating new checkpoints.

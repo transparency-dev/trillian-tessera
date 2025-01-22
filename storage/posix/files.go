@@ -22,6 +22,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"syscall"
 	"time"
@@ -36,6 +37,13 @@ import (
 )
 
 const (
+	// compatibilityVersion is the required version of the log state directory.
+	// This should be bumped whenever a change is made that would break compatibility with old versions.
+	// When this is bumped, ensure that the version file is only written when a new log is being
+	// created. Currently, this version is written whenever it is missing in order to upgrade logs
+	// that were created before we introduced this.
+	compatibilityVersion = 1
+
 	dirPerm  = 0o755
 	filePerm = 0o644
 	stateDir = ".state"
@@ -51,7 +59,7 @@ type Storage struct {
 	queue *storage.Queue
 
 	curSize uint64
-	newCP   options.NewCPFunc
+	newCP   options.NewCPFunc // May be nil for mirrored logs.
 
 	cpUpdated chan struct{}
 
@@ -404,6 +412,9 @@ func (s *Storage) initialise(create bool) error {
 			}
 		}
 	}
+	if err := s.ensureVersion(compatibilityVersion); err != nil {
+		return err
+	}
 	curSize, _, err := s.readTreeState()
 	if err != nil {
 		return fmt.Errorf("failed to load checkpoint for log: %v", err)
@@ -416,6 +427,36 @@ func (s *Storage) initialise(create bool) error {
 type treeState struct {
 	Size uint64 `json:"size"`
 	Root []byte `json:"root"`
+}
+
+// ensureVersion will fail if the compatibility version stored in the state directory
+// is not the expected version. If no file exists, then it is created with the expected version.
+func (s *Storage) ensureVersion(version uint16) error {
+	versionFile := filepath.Join(s.path, stateDir, "version")
+
+	if _, err := os.Stat(versionFile); errors.Is(err, os.ErrNotExist) {
+		klog.V(1).Infof("No version file exists, creating")
+		data := []byte(fmt.Sprintf("%d", version))
+		if err := createExclusive(versionFile, data); err != nil {
+			return fmt.Errorf("failed to create version file: %v", err)
+		}
+		return nil
+	} else if err != nil {
+		return fmt.Errorf("stat(%s): %v", versionFile, err)
+	}
+
+	data, err := os.ReadFile(versionFile)
+	if err != nil {
+		return fmt.Errorf("failed to read version file: %v", err)
+	}
+	parsed, err := strconv.ParseUint(string(data), 10, 16)
+	if err != nil {
+		return fmt.Errorf("failed to parse version: %v", err)
+	}
+	if got, want := uint16(parsed), version; got != want {
+		return fmt.Errorf("wanted version %d but found %d", want, got)
+	}
+	return nil
 }
 
 // writeTreeState stores the current tree size and root hash on disk.
