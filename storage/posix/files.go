@@ -16,13 +16,13 @@ package posix
 import (
 	"bytes"
 	"context"
-	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"syscall"
 	"time"
@@ -436,21 +436,22 @@ func (s *Storage) ensureVersion(version uint16) error {
 
 	if _, err := os.Stat(versionFile); errors.Is(err, os.ErrNotExist) {
 		klog.V(1).Infof("No version file exists, creating")
-		data := make([]byte, 2)
-		binary.LittleEndian.PutUint16(data, version)
+		data := []byte(fmt.Sprintf("%d", version))
 		if err := createExclusive(versionFile, data); err != nil {
 			return fmt.Errorf("failed to create version file: %v", err)
 		}
+		return nil
 	} else if err != nil {
 		return fmt.Errorf("stat(%s): %v", versionFile, err)
-	} else {
-		data, err := os.ReadFile(versionFile)
-		if err != nil {
-			return fmt.Errorf("failed to read version file: %v", err)
-		}
-		if got, want := binary.LittleEndian.Uint16(data), version; got != want {
-			return fmt.Errorf("wanted version %d but found %d", want, got)
-		}
+	}
+
+	data, err := os.ReadFile(versionFile)
+	if err != nil {
+		return fmt.Errorf("failed to read version file: %v", err)
+	}
+	parsed, err := strconv.ParseUint(string(data), 10, 16)
+	if got, want := uint16(parsed), version; got != want {
+		return fmt.Errorf("wanted version %d but found %d", want, got)
 	}
 	return nil
 }
