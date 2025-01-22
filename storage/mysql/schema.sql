@@ -14,6 +14,19 @@
 
 -- MySQL version of the Trillian Tessera database schema.
 
+-- "Tessera" table stores a single row that is the version of this schema
+-- and the data formats within it. This is read at startup to prevent Tessera
+-- running against a database with an incompatible format.
+CREATE TABLE IF NOT EXISTS Tessera (
+  -- id is expected to be always 0 to maintain a maximum of a single row.
+  `id`                   TINYINT UNSIGNED NOT NULL,
+  -- compatibilityVersion is the version of this schema and the data within it.
+  `compatibilityVersion` TINYINT UNSIGNED NOT NULL,
+  PRIMARY KEY (`id`)
+);
+
+INSERT IGNORE INTO Tessera (`id`, `compatibilityVersion`) VALUES (0, 1);
+
 -- "Checkpoint" table stores a single row that records the latest _published_ checkpoint for the log.
 -- This is stored separately from the TreeState in order to enable publishing of commitments to updated tree states to happen
 -- on an indepentent timeframe to the internal updating of state.
