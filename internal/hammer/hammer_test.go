@@ -15,12 +15,7 @@
 package main
 
 import (
-	"context"
-	"sync"
 	"testing"
-	"time"
-
-	"github.com/transparency-dev/trillian-tessera/internal/hammer/loadtest"
 )
 
 func TestLeafGenerator(t *testing.T) {
@@ -39,49 +34,4 @@ func TestLeafGenerator(t *testing.T) {
 			t.Error("Expected duplicate")
 		}
 	}
-}
-
-func TestHammerAnalyser_Stats(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	var treeSize treeSizeState
-	ha := newHammerAnalyser(treeSize.getSize)
-
-	go ha.updateStatsLoop(ctx)
-
-	time.Sleep(100 * time.Millisecond)
-
-	baseTime := time.Now().Add(-1 * time.Minute)
-	for i := 0; i < 10; i++ {
-		ha.seqLeafChan <- loadtest.LeafTime{
-			Index:      uint64(i),
-			QueuedAt:   baseTime,
-			AssignedAt: baseTime.Add(time.Duration(i) * time.Second),
-		}
-	}
-	treeSize.setSize(10)
-	time.Sleep(500 * time.Millisecond)
-
-	avg := ha.queueTime.Avg()
-	if want := float64(4500); avg != want {
-		t.Errorf("integration time avg: got != want (%f != %f)", avg, want)
-	}
-}
-
-type treeSizeState struct {
-	size uint64
-	mux  sync.RWMutex
-}
-
-func (s *treeSizeState) getSize() uint64 {
-	s.mux.RLock()
-	defer s.mux.RUnlock()
-	return s.size
-}
-
-func (s *treeSizeState) setSize(size uint64) {
-	s.mux.Lock()
-	defer s.mux.Unlock()
-	s.size = size
 }

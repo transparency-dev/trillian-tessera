@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package main
+package loadtest
 
 import (
 	"context"
@@ -36,7 +36,7 @@ type tuiController struct {
 	helpView   *tview.TextView
 }
 
-func newController(h *Hammer, a *HammerAnalyser) *tuiController {
+func NewController(h *Hammer, a *HammerAnalyser) *tuiController {
 	c := tuiController{
 		hammer:   h,
 		analyser: a,
@@ -143,9 +143,9 @@ func (c *tuiController) updateStatsLoop(ctx context.Context, interval time.Durat
 				qps,
 				time.Duration(maSlots*int(interval))/time.Second)
 			queueLine := fmt.Sprintf("Time-in-queue: %s",
-				formatMovingAverage(c.analyser.queueTime))
+				formatMovingAverage(c.analyser.QueueTime))
 			integrateLine := fmt.Sprintf("Observed-time-to-integrate: %s",
-				formatMovingAverage(c.analyser.integrationTime))
+				formatMovingAverage(c.analyser.IntegrationTime))
 			text := strings.Join([]string{readWorkersLine, writeWorkersLine, treeSizeLine, queueLine, integrateLine}, "\n")
 			c.statusView.SetText(text)
 			c.app.Draw()
