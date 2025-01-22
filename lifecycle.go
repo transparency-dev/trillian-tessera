@@ -69,20 +69,25 @@ func NewAppender(d Driver, decorators ...func(AddFn) AddFn) (AddFn, LogReader, e
 	return add, reader, nil
 }
 
-// MigrationTarget describes a lifecycle object for migrating C2SP tlog-tiles compliant logs
-// into a Tessera instance.
+// MigrationStorage describes the required functionality from the target storage driver to support the
+// migration lifecycle mode.
+//
+// It's expected that the implementation of this interface will attempt to integrate the entry bundles
+// being set as soon as is reasonably possible. It's up to the implementation whether that's done as a
+// background task, or is in-line with the call to AwaitIntegration.
 type MigrationTarget interface {
-	// SetEntryBundle assigns the provided (serialised) bundle to the address described by
-	// idx and partial.
+	// SetEntryBundle is called to store the provided entry bundle bytes at the given coordinates.
+	//
+	// Implementations SHOULD treat calls to this function as being idempotent - i.e. attempts to set a previously
+	// set entry bundle should succeed if the bundle data are identical.
+	//
+	// This will be called as many times as necessary to set all entry bundles being migrated, quite likely in parallel.
 	SetEntryBundle(ctx context.Context, idx uint64, partial uint8, bundle []byte) error
 	// AwaitIntegration will block until SetEntryBundle has been called at least once for every
 	// entry bundle address implied by a tree of the provided size, and the storage implementation
 	// has successfully integrated all of the entries in those bundles into the local tree.
 	AwaitIntegration(ctx context.Context, size uint64) error
 	// State returns the current size and root hash of the target tree.
-	// When AwaitIntegration has returned, the caller should use this function in order to
-	// compare the locally constructed tree's root hash with the source's root hash at the same
-	// size. If these match, then the contents of the trees at this size are identical.
 	State(ctx context.Context) (uint64, []byte, error)
 }
 

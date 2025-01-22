@@ -24,6 +24,7 @@ import (
 	"strconv"
 	"strings"
 
+	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/client"
 	"github.com/transparency-dev/trillian-tessera/cmd/experimental/migrate/internal"
 	"github.com/transparency-dev/trillian-tessera/storage/gcp"
@@ -66,28 +67,32 @@ func main() {
 	}
 
 	// Create our Tessera storage backend:
-	gcpCfg := storageConfigFromFlags()
-	driver, err := gcp.NewMigrationTarget(ctx, gcpCfg, internal.BundleHasher)
-	if err != nil {
-		klog.Exitf("Failed to create new GCP storage: %v", err)
-	}
+	st := storageFromFlags(ctx)
 
-	if err := internal.Migrate(context.Background(), *numWorkers, sourceSize, sourceRoot, src.ReadEntryBundle, driver); err != nil {
+	if err := internal.Migrate(context.Background(), *numWorkers, sourceSize, sourceRoot, src.ReadEntryBundle, st); err != nil {
 		klog.Exitf("Migrate failed: %v", err)
 	}
 }
 
-// storageConfigFromFlags returns a gcp.Config struct populated with values
-// provided via flags.
-func storageConfigFromFlags() gcp.Config {
+// storageFromFlags returns a MigrationTarget copnfigured for GCP using the values provided via flags.
+func storageFromFlags(ctx context.Context) tessera.MigrationTarget {
 	if *bucket == "" {
 		klog.Exit("--bucket must be set")
 	}
 	if *spanner == "" {
 		klog.Exit("--spanner must be set")
 	}
-	return gcp.Config{
+	cfg := gcp.Config{
 		Bucket:  *bucket,
 		Spanner: *spanner,
 	}
+	driver, err := gcp.NewMigrationTarget(ctx, cfg, internal.BundleHasher)
+	if err != nil {
+		klog.Exitf("Failed to create new GCP storage: %v", err)
+	}
+	st, err := tessera.NewMigrationTarget(driver)
+	if err != nil {
+		klog.Exitf("Failed to create new MigrationTarget lifecycle: %v", err)
+	}
+	return st
 }

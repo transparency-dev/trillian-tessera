@@ -23,6 +23,7 @@ import (
 
 	"github.com/avast/retry-go/v4"
 	"github.com/transparency-dev/merkle/rfc6962"
+	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/api"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
 	"github.com/transparency-dev/trillian-tessera/client"
@@ -33,7 +34,7 @@ import (
 // copier controls the migration work.
 type copier struct {
 	// storage is the target we're migrating to.
-	storage    MigrationStorage
+	storage    tessera.MigrationTarget
 	getEntries client.EntryBundleFetcherFunc
 
 	// sourceSize is the size of the source log.
@@ -54,27 +55,6 @@ type bundle struct {
 	Partial uint8
 }
 
-// MigrationStorage describes the required functionality from the target storage driver.
-//
-// It's expected that the implementation of this interface will attempt to integrate the entry bundles
-// being set as soon as is reasonably possible. It's up to the implementation whether that's done as a
-// background task, or is in-line with the call to AwaitIntegration.
-type MigrationStorage interface {
-	// SetEntryBundle is called to store the provided entry bundle bytes at the given coordinates.
-	//
-	// Implementations SHOULD treat calls to this function as being idempotent - i.e. attempts to set a previously
-	// set entry bundle should succeed if the bundle data are identical.
-	//
-	// This will be called as many times as necessary to set all entry bundles being migrated, quite likely in parallel.
-	SetEntryBundle(ctx context.Context, index uint64, partial uint8, bundle []byte) error
-	// AwaitIntegration should block until the storage driver has received and integrated all outstanding entry bundles implied by sourceSize,
-	// and return the locally calculated root hash.
-	// An error should be returned if there is a problem integrating.
-	AwaitIntegration(ctx context.Context, sourceSize uint64) ([]byte, error)
-	// State returns the current integrated size and root hash of the local tree.
-	State(ctx context.Context) (uint64, []byte, error)
-}
-
 // Migrate starts the work of copying sourceSize entries from the source to the target log.
 //
 // Only the entry bundles are copied as the target storage is expected to integrate them and recalculate the root.
@@ -82,7 +62,7 @@ type MigrationStorage interface {
 //
 // A call to this function will block until either the copying is done, or an error has occurred.
 // It is an error if the resource copying completes ok but the resulting root hash does not match the provided sourceRoot.
-func Migrate(ctx context.Context, numWorkers int, sourceSize uint64, sourceRoot []byte, getEntries client.EntryBundleFetcherFunc, storage MigrationStorage) error {
+func Migrate(ctx context.Context, numWorkers int, sourceSize uint64, sourceRoot []byte, getEntries client.EntryBundleFetcherFunc, storage tessera.MigrationTarget) error {
 	klog.Infof("Starting migration; source size %d root %x", sourceSize, sourceRoot)
 
 	m := &copier{
@@ -133,18 +113,21 @@ func Migrate(ctx context.Context, numWorkers int, sourceSize uint64, sourceRoot 
 			return m.migrateWorker(ctx)
 		})
 	}
-	var root []byte
 	eg.Go(func() error {
-		r, err := m.storage.AwaitIntegration(ctx, sourceSize)
+		err := m.storage.AwaitIntegration(ctx, sourceSize)
 		if err != nil {
-			return fmt.Errorf("migration failed: %v", err)
+			return fmt.Errorf("await integration: %v", err)
 		}
-		root = r
 		return nil
 	})
 
 	if err := eg.Wait(); err != nil {
 		return fmt.Errorf("migration failed: %v", err)
+	}
+
+	_, root, err := m.storage.State(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get local tree state: %v", err)
 	}
 
 	if !bytes.Equal(root, sourceRoot) {

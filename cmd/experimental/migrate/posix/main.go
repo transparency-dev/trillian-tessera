@@ -24,6 +24,7 @@ import (
 	"strconv"
 	"strings"
 
+	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/client"
 	"github.com/transparency-dev/trillian-tessera/cmd/experimental/migrate/internal"
 	"github.com/transparency-dev/trillian-tessera/storage/posix"
@@ -64,13 +65,21 @@ func main() {
 		klog.Exitf("invalid checkpoint roothash %q: %v", bits[2], err)
 	}
 
+	if err := internal.Migrate(context.Background(), *numWorkers, sourceSize, sourceRoot, src.ReadEntryBundle, storageFromFlags(ctx)); err != nil {
+		klog.Exitf("Migrate failed: %v", err)
+	}
+}
+
+func storageFromFlags(ctx context.Context) tessera.MigrationTarget {
 	// Create our Tessera storage backend:
-	st, err := posix.NewMigrationTarget(ctx, *storageDir, *initialise, internal.BundleHasher)
+	driver, err := posix.NewMigrationTarget(ctx, *storageDir, *initialise, internal.BundleHasher)
 	if err != nil {
 		klog.Exitf("Failed to create new POSIX storage: %v", err)
 	}
 
-	if err := internal.Migrate(context.Background(), *numWorkers, sourceSize, sourceRoot, src.ReadEntryBundle, st); err != nil {
-		klog.Exitf("Migrate failed: %v", err)
+	st, err := tessera.NewMigrationTarget(driver)
+	if err != nil {
+		klog.Exitf("Failed to create new MigrationTarget lifecycle: %v", err)
 	}
+	return st
 }
