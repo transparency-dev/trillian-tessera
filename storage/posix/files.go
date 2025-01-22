@@ -450,6 +450,9 @@ func (s *Storage) ensureVersion(version uint16) error {
 		return fmt.Errorf("failed to read version file: %v", err)
 	}
 	parsed, err := strconv.ParseUint(string(data), 10, 16)
+	if err != nil {
+		return fmt.Errorf("failed to parse version: %v", err)
+	}
 	if got, want := uint16(parsed), version; got != want {
 		return fmt.Errorf("wanted version %d but found %d", want, got)
 	}
