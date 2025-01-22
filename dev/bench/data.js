@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1737542376130,
+  "lastUpdate": 1737557712857,
   "repoUrl": "https://github.com/transparency-dev/trillian-tessera",
   "entries": {
     "Benchmark": [
@@ -5640,6 +5640,126 @@ window.BENCHMARK_DATA = {
             "value": 3035,
             "unit": "allocs/op",
             "extra": "4102 times\n4 procs"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "mhutchinson@gmail.com",
+            "name": "Martin Hutchinson",
+            "username": "mhutchinson"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "cd469009461352f08965a3ec9946f6c708667386",
+          "message": "[POSIX] Ensure compatibility version (#457)\n\nThis will upgrade any existing unversioned logs to have the current version. Towards #450\r\n\r\nRegenerated the testdata to confirm this works and checked in the .state\r\ndirectory, with lock files and all. We may want to remove lock files\r\nfrom disk when they are unlocked, but that's beyond the scope of this\r\nPR.",
+          "timestamp": "2025-01-22T14:53:46Z",
+          "tree_id": "7af50abe29b2c2604c3681fd2d6707259d07557c",
+          "url": "https://github.com/transparency-dev/trillian-tessera/commit/cd469009461352f08965a3ec9946f6c708667386"
+        },
+        "date": 1737557712492,
+        "tool": "go",
+        "benches": [
+          {
+            "name": "BenchmarkDedupe",
+            "value": 4249160,
+            "unit": "ns/op\t  700875 B/op\t   19676 allocs/op",
+            "extra": "250 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDedupe - ns/op",
+            "value": 4249160,
+            "unit": "ns/op",
+            "extra": "250 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDedupe - B/op",
+            "value": 700875,
+            "unit": "B/op",
+            "extra": "250 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDedupe - allocs/op",
+            "value": 19676,
+            "unit": "allocs/op",
+            "extra": "250 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLeafBundle_UnmarshalText",
+            "value": 6938,
+            "unit": "ns/op\t    6529 B/op\t       1 allocs/op",
+            "extra": "163443 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLeafBundle_UnmarshalText - ns/op",
+            "value": 6938,
+            "unit": "ns/op",
+            "extra": "163443 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLeafBundle_UnmarshalText - B/op",
+            "value": 6529,
+            "unit": "B/op",
+            "extra": "163443 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLeafBundle_UnmarshalText - allocs/op",
+            "value": 1,
+            "unit": "allocs/op",
+            "extra": "163443 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkCheckpointUnsafe",
+            "value": 117.7,
+            "unit": "ns/op\t     112 B/op\t       3 allocs/op",
+            "extra": "10338648 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkCheckpointUnsafe - ns/op",
+            "value": 117.7,
+            "unit": "ns/op",
+            "extra": "10338648 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkCheckpointUnsafe - B/op",
+            "value": 112,
+            "unit": "B/op",
+            "extra": "10338648 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkCheckpointUnsafe - allocs/op",
+            "value": 3,
+            "unit": "allocs/op",
+            "extra": "10338648 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkIntegrate",
+            "value": 351106,
+            "unit": "ns/op\t  291274 B/op\t    3042 allocs/op",
+            "extra": "3933 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkIntegrate - ns/op",
+            "value": 351106,
+            "unit": "ns/op",
+            "extra": "3933 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkIntegrate - B/op",
+            "value": 291274,
+            "unit": "B/op",
+            "extra": "3933 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkIntegrate - allocs/op",
+            "value": 3042,
+            "unit": "allocs/op",
+            "extra": "3933 times\n4 procs"
           }
         ]
       }
