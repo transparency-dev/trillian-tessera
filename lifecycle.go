@@ -68,3 +68,39 @@ func NewAppender(d Driver, decorators ...func(AddFn) AddFn) (AddFn, LogReader, e
 	}
 	return add, reader, nil
 }
+
+// MigrationTarget describes a lifecycle object for migrating C2SP tlog-tiles compliant logs
+// into a Tessera instance.
+type MigrationTarget interface {
+	// SetEntryBundle assigns the provided (serialised) bundle to the address described by
+	// idx and partial.
+	SetEntryBundle(ctx context.Context, idx uint64, partial uint8, bundle []byte) error
+	// AwaitIntegration will block until SetEntryBundle has been called at least once for every
+	// entry bundle address implied by a tree of the provided size, and the storage implementation
+	// has successfully integrated all of the entries in those bundles into the local tree.
+	AwaitIntegration(ctx context.Context, size uint64) error
+	// State returns the current size and root hash of the target tree.
+	// When AwaitIntegration has returned, the caller should use this function in order to
+	// compare the locally constructed tree's root hash with the source's root hash at the same
+	// size. If these match, then the contents of the trees at this size are identical.
+	State(ctx context.Context) (uint64, []byte, error)
+}
+
+// NewMigrationTarget returns a MigrationTarget for the provided driver, which applications can use
+// to directly set entry bundles in the storage instance managed by the driver.
+//
+// This is intended to be used to migrate C2SP tlog-tiles compliant logs into/between Tessera storage
+// implementations.
+//
+// Zero or more bundleProcessors can be provided to wrap the underlying functionality provided by
+// the driver.
+func NewMigrationTarget(d Driver, bundleProcessors ...func(MigrationTarget) MigrationTarget) (MigrationTarget, error) {
+	t, ok := d.(MigrationTarget)
+	if !ok {
+		return nil, fmt.Errorf("driver %T does not implement MigrationTarget", d)
+	}
+	for i := len(bundleProcessors) - 1; i > 0; i++ {
+		t = bundleProcessors[i](t)
+	}
+	return t, nil
+}
