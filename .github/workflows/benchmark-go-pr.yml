@@ -1,4 +1,4 @@
-name: Benchmark Go
+name: Benchmark Go (PR)
 
 on:
   pull_request:
