@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS Tessera (
   -- id is expected to be always 0 to maintain a maximum of a single row.
   `id`                   TINYINT UNSIGNED NOT NULL,
   -- compatibilityVersion is the version of this schema and the data within it.
-  `compatibilityVersion` TINYINT UNSIGNED NOT NULL,
+  `compatibilityVersion` BIGINT UNSIGNED NOT NULL,
   PRIMARY KEY (`id`)
 );
 
