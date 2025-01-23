@@ -38,6 +38,7 @@ import (
 )
 
 const (
+	selectCompatibilityVersionSQL    = "SELECT `compatibilityVersion` FROM `Tessera` WHERE `id` = 0"
 	selectCheckpointByIDSQL          = "SELECT `note`, `published_at` FROM `Checkpoint` WHERE `id` = ?"
 	selectCheckpointByIDForUpdateSQL = selectCheckpointByIDSQL + " FOR UPDATE"
 	replaceCheckpointSQL             = "REPLACE INTO `Checkpoint` (`id`, `note`, `published_at`) VALUES (?, ?, ?)"
@@ -51,6 +52,8 @@ const (
 
 	checkpointID = 0
 	treeStateID  = 0
+
+	schemaCompatibilityVersion = 1
 
 	minCheckpointInterval = time.Second
 )
@@ -85,6 +88,9 @@ func New(ctx context.Context, db *sql.DB, opts ...func(*options.StorageOptions))
 	if s.newCheckpoint == nil {
 		return nil, errors.New("tessera.WithCheckpointSigner must be provided in New()")
 	}
+	if err := s.ensureVersion(ctx, schemaCompatibilityVersion); err != nil {
+		return nil, fmt.Errorf("incompatible schema version: %v", err)
+	}
 
 	s.queue = storage.NewQueue(ctx, opt.BatchMaxAge, opt.BatchMaxSize, s.sequenceBatch)
 
@@ -108,6 +114,21 @@ func New(ctx context.Context, db *sql.DB, opts ...func(*options.StorageOptions))
 		}
 	}(ctx, opt.CheckpointInterval)
 	return s, nil
+}
+
+func (s *Storage) ensureVersion(ctx context.Context, wantVersion uint8) error {
+	row := s.db.QueryRowContext(ctx, selectCompatibilityVersionSQL)
+	if row.Err() != nil {
+		return row.Err()
+	}
+	var gotVersion uint8
+	if err := row.Scan(&gotVersion); err != nil {
+		return fmt.Errorf("failed to read Tessera version from DB: %v", err)
+	}
+	if gotVersion != wantVersion {
+		return fmt.Errorf("DB has Tessera compatibility version of %d, but version %d required", gotVersion, wantVersion)
+	}
+	return nil
 }
 
 // maybeInitTree will insert an initial "empty tree" row into the
