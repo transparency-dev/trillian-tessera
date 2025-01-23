@@ -15,6 +15,10 @@ The DB layout has been designed such that serving any read request is a point lo
 
 ### Table Schema
 
+#### `Tessera`
+
+A single row that records the current version of the Tessera schema and data compatibility.
+
 #### `Checkpoint`
 
 A single row that records the current published checkpoint.
