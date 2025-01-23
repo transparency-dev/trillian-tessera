@@ -903,16 +903,32 @@ func NewDedupDecorator(ctx context.Context, spannerDB string) (func(tessera.AddF
 			}
 		}
 	}(ctx)
-	return func(af tessera.AddFn) tessera.AddFn {
-		r.delegate = af
-		return r.add
+	return func(delegate tessera.AddFn) tessera.AddFn {
+		return func(ctx context.Context, e *tessera.Entry) tessera.IndexFuture {
+			idx, err := r.index(ctx, e.Identity())
+			if err != nil {
+				return func() (uint64, error) { return 0, err }
+			}
+			if idx != nil {
+				return func() (uint64, error) { return *idx, nil }
+			}
+
+			i, err := delegate(ctx, e)()
+			if err != nil {
+				return func() (uint64, error) { return 0, err }
+			}
+
+			err = r.enqueueMapping(ctx, e.Identity(), i)
+			return func() (uint64, error) {
+				return i, err
+			}
+		}
 	}, nil
 }
 
 type dedupStorage struct {
-	ctx      context.Context
-	dbPool   *spanner.Client
-	delegate func(ctx context.Context, e *tessera.Entry) tessera.IndexFuture
+	ctx    context.Context
+	dbPool *spanner.Client
 
 	numLookups  atomic.Uint64
 	numWrites   atomic.Uint64
@@ -967,28 +983,6 @@ func (d *dedupStorage) storeMappings(ctx context.Context, entries []dedupeMappin
 type dedupeMapping struct {
 	ID  []byte
 	Idx uint64
-}
-
-// add adds the entry to the underlying delegate only if e isn't already known. In either case,
-// an IndexFuture will be returned that the client can use to get the sequence number of this entry.
-func (d *dedupStorage) add(ctx context.Context, e *tessera.Entry) tessera.IndexFuture {
-	idx, err := d.index(ctx, e.Identity())
-	if err != nil {
-		return func() (uint64, error) { return 0, err }
-	}
-	if idx != nil {
-		return func() (uint64, error) { return *idx, nil }
-	}
-
-	i, err := d.delegate(ctx, e)()
-	if err != nil {
-		return func() (uint64, error) { return 0, err }
-	}
-
-	err = d.enqueueMapping(ctx, e.Identity(), i)
-	return func() (uint64, error) {
-		return i, err
-	}
 }
 
 // enqueueMapping buffers the provided ID -> index mapping ready to be flushed to storage.
