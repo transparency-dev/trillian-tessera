@@ -78,7 +78,8 @@ func main() {
 	if err != nil {
 		klog.Exitf("Failed to create new AWS storage: %v", err)
 	}
-	addFn, _, err := tessera.NewAppender(driver, tessera.InMemoryDedupe(256))
+	appender, _, err := tessera.NewAppender(driver, tessera.WithAppendDeduplication(tessera.InMemoryDedupe(256)))
+	addFn := appender.Add
 	if err != nil {
 		klog.Exit(err)
 	}

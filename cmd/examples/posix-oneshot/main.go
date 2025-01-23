@@ -95,7 +95,8 @@ func main() {
 	if err != nil {
 		klog.Exitf("Failed to construct storage: %v", err)
 	}
-	addFn, r, err := tessera.NewAppender(driver)
+	appender, r, err := tessera.NewAppender(driver)
+	addFn := appender.Add
 	if err != nil {
 		klog.Exit(err)
 	}

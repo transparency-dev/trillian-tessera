@@ -169,6 +169,10 @@ func (s *Storage) ReadTile(_ context.Context, level, index uint64, p uint8) ([]b
 	return os.ReadFile(filepath.Join(s.path, layout.TilePath(level, index, p)))
 }
 
+func (s *Storage) Shutdown(ctx context.Context) {
+	// TODO(mhutchinson): implement this
+}
+
 // sequenceBatch writes the entries from the provided batch into the entry bundle files of the log.
 //
 // This func starts filling entries bundles at the next available slot in the log, ensuring that the

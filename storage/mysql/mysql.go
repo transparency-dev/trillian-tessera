@@ -298,6 +298,10 @@ func (s *Storage) ReadTile(ctx context.Context, level, index uint64, p uint8) ([
 	return tile, nil
 }
 
+func (s *Storage) Shutdown(ctx context.Context) {
+	// TODO(mhutchinson): implement this
+}
+
 // writeTile replaces the tile nodes at the given level and index.
 func (s *Storage) writeTile(ctx context.Context, tx *sql.Tx, level, index uint64, nodes []byte) error {
 	if _, err := tx.ExecContext(ctx, replaceSubtreeSQL, level, index, nodes); err != nil {

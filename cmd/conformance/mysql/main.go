@@ -70,7 +70,8 @@ func main() {
 		klog.Exitf("Failed to create new MySQL storage: %v", err)
 	}
 
-	addFn, reader, err := tessera.NewAppender(driver, tessera.InMemoryDedupe(256))
+	appender, reader, err := tessera.NewAppender(driver, tessera.WithAppendDeduplication(tessera.InMemoryDedupe(256)))
+	addFn := appender.Add
 	if err != nil {
 		klog.Exit(err)
 	}
