@@ -78,7 +78,8 @@ func main() {
 		dedups = append(dedups, fn)
 	}
 
-	addFn, _, err := tessera.NewAppender(driver, dedups...)
+	appender, _, err := tessera.NewAppender(driver, tessera.WithAppendDeduplication(dedups...))
+	addFn := appender.Add
 	if err != nil {
 		klog.Exit(err)
 	}

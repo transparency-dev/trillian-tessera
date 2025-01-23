@@ -267,6 +267,10 @@ func (s *Storage) ReadEntryBundle(ctx context.Context, i uint64, p uint8) ([]byt
 	return s.get(ctx, s.entriesPath(i, p))
 }
 
+func (s *Storage) Shutdown(ctx context.Context) {
+	// TODO(mhutchinson): implement this
+}
+
 // get returns the requested object.
 //
 // This is indended to be used to proxy read requests through the personality for debug/testing purposes.
