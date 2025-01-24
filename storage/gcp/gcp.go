@@ -974,7 +974,8 @@ func (d *Dedup) Follower(bh BundleHasherFunc) tessera.Follower {
 func (d *Dedup) index(ctx context.Context, h []byte) (*uint64, error) {
 	d.numLookups.Add(1)
 	var idx int64
-	if row, err := d.dbPool.Single().ReadRow(ctx, "IDSeq", spanner.Key{0, h}, []string{"idx"}); err != nil {
+	// TODO(al): timestamp bound - good?
+	if row, err := d.dbPool.Single().WithTimestampBound(spanner.MaxStaleness(10*time.Second)).ReadRow(ctx, "IDSeq", spanner.Key{0, h}, []string{"idx"}); err != nil {
 		if c := spanner.ErrCode(err); c == codes.NotFound {
 			return nil, nil
 		}
