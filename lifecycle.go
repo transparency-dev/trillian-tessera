@@ -125,6 +125,7 @@ func NewMigrationTarget(d Driver, bundleProcessors ...func(MigrationTarget) Migr
 type Follower func(ctx context.Context, lsr LogStateReader) error
 
 // Follow registers a func which will be called and provided with read-only access to the current state of the log.
+// The provided func should only return an error under fatal conditions.
 //
 // This is intended for use by applications which want to perform some sort of processing based on the contents of the integrated entries.
 func Follow(ctx context.Context, d Driver, fn Follower) error {

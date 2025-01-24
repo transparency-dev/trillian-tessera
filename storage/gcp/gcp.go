@@ -233,6 +233,11 @@ func (s *Storage) ReadEntryBundle(ctx context.Context, i uint64, p uint8) ([]byt
 	return s.get(ctx, s.entriesPath(i, p))
 }
 
+// For LogReaderState
+func (s *Storage) State(ctx context.Context) (uint64, []byte, error) {
+	return s.sequencer.currentTree(ctx)
+}
+
 // get returns the requested object.
 //
 // This is indended to be used to proxy read requests through the personality for debug/testing purposes.
