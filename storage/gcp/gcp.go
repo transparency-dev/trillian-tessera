@@ -878,8 +878,7 @@ func NewDedup(ctx context.Context, spannerDB string) (*Dedup, error) {
 			) PRIMARY KEY (id);
 
 		   	CREATE TABLE IDSeq (
-				id INT64 NOT NULL,
-				h BYTES(MAX) NOT NULL,
+				h BYTES(64) NOT NULL,
 				idx INT64 NOT NULL,
 		   	) PRIMARY KEY (id, h);
 	*/
@@ -975,7 +974,7 @@ func (d *Dedup) index(ctx context.Context, h []byte) (*uint64, error) {
 	d.numLookups.Add(1)
 	var idx int64
 	// TODO(al): timestamp bound - good?
-	if row, err := d.dbPool.Single().WithTimestampBound(spanner.MaxStaleness(10*time.Second)).ReadRow(ctx, "IDSeq", spanner.Key{0, h}, []string{"idx"}); err != nil {
+	if row, err := d.dbPool.Single().WithTimestampBound(spanner.MaxStaleness(10*time.Second)).ReadRow(ctx, "IDSeq", spanner.Key{h}, []string{"idx"}); err != nil {
 		if c := spanner.ErrCode(err); c == codes.NotFound {
 			return nil, nil
 		}
@@ -1020,7 +1019,7 @@ func (d *Dedup) populate(ctx context.Context, bh BundleHasherFunc, lsr tessera.L
 		if behind > maxBehind {
 			klog.Infof("Dedup pushing back (%d > %d)", behind, maxBehind)
 			d.underwater.Store(true)
-		} else {
+		} else if d.underwater.Load() {
 			klog.Infof("Dedup caught up, stopping pushback")
 			d.underwater.Store(false)
 		}
@@ -1078,7 +1077,7 @@ func (d *Dedup) storeMappings(ctx context.Context, entries []dedupeMapping) erro
 	m := make([]*spanner.MutationGroup, 0, len(entries))
 	for _, e := range entries {
 		m = append(m, &spanner.MutationGroup{
-			Mutations: []*spanner.Mutation{spanner.Insert("IDSeq", []string{"id", "h", "idx"}, []interface{}{0, e.ID, int64(e.Idx)})},
+			Mutations: []*spanner.Mutation{spanner.Insert("IDSeq", []string{"h", "idx"}, []interface{}{e.ID, int64(e.Idx)})},
 		})
 	}
 
