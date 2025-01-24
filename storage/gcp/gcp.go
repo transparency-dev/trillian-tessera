@@ -897,6 +897,21 @@ func NewDedup(ctx context.Context, spannerDB string) (*Dedup, error) {
 		dbPool: dedupDB,
 	}
 
+	go func() {
+		t := time.NewTicker(time.Second)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+			}
+			hits := r.numDBDedups.Load()
+			lookups := r.numLookups.Load()
+			writes := r.numWrites.Load()
+			klog.Infof("DEDUP: hits %0.1f%% lookups: %d, populationWrites: %d", float64(hits)*100.0/float64(lookups), lookups, writes)
+		}
+	}()
+
 	return r, nil
 }
 
@@ -999,7 +1014,9 @@ func (d *Dedup) populate(ctx context.Context, bh BundleHasherFunc, lsr tessera.L
 
 		workToDo = true
 
+		// TODO(al): make this configuable.
 		const maxBundles = 5
+
 		lh, err := fetchLeafHashes(ctx, fromIdx, toSize, toSize, maxBundles, lsr.ReadEntryBundle, bh)
 		if err != nil {
 			return fmt.Errorf("fetchLeafHashes(%d, %d, %d): %v", fromIdx, toSize, toSize, err)
@@ -1022,6 +1039,8 @@ func (d *Dedup) populate(ctx context.Context, bh BundleHasherFunc, lsr tessera.L
 		if err := txn.BufferWrite([]*spanner.Mutation{spanner.Update("FollowCoord", []string{"id", "nextIdx"}, []interface{}{0, int64(nextIdx)})}); err != nil {
 			return fmt.Errorf("update followcoord: %v", err)
 		}
+
+		d.numWrites.Add(uint64(len(m)))
 
 		return nil
 	})
