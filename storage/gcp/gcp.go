@@ -975,7 +975,7 @@ func (d *Dedup) index(ctx context.Context, h []byte) (*uint64, error) {
 }
 
 func (d *Dedup) populate(ctx context.Context, bh BundleHasherFunc, lsr tessera.LogStateReader) (bool, error) {
-	didWork := false
+	workToDo := false
 	toSize, _, err := lsr.State(ctx)
 	if err != nil {
 		return false, fmt.Errorf("failed to read log state: %v", err)
@@ -996,6 +996,8 @@ func (d *Dedup) populate(ctx context.Context, bh BundleHasherFunc, lsr tessera.L
 			klog.V(1).Infof("Dedup: nothing new to add")
 			return nil
 		}
+
+		workToDo = true
 
 		const maxBundles = 2
 		lh, err := fetchLeafHashes(ctx, fromIdx, toSize, toSize, maxBundles, lsr.ReadEntryBundle, bh)
@@ -1021,14 +1023,13 @@ func (d *Dedup) populate(ctx context.Context, bh BundleHasherFunc, lsr tessera.L
 			return fmt.Errorf("update followcoord: %v", err)
 		}
 
-		didWork = true
 		return nil
 	})
 	if err != nil {
 		return false, err
 	}
 
-	return didWork, nil
+	return workToDo, nil
 
 }
 
