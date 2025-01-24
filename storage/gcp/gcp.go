@@ -944,7 +944,7 @@ func (d *Dedup) Follower(bh BundleHasherFunc) tessera.Follower {
 			case <-t.C:
 			}
 			var err error
-			klog.Infof("Dedup: follower looking for work")
+			klog.V(2).Infof("Dedup: follower looking for work")
 			for more := true; more; {
 				more, err = d.populate(ctx, bh, lsr)
 				if err != nil {
@@ -994,6 +994,7 @@ func (d *Dedup) populate(ctx context.Context, bh BundleHasherFunc, lsr tessera.L
 		klog.V(1).Infof("Dedup: Populating from %d", fromIdx)
 		if fromIdx == toSize {
 			klog.V(1).Infof("Dedup: nothing new to add")
+			return nil
 		}
 
 		const maxBundles = 10
@@ -1013,9 +1014,10 @@ func (d *Dedup) populate(ctx context.Context, bh BundleHasherFunc, lsr tessera.L
 		if err := d.storeMappings(ctx, m); err != nil {
 			return fmt.Errorf("storeMappings(idx: %d, len: %d): %v", fromIdx, len(m), err)
 		}
+		nextIdx := fromIdx + uint64(len(m))
 
 		// Update our coordination row.
-		if err := txn.BufferWrite([]*spanner.Mutation{spanner.Update("FollowCoord", []string{"id", "nextIdx"}, []interface{}{0, int64(fromIdx)})}); err != nil {
+		if err := txn.BufferWrite([]*spanner.Mutation{spanner.Update("FollowCoord", []string{"id", "nextIdx"}, []interface{}{0, int64(nextIdx)})}); err != nil {
 			return fmt.Errorf("update followcoord: %v", err)
 		}
 
