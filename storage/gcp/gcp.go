@@ -47,7 +47,6 @@ import (
 	"cloud.google.com/go/spanner/apiv1/spannerpb"
 
 	gcs "cloud.google.com/go/storage"
-	"github.com/globocom/go-buffer"
 	"github.com/google/go-cmp/cmp"
 	"github.com/transparency-dev/merkle/rfc6962"
 	tessera "github.com/transparency-dev/trillian-tessera"
@@ -865,47 +864,37 @@ func (s *gcsStorage) lastModified(ctx context.Context, obj string) (time.Time, e
 // maintaining the Merkle tree.
 //
 // This functionality is experimental!
-func NewDedupDecorator(ctx context.Context, spannerDB string) (func(tessera.AddFn) tessera.AddFn, error) {
+func NewDedup(ctx context.Context, spannerDB string) (*Dedup, error) {
 	/*
-	   Schema for reference:
+		Schema for reference:
+			CREATE TABLE FollowCoord (
+				id INT64 NOT NULL,
+				nextIdx INT64 NOT NULL,
+			) PRIMARY KEY (id);
 
-	   	CREATE TABLE IDSeq (
-	   	 id INT64 NOT NULL,
-	   	 h BYTES(MAX) NOT NULL,
-	   	 idx INT64 NOT NULL,
-	   	) PRIMARY KEY (id, h);
+		   	CREATE TABLE IDSeq (
+				id INT64 NOT NULL,
+				h BYTES(MAX) NOT NULL,
+				idx INT64 NOT NULL,
+		   	) PRIMARY KEY (id, h);
 	*/
 	dedupDB, err := spanner.NewClient(ctx, spannerDB)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to Spanner: %v", err)
 	}
 
-	r := &dedupStorage{
+	r := &Dedup{
 		ctx:    ctx,
 		dbPool: dedupDB,
 	}
 
-	// TODO(al): Make these configurable
-	r.buf = buffer.New(
-		buffer.WithSize(64),
-		buffer.WithFlushInterval(200*time.Millisecond),
-		buffer.WithFlusher(buffer.FlusherFunc(r.flush)),
-		buffer.WithPushTimeout(15*time.Second),
-	)
-	go func(ctx context.Context) {
-		t := time.NewTicker(time.Second)
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-t.C:
-				klog.V(1).Infof("DEDUP: # Writes %d, # Lookups %d, # DB hits %v, # buffer Push discards %d", r.numWrites.Load(), r.numLookups.Load(), r.numDBDedups.Load(), r.numPushErrs.Load())
-			}
-		}
-	}(ctx)
+	return r, nil
+}
+
+func (d *Dedup) AppendDecorator() func(d tessera.AddFn) tessera.AddFn {
 	return func(delegate tessera.AddFn) tessera.AddFn {
 		return func(ctx context.Context, e *tessera.Entry) tessera.IndexFuture {
-			idx, err := r.index(ctx, e.Identity())
+			idx, err := d.index(ctx, e.Identity())
 			if err != nil {
 				return func() (uint64, error) { return 0, err }
 			}
@@ -918,15 +907,14 @@ func NewDedupDecorator(ctx context.Context, spannerDB string) (func(tessera.AddF
 				return func() (uint64, error) { return 0, err }
 			}
 
-			err = r.enqueueMapping(ctx, e.Identity(), i)
 			return func() (uint64, error) {
-				return i, err
+				return i, nil
 			}
 		}
-	}, nil
+	}
 }
 
-type dedupStorage struct {
+type Dedup struct {
 	ctx    context.Context
 	dbPool *spanner.Client
 
@@ -934,12 +922,31 @@ type dedupStorage struct {
 	numWrites   atomic.Uint64
 	numDBDedups atomic.Uint64
 	numPushErrs atomic.Uint64
+}
 
-	buf *buffer.Buffer
+func (d *Dedup) Follower(bh BundleHasherFunc) tessera.Follower {
+	return func(ctx context.Context, lsr tessera.LogStateReader) error {
+		t := time.NewTicker(500 * time.Millisecond)
+		for {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-t.C:
+			}
+			var err error
+			for more := true; more; {
+				more, err = d.populate(ctx, bh, lsr)
+				if err != nil {
+					klog.Errorf("Dedup failed to populate: %v", err)
+				}
+			}
+
+		}
+	}
 }
 
 // index returns the index (if any) previously associated with the provided hash
-func (d *dedupStorage) index(ctx context.Context, h []byte) (*uint64, error) {
+func (d *Dedup) index(ctx context.Context, h []byte) (*uint64, error) {
 	d.numLookups.Add(1)
 	var idx int64
 	if row, err := d.dbPool.Single().ReadRow(ctx, "IDSeq", spanner.Key{0, h}, []string{"idx"}); err != nil {
@@ -957,11 +964,63 @@ func (d *dedupStorage) index(ctx context.Context, h []byte) (*uint64, error) {
 	}
 }
 
+func (d *Dedup) populate(ctx context.Context, bh BundleHasherFunc, lsr tessera.LogStateReader) (bool, error) {
+	didWork := false
+	toSize, _, err := lsr.State(ctx)
+	if err != nil {
+		return false, fmt.Errorf("failed to read log state: %v", err)
+	}
+	_, err = d.dbPool.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
+		// Grab the highest index we've populated so far.
+		row, err := txn.ReadRowWithOptions(ctx, "FollowCoord", spanner.Key{0}, []string{"nextIdx"}, &spanner.ReadOptions{LockHint: spannerpb.ReadRequest_LOCK_HINT_EXCLUSIVE})
+		if err != nil {
+			return fmt.Errorf("read followcoord: %v", err)
+		}
+		var fromIdx int64 // Spanner doesn't support uint64
+		if err := row.Columns(&fromIdx); err != nil {
+			return fmt.Errorf("failed to read dedup coordination info: %v", err)
+		}
+		klog.V(1).Infof("Populating from %d", fromIdx)
+
+		const maxBundles = 10
+		lh, err := fetchLeafHashes(ctx, uint64(fromIdx), toSize, toSize, maxBundles, lsr.ReadEntryBundle, bh)
+		if err != nil {
+			return fmt.Errorf("fetchLeafHashes(%d, %d, %d): %v", fromIdx, toSize, toSize, err)
+		}
+
+		m := make([]dedupeMapping, 0, len(lh))
+		for i, h := range lh {
+			m = append(m, dedupeMapping{
+				ID:  h,
+				Idx: uint64(fromIdx) + uint64(i),
+			})
+		}
+
+		if err := d.storeMappings(ctx, m); err != nil {
+			return fmt.Errorf("storeMappings(idx: %d, len: %d): %v", fromIdx, len(m), err)
+		}
+
+		// Update our coordination row.
+		if err := txn.BufferWrite([]*spanner.Mutation{spanner.Update("FollowCoord", []string{"id", "nextIdx"}, []interface{}{0, int64(fromIdx)})}); err != nil {
+			return fmt.Errorf("update followcoord: %v", err)
+		}
+
+		didWork = true
+		return nil
+	})
+	if err != nil {
+		return false, err
+	}
+
+	return didWork, nil
+
+}
+
 // storeMappings stores the associations between the keys and IDs in a non-atomic fashion
 // (i.e. it does not store all or none in a transactional sense).
 //
 // Returns an error if one or more mappings cannot be stored.
-func (d *dedupStorage) storeMappings(ctx context.Context, entries []dedupeMapping) error {
+func (d *Dedup) storeMappings(ctx context.Context, entries []dedupeMapping) error {
 	m := make([]*spanner.MutationGroup, 0, len(entries))
 	for _, e := range entries {
 		m = append(m, &spanner.MutationGroup{
@@ -985,37 +1044,7 @@ type dedupeMapping struct {
 	Idx uint64
 }
 
-// enqueueMapping buffers the provided ID -> index mapping ready to be flushed to storage.
-func (d *dedupStorage) enqueueMapping(_ context.Context, h []byte, idx uint64) error {
-	err := d.buf.Push(dedupeMapping{ID: h, Idx: idx})
-	if err != nil {
-		d.numPushErrs.Add(1)
-		// This means there's pressure flushing dedup writes out, so discard this write.
-		if err != buffer.ErrTimeout {
-			return err
-		}
-	}
-	return nil
-}
-
-// flush writes enqueued mappings to storage.
-func (d *dedupStorage) flush(items []interface{}) {
-	entries := make([]dedupeMapping, len(items))
-	for i := range items {
-		entries[i] = items[i].(dedupeMapping)
-	}
-
-	ctx, c := context.WithTimeout(d.ctx, 15*time.Second)
-	defer c()
-
-	if err := d.storeMappings(ctx, entries); err != nil {
-		klog.Infof("Failed to flush dedup entries: %v", err)
-		return
-	}
-	d.numWrites.Add(uint64(len(entries)))
-}
-
-// BundleHasherFunc is the signature of a function which knows how to parse an entry bundle and calculate leaf hashes for its entries.
+// BundleHasherFunc is the signature of a function which knows how N parse an entry bundle and calculate leaf hashes for its entries.
 type BundleHasherFunc func(entryBundle []byte) (LeafHashes [][]byte, err error)
 
 // NewMigrationTarget creates a new GCP storage for the MigrationTarget lifecycle mode.

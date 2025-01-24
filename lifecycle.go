@@ -44,6 +44,17 @@ type LogReader interface {
 	ReadEntryBundle(ctx context.Context, index uint64, p uint8) ([]byte, error)
 }
 
+// LogStateReader is a LogReader that also provides access to the current integrated state, regardless
+// of whether it's been published.
+type LogStateReader interface {
+	LogReader
+
+	// State returns the current size and root hash of the integrated tree.
+	// Note that this may not necessarily represent the same tree state as the checkpoint returned by
+	// LogReader.ReadCheckpoint since the current tree state may not have been published yet.
+	State(ctx context.Context) (uint64, []byte, error)
+}
+
 // NewAppender returns an Appender, which allows a personality to incrementally append new
 // leaves to the log and to read from it.
 //
@@ -108,4 +119,18 @@ func NewMigrationTarget(d Driver, bundleProcessors ...func(MigrationTarget) Migr
 		t = bundleProcessors[i](t)
 	}
 	return t, nil
+}
+
+// Follower is the signature of a function accepted by the Follow function below.
+type Follower func(ctx context.Context, lsr LogStateReader) error
+
+// Follow registers a func which will be called and provided with read-only access to the current state of the log.
+//
+// This is intended for use by applications which want to perform some sort of processing based on the contents of the integrated entries.
+func Follow(ctx context.Context, d Driver, fn Follower) error {
+	lsr, ok := d.(LogStateReader)
+	if !ok {
+		return fmt.Errorf("driver %T does not implement LogStateReader", d)
+	}
+	return fn(ctx, lsr)
 }
