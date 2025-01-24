@@ -917,7 +917,9 @@ func NewDedup(ctx context.Context, spannerDB string) (*Dedup, error) {
 
 func (d *Dedup) AppendDecorator() func(d tessera.AddFn) tessera.AddFn {
 	return func(delegate tessera.AddFn) tessera.AddFn {
+		klog.Infof("AppendDecorator applied")
 		return func(ctx context.Context, e *tessera.Entry) tessera.IndexFuture {
+			klog.Infof("AppendDecorator")
 			idx, err := d.index(ctx, e.Identity())
 			if err != nil {
 				return func() (uint64, error) { return 0, err }
@@ -926,14 +928,7 @@ func (d *Dedup) AppendDecorator() func(d tessera.AddFn) tessera.AddFn {
 				return func() (uint64, error) { return *idx, nil }
 			}
 
-			i, err := delegate(ctx, e)()
-			if err != nil {
-				return func() (uint64, error) { return 0, err }
-			}
-
-			return func() (uint64, error) {
-				return i, nil
-			}
+			return delegate(ctx, e)
 		}
 	}
 }
