@@ -996,6 +996,7 @@ func (d *Dedup) populate(ctx context.Context, bh BundleHasherFunc, lsr tessera.L
 		return false, fmt.Errorf("failed to read log state: %v", err)
 	}
 	_, err = d.dbPool.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
+		Tstart := time.Now()
 		// Grab the highest index we've populated so far.
 		row, err := txn.ReadRowWithOptions(ctx, "FollowCoord", spanner.Key{0}, []string{"nextIdx"}, &spanner.ReadOptions{LockHint: spannerpb.ReadRequest_LOCK_HINT_EXCLUSIVE})
 		if err != nil {
@@ -1028,6 +1029,7 @@ func (d *Dedup) populate(ctx context.Context, bh BundleHasherFunc, lsr tessera.L
 		// TODO(al): make this configuable.
 		const maxBundles = 5
 
+		TfetchLeaves := time.Now()
 		lh, err := fetchLeafHashes(ctx, fromIdx, toSize, toSize, maxBundles, lsr.ReadEntryBundle, bh)
 		if err != nil {
 			return fmt.Errorf("fetchLeafHashes(%d, %d, %d): %v", fromIdx, toSize, toSize, err)
@@ -1041,17 +1043,21 @@ func (d *Dedup) populate(ctx context.Context, bh BundleHasherFunc, lsr tessera.L
 			})
 		}
 
+		TstoreMappings := time.Now()
 		if err := d.storeMappings(ctx, m); err != nil {
 			return fmt.Errorf("storeMappings(idx: %d, len: %d): %v", fromIdx, len(m), err)
 		}
 		nextIdx := fromIdx + uint64(len(m))
 
+		TupdateCoord := time.Now()
 		// Update our coordination row.
 		if err := txn.BufferWrite([]*spanner.Mutation{spanner.Update("FollowCoord", []string{"id", "nextIdx"}, []interface{}{0, int64(nextIdx)})}); err != nil {
 			return fmt.Errorf("update followcoord: %v", err)
 		}
 
 		d.numWrites.Add(uint64(len(m)))
+
+		klog.Infof("DEDUP: total %v (rC: %v, fetch: %v, storeM: %v, uC: %v)", time.Since(Tstart), TfetchLeaves.Sub(Tstart), TstoreMappings.Sub(TfetchLeaves), TupdateCoord.Sub(TstoreMappings), time.Since(TupdateCoord))
 
 		return nil
 	})
