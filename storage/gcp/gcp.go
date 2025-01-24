@@ -888,6 +888,10 @@ func NewDedup(ctx context.Context, spannerDB string) (*Dedup, error) {
 		return nil, fmt.Errorf("failed to connect to Spanner: %v", err)
 	}
 
+	if _, err := dedupDB.Apply(ctx, []*spanner.Mutation{spanner.Insert("FollowCoord", []string{"id", "nextIdx"}, []interface{}{0, 0})}); err != nil && spanner.ErrCode(err) != codes.AlreadyExists {
+		return nil, fmt.Errorf("failed to initialise dedupDB: %v:", err)
+	}
+
 	r := &Dedup{
 		ctx:    ctx,
 		dbPool: dedupDB,
