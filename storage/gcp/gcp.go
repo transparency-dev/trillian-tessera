@@ -925,6 +925,7 @@ type Dedup struct {
 }
 
 func (d *Dedup) Follower(bh BundleHasherFunc) tessera.Follower {
+	klog.Infof("Dedup: following")
 	return func(ctx context.Context, lsr tessera.LogStateReader) error {
 		t := time.NewTicker(500 * time.Millisecond)
 		for {
@@ -934,13 +935,13 @@ func (d *Dedup) Follower(bh BundleHasherFunc) tessera.Follower {
 			case <-t.C:
 			}
 			var err error
+			klog.Infof("Dedup: follower looking for work")
 			for more := true; more; {
 				more, err = d.populate(ctx, bh, lsr)
 				if err != nil {
 					klog.Errorf("Dedup failed to populate: %v", err)
 				}
 			}
-
 		}
 	}
 }
@@ -976,14 +977,18 @@ func (d *Dedup) populate(ctx context.Context, bh BundleHasherFunc, lsr tessera.L
 		if err != nil {
 			return fmt.Errorf("read followcoord: %v", err)
 		}
-		var fromIdx int64 // Spanner doesn't support uint64
-		if err := row.Columns(&fromIdx); err != nil {
+		var f int64 // Spanner doesn't support uint64
+		if err := row.Columns(&f); err != nil {
 			return fmt.Errorf("failed to read dedup coordination info: %v", err)
 		}
-		klog.V(1).Infof("Populating from %d", fromIdx)
+		fromIdx := uint64(f)
+		klog.V(1).Infof("Dedup: Populating from %d", fromIdx)
+		if fromIdx == toSize {
+			klog.V(1).Infof("Dedup: nothing new to add")
+		}
 
 		const maxBundles = 10
-		lh, err := fetchLeafHashes(ctx, uint64(fromIdx), toSize, toSize, maxBundles, lsr.ReadEntryBundle, bh)
+		lh, err := fetchLeafHashes(ctx, fromIdx, toSize, toSize, maxBundles, lsr.ReadEntryBundle, bh)
 		if err != nil {
 			return fmt.Errorf("fetchLeafHashes(%d, %d, %d): %v", fromIdx, toSize, toSize, err)
 		}
@@ -992,7 +997,7 @@ func (d *Dedup) populate(ctx context.Context, bh BundleHasherFunc, lsr tessera.L
 		for i, h := range lh {
 			m = append(m, dedupeMapping{
 				ID:  h,
-				Idx: uint64(fromIdx) + uint64(i),
+				Idx: fromIdx + uint64(i),
 			})
 		}
 
