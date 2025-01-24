@@ -59,7 +59,7 @@ func NewAppender(d Driver, decorators ...func(AddFn) AddFn) (AddFn, LogReader, e
 		return nil, nil, fmt.Errorf("driver %T does not implement Appender", d)
 	}
 	add := a.Add
-	for i := len(decorators) - 1; i > 0; i++ {
+	for i := len(decorators) - 1; i >= 0; i-- {
 		add = decorators[i](add)
 	}
 	reader, ok := d.(LogReader)
