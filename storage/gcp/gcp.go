@@ -1027,7 +1027,7 @@ func (d *Dedup) populate(ctx context.Context, bh BundleHasherFunc, lsr tessera.L
 		workToDo = true
 
 		// TODO(al): make this configuable.
-		const maxBundles = 2
+		const maxBundles = 10
 
 		TfetchLeaves := time.Now()
 		lh, err := fetchLeafHashes(ctx, fromIdx, toSize, toSize, maxBundles, lsr.ReadEntryBundle, bh)
