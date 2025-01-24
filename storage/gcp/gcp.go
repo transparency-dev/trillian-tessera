@@ -925,8 +925,8 @@ type Dedup struct {
 }
 
 func (d *Dedup) Follower(bh BundleHasherFunc) tessera.Follower {
-	klog.Infof("Dedup: following")
 	return func(ctx context.Context, lsr tessera.LogStateReader) error {
+		klog.Infof("Dedup: following")
 		t := time.NewTicker(500 * time.Millisecond)
 		for {
 			select {

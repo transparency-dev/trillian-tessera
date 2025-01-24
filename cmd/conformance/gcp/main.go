@@ -31,7 +31,6 @@ import (
 	"golang.org/x/mod/sumdb/note"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
-	"golang.org/x/sync/errgroup"
 	"k8s.io/klog/v2"
 )
 
@@ -70,7 +69,6 @@ func main() {
 		klog.Exitf("Failed to create new GCP storage: %v", err)
 	}
 
-	errG := errgroup.Group{}
 	dedups := make([]func(tessera.AddFn) tessera.AddFn, 0, 2)
 	dedups = append(dedups, tessera.InMemoryDedupe(256))
 	// PersistentDedup is currently experimental, so there's no terraform or documentation yet!
@@ -80,7 +78,18 @@ func main() {
 			klog.Exitf("Failed to create new GCP dedupe: %v", err)
 		}
 		dedups = append(dedups, dd.AppendDecorator())
-		errG.Go(func() error { return tessera.Follow(ctx, driver, dd.Follower(BundleHasher)) })
+		go func() {
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				default:
+					if err := tessera.Follow(ctx, driver, dd.Follower(BundleHasher)); err != nil {
+						klog.Warningf("Follow: %v", err)
+					}
+				}
+			}
+		}()
 	}
 
 	addFn, _, err := tessera.NewAppender(driver, dedups...)
