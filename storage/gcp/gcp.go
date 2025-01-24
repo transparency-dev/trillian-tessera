@@ -1098,43 +1098,11 @@ func (m *MigrationStorage) fetchLeafHashes(ctx context.Context, from, to, source
 	// TODO(al): Make this configurable.
 	const maxBundles = 300
 
-	toBeAdded := sync.Map{}
-	eg := errgroup.Group{}
-	n := 0
-	for ri := range layout.Range(from, to, sourceSize) {
-		eg.Go(func() error {
-			b, err := m.s.ReadEntryBundle(ctx, ri.Index, ri.Partial)
-			if err != nil {
-				return fmt.Errorf("ReadEntryBundle(%d.%d): %v", ri.Index, ri.Partial, err)
-			}
-
-			bh, err := m.bundleHasher(b)
-			if err != nil {
-				return fmt.Errorf("bundleHasherFunc for bundle index %d: %v", ri.Index, err)
-			}
-			toBeAdded.Store(ri.Index, bh[ri.First:ri.First+ri.N])
-			return nil
-		})
-		n++
-		if n >= maxBundles {
-			break
-		}
+	h, err := fetchLeafHashes(ctx, from, to, to, maxBundles, m.s.ReadEntryBundle, m.bundleHasher)
+	if err != nil {
+		return nil, fmt.Errorf("fetchLeafHashes(%d, %d): %v", from, to, err)
 	}
-	if err := eg.Wait(); err != nil {
-		return nil, err
-	}
-
-	lh := make([][]byte, 0, maxBundles)
-	for i := from / layout.EntryBundleWidth; ; i++ {
-		v, ok := toBeAdded.LoadAndDelete(i)
-		if !ok {
-			break
-		}
-		bh := v.([][]byte)
-		lh = append(lh, bh...)
-	}
-
-	return lh, nil
+	return h, nil
 }
 
 func (m *MigrationStorage) buildTree(ctx context.Context, sourceSize uint64) (uint64, []byte, error) {
@@ -1185,4 +1153,52 @@ func (m *MigrationStorage) buildTree(ctx context.Context, sourceSize uint64) (ui
 		return 0, nil, err
 	}
 	return newSize, newRoot, nil
+}
+
+// readEntryBundleFunc is the signature of a function which knows how to fetch the specified entry bundle resource.
+type readEntryBundleFunc func(ctx context.Context, idx uint64, p uint8) ([]byte, error)
+
+// fetchLeafHashes fetches the necessary entry bundles to cover the specified [from, to) range of entries,
+// and uses the provided function to hash the entries they contain.
+// If the required number of bundles is greater than maxBundles, the entry range fetched is truncated.
+func fetchLeafHashes(ctx context.Context, from, to, sourceSize uint64, maxBundles int, readBundle readEntryBundleFunc, bundleHasher BundleHasherFunc) ([][]byte, error) {
+	toBeAdded := sync.Map{}
+	eg := errgroup.Group{}
+	n := 0
+
+	for ri := range layout.Range(from, to, sourceSize) {
+		// We'll fetch each bundle in parallel because each individual request is surprisingly slow.
+		eg.Go(func() error {
+			b, err := readBundle(ctx, ri.Index, ri.Partial)
+			if err != nil {
+				return fmt.Errorf("ReadEntryBundle(%d.%d): %v", ri.Index, ri.Partial, err)
+			}
+
+			bh, err := bundleHasher(b)
+			if err != nil {
+				return fmt.Errorf("bundleHasherFunc for bundle index %d: %v", ri.Index, err)
+			}
+			toBeAdded.Store(ri.Index, bh[ri.First:ri.First+ri.N])
+			return nil
+		})
+		n++
+		if n >= maxBundles {
+			break
+		}
+	}
+	if err := eg.Wait(); err != nil {
+		return nil, err
+	}
+
+	lh := make([][]byte, 0, maxBundles)
+	for i := from / layout.EntryBundleWidth; ; i++ {
+		v, ok := toBeAdded.LoadAndDelete(i)
+		if !ok {
+			break
+		}
+		bh := v.([][]byte)
+		lh = append(lh, bh...)
+	}
+
+	return lh, nil
 }
