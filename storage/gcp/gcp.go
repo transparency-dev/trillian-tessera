@@ -918,6 +918,11 @@ func NewDedup(ctx context.Context, spannerDB string) (*Dedup, error) {
 func (d *Dedup) AppendDecorator() func(d tessera.AddFn) tessera.AddFn {
 	return func(delegate tessera.AddFn) tessera.AddFn {
 		return func(ctx context.Context, e *tessera.Entry) tessera.IndexFuture {
+			// Push back if anti-spam is trailing too far behind the current log.
+			if d.underwater.Load() {
+				return func() (uint64, error) { return 0, tessera.ErrPushback }
+			}
+
 			idx, err := d.index(ctx, e.Identity())
 			if err != nil {
 				return func() (uint64, error) { return 0, err }
@@ -934,6 +939,8 @@ func (d *Dedup) AppendDecorator() func(d tessera.AddFn) tessera.AddFn {
 type Dedup struct {
 	ctx    context.Context
 	dbPool *spanner.Client
+
+	underwater atomic.Bool
 
 	numLookups  atomic.Uint64
 	numWrites   atomic.Uint64
@@ -1003,6 +1010,17 @@ func (d *Dedup) populate(ctx context.Context, bh BundleHasherFunc, lsr tessera.L
 		if fromIdx == toSize {
 			klog.V(1).Infof("Dedup: nothing new to add")
 			return nil
+		}
+
+		// TODO(al): make this configurable
+		const maxBehind = 256 * 20
+		behind := toSize - fromIdx
+		if behind > maxBehind {
+			klog.Infof("Dedup pushing back (%d > %d)", behind, maxBehind)
+			d.underwater.Store(true)
+		} else {
+			klog.Infof("Dedup caught up, stopping pushback")
+			d.underwater.Store(false)
 		}
 
 		workToDo = true
