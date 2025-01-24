@@ -77,6 +77,8 @@ func main() {
 		if err != nil {
 			klog.Exitf("Failed to create new GCP dedupe: %v", err)
 		}
+		dedups = append(dedups, dd.AppendDecorator())
+
 		go func() {
 			if err := tessera.Follow(ctx, driver, dd.Follower(BundleHasher)); err != nil {
 				klog.Exitf("Follow: %v", err)
