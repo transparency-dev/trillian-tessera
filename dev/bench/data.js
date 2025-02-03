@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1738617437205,
+  "lastUpdate": 1738620910201,
   "repoUrl": "https://github.com/transparency-dev/trillian-tessera",
   "entries": {
     "Benchmark": [
@@ -6600,6 +6600,126 @@ window.BENCHMARK_DATA = {
             "value": 3032,
             "unit": "allocs/op",
             "extra": "3732 times\n4 procs"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "49699333+dependabot[bot]@users.noreply.github.com",
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "2d6f5e360efa12726eb11947a9ed12853e336ab4",
+          "message": "Bump the all-gha-deps group with 3 updates (#467)\n\nBumps the all-gha-deps group with 3 updates: [aws-actions/configure-aws-credentials](https://github.com/aws-actions/configure-aws-credentials), [gruntwork-io/terragrunt-action](https://github.com/gruntwork-io/terragrunt-action) and [github/codeql-action](https://github.com/github/codeql-action).\n\n\nUpdates `aws-actions/configure-aws-credentials` from 4.0.2 to 4.0.3\n- [Release notes](https://github.com/aws-actions/configure-aws-credentials/releases)\n- [Changelog](https://github.com/aws-actions/configure-aws-credentials/blob/main/CHANGELOG.md)\n- [Commits](https://github.com/aws-actions/configure-aws-credentials/compare/e3dd6a429d7300a6a4c196c26e071d42e0343502...4fc4975a852c8cd99761e2de1f4ba73402e44dd9)\n\nUpdates `gruntwork-io/terragrunt-action` from 2.1.4 to 2.1.5\n- [Release notes](https://github.com/gruntwork-io/terragrunt-action/releases)\n- [Commits](https://github.com/gruntwork-io/terragrunt-action/compare/cf355638dbd066b6a70eb01f31ad9293870a0e34...9559e51d05873b0ea467c42bbabcb5c067642ccc)\n\nUpdates `github/codeql-action` from 3.28.6 to 3.28.8\n- [Release notes](https://github.com/github/codeql-action/releases)\n- [Changelog](https://github.com/github/codeql-action/blob/main/CHANGELOG.md)\n- [Commits](https://github.com/github/codeql-action/compare/17a820bf2e43b47be2c72b39cc905417bc1ab6d0...dd746615b3b9d728a6a37ca2045b68ca76d4841a)\n\n---\nupdated-dependencies:\n- dependency-name: aws-actions/configure-aws-credentials\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: all-gha-deps\n- dependency-name: gruntwork-io/terragrunt-action\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: all-gha-deps\n- dependency-name: github/codeql-action\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: all-gha-deps\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
+          "timestamp": "2025-02-03T22:14:26Z",
+          "tree_id": "e4a1e7aa209955c2788162e145e5c46e0e5a44aa",
+          "url": "https://github.com/transparency-dev/trillian-tessera/commit/2d6f5e360efa12726eb11947a9ed12853e336ab4"
+        },
+        "date": 1738620909830,
+        "tool": "go",
+        "benches": [
+          {
+            "name": "BenchmarkDedupe",
+            "value": 4936651,
+            "unit": "ns/op\t  698986 B/op\t   19657 allocs/op",
+            "extra": "253 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDedupe - ns/op",
+            "value": 4936651,
+            "unit": "ns/op",
+            "extra": "253 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDedupe - B/op",
+            "value": 698986,
+            "unit": "B/op",
+            "extra": "253 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDedupe - allocs/op",
+            "value": 19657,
+            "unit": "allocs/op",
+            "extra": "253 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLeafBundle_UnmarshalText",
+            "value": 6979,
+            "unit": "ns/op\t    6528 B/op\t       1 allocs/op",
+            "extra": "188101 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLeafBundle_UnmarshalText - ns/op",
+            "value": 6979,
+            "unit": "ns/op",
+            "extra": "188101 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLeafBundle_UnmarshalText - B/op",
+            "value": 6528,
+            "unit": "B/op",
+            "extra": "188101 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLeafBundle_UnmarshalText - allocs/op",
+            "value": 1,
+            "unit": "allocs/op",
+            "extra": "188101 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkCheckpointUnsafe",
+            "value": 113.9,
+            "unit": "ns/op\t     112 B/op\t       3 allocs/op",
+            "extra": "10524630 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkCheckpointUnsafe - ns/op",
+            "value": 113.9,
+            "unit": "ns/op",
+            "extra": "10524630 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkCheckpointUnsafe - B/op",
+            "value": 112,
+            "unit": "B/op",
+            "extra": "10524630 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkCheckpointUnsafe - allocs/op",
+            "value": 3,
+            "unit": "allocs/op",
+            "extra": "10524630 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkIntegrate",
+            "value": 349534,
+            "unit": "ns/op\t  290407 B/op\t    3036 allocs/op",
+            "extra": "4144 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkIntegrate - ns/op",
+            "value": 349534,
+            "unit": "ns/op",
+            "extra": "4144 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkIntegrate - B/op",
+            "value": 290407,
+            "unit": "B/op",
+            "extra": "4144 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkIntegrate - allocs/op",
+            "value": 3036,
+            "unit": "allocs/op",
+            "extra": "4144 times\n4 procs"
           }
         ]
       }
