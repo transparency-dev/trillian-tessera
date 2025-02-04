@@ -47,7 +47,6 @@ import (
 	"cloud.google.com/go/spanner/apiv1/spannerpb"
 
 	gcs "cloud.google.com/go/storage"
-	"github.com/globocom/go-buffer"
 	"github.com/google/go-cmp/cmp"
 	"github.com/transparency-dev/merkle/rfc6962"
 	tessera "github.com/transparency-dev/trillian-tessera"
@@ -232,6 +231,11 @@ func (s *Storage) ReadTile(ctx context.Context, l, i uint64, p uint8) ([]byte, e
 
 func (s *Storage) ReadEntryBundle(ctx context.Context, i uint64, p uint8) ([]byte, error) {
 	return s.get(ctx, s.entriesPath(i, p))
+}
+
+// For LogReaderState
+func (s *Storage) State(ctx context.Context) (uint64, []byte, error) {
+	return s.sequencer.currentTree(ctx)
 }
 
 // get returns the requested object.
@@ -852,7 +856,7 @@ func (s *gcsStorage) lastModified(ctx context.Context, obj string) (time.Time, e
 	return r.Attrs.LastModified, r.Close()
 }
 
-// NewDedupe returns wrapped Add func which will use Spanner to maintain a mapping of
+// NewDedupDecorator returns wrapped Add func which will use Spanner to maintain a mapping of
 // previously seen entries and their assigned indices. Future calls with the same entry
 // will return the previously assigned index, as yet unseen entries will be passed to the provided
 // delegate function to have an index assigned.
@@ -865,68 +869,112 @@ func (s *gcsStorage) lastModified(ctx context.Context, obj string) (time.Time, e
 // maintaining the Merkle tree.
 //
 // This functionality is experimental!
-func NewDedupe(ctx context.Context, spannerDB string) (func(tessera.AddFn) tessera.AddFn, error) {
+func NewDedup(ctx context.Context, spannerDB string) (*Dedup, error) {
 	/*
-	   Schema for reference:
+		Schema for reference:
+			CREATE TABLE FollowCoord (
+				id INT64 NOT NULL,
+				nextIdx INT64 NOT NULL,
+			) PRIMARY KEY (id);
 
-	   	CREATE TABLE IDSeq (
-	   	 id INT64 NOT NULL,
-	   	 h BYTES(MAX) NOT NULL,
-	   	 idx INT64 NOT NULL,
-	   	) PRIMARY KEY (id, h);
+		   	CREATE TABLE IDSeq (
+				h BYTES(64) NOT NULL,
+				idx INT64 NOT NULL,
+		   	) PRIMARY KEY (id, h);
 	*/
 	dedupDB, err := spanner.NewClient(ctx, spannerDB)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to Spanner: %v", err)
 	}
 
-	r := &dedupStorage{
+	if _, err := dedupDB.Apply(ctx, []*spanner.Mutation{spanner.Insert("FollowCoord", []string{"id", "nextIdx"}, []interface{}{0, 0})}); err != nil && spanner.ErrCode(err) != codes.AlreadyExists {
+		return nil, fmt.Errorf("failed to initialise dedupDB: %v:", err)
+	}
+
+	r := &Dedup{
 		ctx:    ctx,
 		dbPool: dedupDB,
 	}
 
-	// TODO(al): Make these configurable
-	r.buf = buffer.New(
-		buffer.WithSize(64),
-		buffer.WithFlushInterval(200*time.Millisecond),
-		buffer.WithFlusher(buffer.FlusherFunc(r.flush)),
-		buffer.WithPushTimeout(15*time.Second),
-	)
-	go func(ctx context.Context) {
+	go func() {
 		t := time.NewTicker(time.Second)
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case <-t.C:
-				klog.V(1).Infof("DEDUP: # Writes %d, # Lookups %d, # DB hits %v, # buffer Push discards %d", r.numWrites.Load(), r.numLookups.Load(), r.numDBDedups.Load(), r.numPushErrs.Load())
 			}
+			hits := r.numDBDedups.Load()
+			lookups := r.numLookups.Load()
+			writes := r.numWrites.Load()
+			klog.Infof("DEDUP: hits %0.1f%% lookups: %d, populationWrites: %d", float64(hits)*100.0/float64(lookups), lookups, writes)
 		}
-	}(ctx)
-	return func(af tessera.AddFn) tessera.AddFn {
-		r.delegate = af
-		return r.add
-	}, nil
+	}()
+
+	return r, nil
 }
 
-type dedupStorage struct {
-	ctx      context.Context
-	dbPool   *spanner.Client
-	delegate func(ctx context.Context, e *tessera.Entry) tessera.IndexFuture
+func (d *Dedup) AppendDecorator() func(d tessera.AddFn) tessera.AddFn {
+	return func(delegate tessera.AddFn) tessera.AddFn {
+		return func(ctx context.Context, e *tessera.Entry) tessera.IndexFuture {
+			// Push back if anti-spam is trailing too far behind the current log.
+			if d.underwater.Load() {
+				return func() (uint64, error) { return 0, tessera.ErrPushback }
+			}
+
+			idx, err := d.index(ctx, e.Identity())
+			if err != nil {
+				return func() (uint64, error) { return 0, err }
+			}
+			if idx != nil {
+				return func() (uint64, error) { return *idx, nil }
+			}
+
+			return delegate(ctx, e)
+		}
+	}
+}
+
+type Dedup struct {
+	ctx    context.Context
+	dbPool *spanner.Client
+
+	underwater atomic.Bool
 
 	numLookups  atomic.Uint64
 	numWrites   atomic.Uint64
 	numDBDedups atomic.Uint64
 	numPushErrs atomic.Uint64
+}
 
-	buf *buffer.Buffer
+func (d *Dedup) Follower(bh BundleHasherFunc) tessera.Follower {
+	return func(ctx context.Context, lsr tessera.LogStateReader) error {
+		klog.Infof("Dedup: following")
+		t := time.NewTicker(500 * time.Millisecond)
+		for {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-t.C:
+			}
+			var err error
+			klog.V(2).Infof("Dedup: follower looking for work")
+			for more := true; more; {
+				more, err = d.populate(ctx, bh, lsr)
+				if err != nil {
+					klog.Errorf("Dedup failed to populate: %v", err)
+				}
+			}
+		}
+	}
 }
 
 // index returns the index (if any) previously associated with the provided hash
-func (d *dedupStorage) index(ctx context.Context, h []byte) (*uint64, error) {
+func (d *Dedup) index(ctx context.Context, h []byte) (*uint64, error) {
 	d.numLookups.Add(1)
 	var idx int64
-	if row, err := d.dbPool.Single().ReadRow(ctx, "IDSeq", spanner.Key{0, h}, []string{"idx"}); err != nil {
+	// TODO(al): timestamp bound - good?
+	if row, err := d.dbPool.Single().WithTimestampBound(spanner.MaxStaleness(10*time.Second)).ReadRow(ctx, "IDSeq", spanner.Key{h}, []string{"idx"}); err != nil {
 		if c := spanner.ErrCode(err); c == codes.NotFound {
 			return nil, nil
 		}
@@ -941,15 +989,95 @@ func (d *dedupStorage) index(ctx context.Context, h []byte) (*uint64, error) {
 	}
 }
 
+func (d *Dedup) populate(ctx context.Context, bh BundleHasherFunc, lsr tessera.LogStateReader) (bool, error) {
+	workToDo := false
+	toSize, _, err := lsr.State(ctx)
+	if err != nil {
+		return false, fmt.Errorf("failed to read log state: %v", err)
+	}
+	_, err = d.dbPool.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
+		Tstart := time.Now()
+		// Grab the highest index we've populated so far.
+		row, err := txn.ReadRowWithOptions(ctx, "FollowCoord", spanner.Key{0}, []string{"nextIdx"}, &spanner.ReadOptions{LockHint: spannerpb.ReadRequest_LOCK_HINT_EXCLUSIVE})
+		if err != nil {
+			return fmt.Errorf("read followcoord: %v", err)
+		}
+		var f int64 // Spanner doesn't support uint64
+		if err := row.Columns(&f); err != nil {
+			return fmt.Errorf("failed to read dedup coordination info: %v", err)
+		}
+		fromIdx := uint64(f)
+		klog.V(1).Infof("Dedup: Populating from %d", fromIdx)
+		if fromIdx == toSize {
+			klog.V(1).Infof("Dedup: nothing new to add")
+			return nil
+		}
+
+		// TODO(al): make this configurable
+		const maxBehind = 256 * 20
+		behind := toSize - fromIdx
+		if behind > maxBehind {
+			klog.Infof("Dedup pushing back (%d > %d)", behind, maxBehind)
+			d.underwater.Store(true)
+		} else if d.underwater.Load() {
+			klog.Infof("Dedup caught up, stopping pushback")
+			d.underwater.Store(false)
+		}
+
+		workToDo = true
+
+		// TODO(al): make this configuable.
+		const maxBundles = 10
+
+		TfetchLeaves := time.Now()
+		lh, err := fetchLeafHashes(ctx, fromIdx, toSize, toSize, maxBundles, lsr.ReadEntryBundle, bh)
+		if err != nil {
+			return fmt.Errorf("fetchLeafHashes(%d, %d, %d): %v", fromIdx, toSize, toSize, err)
+		}
+
+		m := make([]dedupeMapping, 0, len(lh))
+		for i, h := range lh {
+			m = append(m, dedupeMapping{
+				ID:  h,
+				Idx: fromIdx + uint64(i),
+			})
+		}
+
+		TstoreMappings := time.Now()
+		if err := d.storeMappings(ctx, m); err != nil {
+			return fmt.Errorf("storeMappings(idx: %d, len: %d): %v", fromIdx, len(m), err)
+		}
+		nextIdx := fromIdx + uint64(len(m))
+
+		TupdateCoord := time.Now()
+		// Update our coordination row.
+		if err := txn.BufferWrite([]*spanner.Mutation{spanner.Update("FollowCoord", []string{"id", "nextIdx"}, []interface{}{0, int64(nextIdx)})}); err != nil {
+			return fmt.Errorf("update followcoord: %v", err)
+		}
+
+		d.numWrites.Add(uint64(len(m)))
+
+		klog.Infof("DEDUP: total %v (rC: %v, fetch: %v, storeM: %v, uC: %v)", time.Since(Tstart), TfetchLeaves.Sub(Tstart), TstoreMappings.Sub(TfetchLeaves), TupdateCoord.Sub(TstoreMappings), time.Since(TupdateCoord))
+
+		return nil
+	})
+	if err != nil {
+		return false, err
+	}
+
+	return workToDo, nil
+
+}
+
 // storeMappings stores the associations between the keys and IDs in a non-atomic fashion
 // (i.e. it does not store all or none in a transactional sense).
 //
 // Returns an error if one or more mappings cannot be stored.
-func (d *dedupStorage) storeMappings(ctx context.Context, entries []dedupeMapping) error {
+func (d *Dedup) storeMappings(ctx context.Context, entries []dedupeMapping) error {
 	m := make([]*spanner.MutationGroup, 0, len(entries))
 	for _, e := range entries {
 		m = append(m, &spanner.MutationGroup{
-			Mutations: []*spanner.Mutation{spanner.Insert("IDSeq", []string{"id", "h", "idx"}, []interface{}{0, e.ID, int64(e.Idx)})},
+			Mutations: []*spanner.Mutation{spanner.Insert("IDSeq", []string{"h", "idx"}, []interface{}{e.ID, int64(e.Idx)})},
 		})
 	}
 
@@ -969,59 +1097,7 @@ type dedupeMapping struct {
 	Idx uint64
 }
 
-// add adds the entry to the underlying delegate only if e isn't already known. In either case,
-// an IndexFuture will be returned that the client can use to get the sequence number of this entry.
-func (d *dedupStorage) add(ctx context.Context, e *tessera.Entry) tessera.IndexFuture {
-	idx, err := d.index(ctx, e.Identity())
-	if err != nil {
-		return func() (uint64, error) { return 0, err }
-	}
-	if idx != nil {
-		return func() (uint64, error) { return *idx, nil }
-	}
-
-	i, err := d.delegate(ctx, e)()
-	if err != nil {
-		return func() (uint64, error) { return 0, err }
-	}
-
-	err = d.enqueueMapping(ctx, e.Identity(), i)
-	return func() (uint64, error) {
-		return i, err
-	}
-}
-
-// enqueueMapping buffers the provided ID -> index mapping ready to be flushed to storage.
-func (d *dedupStorage) enqueueMapping(_ context.Context, h []byte, idx uint64) error {
-	err := d.buf.Push(dedupeMapping{ID: h, Idx: idx})
-	if err != nil {
-		d.numPushErrs.Add(1)
-		// This means there's pressure flushing dedup writes out, so discard this write.
-		if err != buffer.ErrTimeout {
-			return err
-		}
-	}
-	return nil
-}
-
-// flush writes enqueued mappings to storage.
-func (d *dedupStorage) flush(items []interface{}) {
-	entries := make([]dedupeMapping, len(items))
-	for i := range items {
-		entries[i] = items[i].(dedupeMapping)
-	}
-
-	ctx, c := context.WithTimeout(d.ctx, 15*time.Second)
-	defer c()
-
-	if err := d.storeMappings(ctx, entries); err != nil {
-		klog.Infof("Failed to flush dedup entries: %v", err)
-		return
-	}
-	d.numWrites.Add(uint64(len(entries)))
-}
-
-// BundleHasherFunc is the signature of a function which knows how to parse an entry bundle and calculate leaf hashes for its entries.
+// BundleHasherFunc is the signature of a function which knows how N parse an entry bundle and calculate leaf hashes for its entries.
 type BundleHasherFunc func(entryBundle []byte) (LeafHashes [][]byte, err error)
 
 // NewMigrationTarget creates a new GCP storage for the MigrationTarget lifecycle mode.
@@ -1104,43 +1180,11 @@ func (m *MigrationStorage) fetchLeafHashes(ctx context.Context, from, to, source
 	// TODO(al): Make this configurable.
 	const maxBundles = 300
 
-	toBeAdded := sync.Map{}
-	eg := errgroup.Group{}
-	n := 0
-	for ri := range layout.Range(from, to, sourceSize) {
-		eg.Go(func() error {
-			b, err := m.s.ReadEntryBundle(ctx, ri.Index, ri.Partial)
-			if err != nil {
-				return fmt.Errorf("ReadEntryBundle(%d.%d): %v", ri.Index, ri.Partial, err)
-			}
-
-			bh, err := m.bundleHasher(b)
-			if err != nil {
-				return fmt.Errorf("bundleHasherFunc for bundle index %d: %v", ri.Index, err)
-			}
-			toBeAdded.Store(ri.Index, bh[ri.First:ri.First+ri.N])
-			return nil
-		})
-		n++
-		if n >= maxBundles {
-			break
-		}
+	h, err := fetchLeafHashes(ctx, from, to, to, maxBundles, m.s.ReadEntryBundle, m.bundleHasher)
+	if err != nil {
+		return nil, fmt.Errorf("fetchLeafHashes(%d, %d): %v", from, to, err)
 	}
-	if err := eg.Wait(); err != nil {
-		return nil, err
-	}
-
-	lh := make([][]byte, 0, maxBundles)
-	for i := from / layout.EntryBundleWidth; ; i++ {
-		v, ok := toBeAdded.LoadAndDelete(i)
-		if !ok {
-			break
-		}
-		bh := v.([][]byte)
-		lh = append(lh, bh...)
-	}
-
-	return lh, nil
+	return h, nil
 }
 
 func (m *MigrationStorage) buildTree(ctx context.Context, sourceSize uint64) (uint64, []byte, error) {
@@ -1191,4 +1235,52 @@ func (m *MigrationStorage) buildTree(ctx context.Context, sourceSize uint64) (ui
 		return 0, nil, err
 	}
 	return newSize, newRoot, nil
+}
+
+// readEntryBundleFunc is the signature of a function which knows how to fetch the specified entry bundle resource.
+type readEntryBundleFunc func(ctx context.Context, idx uint64, p uint8) ([]byte, error)
+
+// fetchLeafHashes fetches the necessary entry bundles to cover the specified [from, to) range of entries,
+// and uses the provided function to hash the entries they contain.
+// If the required number of bundles is greater than maxBundles, the entry range fetched is truncated.
+func fetchLeafHashes(ctx context.Context, from, to, sourceSize uint64, maxBundles int, readBundle readEntryBundleFunc, bundleHasher BundleHasherFunc) ([][]byte, error) {
+	toBeAdded := sync.Map{}
+	eg := errgroup.Group{}
+	n := 0
+
+	for ri := range layout.Range(from, to, sourceSize) {
+		// We'll fetch each bundle in parallel because each individual request is surprisingly slow.
+		eg.Go(func() error {
+			b, err := readBundle(ctx, ri.Index, ri.Partial)
+			if err != nil {
+				return fmt.Errorf("ReadEntryBundle(%d.%d): %v", ri.Index, ri.Partial, err)
+			}
+
+			bh, err := bundleHasher(b)
+			if err != nil {
+				return fmt.Errorf("bundleHasherFunc for bundle index %d: %v", ri.Index, err)
+			}
+			toBeAdded.Store(ri.Index, bh[ri.First:ri.First+ri.N])
+			return nil
+		})
+		n++
+		if n >= maxBundles {
+			break
+		}
+	}
+	if err := eg.Wait(); err != nil {
+		return nil, err
+	}
+
+	lh := make([][]byte, 0, maxBundles)
+	for i := from / layout.EntryBundleWidth; ; i++ {
+		v, ok := toBeAdded.LoadAndDelete(i)
+		if !ok {
+			break
+		}
+		bh := v.([][]byte)
+		lh = append(lh, bh...)
+	}
+
+	return lh, nil
 }

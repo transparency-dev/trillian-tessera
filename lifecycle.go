@@ -44,6 +44,17 @@ type LogReader interface {
 	ReadEntryBundle(ctx context.Context, index uint64, p uint8) ([]byte, error)
 }
 
+// LogStateReader is a LogReader that also provides access to the current integrated state, regardless
+// of whether it's been published.
+type LogStateReader interface {
+	LogReader
+
+	// State returns the current size and root hash of the integrated tree.
+	// Note that this may not necessarily represent the same tree state as the checkpoint returned by
+	// LogReader.ReadCheckpoint since the current tree state may not have been published yet.
+	State(ctx context.Context) (uint64, []byte, error)
+}
+
 // NewAppender returns an Appender, which allows a personality to incrementally append new
 // leaves to the log and to read from it.
 //
@@ -67,4 +78,60 @@ func NewAppender(d Driver, decorators ...func(AddFn) AddFn) (AddFn, LogReader, e
 		return nil, nil, fmt.Errorf("driver %T does not implement LogReader", d)
 	}
 	return add, reader, nil
+}
+
+// MigrationStorage describes the required functionality from the target storage driver to support the
+// migration lifecycle mode.
+//
+// It's expected that the implementation of this interface will attempt to integrate the entry bundles
+// being set as soon as is reasonably possible. It's up to the implementation whether that's done as a
+// background task, or is in-line with the call to AwaitIntegration.
+type MigrationTarget interface {
+	// SetEntryBundle is called to store the provided entry bundle bytes at the given coordinates.
+	//
+	// Implementations SHOULD treat calls to this function as being idempotent - i.e. attempts to set a previously
+	// set entry bundle should succeed if the bundle data are identical.
+	//
+	// This will be called as many times as necessary to set all entry bundles being migrated, quite likely in parallel.
+	SetEntryBundle(ctx context.Context, idx uint64, partial uint8, bundle []byte) error
+	// AwaitIntegration will block until SetEntryBundle has been called at least once for every
+	// entry bundle address implied by a tree of the provided size, and the storage implementation
+	// has successfully integrated all of the entries in those bundles into the local tree.
+	AwaitIntegration(ctx context.Context, size uint64) error
+	// State returns the current size and root hash of the target tree.
+	State(ctx context.Context) (uint64, []byte, error)
+}
+
+// NewMigrationTarget returns a MigrationTarget for the provided driver, which applications can use
+// to directly set entry bundles in the storage instance managed by the driver.
+//
+// This is intended to be used to migrate C2SP tlog-tiles compliant logs into/between Tessera storage
+// implementations.
+//
+// Zero or more bundleProcessors can be provided to wrap the underlying functionality provided by
+// the driver.
+func NewMigrationTarget(d Driver, bundleProcessors ...func(MigrationTarget) MigrationTarget) (MigrationTarget, error) {
+	t, ok := d.(MigrationTarget)
+	if !ok {
+		return nil, fmt.Errorf("driver %T does not implement MigrationTarget", d)
+	}
+	for i := len(bundleProcessors) - 1; i > 0; i++ {
+		t = bundleProcessors[i](t)
+	}
+	return t, nil
+}
+
+// Follower is the signature of a function accepted by the Follow function below.
+type Follower func(ctx context.Context, lsr LogStateReader) error
+
+// Follow registers a func which will be called and provided with read-only access to the current state of the log.
+// The provided func should only return an error under fatal conditions.
+//
+// This is intended for use by applications which want to perform some sort of processing based on the contents of the integrated entries.
+func Follow(ctx context.Context, d Driver, fn Follower) error {
+	lsr, ok := d.(LogStateReader)
+	if !ok {
+		return fmt.Errorf("driver %T does not implement LogStateReader", d)
+	}
+	return fn(ctx, lsr)
 }

@@ -24,7 +24,9 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/transparency-dev/merkle/rfc6962"
 	tessera "github.com/transparency-dev/trillian-tessera"
+	"github.com/transparency-dev/trillian-tessera/api"
 	"github.com/transparency-dev/trillian-tessera/storage/gcp"
 	"golang.org/x/mod/sumdb/note"
 	"golang.org/x/net/http2"
@@ -71,11 +73,17 @@ func main() {
 	dedups = append(dedups, tessera.InMemoryDedupe(256))
 	// PersistentDedup is currently experimental, so there's no terraform or documentation yet!
 	if *persistentDedup {
-		fn, err := gcp.NewDedupe(ctx, fmt.Sprintf("%s_dedup", *spanner))
+		dd, err := gcp.NewDedup(ctx, fmt.Sprintf("%s_dedup", *spanner))
 		if err != nil {
 			klog.Exitf("Failed to create new GCP dedupe: %v", err)
 		}
-		dedups = append(dedups, fn)
+		dedups = append(dedups, dd.AppendDecorator())
+
+		go func() {
+			if err := tessera.Follow(ctx, driver, dd.Follower(BundleHasher)); err != nil {
+				klog.Exitf("Follow: %v", err)
+			}
+		}()
 	}
 
 	addFn, _, err := tessera.NewAppender(driver, dedups...)
@@ -150,4 +158,19 @@ func signerFromFlags() (note.Signer, []note.Signer) {
 	}
 
 	return s, a
+}
+
+// BundleHasher parses a C2SP tlog-tile bundle and returns the leaf hashes of each entry it contains.
+// TODO: figure out where this should live/how it should work
+func BundleHasher(bundle []byte) ([][]byte, error) {
+	eb := &api.EntryBundle{}
+	if err := eb.UnmarshalText(bundle); err != nil {
+		return nil, fmt.Errorf("unmarshal: %v", err)
+	}
+	r := make([][]byte, 0, len(eb.Entries))
+	for _, e := range eb.Entries {
+		h := rfc6962.DefaultHasher.HashLeaf(e)
+		r = append(r, h[:])
+	}
+	return r, nil
 }
