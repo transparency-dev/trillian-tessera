@@ -35,7 +35,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"iter"
 	"net/http"
 	"os"
 	"sync"
@@ -332,83 +331,97 @@ func (s *Storage) getTiles(ctx context.Context, tileIDs []storage.TileID, logSiz
 		return nil, err
 	}
 	return r, nil
-
 }
 
-// streamEntryBundles returns an iterator over the entry bundles in the range [fromBundle, fromBundle+N).
-// The yielded range is truncated at the extent of the currently integrated tree, or if an error is encountered
-// while fetching entry bundle data.
+func (s *Storage) State(ctx context.Context) (uint64, error) {
+	size, _, err := s.sequencer.currentTree(ctx)
+	return size, err
+}
+
+// StreamEntryRange provides a mechanism to quickly read sequential entry bundles covering a range of entries [fromEntry, fromEntry+N).
+//
+// Returns a "next" function, which can be used to retrieve subsequent entry bundles, and a "stop" function which must be
+// called when no further bundles are required.
 //
 // This implementation is intended to be relatively performant compared to the naive approach of serially fetching
 // and yielding each bundle in turn, and is intended for use cases where the caller is actively consuming large
 // sections of the log contents.
-func (s *Storage) streamEntryBundles(ctx context.Context, fromBundle, N, treeSize uint64) iter.Seq2[[]byte, error] {
-	return func(yield func([]byte, error) bool) {
-		// bundleOrErr represents a fetched entry bunlde and its params, or an error if we couldn't fetch it for
-		// some reason.
-		type bundleOrErr struct {
-			b   []byte
-			err error
+//
+// TODO(al): consider whether this should be factored out as a storage mix-in.
+func (s *Storage) StreamEntryRange(ctx context.Context, fromEntry, N, treeSize uint64) (func() (ri layout.RangeInfo, bundle []byte, err error), func()) {
+	klog.V(1).Infof("StreamEntryRange from %d, N %d, treeSize %d", fromEntry, N, treeSize)
+
+	// bundleOrErr represents a fetched entry bunlde and its params, or an error if we couldn't fetch it for
+	// some reason.
+	type bundleOrErr struct {
+		ri  layout.RangeInfo
+		b   []byte
+		err error
+	}
+	// TODO(al): this should probably be configurable
+	nWorkers := 10
+
+	// bundles will be filled with futures for in-order entry bundles by the worker
+	// go routines below.
+	// This channel will be drained by the loop at the bottom of this func which
+	// yields the bundles to the caller.
+	bundles := make(chan func() bundleOrErr, nWorkers)
+	exit := make(chan struct{})
+
+	// Fetch entry bundle resources in parallel.
+	// We use a limited number of tokens here to prevent this from
+	// consuming an unbounded amount of resources.
+	go func() {
+		defer close(bundles)
+
+		// We'll limit ourselves to nWorkers worth of on-going work using these tokens:
+		tokens := make(chan struct{}, nWorkers)
+		for range nWorkers {
+			tokens <- struct{}{}
 		}
-		// TODO(al): this should probably be configurable
-		nWorkers := 10
 
-		// bundles will be filled with futures for in-order entry bundles by the worker
-		// go routines below.
-		// This channel will be drained by the loop at the bottom of this func which
-		// yields the bundles to the caller.
-		bundles := make(chan func() bundleOrErr, nWorkers)
-		exit := make(chan struct{})
-		defer close(exit)
-
-		// Fetch entry bundle resources in parallel.
-		// We use a limited number of tokens here to prevent this from
-		// consuming an unbounded amount of resources.
-		go func() {
-			defer close(bundles)
-
-			// We'll limit ourselves to nWorkers worth of on-going work using these tokens:
-			tokens := make(chan struct{}, nWorkers)
-			for range nWorkers {
-				tokens <- struct{}{}
-			}
-
-			// For each bundle, pop a future into the bundles channel and kick off an async request
-			// to resolve it.
-			for idx, limit := fromBundle, (fromBundle+N)/layout.EntryBundleWidth+1; idx < limit; idx++ {
-				select {
-				case <-exit:
-					return
-				case <-tokens:
-					// We'll return a token below, once the bundle is fetched _and_ is being yielded.
-				}
-
-				c := make(chan bundleOrErr, 1)
-				go func() {
-					b, err := s.getEntryBundle(ctx, idx, layout.PartialTileSize(0, idx, treeSize))
-					c <- bundleOrErr{b: b, err: err}
-				}()
-
-				f := func() bundleOrErr {
-					b := <-c
-					// We're about to yield a value, so we can now return the token and unblock another fetch.
-					tokens <- struct{}{}
-					return b
-				}
-
-				bundles <- f
-			}
-		}()
-
-		// Now that the bundles channel is being asynchronously populated, we can start yielding
-		// values out to the caller.
-		for f := range bundles {
-			b := f()
-			if ok := yield(b.b, b.err); !ok || b.err != nil {
+		// For each bundle, pop a future into the bundles channel and kick off an async request
+		// to resolve it.
+		for ri := range layout.Range(fromEntry, N, treeSize) {
+			select {
+			case <-exit:
 				return
+			case <-tokens:
+				// We'll return a token below, once the bundle is fetched _and_ is being yielded.
 			}
+
+			c := make(chan bundleOrErr, 1)
+			go func(ri layout.RangeInfo) {
+				b, err := s.getEntryBundle(ctx, ri.Index, ri.Partial)
+				c <- bundleOrErr{ri: ri, b: b, err: err}
+			}(ri)
+
+			f := func() bundleOrErr {
+				b := <-c
+				// We're about to yield a value, so we can now return the token and unblock another fetch.
+				tokens <- struct{}{}
+				return b
+			}
+
+			bundles <- f
+		}
+	}()
+
+	stop := func() {
+		close(exit)
+	}
+
+	next := func() (layout.RangeInfo, []byte, error) {
+		select {
+		case f, ok := <-bundles:
+			if !ok {
+				return layout.RangeInfo{}, nil, errors.New("no more bundles")
+			}
+			b := f()
+			return b.ri, b.b, b.err
 		}
 	}
+	return next, stop
 }
 
 // getEntryBundle returns the serialised entry bundle at the location described by the given index and partial size.

@@ -346,7 +346,7 @@ func TestBundleRoundtrip(t *testing.T) {
 	}
 }
 
-func TestStreamEntryBundles(t *testing.T) {
+func TestStreamEntryRange(t *testing.T) {
 	ctx := context.Background()
 	m := newMemObjStore()
 	s := &Storage{
@@ -355,8 +355,6 @@ func TestStreamEntryBundles(t *testing.T) {
 	}
 
 	logSize := 100045
-	N := uint64(logSize/layout.EntryBundleWidth + 1)
-
 	wantBundles := [][]byte{}
 
 	for r, idx := logSize, uint64(0); r > 0; idx++ {
@@ -372,15 +370,27 @@ func TestStreamEntryBundles(t *testing.T) {
 		r -= sz
 
 	}
-	idx := 0
-	for got, err := range s.streamEntryBundles(ctx, 0, N, uint64(logSize)) {
-		if err != nil {
-			t.Fatalf("streamEntryBundles: %v", err)
+	wantIdx := uint64(0)
+	next, stop := s.StreamEntryRange(ctx, 0, uint64(logSize), uint64(logSize))
+	defer stop()
+
+	for {
+		gotRI, gotBundle, gotErr := next()
+		if gotErr != nil {
+			t.Logf("gotErr after %d: %v", wantIdx, gotErr)
+			break
 		}
-		if diff := cmp.Diff(got, wantBundles[idx]); diff != "" {
+		if gotRI.Index != wantIdx {
+			t.Fatalf("got idx %d, want %d", gotRI.Index, wantIdx)
+		}
+		if diff := cmp.Diff(gotBundle, wantBundles[0]); diff != "" {
 			t.Fatalf("streamEntryBundles returned unexpected data: %s", diff)
 		}
-		idx++
+		wantBundles = wantBundles[1:]
+		wantIdx++
+	}
+	if l := len(wantBundles); l > 0 {
+		t.Fatalf("Expected %d more bundles", l)
 	}
 }
 
