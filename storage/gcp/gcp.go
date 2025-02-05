@@ -47,7 +47,6 @@ import (
 	"cloud.google.com/go/spanner/apiv1/spannerpb"
 
 	gcs "cloud.google.com/go/storage"
-	"github.com/globocom/go-buffer"
 	"github.com/google/go-cmp/cmp"
 	"github.com/transparency-dev/merkle/rfc6962"
 	tessera "github.com/transparency-dev/trillian-tessera"
@@ -829,46 +828,42 @@ func (s *gcsStorage) lastModified(ctx context.Context, obj string) (time.Time, e
 	return r.Attrs.LastModified, r.Close()
 }
 
-// NewDedupe returns wrapped Add func which will use Spanner to maintain a mapping of
-// previously seen entries and their assigned indices. Future calls with the same entry
-// will return the previously assigned index, as yet unseen entries will be passed to the provided
-// delegate function to have an index assigned.
-//
-// For performance reasons, the ID -> index associations returned by the delegate are buffered before
-// being flushed to Spanner. This can result in duplicates occuring in some circumstances, but in
-// general this should not be a problem.
+// NewDedupe returns a dedupe driver which uses Spanner to maintain a mapping of
+// previously seen entries and their assigned indices.
 //
 // Note that the storage for this mapping is entirely separate and unconnected to the storage used for
 // maintaining the Merkle tree.
 //
 // This functionality is experimental!
-func NewDedupe(ctx context.Context, spannerDB string) (func(tessera.AddFn) tessera.AddFn, error) {
+func NewDedupe(ctx context.Context, spannerDB string) (*DedupStorage, error) {
 	/*
-	   Schema for reference:
+		Schema for reference:
+			CREATE TABLE FollowCoord (
+				id INT64 NOT NULL,
+				nextIdx INT64 NOT NULL,
+			) PRIMARY KEY (id);
 
-	   	CREATE TABLE IDSeq (
-	   	 id INT64 NOT NULL,
-	   	 h BYTES(MAX) NOT NULL,
-	   	 idx INT64 NOT NULL,
-	   	) PRIMARY KEY (id, h);
+			CREATE TABLE IDSeq (
+				id INT64 NOT NULL,
+				h BYTES(MAX) NOT NULL,
+				idx INT64 NOT NULL,
+			) PRIMARY KEY (id, h);
 	*/
 	dedupDB, err := spanner.NewClient(ctx, spannerDB)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to Spanner: %v", err)
 	}
 
-	r := &dedupStorage{
+	// Initialise the DB if necessary
+	if _, err := dedupDB.Apply(ctx, []*spanner.Mutation{spanner.Insert("FollowCoord", []string{"id", "nextIdx"}, []interface{}{0, 0})}); err != nil && spanner.ErrCode(err) != codes.AlreadyExists {
+		return nil, fmt.Errorf("failed to initialise dedupDB: %v:", err)
+	}
+
+	r := &DedupStorage{
 		ctx:    ctx,
 		dbPool: dedupDB,
 	}
 
-	// TODO(al): Make these configurable
-	r.buf = buffer.New(
-		buffer.WithSize(64),
-		buffer.WithFlushInterval(200*time.Millisecond),
-		buffer.WithFlusher(buffer.FlusherFunc(r.flush)),
-		buffer.WithPushTimeout(15*time.Second),
-	)
 	go func(ctx context.Context) {
 		t := time.NewTicker(time.Second)
 		for {
@@ -876,31 +871,25 @@ func NewDedupe(ctx context.Context, spannerDB string) (func(tessera.AddFn) tesse
 			case <-ctx.Done():
 				return
 			case <-t.C:
-				klog.V(1).Infof("DEDUP: # Writes %d, # Lookups %d, # DB hits %v, # buffer Push discards %d", r.numWrites.Load(), r.numLookups.Load(), r.numDBDedups.Load(), r.numPushErrs.Load())
+				klog.V(1).Infof("DEDUP: # Writes %d, # Lookups %d, # DB hits %v", r.numWrites.Load(), r.numLookups.Load(), r.numDBDedups.Load())
 			}
 		}
 	}(ctx)
-	return func(af tessera.AddFn) tessera.AddFn {
-		r.delegate = af
-		return r.add
-	}, nil
+
+	return r, nil
 }
 
-type dedupStorage struct {
-	ctx      context.Context
-	dbPool   *spanner.Client
-	delegate func(ctx context.Context, e *tessera.Entry) tessera.IndexFuture
+type DedupStorage struct {
+	ctx    context.Context
+	dbPool *spanner.Client
 
 	numLookups  atomic.Uint64
 	numWrites   atomic.Uint64
 	numDBDedups atomic.Uint64
-	numPushErrs atomic.Uint64
-
-	buf *buffer.Buffer
 }
 
 // index returns the index (if any) previously associated with the provided hash
-func (d *dedupStorage) index(ctx context.Context, h []byte) (*uint64, error) {
+func (d *DedupStorage) index(ctx context.Context, h []byte) (*uint64, error) {
 	d.numLookups.Add(1)
 	var idx int64
 	if row, err := d.dbPool.Single().ReadRow(ctx, "IDSeq", spanner.Key{0, h}, []string{"idx"}); err != nil {
@@ -922,7 +911,7 @@ func (d *dedupStorage) index(ctx context.Context, h []byte) (*uint64, error) {
 // (i.e. it does not store all or none in a transactional sense).
 //
 // Returns an error if one or more mappings cannot be stored.
-func (d *dedupStorage) storeMappings(ctx context.Context, entries []dedupeMapping) error {
+func (d *DedupStorage) storeMappings(ctx context.Context, entries []dedupeMapping) error {
 	m := make([]*spanner.MutationGroup, 0, len(entries))
 	for _, e := range entries {
 		m = append(m, &spanner.MutationGroup{
@@ -946,56 +935,22 @@ type dedupeMapping struct {
 	Idx uint64
 }
 
-// add adds the entry to the underlying delegate only if e isn't already known. In either case,
-// an IndexFuture will be returned that the client can use to get the sequence number of this entry.
-func (d *dedupStorage) add(ctx context.Context, e *tessera.Entry) tessera.IndexFuture {
-	idx, err := d.index(ctx, e.Identity())
-	if err != nil {
-		return func() (uint64, error) { return 0, err }
-	}
-	if idx != nil {
-		return func() (uint64, error) { return *idx, nil }
-	}
+// Decorator returns a function which will wrap an underlying Add delegate with
+// code to dedup against the stored data.
+func (d *DedupStorage) Decorator() func(f tessera.AddFn) tessera.AddFn {
+	return func(delegate tessera.AddFn) tessera.AddFn {
+		return func(ctx context.Context, e *tessera.Entry) tessera.IndexFuture {
+			idx, err := d.index(ctx, e.Identity())
+			if err != nil {
+				return func() (uint64, error) { return 0, err }
+			}
+			if idx != nil {
+				return func() (uint64, error) { return *idx, nil }
+			}
 
-	i, err := d.delegate(ctx, e)()
-	if err != nil {
-		return func() (uint64, error) { return 0, err }
-	}
-
-	err = d.enqueueMapping(ctx, e.Identity(), i)
-	return func() (uint64, error) {
-		return i, err
-	}
-}
-
-// enqueueMapping buffers the provided ID -> index mapping ready to be flushed to storage.
-func (d *dedupStorage) enqueueMapping(_ context.Context, h []byte, idx uint64) error {
-	err := d.buf.Push(dedupeMapping{ID: h, Idx: idx})
-	if err != nil {
-		d.numPushErrs.Add(1)
-		// This means there's pressure flushing dedup writes out, so discard this write.
-		if err != buffer.ErrTimeout {
-			return err
+			return delegate(ctx, e)
 		}
 	}
-	return nil
-}
-
-// flush writes enqueued mappings to storage.
-func (d *dedupStorage) flush(items []interface{}) {
-	entries := make([]dedupeMapping, len(items))
-	for i := range items {
-		entries[i] = items[i].(dedupeMapping)
-	}
-
-	ctx, c := context.WithTimeout(d.ctx, 15*time.Second)
-	defer c()
-
-	if err := d.storeMappings(ctx, entries); err != nil {
-		klog.Infof("Failed to flush dedup entries: %v", err)
-		return
-	}
-	d.numWrites.Add(uint64(len(entries)))
 }
 
 // BundleHasherFunc is the signature of a function which knows how to parse an entry bundle and calculate leaf hashes for its entries.
