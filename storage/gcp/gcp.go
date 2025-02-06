@@ -1088,10 +1088,27 @@ func (e *EntryReader) Next() (uint64, []byte, error) {
 	return rIdx, r, nil
 }
 
+// LogFollower provides read-only access to the log with an API tailored to bulk in-order
+// reads of entry bundles.
+//
+// TODO(al): factor this out into higher layer when it's ready.
+type LogFollower interface {
+	// State returns the size of the currently integrated tree.
+	// Note that this _may_ be larger than the currently _published_ checkpoint.
+	State(ctx context.Context) (uint64, error)
+
+	// StreamEntryBundles returns functions which act like a pull iterator for subsequent entry bundles starting at the given index.
+	//
+	// Implementations must:
+	//  - truncate the requested range if any or all of it is beyond the extent of the currently integrated tree.
+	//  - cease iterating if next() produces an error, or stop is called. next should continue to return an error if called again after either of these cases.
+	StreamEntryRange(ctx context.Context, fromIdx, N, treeSize uint64) (next func() (layout.RangeInfo, []byte, error), stop func())
+}
+
 // Populate uses entry data from the log to populate the dedupe storage.
 //
 // TODO(al):  add details
-func (d *DedupStorage) Populate(ctx context.Context, lss tessera.LogFollower, bundleFn BundleHasherFunc) error {
+func (d *DedupStorage) Populate(ctx context.Context, lf LogFollower, bundleFn BundleHasherFunc) error {
 	t := time.NewTicker(time.Second)
 	var (
 		entryReader *EntryReader
@@ -1106,7 +1123,7 @@ func (d *DedupStorage) Populate(ctx context.Context, lss tessera.LogFollower, bu
 			return ctx.Err()
 		case <-t.C:
 		}
-		size, err := lss.State(ctx)
+		size, err := lf.State(ctx)
 		if err != nil {
 			klog.Errorf("Populate: State(): %v", err)
 			continue
@@ -1134,7 +1151,7 @@ func (d *DedupStorage) Populate(ctx context.Context, lss tessera.LogFollower, bu
 				// If this is the first time around the loop we need to start the stream of entries now that we know where we want to
 				// start reading from:
 				if entryReader == nil {
-					next, st := lss.StreamEntryRange(ctx, followFrom, size-followFrom, size)
+					next, st := lf.StreamEntryRange(ctx, followFrom, size-followFrom, size)
 					stop = st
 					entryReader = NewEntryReader(next, bundleFn)
 				}
