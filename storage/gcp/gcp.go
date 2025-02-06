@@ -1043,6 +1043,178 @@ func (d *DedupStorage) Decorator() func(f tessera.AddFn) tessera.AddFn {
 	}
 }
 
+func NewEntryReader(next func() (layout.RangeInfo, []byte, error), bundleFn BundleHasherFunc) *EntryReader {
+	return &EntryReader{
+		bundleFn: bundleFn,
+		next:     next,
+		i:        0,
+	}
+}
+
+type EntryReader struct {
+	bundleFn BundleHasherFunc
+	next     func() (layout.RangeInfo, []byte, error)
+
+	curData [][]byte
+	curRI   layout.RangeInfo
+	i       uint64
+}
+
+func (e *EntryReader) Next() (uint64, []byte, error) {
+	if len(e.curData) == 0 {
+		var err error
+		var b []byte
+		e.curRI, b, err = e.next()
+		if err != nil {
+			return 0, nil, fmt.Errorf("next: %v", err)
+		}
+		e.curData, err = e.bundleFn(b)
+		if err != nil {
+			return 0, nil, fmt.Errorf("bundleFn(bundleEntry @%d): %v", e.curRI.Index, err)
+
+		}
+		if e.curRI.First > 0 {
+			e.curData = e.curData[e.curRI.First:]
+		}
+		if len(e.curData) > int(e.curRI.N) {
+			e.curData = e.curData[:e.curRI.N]
+		}
+		e.i = 0
+	}
+	var r []byte
+	r, e.curData = e.curData[0], e.curData[1:]
+	rIdx := e.curRI.Index*layout.EntryBundleWidth + uint64(e.curRI.First) + e.i
+	e.i++
+	return rIdx, r, nil
+}
+
+// Populate uses entry data from the log to populate the dedupe storage.
+//
+// TODO(al):  add details
+func (d *DedupStorage) Populate(ctx context.Context, lss tessera.LogFollower, bundleFn BundleHasherFunc) error {
+	t := time.NewTicker(time.Second)
+	var (
+		entryReader *EntryReader
+		stop        func()
+
+		curEntries [][]byte
+		curIndex   uint64
+	)
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-t.C:
+		}
+		size, err := lss.State(ctx)
+		if err != nil {
+			klog.Errorf("Populate: State(): %v", err)
+			continue
+		}
+
+		// Busy loop while there's work to be done
+		for workDone := true; workDone; {
+			_, err = d.dbPool.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
+				// Figure out the last entry we used to populate our dedup storage.
+				row, err := txn.ReadRowWithOptions(ctx, "FollowCoord", spanner.Key{0}, []string{"nextIdx"}, &spanner.ReadOptions{LockHint: spannerpb.ReadRequest_LOCK_HINT_EXCLUSIVE})
+				if err != nil {
+					return err
+				}
+
+				var f int64 // Spanner doesn't support uint64
+				if err := row.Columns(&f); err != nil {
+					return fmt.Errorf("failed to read follow coordination info: %v", err)
+				}
+				followFrom := uint64(f)
+				if followFrom == size {
+					workDone = false
+					return nil
+				}
+
+				// If this is the first time around the loop we need to start the stream of entries now that we know where we want to
+				// start reading from:
+				if entryReader == nil {
+					next, st := lss.StreamEntryRange(ctx, followFrom, size-followFrom, size)
+					stop = st
+					entryReader = NewEntryReader(next, bundleFn)
+				}
+
+				if curIndex == followFrom && curEntries != nil {
+					// We're recovering from a previous failed attempt
+				} else {
+					const batchSize = 64
+					bs := uint64(batchSize)
+					if r := size - followFrom; r < bs {
+						bs = r
+					}
+					batch := make([][]byte, 0, bs)
+					for i := 0; i < int(bs); i++ {
+						idx, c, err := entryReader.Next()
+						if err != nil {
+							return fmt.Errorf("entryReader.next: %v", err)
+						}
+						if wantIdx := followFrom + uint64(i); idx != wantIdx {
+							// We're out of sync
+							return fmt.Errorf("out of sync (%d != %d), bailing", idx, wantIdx)
+						}
+						batch = append(batch, c)
+					}
+					curEntries = batch
+					curIndex = followFrom
+				}
+
+				// Store dedup entries.
+				//
+				// Note that we're writing the dedup entries outside of the transaction here.
+				// This looks weird, but is ok because we don't mind if one or more of the individual dedupe entries fails because there's already
+				// an entry for that hash, and we'll only continue on to update our FollowCoord if no errors (other than AlreadyExists) occur while
+				// inserting entries.
+				//
+				// Alternative approaches are:
+				//  - Use InsertOrUpdate, but we'd rather keep serving the earliest index known for that entry.
+				//  - Perform Reads for each of the hashes we're about to write, and use that to filter writes.
+				//    This would work, but would incur an extra round-trip of data which isn't really necessary.
+				{
+					m := make([]*spanner.MutationGroup, 0, len(curEntries))
+					for i, e := range curEntries {
+						m = append(m, &spanner.MutationGroup{
+							Mutations: []*spanner.Mutation{spanner.Insert("IDSeq", []string{"id", "h", "idx"}, []interface{}{0, e, int64(curIndex + uint64(i))})},
+						})
+					}
+
+					i := d.dbPool.BatchWrite(ctx, m)
+					err := i.Do(func(r *spannerpb.BatchWriteResponse) error {
+						s := r.GetStatus()
+						if c := codes.Code(s.Code); c != codes.OK && c != codes.AlreadyExists {
+							return fmt.Errorf("failed to write dedup record: %v (%v)", s.GetMessage(), c)
+						}
+						return nil
+					})
+					if err != nil {
+						return err
+					}
+				}
+
+				numAdded := uint64(len(curEntries))
+				d.numWrites.Add(numAdded)
+
+				// Insertion of dupe entries was successful, so update our follow coordination row:
+				m := make([]*spanner.Mutation, 0)
+				m = append(m, spanner.Update("FollowCoord", []string{"id", "nextIdx"}, []interface{}{0, int64(followFrom + numAdded)}))
+
+				return txn.BufferWrite(m)
+			})
+			if err != nil {
+				klog.Errorf("Failed to commit dedupe population tx: %v", err)
+				stop()
+				entryReader = nil
+				continue
+			}
+			curEntries = nil
+		}
+	}
+}
+
 // BundleHasherFunc is the signature of a function which knows how to parse an entry bundle and calculate leaf hashes for its entries.
 type BundleHasherFunc func(entryBundle []byte) (LeafHashes [][]byte, err error)
 
