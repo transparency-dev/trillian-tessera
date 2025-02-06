@@ -926,19 +926,26 @@ func (s *gcsStorage) lastModified(ctx context.Context, obj string) (time.Time, e
 //
 // This functionality is experimental!
 func NewDedupe(ctx context.Context, spannerDB string) (*DedupStorage, error) {
-	/*
-		Schema for reference:
-			CREATE TABLE FollowCoord (
-				id INT64 NOT NULL,
-				nextIdx INT64 NOT NULL,
-			) PRIMARY KEY (id);
+	adminClient, err := database.NewDatabaseAdminClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer adminClient.Close()
 
-			CREATE TABLE IDSeq (
-				id INT64 NOT NULL,
-				h BYTES(MAX) NOT NULL,
-				idx INT64 NOT NULL,
-			) PRIMARY KEY (id, h);
-	*/
+	op, err := adminClient.UpdateDatabaseDdl(ctx, &adminpb.UpdateDatabaseDdlRequest{
+		Database: spannerDB,
+		Statements: []string{
+			"CREATE TABLE IF NOT EXISTS FollowCoord (id INT64 NOT NULL, nextIdx INT64 NOT NULL) PRIMARY KEY (id)",
+			"CREATE TABLE IF NOT EXISTS IDSeq (id INT64 NOT NULL, h BYTES(32) NOT NULL, idx INT64 NOT NULL) PRIMARY KEY (id, h)",
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create tables: %v", err)
+	}
+	if err := op.Wait(ctx); err != nil {
+		return nil, err
+	}
+
 	dedupDB, err := spanner.NewClient(ctx, spannerDB)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to Spanner: %v", err)
