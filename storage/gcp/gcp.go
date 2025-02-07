@@ -346,11 +346,28 @@ func (s *Storage) State(ctx context.Context) (uint64, error) {
 // This implementation is intended to be relatively performant compared to the naive approach of serially fetching
 // and yielding each bundle in turn, and is intended for use cases where the caller is actively consuming large
 // sections of the log contents.
-//
-// TODO(al): consider whether this should be factored out as a storage mix-in.
 func (s *Storage) StreamEntryRange(ctx context.Context, fromEntry, N, treeSize uint64) (func() (ri layout.RangeInfo, bundle []byte, err error), func()) {
 	klog.V(1).Infof("StreamEntryRange from %d, N %d, treeSize %d", fromEntry, N, treeSize)
 
+	return streamAdaptor(ctx, s.getEntryBundle, fromEntry, N, treeSize)
+}
+
+// getbundleFn is a function which knows how to fetch a single entry bundle from the specified address.
+type getBundleFn func(ctx context.Context, bundleIdx uint64, partial uint8) ([]byte, error)
+
+// streamAdaptor uses the provided function to produce a stream of entry bundles accesible via the returned functions.
+//
+// Entry bundles are retuned strictly in order via consecutive calls to the returned next func.
+// If the adaptor encounters an error while reading an entry bundle, the encountered error will be returned by the corresponding call to next,
+// and the stream will be stopped - further calls to next will continue to return errors.
+//
+// When the caller has finished consuming entrybundles (either because of an error being returned via next, or having consumed all the bundles it needs),
+// it MUST call the returned stop function to release resources.
+//
+// This adaptor is optimised for the case where calling getBundle has some appreciable latency, and works
+// around that by maintaining a read-ahead cache of subsequent bundles.
+// TODO(al): consider whether this should be factored out as a storage mix-in.
+func streamAdaptor(ctx context.Context, getBundle getBundleFn, fromEntry, N, treeSize uint64) (next func() (ri layout.RangeInfo, bundle []byte, err error), stop func()) {
 	// bundleOrErr represents a fetched entry bunlde and its params, or an error if we couldn't fetch it for
 	// some reason.
 	type bundleOrErr struct {
@@ -392,7 +409,7 @@ func (s *Storage) StreamEntryRange(ctx context.Context, fromEntry, N, treeSize u
 
 			c := make(chan bundleOrErr, 1)
 			go func(ri layout.RangeInfo) {
-				b, err := s.getEntryBundle(ctx, ri.Index, ri.Partial)
+				b, err := getBundle(ctx, ri.Index, ri.Partial)
 				c <- bundleOrErr{ri: ri, b: b, err: err}
 			}(ri)
 
@@ -407,11 +424,11 @@ func (s *Storage) StreamEntryRange(ctx context.Context, fromEntry, N, treeSize u
 		}
 	}()
 
-	stop := func() {
+	stop = func() {
 		close(exit)
 	}
 
-	next := func() (layout.RangeInfo, []byte, error) {
+	next = func() (layout.RangeInfo, []byte, error) {
 		select {
 		case f, ok := <-bundles:
 			if !ok {
