@@ -984,6 +984,8 @@ type DedupStorage struct {
 	ctx    context.Context
 	dbPool *spanner.Client
 
+	pushBack atomic.Bool
+
 	numLookups  atomic.Uint64
 	numWrites   atomic.Uint64
 	numDBDedups atomic.Uint64
@@ -1012,8 +1014,10 @@ func (d *DedupStorage) index(ctx context.Context, h []byte) (*uint64, error) {
 // code to dedup against the stored data.
 func (d *DedupStorage) Decorator() func(f tessera.AddFn) tessera.AddFn {
 	return func(delegate tessera.AddFn) tessera.AddFn {
-		// TODO(al): return ErrPushback if the Follower is too far behind the current size of the log.
 		return func(ctx context.Context, e *tessera.Entry) tessera.IndexFuture {
+			if d.pushBack.Load() {
+				return func() (uint64, error) { return 0, tessera.ErrPushback }
+			}
 			idx, err := d.index(ctx, e.Identity())
 			if err != nil {
 				return func() (uint64, error) { return 0, err }
@@ -1137,9 +1141,15 @@ func (d *DedupStorage) Populate(ctx context.Context, lf LogFollower, bundleFn Bu
 				}
 				followFrom := uint64(f)
 				if followFrom >= size {
+					// Our view of the log is out of date, exit the busy loop and refresh it.
 					workDone = false
 					return nil
 				}
+
+				// TODO(al): Maybe make these configurable.
+				const batchSize = 64
+				const pushBackThreshold = batchSize * 16
+				d.pushBack.Store(size-followFrom > pushBackThreshold)
 
 				// If this is the first time around the loop we need to start the stream of entries now that we know where we want to
 				// start reading from:
@@ -1155,7 +1165,6 @@ func (d *DedupStorage) Populate(ctx context.Context, lf LogFollower, bundleFn Bu
 					// If the above condition holds, then we're in a retry situation and we must use the same data again rather
 					// than continue reading entries which will take us out of sync.
 				} else {
-					const batchSize = 64
 					bs := uint64(batchSize)
 					if r := size - followFrom; r < bs {
 						bs = r
