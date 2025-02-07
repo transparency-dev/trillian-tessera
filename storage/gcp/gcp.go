@@ -347,7 +347,7 @@ func (s *Storage) State(ctx context.Context) (uint64, error) {
 // and yielding each bundle in turn, and is intended for use cases where the caller is actively consuming large
 // sections of the log contents.
 func (s *Storage) StreamEntryRange(ctx context.Context, fromEntry, N, treeSize uint64) (func() (ri layout.RangeInfo, bundle []byte, err error), func()) {
-	klog.V(1).Infof("StreamEntryRange from %d, N %d, treeSize %d", fromEntry, N, treeSize)
+	klog.Infof("StreamEntryRange from %d, N %d, treeSize %d", fromEntry, N, treeSize)
 
 	return streamAdaptor(ctx, s.getEntryBundle, fromEntry, N, treeSize)
 }
@@ -1175,7 +1175,7 @@ func (d *DedupStorage) Populate(ctx context.Context, lf LogFollower, bundleFn Bu
 					return fmt.Errorf("failed to read follow coordination info: %v", err)
 				}
 				followFrom := uint64(f)
-				if followFrom == size {
+				if followFrom >= size {
 					workDone = false
 					return nil
 				}
