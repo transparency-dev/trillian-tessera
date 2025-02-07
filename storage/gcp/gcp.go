@@ -1053,6 +1053,7 @@ type dedupeMapping struct {
 // code to dedup against the stored data.
 func (d *DedupStorage) Decorator() func(f tessera.AddFn) tessera.AddFn {
 	return func(delegate tessera.AddFn) tessera.AddFn {
+		// TODO(al): return ErrPushback if the Follower is too far behind the current size of the log.
 		return func(ctx context.Context, e *tessera.Entry) tessera.IndexFuture {
 			idx, err := d.index(ctx, e.Identity())
 			if err != nil {
