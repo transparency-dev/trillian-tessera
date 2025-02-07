@@ -1217,15 +1217,21 @@ func (d *DedupStorage) Populate(ctx context.Context, lf LogFollower, bundleFn Bu
 
 				// Store dedup entries.
 				//
-				// Note that we're writing the dedup entries outside of the transaction here.
-				// This looks weird, but is ok because we don't mind if one or more of the individual dedupe entries fails because there's already
-				// an entry for that hash, and we'll only continue on to update our FollowCoord if no errors (other than AlreadyExists) occur while
-				// inserting entries.
+				// Note that we're writing the dedup entries outside of the transaction here. The reason is because we absolutely do not want
+				// the transaction to fail if there's already an entry for the same hash in the IDSeq table.
+				//
+				// It looks unusual, but is ok because:
+				//  - individual dedupe entries fails because there's already an entry for that hash is perfectly ok
+				//  - we'll only continue on to update FollowCoord if no errors (other than AlreadyExists) occur while inserting entries
+				//  - similarly, if we manage to insert dedupe entries here, but then fail to update FollowCoord, we'll end up
+				//    retrying over the same set of log entries, and then ignoring the AlreadyExists which will occur.
 				//
 				// Alternative approaches are:
-				//  - Use InsertOrUpdate, but we'd rather keep serving the earliest index known for that entry.
-				//  - Perform Reads for each of the hashes we're about to write, and use that to filter writes.
-				//    This would work, but would incur an extra round-trip of data which isn't really necessary.
+				//  - Use InsertOrUpdate, but that will keep updating the index associated with the ID hash, and we'd rather keep serving
+				//    the earliest index known for that entry.
+				//  - Perform reads for each of the hashes we're about to write, and use that to filter writes.
+				//    This would work, but would also incur an extra round-trip of data which isn't really necessary but would
+				//    slow the process down considerably and add extra load to Spanner for no benefit.
 				{
 					m := make([]*spanner.MutationGroup, 0, len(curEntries))
 					for i, e := range curEntries {
