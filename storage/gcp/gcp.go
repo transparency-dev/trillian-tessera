@@ -644,7 +644,8 @@ func newSpannerSequencer(ctx context.Context, spannerDB string, maxOutstanding u
 //     This table coordinates integration of the batches of entries stored in
 //     Seq into the committed tree state.
 func (s *spannerSequencer) initDB(ctx context.Context, spannerDB string) error {
-	return createAndPrepareTables(ctx, spannerDB,
+	return createAndPrepareTables(
+		ctx, spannerDB,
 		[]string{
 			"CREATE TABLE IF NOT EXISTS Tessera (id INT64 NOT NULL, compatibilityVersion INT64 NOT NULL) PRIMARY KEY (id)",
 			"CREATE TABLE IF NOT EXISTS SeqCoord (id INT64 NOT NULL, next INT64 NOT NULL,) PRIMARY KEY (id)",
@@ -943,34 +944,22 @@ func (s *gcsStorage) lastModified(ctx context.Context, obj string) (time.Time, e
 //
 // This functionality is experimental!
 func NewDedupe(ctx context.Context, spannerDB string) (*DedupStorage, error) {
-	adminClient, err := database.NewDatabaseAdminClient(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer adminClient.Close()
-
-	op, err := adminClient.UpdateDatabaseDdl(ctx, &adminpb.UpdateDatabaseDdlRequest{
-		Database: spannerDB,
-		Statements: []string{
+	if err := createAndPrepareTables(
+		ctx, spannerDB,
+		[]string{
 			"CREATE TABLE IF NOT EXISTS FollowCoord (id INT64 NOT NULL, nextIdx INT64 NOT NULL) PRIMARY KEY (id)",
 			"CREATE TABLE IF NOT EXISTS IDSeq (id INT64 NOT NULL, h BYTES(32) NOT NULL, idx INT64 NOT NULL) PRIMARY KEY (id, h)",
 		},
-	})
-	if err != nil {
+		[][]*spanner.Mutation{
+			{spanner.Insert("FollowCoord", []string{"id", "nextIdx"}, []interface{}{0, 0})},
+		},
+	); err != nil {
 		return nil, fmt.Errorf("failed to create tables: %v", err)
-	}
-	if err := op.Wait(ctx); err != nil {
-		return nil, err
 	}
 
 	dedupDB, err := spanner.NewClient(ctx, spannerDB)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to Spanner: %v", err)
-	}
-
-	// Initialise the DB if necessary
-	if _, err := dedupDB.Apply(ctx, []*spanner.Mutation{spanner.Insert("FollowCoord", []string{"id", "nextIdx"}, []interface{}{0, 0})}); err != nil && spanner.ErrCode(err) != codes.AlreadyExists {
-		return nil, fmt.Errorf("failed to initialise dedupDB: %v:", err)
 	}
 
 	r := &DedupStorage{
