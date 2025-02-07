@@ -333,7 +333,8 @@ func (s *Storage) getTiles(ctx context.Context, tileIDs []storage.TileID, logSiz
 	return r, nil
 }
 
-func (s *Storage) State(ctx context.Context) (uint64, error) {
+// IntegratedSize returns the current size of the integrated tree.
+func (s *Storage) IntegratedSize(ctx context.Context) (uint64, error) {
 	size, _, err := s.sequencer.currentTree(ctx)
 	return size, err
 }
@@ -1086,9 +1087,9 @@ func (e *entryStreamReader[T]) Next() (uint64, T, error) {
 //
 // TODO(al): factor this out into higher layer when it's ready.
 type LogFollower interface {
-	// State returns the size of the currently integrated tree.
+	// IntegratedSize returns the size of the currently integrated tree.
 	// Note that this _may_ be larger than the currently _published_ checkpoint.
-	State(ctx context.Context) (uint64, error)
+	IntegratedSize(ctx context.Context) (uint64, error)
 
 	// StreamEntryBundles returns functions which act like a pull iterator for subsequent entry bundles starting at the given index.
 	//
@@ -1118,9 +1119,9 @@ func (d *DedupStorage) Populate(ctx context.Context, lf LogFollower, bundleFn Bu
 			return ctx.Err()
 		case <-t.C:
 		}
-		size, err := lf.State(ctx)
+		size, err := lf.IntegratedSize(ctx)
 		if err != nil {
-			klog.Errorf("Populate: State(): %v", err)
+			klog.Errorf("Populate: IntegratedSize(): %v", err)
 			continue
 		}
 
