@@ -287,12 +287,15 @@ func TestTileRoundtrip(t *testing.T) {
 	}
 }
 
-func makeBundle(t *testing.T, size uint64) []byte {
+func makeBundle(t *testing.T, idx uint64, size int) []byte {
 	t.Helper()
 	r := &bytes.Buffer{}
-	for i := uint64(0); i < size; i++ {
-		e := tessera.NewEntry([]byte(fmt.Sprintf("%d", i)))
-		if _, err := r.Write(e.MarshalBundleData(i)); err != nil {
+	if size == 0 {
+		size = layout.EntryBundleWidth
+	}
+	for i := 0; i < size; i++ {
+		e := tessera.NewEntry([]byte(fmt.Sprintf("%d:%d", idx, i)))
+		if _, err := r.Write(e.MarshalBundleData(uint64(i))); err != nil {
 			t.Fatalf("MarshalBundleEntry: %v", err)
 		}
 	}
@@ -311,7 +314,7 @@ func TestBundleRoundtrip(t *testing.T) {
 		name       string
 		index      uint64
 		logSize    uint64
-		bundleSize uint64
+		bundleSize int
 	}{
 		{
 			name:       "ok",
@@ -321,7 +324,7 @@ func TestBundleRoundtrip(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			wantBundle := makeBundle(t, test.bundleSize)
+			wantBundle := makeBundle(t, test.index, test.bundleSize)
 			if err := s.setEntryBundle(ctx, test.index, uint8(test.bundleSize), wantBundle); err != nil {
 				t.Fatalf("setEntryBundle: %v", err)
 			}
@@ -340,6 +343,54 @@ func TestBundleRoundtrip(t *testing.T) {
 				t.Fatal("roundtrip returned different data")
 			}
 		})
+	}
+}
+
+func TestStreamEntryRange(t *testing.T) {
+	ctx := context.Background()
+	m := newMemObjStore()
+	s := &Storage{
+		objStore:    m,
+		entriesPath: layout.EntriesPath,
+	}
+
+	logSize := 100045
+	wantBundles := [][]byte{}
+
+	for r, idx := logSize, uint64(0); r > 0; idx++ {
+		sz := layout.EntryBundleWidth
+		if sz > r {
+			sz = r
+		}
+		b := makeBundle(t, idx, sz)
+		if err := s.setEntryBundle(ctx, idx, uint8(sz), b); err != nil {
+			t.Fatalf("setEntryBundle(%d): %v", idx, err)
+		}
+		wantBundles = append(wantBundles, b)
+		r -= sz
+
+	}
+	wantIdx := uint64(0)
+	next, stop := s.StreamEntryRange(ctx, 0, uint64(logSize), uint64(logSize))
+	defer stop()
+
+	for {
+		gotRI, gotBundle, gotErr := next()
+		if gotErr != nil {
+			t.Logf("gotErr after %d: %v", wantIdx, gotErr)
+			break
+		}
+		if gotRI.Index != wantIdx {
+			t.Fatalf("got idx %d, want %d", gotRI.Index, wantIdx)
+		}
+		if diff := cmp.Diff(gotBundle, wantBundles[0]); diff != "" {
+			t.Fatalf("streamEntryBundles returned unexpected data: %s", diff)
+		}
+		wantBundles = wantBundles[1:]
+		wantIdx++
+	}
+	if l := len(wantBundles); l > 0 {
+		t.Fatalf("Expected %d more bundles", l)
 	}
 }
 
