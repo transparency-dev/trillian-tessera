@@ -961,7 +961,6 @@ func NewDedupe(ctx context.Context, spannerDB string) (*DedupStorage, error) {
 	}
 
 	r := &DedupStorage{
-		ctx:    ctx,
 		dbPool: dedupDB,
 	}
 
@@ -981,7 +980,6 @@ func NewDedupe(ctx context.Context, spannerDB string) (*DedupStorage, error) {
 }
 
 type DedupStorage struct {
-	ctx    context.Context
 	dbPool *spanner.Client
 
 	pushBack atomic.Bool
