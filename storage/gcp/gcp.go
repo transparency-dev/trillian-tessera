@@ -429,14 +429,12 @@ func streamAdaptor(ctx context.Context, getBundle getBundleFn, fromEntry, N, tre
 	}
 
 	next = func() (layout.RangeInfo, []byte, error) {
-		select {
-		case f, ok := <-bundles:
-			if !ok {
-				return layout.RangeInfo{}, nil, errors.New("no more bundles")
-			}
-			b := f()
-			return b.ri, b.b, b.err
+		f, ok := <-bundles
+		if !ok {
+			return layout.RangeInfo{}, nil, errors.New("no more bundles")
 		}
+		b := f()
+		return b.ri, b.b, b.err
 	}
 	return next, cancel
 }
@@ -1008,34 +1006,6 @@ func (d *DedupStorage) index(ctx context.Context, h []byte) (*uint64, error) {
 		d.numDBDedups.Add(1)
 		return &idx, nil
 	}
-}
-
-// storeMappings stores the associations between the keys and IDs in a non-atomic fashion
-// (i.e. it does not store all or none in a transactional sense).
-//
-// Returns an error if one or more mappings cannot be stored.
-func (d *DedupStorage) storeMappings(ctx context.Context, entries []dedupeMapping) error {
-	m := make([]*spanner.MutationGroup, 0, len(entries))
-	for _, e := range entries {
-		m = append(m, &spanner.MutationGroup{
-			Mutations: []*spanner.Mutation{spanner.Insert("IDSeq", []string{"id", "h", "idx"}, []interface{}{0, e.ID, int64(e.Idx)})},
-		})
-	}
-
-	i := d.dbPool.BatchWrite(ctx, m)
-	return i.Do(func(r *spannerpb.BatchWriteResponse) error {
-		s := r.GetStatus()
-		if c := codes.Code(s.Code); c != codes.OK && c != codes.AlreadyExists {
-			return fmt.Errorf("failed to write dedup record: %v (%v)", s.GetMessage(), c)
-		}
-		return nil
-	})
-}
-
-// dedupeMapping represents an ID -> index mapping.
-type dedupeMapping struct {
-	ID  []byte
-	Idx uint64
 }
 
 // Decorator returns a function which will wrap an underlying Add delegate with
