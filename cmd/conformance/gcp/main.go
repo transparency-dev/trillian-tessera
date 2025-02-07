@@ -84,7 +84,11 @@ func main() {
 			klog.Exitf("Storage driver %T doesn't support LogFollower", driver)
 		}
 		// Start populating the dedupe data:
-		go dd.Populate(ctx, follower, idHasher)
+		go func() {
+			if err := dd.Populate(ctx, follower, idHasher); err != nil {
+				klog.Exitf("Populate: %v", err)
+			}
+		}()
 	}
 
 	addFn, _, err := tessera.NewAppender(driver, dedups...)
