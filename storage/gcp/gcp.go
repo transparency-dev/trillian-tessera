@@ -340,7 +340,7 @@ func (s *Storage) State(ctx context.Context) (uint64, error) {
 
 // StreamEntryRange provides a mechanism to quickly read sequential entry bundles covering a range of entries [fromEntry, fromEntry+N).
 //
-// Returns a "next" function, which can be used to retrieve subsequent entry bundles, and a "stop" function which must be
+// Returns a "next" function, which can be used to retrieve subsequent entry bundles, and a "cancel" function which must be
 // called when no further bundles are required.
 //
 // This implementation is intended to be relatively performant compared to the naive approach of serially fetching
@@ -362,12 +362,12 @@ type getBundleFn func(ctx context.Context, bundleIdx uint64, partial uint8) ([]b
 // and the stream will be stopped - further calls to next will continue to return errors.
 //
 // When the caller has finished consuming entrybundles (either because of an error being returned via next, or having consumed all the bundles it needs),
-// it MUST call the returned stop function to release resources.
+// it MUST call the returned close function to release resources.
 //
 // This adaptor is optimised for the case where calling getBundle has some appreciable latency, and works
 // around that by maintaining a read-ahead cache of subsequent bundles.
 // TODO(al): consider whether this should be factored out as a storage mix-in.
-func streamAdaptor(ctx context.Context, getBundle getBundleFn, fromEntry, N, treeSize uint64) (next func() (ri layout.RangeInfo, bundle []byte, err error), stop func()) {
+func streamAdaptor(ctx context.Context, getBundle getBundleFn, fromEntry, N, treeSize uint64) (next func() (ri layout.RangeInfo, bundle []byte, err error), cancel func()) {
 	// bundleOrErr represents a fetched entry bunlde and its params, or an error if we couldn't fetch it for
 	// some reason.
 	type bundleOrErr struct {
@@ -424,7 +424,7 @@ func streamAdaptor(ctx context.Context, getBundle getBundleFn, fromEntry, N, tre
 		}
 	}()
 
-	stop = func() {
+	cancel = func() {
 		close(exit)
 	}
 
@@ -438,7 +438,7 @@ func streamAdaptor(ctx context.Context, getBundle getBundleFn, fromEntry, N, tre
 			return b.ri, b.b, b.err
 		}
 	}
-	return next, stop
+	return next, cancel
 }
 
 // getEntryBundle returns the serialised entry bundle at the location described by the given index and partial size.
@@ -1067,34 +1067,42 @@ func (d *DedupStorage) Decorator() func(f tessera.AddFn) tessera.AddFn {
 	}
 }
 
-func NewEntryReader(next func() (layout.RangeInfo, []byte, error), bundleFn BundleHasherFunc) *EntryReader {
-	return &EntryReader{
+// entryStreamReader converts a stream of {RangeInfo, EntryBundle} into a stream of individually processed entries.
+//
+// TODO(al): Factor this out for re-use elsewhere when it's ready.
+type entryStreamReader[T any] struct {
+	bundleFn func([]byte) ([]T, error)
+	next     func() (layout.RangeInfo, []byte, error)
+
+	curData []T
+	curRI   layout.RangeInfo
+	i       uint64
+}
+
+// newEntryStreamReader creates a new stream reader which uses the provided bundleFn to process bundles into processed entries of type T
+//
+// Different bundleFn implementations can be provided to return raw entry bytes, parsed entry structs, or derivations of entries (e.g. hashes) as needed.
+func newEntryStreamReader[T any](next func() (layout.RangeInfo, []byte, error), bundleFn func([]byte) ([]T, error)) *entryStreamReader[T] {
+	return &entryStreamReader[T]{
 		bundleFn: bundleFn,
 		next:     next,
 		i:        0,
 	}
 }
 
-type EntryReader struct {
-	bundleFn BundleHasherFunc
-	next     func() (layout.RangeInfo, []byte, error)
-
-	curData [][]byte
-	curRI   layout.RangeInfo
-	i       uint64
-}
-
-func (e *EntryReader) Next() (uint64, []byte, error) {
+// Next processes and returns the next available entry in the stream along with its index in the log.
+func (e *entryStreamReader[T]) Next() (uint64, T, error) {
+	var t T
 	if len(e.curData) == 0 {
 		var err error
 		var b []byte
 		e.curRI, b, err = e.next()
 		if err != nil {
-			return 0, nil, fmt.Errorf("next: %v", err)
+			return 0, t, fmt.Errorf("next: %v", err)
 		}
 		e.curData, err = e.bundleFn(b)
 		if err != nil {
-			return 0, nil, fmt.Errorf("bundleFn(bundleEntry @%d): %v", e.curRI.Index, err)
+			return 0, t, fmt.Errorf("bundleFn(bundleEntry @%d): %v", e.curRI.Index, err)
 
 		}
 		if e.curRI.First > 0 {
@@ -1105,11 +1113,10 @@ func (e *EntryReader) Next() (uint64, []byte, error) {
 		}
 		e.i = 0
 	}
-	var r []byte
-	r, e.curData = e.curData[0], e.curData[1:]
+	t, e.curData = e.curData[0], e.curData[1:]
 	rIdx := e.curRI.Index*layout.EntryBundleWidth + uint64(e.curRI.First) + e.i
 	e.i++
-	return rIdx, r, nil
+	return rIdx, t, nil
 }
 
 // LogFollower provides read-only access to the log with an API tailored to bulk in-order
@@ -1135,7 +1142,7 @@ type LogFollower interface {
 func (d *DedupStorage) Populate(ctx context.Context, lf LogFollower, bundleFn BundleHasherFunc) error {
 	t := time.NewTicker(time.Second)
 	var (
-		entryReader *EntryReader
+		entryReader *entryStreamReader[[]byte]
 		stop        func()
 
 		curEntries [][]byte
@@ -1177,11 +1184,14 @@ func (d *DedupStorage) Populate(ctx context.Context, lf LogFollower, bundleFn Bu
 				if entryReader == nil {
 					next, st := lf.StreamEntryRange(ctx, followFrom, size-followFrom, size)
 					stop = st
-					entryReader = NewEntryReader(next, bundleFn)
+					entryReader = newEntryStreamReader(next, bundleFn)
 				}
 
 				if curIndex == followFrom && curEntries != nil {
-					// We're recovering from a previous failed attempt
+					// Note that it's possible for Spanner to automatically retry transactions in some circumstances, when it does
+					// it'll call this function again.
+					// If the above condition holds, then we're in a retry situation and we must use the same data again rather
+					// than continue reading entries which will take us out of sync.
 				} else {
 					const batchSize = 64
 					bs := uint64(batchSize)
