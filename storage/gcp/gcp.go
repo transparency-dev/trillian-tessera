@@ -1141,6 +1141,8 @@ type LogFollower interface {
 //
 // TODO(al):  add details
 func (d *DedupStorage) Populate(ctx context.Context, lf LogFollower, bundleFn BundleHasherFunc) error {
+	errOutOfSync := errors.New("out-of-sync")
+
 	t := time.NewTicker(time.Second)
 	var (
 		entryReader *entryStreamReader[[]byte]
@@ -1207,7 +1209,7 @@ func (d *DedupStorage) Populate(ctx context.Context, lf LogFollower, bundleFn Bu
 						}
 						if wantIdx := followFrom + uint64(i); idx != wantIdx {
 							// We're out of sync
-							return fmt.Errorf("out of sync (%d != %d), bailing", idx, wantIdx)
+							return errOutOfSync
 						}
 						batch = append(batch, c)
 					}
@@ -1263,7 +1265,9 @@ func (d *DedupStorage) Populate(ctx context.Context, lf LogFollower, bundleFn Bu
 				return txn.BufferWrite(m)
 			})
 			if err != nil {
-				klog.Errorf("Failed to commit dedupe population tx: %v", err)
+				if err != errOutOfSync {
+					klog.Errorf("Failed to commit dedupe population tx: %v", err)
+				}
 				stop()
 				entryReader = nil
 				continue
