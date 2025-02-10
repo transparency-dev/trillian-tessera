@@ -357,7 +357,7 @@ func (s *Storage) IntegratedSize(ctx context.Context) (uint64, error) {
 // This implementation is intended to be relatively performant compared to the naive approach of serially fetching
 // and yielding each bundle in turn, and is intended for use cases where the caller is actively consuming large
 // sections of the log contents.
-func (s *Storage) StreamEntryRange(ctx context.Context, fromEntry, N, treeSize uint64) (func() (ri layout.RangeInfo, bundle []byte, err error), func()) {
+func (s *Storage) StreamEntryRange(ctx context.Context, fromEntry, N, treeSize uint64) (next func() (ri layout.RangeInfo, bundle []byte, err error), cancel func()) {
 	klog.Infof("StreamEntryRange from %d, N %d, treeSize %d", fromEntry, N, treeSize)
 
 	return streamAdaptor(ctx, s.getEntryBundle, fromEntry, N, treeSize)
