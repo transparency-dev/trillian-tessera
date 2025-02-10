@@ -386,7 +386,9 @@ func streamAdaptor(ctx context.Context, getBundle getBundleFn, fromEntry, N, tre
 		b   []byte
 		err error
 	}
-	// TODO(al): this should probably be configurable
+	// TODO(al): this should probably be configurable - it's primarily intended to act as a means to balance throughput against
+	//           consumption of resources, but such balancing needs to be mindful of the nature of the source infrastructure, and
+	//           how concurrent requests affect performance (e.g. GCS buckets vs. files on a single disk).
 	nWorkers := 10
 
 	// bundles will be filled with futures for in-order entry bundles by the worker
