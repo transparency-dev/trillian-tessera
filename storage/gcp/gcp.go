@@ -372,14 +372,14 @@ type getBundleFn func(ctx context.Context, bundleIdx uint64, partial uint8) ([]b
 // If the adaptor encounters an error while reading an entry bundle, the encountered error will be returned by the corresponding call to next,
 // and the stream will be stopped - further calls to next will continue to return errors.
 //
-// When the caller has finished consuming entrybundles (either because of an error being returned via next, or having consumed all the bundles it needs),
-// it MUST call the returned close function to release resources.
+// When the caller has finished consuming entry bundles (either because of an error being returned via next, or having consumed all the bundles it needs),
+// it MUST call the returned cancel function to release resources.
 //
 // This adaptor is optimised for the case where calling getBundle has some appreciable latency, and works
 // around that by maintaining a read-ahead cache of subsequent bundles.
 // TODO(al): consider whether this should be factored out as a storage mix-in.
 func streamAdaptor(ctx context.Context, getBundle getBundleFn, fromEntry, N, treeSize uint64) (next func() (ri layout.RangeInfo, bundle []byte, err error), cancel func()) {
-	// bundleOrErr represents a fetched entry bunlde and its params, or an error if we couldn't fetch it for
+	// bundleOrErr represents a fetched entry bundle and its params, or an error if we couldn't fetch it for
 	// some reason.
 	type bundleOrErr struct {
 		ri  layout.RangeInfo
