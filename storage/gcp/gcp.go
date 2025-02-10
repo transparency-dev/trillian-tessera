@@ -538,42 +538,19 @@ func newSpannerSequencer(ctx context.Context, spannerDB string, maxOutstanding u
 //     This table coordinates integration of the batches of entries stored in
 //     Seq into the committed tree state.
 func (s *spannerSequencer) initDB(ctx context.Context, spannerDB string) error {
-	adminClient, err := database.NewDatabaseAdminClient(ctx)
-	if err != nil {
-		return err
-	}
-	defer adminClient.Close()
-
-	op, err := adminClient.UpdateDatabaseDdl(ctx, &adminpb.UpdateDatabaseDdlRequest{
-		Database: spannerDB,
-		Statements: []string{
+	return createAndPrepareTables(ctx, spannerDB,
+		[]string{
 			"CREATE TABLE IF NOT EXISTS Tessera (id INT64 NOT NULL, compatibilityVersion INT64 NOT NULL) PRIMARY KEY (id)",
 			"CREATE TABLE IF NOT EXISTS SeqCoord (id INT64 NOT NULL, next INT64 NOT NULL,) PRIMARY KEY (id)",
 			"CREATE TABLE IF NOT EXISTS Seq (id INT64 NOT NULL, seq INT64 NOT NULL, v BYTES(MAX),) PRIMARY KEY (id, seq)",
 			"CREATE TABLE IF NOT EXISTS IntCoord (id INT64 NOT NULL, seq INT64 NOT NULL, rootHash BYTES(32)) PRIMARY KEY (id)",
 		},
-	})
-	if err != nil {
-		return fmt.Errorf("failed to create tables: %v", err)
-	}
-	if err := op.Wait(ctx); err != nil {
-		return err
-	}
-
-	// Set default values for a newly initialised schema - these rows being present are a precondition for
-	// sequencing and integration to occur.
-	// Note that this will only succeed if no row exists, so there's no danger
-	// of "resetting" an existing log.
-	if _, err := s.dbPool.Apply(ctx, []*spanner.Mutation{spanner.Insert("Tessera", []string{"id", "compatibilityVersion"}, []interface{}{0, SchemaCompatibilityVersion})}); err != nil && spanner.ErrCode(err) != codes.AlreadyExists {
-		return err
-	}
-	if _, err := s.dbPool.Apply(ctx, []*spanner.Mutation{spanner.Insert("SeqCoord", []string{"id", "next"}, []interface{}{0, 0})}); err != nil && spanner.ErrCode(err) != codes.AlreadyExists {
-		return err
-	}
-	if _, err := s.dbPool.Apply(ctx, []*spanner.Mutation{spanner.Insert("IntCoord", []string{"id", "seq", "rootHash"}, []interface{}{0, 0, rfc6962.DefaultHasher.EmptyRoot()})}); err != nil && spanner.ErrCode(err) != codes.AlreadyExists {
-		return err
-	}
-	return nil
+		[][]*spanner.Mutation{
+			{spanner.Insert("Tessera", []string{"id", "compatibilityVersion"}, []interface{}{0, SchemaCompatibilityVersion})},
+			{spanner.Insert("SeqCoord", []string{"id", "next"}, []interface{}{0, 0})},
+			{spanner.Insert("IntCoord", []string{"id", "seq", "rootHash"}, []interface{}{0, 0, rfc6962.DefaultHasher.EmptyRoot()})},
+		},
+	)
 }
 
 // checkDataCompatibility compares the Tessera library SchemaCompatibilityVersion with the one stored in the
@@ -1191,4 +1168,44 @@ func (m *MigrationStorage) buildTree(ctx context.Context, sourceSize uint64) (ui
 		return 0, nil, err
 	}
 	return newSize, newRoot, nil
+}
+
+// createAndPrepareTables applies the passed in list of DDL statements and groups of mutations.
+//
+// This is intended to be used to create and initialise Spanner instances on first use.
+// DDL should likely be of the form "CREATE TABLE IF NOT EXISTS".
+// Mutation groups should likey be one or more spanner.Insert operations - AlreadyExists errors will be silently ignored.
+func createAndPrepareTables(ctx context.Context, spannerDB string, ddl []string, mutations [][]*spanner.Mutation) error {
+	adminClient, err := database.NewDatabaseAdminClient(ctx)
+	if err != nil {
+		return err
+	}
+	defer adminClient.Close()
+
+	op, err := adminClient.UpdateDatabaseDdl(ctx, &adminpb.UpdateDatabaseDdlRequest{
+		Database:   spannerDB,
+		Statements: ddl,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create tables: %v", err)
+	}
+	if err := op.Wait(ctx); err != nil {
+		return err
+	}
+	adminClient.Close()
+
+	dbPool, err := spanner.NewClient(ctx, spannerDB)
+	if err != nil {
+		return fmt.Errorf("failed to connect to Spanner: %v", err)
+	}
+	defer dbPool.Close()
+
+	// Set default values for a newly initialised schema using passed in mutation groups.
+	// Note that this will only succeed if no row exists, so there's no danger of "resetting" an existing log.
+	for _, mg := range mutations {
+		if _, err := dbPool.Apply(ctx, mg); err != nil && spanner.ErrCode(err) != codes.AlreadyExists {
+			return err
+		}
+	}
+	return nil
 }
