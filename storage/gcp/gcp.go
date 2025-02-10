@@ -993,6 +993,10 @@ func NewDedupe(ctx context.Context, spannerDB string) (*DedupStorage, error) {
 type DedupStorage struct {
 	dbPool *spanner.Client
 
+	// pushBack is used to prevent the follower from getting too far underwater.
+	// Populate dynamically will set this to true/false based on how far behind the follower is from the
+	// currently integrated tree size.
+	// When pushBack is true, the dedupe decorator will start returning ErrPushback to all calls.
 	pushBack atomic.Bool
 
 	numLookups  atomic.Uint64
@@ -1025,6 +1029,14 @@ func (d *DedupStorage) Decorator() func(f tessera.AddFn) tessera.AddFn {
 	return func(delegate tessera.AddFn) tessera.AddFn {
 		return func(ctx context.Context, e *tessera.Entry) tessera.IndexFuture {
 			if d.pushBack.Load() {
+				// The follower is too far behind the currently integrated tree, so we're going to push back against
+				// the incoming requests.
+				// This should have two effects:
+				//   1. The tree will cease growing, giving the follower a chance to catch up, and
+				//   2. We'll stop doing lookups for each submission, freeing up Spanner CPU to focus on catching up.
+				//
+				// We may decide in the future that serving duplicate reads is more important than catching up as quickly
+				// as possible, in which case we'd move this check down below the call to index.
 				return func() (uint64, error) { return 0, tessera.ErrPushback }
 			}
 			idx, err := d.index(ctx, e.Identity())
