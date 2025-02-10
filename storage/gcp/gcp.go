@@ -107,6 +107,8 @@ type objStore interface {
 }
 
 // sequencer describes a type which knows how to sequence entries.
+//
+// TODO(al): rename this as it's really more of a coordination for the log.
 type sequencer interface {
 	// assignEntries should durably allocate contiguous index numbers to the provided entries.
 	assignEntries(ctx context.Context, entries []*tessera.Entry) error
@@ -117,7 +119,7 @@ type sequencer interface {
 	// If forceUpdate is true, then the consumeFunc should be called, with an empty slice of entries if
 	// necessary. This allows the log self-initialise in a transactionally safe manner.
 	consumeEntries(ctx context.Context, limit uint64, f consumeFunc, forceUpdate bool) (bool, error)
-	// currentTree returns the sequencer's view of the current tree state.
+	// currentTree returns the tree state of the currently integrated tree according to the IntCoord table.
 	currentTree(ctx context.Context) (uint64, []byte, error)
 }
 
@@ -334,6 +336,14 @@ func (s *Storage) getTiles(ctx context.Context, tileIDs []storage.TileID, logSiz
 }
 
 // IntegratedSize returns the current size of the integrated tree.
+//
+// This tree size has all the static resources it implies created, but may not have had a checkpoint
+// for it signed, witnessed, or published yet.
+//
+// It's safe to use this value for processes internal to the operation of the log (e.g. populating antispam
+// data structures), but it should not be used as a substitute for reading the checkpoint.
+//
+// TODO(al): This needs to be reflected and documented in some tessera-level dedupe storage contract.
 func (s *Storage) IntegratedSize(ctx context.Context) (uint64, error) {
 	size, _, err := s.sequencer.currentTree(ctx)
 	return size, err
