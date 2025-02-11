@@ -584,7 +584,6 @@ func createIdempotent(p string, d []byte) error {
 	if err := createExclusive(p, d); err != nil {
 		if errors.Is(err, os.ErrExist) {
 			if r, err := os.ReadFile(p); err != nil {
-
 				return fmt.Errorf("file %q already exists, but unable to read it: %v", p, err)
 			} else if bytes.Equal(d, r) {
 				// Idempotent write
