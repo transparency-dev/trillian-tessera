@@ -351,6 +351,9 @@ func (s *Storage) IntegratedSize(ctx context.Context) (uint64, error) {
 
 // StreamEntryRange provides a mechanism to quickly read sequential entry bundles covering a range of entries [fromEntry, fromEntry+N).
 //
+// Note that input parameters reference the raw leaf indices, and these will be returned bundled according to the tiles spec along with
+// "RangeInfo" structs with information about which entries in each bundle are within the requested range.
+//
 // Returns a "next" function, which can be used to retrieve subsequent entry bundles, and a "cancel" function which must be
 // called when no further bundles are required.
 //

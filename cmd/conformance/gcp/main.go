@@ -79,6 +79,7 @@ func main() {
 		}
 		dedups = append(dedups, dd.Decorator())
 
+		// TODO(al): Figure out how this will be for realz.
 		follower, ok := driver.(gcp.LogFollower)
 		if !ok {
 			klog.Exitf("Storage driver %T doesn't support LogFollower", driver)
