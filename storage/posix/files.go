@@ -351,7 +351,7 @@ func (s *Storage) writeTile(_ context.Context, level, index uint64, partial uint
 		return fmt.Errorf("failed to create directory %q: %w", tDir, err)
 	}
 
-	if err := createExclusive(tPath, t); err != nil {
+	if err := createIdempotent(tPath, t); err != nil {
 		return err
 	}
 
@@ -386,7 +386,7 @@ func (s *Storage) writeBundle(_ context.Context, index uint64, partial uint8, bu
 	if err := os.MkdirAll(filepath.Dir(bf), dirPerm); err != nil {
 		return fmt.Errorf("failed to make entries directory structure: %w", err)
 	}
-	if err := createExclusive(bf, bundle); err != nil {
+	if err := createIdempotent(bf, bundle); err != nil {
 		if !errors.Is(err, os.ErrExist) {
 			return err
 		}
@@ -467,7 +467,7 @@ func (s *Storage) writeTreeState(size uint64, root []byte) error {
 		return fmt.Errorf("Marshal: %v", err)
 	}
 
-	if err := createExclusive(filepath.Join(s.path, stateDir, "treeState"), raw); err != nil {
+	if err := overwrite(filepath.Join(s.path, stateDir, "treeState"), raw); err != nil {
 		return fmt.Errorf("failed to create private tree state file: %w", err)
 	}
 	// Notify that we know for sure there's a new checkpoint, but don't block if there's already
@@ -529,8 +529,8 @@ func (s *Storage) publishCheckpoint(minStaleness time.Duration) error {
 		return fmt.Errorf("newCP: %v", err)
 	}
 
-	if err := createExclusive(filepath.Join(s.path, layout.CheckpointPath), cpRaw); err != nil {
-		return fmt.Errorf("createExclusive(%s): %v", layout.CheckpointPath, err)
+	if err := overwrite(filepath.Join(s.path, layout.CheckpointPath), cpRaw); err != nil {
+		return fmt.Errorf("overwrite(%s): %v", layout.CheckpointPath, err)
 	}
 	klog.Infof("Published latest checkpoint")
 
@@ -538,8 +538,13 @@ func (s *Storage) publishCheckpoint(minStaleness time.Duration) error {
 }
 
 // createExclusive atomically creates a file at the given path containing the provided data.
-// It will error if the file already exists, or it's unable to fully write the
+//
+// It will error if a file already exists at the specified location, or it's unable to fully write the
 // data & close the file.
+//
+// This is currently implemented using unix-specific method of creating an unlinked temporary file and
+// hard-linking it into place in order to avoid the possibility of leaving temporary files dangling inside
+// the log storage.
 func createExclusive(p string, d []byte) error {
 	dir, f := filepath.Split(p)
 	tmpF, err := unix.Open(dir, unix.O_RDWR|unix.O_TMPFILE, filePerm)
@@ -565,6 +570,39 @@ func createExclusive(p string, d []byte) error {
 		}
 	}
 	return unix.Close(tmpF)
+}
+
+// createIdempotent atomically writes the provided data to a file at the provided path.
+// An error will be returned if a file already exists in the named location AND that file's
+// contents is not identical to the provided data.
+func createIdempotent(p string, d []byte) error {
+	if err := createExclusive(p, d); err != nil {
+		if errors.Is(err, os.ErrExist) {
+			if r, err := os.ReadFile(p); err != nil {
+
+				return fmt.Errorf("file %q already exists, but unable to read it: %v", p, err)
+			} else if bytes.Equal(d, r) {
+				// Idempotent write
+				return nil
+			}
+		}
+		return err
+	}
+	return nil
+}
+
+// overwrite atomically overwrites the specified file (or creates it if it doesn't exist) with the
+// provided data.
+func overwrite(p string, d []byte) error {
+	tmpN := p + ".tmp"
+	if err := os.WriteFile(tmpN, d, filePerm); err != nil {
+		return fmt.Errorf("failed to write temp file %q: %v", tmpN, err)
+	}
+	if err := os.Rename(tmpN, p); err != nil {
+		_ = os.Remove(tmpN)
+		return fmt.Errorf("failed to move temp file into target location %q: %v", p, err)
+	}
+	return nil
 }
 
 // BundleHasherFunc is the signature of a function which knows how to parse an entry bundle and calculate leaf hashes for its entries.
