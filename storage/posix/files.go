@@ -33,7 +33,6 @@ import (
 	"github.com/transparency-dev/trillian-tessera/api/layout"
 	"github.com/transparency-dev/trillian-tessera/internal/options"
 	storage "github.com/transparency-dev/trillian-tessera/storage/internal"
-	"golang.org/x/sys/unix"
 	"k8s.io/klog/v2"
 )
 
@@ -541,35 +540,41 @@ func (s *Storage) publishCheckpoint(minStaleness time.Duration) error {
 //
 // It will error if a file already exists at the specified location, or it's unable to fully write the
 // data & close the file.
-//
-// This is currently implemented using unix-specific method of creating an unlinked temporary file and
-// hard-linking it into place in order to avoid the possibility of leaving temporary files dangling inside
-// the log storage.
 func createExclusive(p string, d []byte) error {
 	dir, f := filepath.Split(p)
-	tmpF, err := unix.Open(dir, unix.O_RDWR|unix.O_TMPFILE, filePerm)
+	tmpF, err := os.CreateTemp(dir, f+"-*")
 	if err != nil {
-		return fmt.Errorf("unable to open unlinked temp file: %w", err)
+		return fmt.Errorf("failed to create temp file: %v", err)
 	}
+	if err := tmpF.Chmod(filePerm); err != nil {
+		return fmt.Errorf("failed to chmod temp file: %v", err)
+	}
+	tmpName := tmpF.Name()
+	defer func() {
+		if tmpF != nil {
+			if err := tmpF.Close(); err != nil {
+				klog.Warningf("Failed to close temporary file: %v", err)
+			}
+		}
+		if err := os.Remove(tmpName); err != nil {
+			klog.Warningf("Failed to remove temporary file %q: %v", tmpName, err)
+		}
+	}()
 
-	if n, err := unix.Write(tmpF, d); err != nil {
-		return fmt.Errorf("unable to write data to temporary file: %w", err)
+	if n, err := tmpF.Write(d); err != nil {
+		return fmt.Errorf("unable to write data to temporary file: %v", err)
 	} else if l := len(d); n != l {
 		return fmt.Errorf("short write (%d < %d byte) on temporary file", n, l)
 	}
-
-	if err := unix.Linkat(0, fmt.Sprintf("/proc/self/fd/%d", tmpF), 0, p, unix.AT_SYMLINK_FOLLOW); err != nil {
-		if syscall.EEXIST == err {
-			return os.ErrExist
-		}
-		return &os.LinkError{
-			Op:  "linkat",
-			Old: f,
-			New: dir,
-			Err: err,
-		}
+	if err := tmpF.Close(); err != nil {
+		return fmt.Errorf("failed to close temporary file: %v", err)
 	}
-	return unix.Close(tmpF)
+	tmpF = nil
+	if err := os.Link(tmpName, p); err != nil {
+		return fmt.Errorf("failed to link temporary file to target %q: %v", p, err)
+	}
+
+	return nil
 }
 
 // createIdempotent atomically writes the provided data to a file at the provided path.
