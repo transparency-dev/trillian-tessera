@@ -541,10 +541,20 @@ func (s *Storage) publishCheckpoint(minStaleness time.Duration) error {
 // data & close the file.
 func createExclusive(f string, d []byte) error {
 	tmpName := f + ".temp"
-	if err := os.WriteFile(tmpName, d, filePerm); err != nil {
-		return fmt.Errorf("unable to write data to temporary file: %w", err)
+	tmpF, err := os.OpenFile(tmpName, os.O_CREATE|os.O_RDWR|os.O_EXCL, filePerm)
+	if err != nil {
+		return fmt.Errorf("unable to open unlinked temp file: %w", err)
 	}
-	if err := os.Rename(tmpName, f); err != nil {
+
+	if n, err := tmpF.Write(d); err != nil {
+		return fmt.Errorf("unable to write data to temporary file %q: %w", tmpName, err)
+	} else if l := len(d); n != l {
+		return fmt.Errorf("short write (%d < %d bytes) on %q", n, l, tmpName)
+	}
+	if err := os.Link(tmpName, f); err != nil {
+		return err
+	}
+	if err := os.Remove(tmpName); err != nil {
 		return err
 	}
 	return nil
