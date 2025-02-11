@@ -36,7 +36,6 @@ import (
 
 var (
 	storageDir                = flag.String("storage_dir", "", "Root directory to store log data.")
-	initialise                = flag.Bool("initialise", false, "Set when creating a new log to initialise the structure.")
 	listen                    = flag.String("listen", ":2025", "Address:port to listen on")
 	privKeyFile               = flag.String("private_key", "", "Location of private key file. If unset, uses the contents of the LOG_PRIVATE_KEY environment variable.")
 	additionalPrivateKeyFiles = []string{}
@@ -65,7 +64,7 @@ func main() {
 	s, a := getSignersOrDie()
 
 	// Create the Tessera POSIX storage, using the directory from the --storage_dir flag
-	driver, err := posix.New(ctx, *storageDir, *initialise, tessera.WithCheckpointSigner(s, a...), tessera.WithBatching(256, time.Second))
+	driver, err := posix.New(ctx, *storageDir, tessera.WithCheckpointSigner(s, a...), tessera.WithBatching(256, time.Second))
 	if err != nil {
 		klog.Exitf("Failed to construct storage: %v", err)
 	}
