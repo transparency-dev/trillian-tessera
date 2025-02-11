@@ -47,7 +47,6 @@ import (
 	"cloud.google.com/go/spanner/apiv1/spannerpb"
 
 	gcs "cloud.google.com/go/storage"
-	"github.com/globocom/go-buffer"
 	"github.com/google/go-cmp/cmp"
 	"github.com/transparency-dev/merkle/rfc6962"
 	tessera "github.com/transparency-dev/trillian-tessera"
@@ -108,6 +107,8 @@ type objStore interface {
 }
 
 // sequencer describes a type which knows how to sequence entries.
+//
+// TODO(al): rename this as it's really more of a coordination for the log.
 type sequencer interface {
 	// assignEntries should durably allocate contiguous index numbers to the provided entries.
 	assignEntries(ctx context.Context, entries []*tessera.Entry) error
@@ -118,7 +119,7 @@ type sequencer interface {
 	// If forceUpdate is true, then the consumeFunc should be called, with an empty slice of entries if
 	// necessary. This allows the log self-initialise in a transactionally safe manner.
 	consumeEntries(ctx context.Context, limit uint64, f consumeFunc, forceUpdate bool) (bool, error)
-	// currentTree returns the sequencer's view of the current tree state.
+	// currentTree returns the tree state of the currently integrated tree according to the IntCoord table.
 	currentTree(ctx context.Context) (uint64, []byte, error)
 }
 
@@ -332,7 +333,126 @@ func (s *Storage) getTiles(ctx context.Context, tileIDs []storage.TileID, logSiz
 		return nil, err
 	}
 	return r, nil
+}
 
+// IntegratedSize returns the current size of the integrated tree.
+//
+// This tree size has all the static resources it implies created, but may not have had a checkpoint
+// for it signed, witnessed, or published yet.
+//
+// It's safe to use this value for processes internal to the operation of the log (e.g. populating antispam
+// data structures), but it should not be used as a substitute for reading the checkpoint.
+//
+// TODO(al): This needs to be reflected and documented in some tessera-level dedupe storage contract.
+func (s *Storage) IntegratedSize(ctx context.Context) (uint64, error) {
+	size, _, err := s.sequencer.currentTree(ctx)
+	return size, err
+}
+
+// StreamEntryRange provides a mechanism to quickly read sequential entry bundles covering a range of entries [fromEntry, fromEntry+N).
+//
+// Note that input parameters reference the raw leaf indices, and these will be returned bundled according to the tiles spec along with
+// "RangeInfo" structs with information about which entries in each bundle are within the requested range.
+//
+// Returns a "next" function, which can be used to retrieve subsequent entry bundles, and a "cancel" function which must be
+// called when no further bundles are required.
+//
+// This implementation is intended to be relatively performant compared to the naive approach of serially fetching
+// and yielding each bundle in turn, and is intended for use cases where the caller is actively consuming large
+// sections of the log contents.
+func (s *Storage) StreamEntryRange(ctx context.Context, fromEntry, N, treeSize uint64) (next func() (ri layout.RangeInfo, bundle []byte, err error), cancel func()) {
+	klog.Infof("StreamEntryRange from %d, N %d, treeSize %d", fromEntry, N, treeSize)
+
+	return streamAdaptor(ctx, s.getEntryBundle, fromEntry, N, treeSize)
+}
+
+// getbundleFn is a function which knows how to fetch a single entry bundle from the specified address.
+type getBundleFn func(ctx context.Context, bundleIdx uint64, partial uint8) ([]byte, error)
+
+// streamAdaptor uses the provided function to produce a stream of entry bundles accesible via the returned functions.
+//
+// Entry bundles are retuned strictly in order via consecutive calls to the returned next func.
+// If the adaptor encounters an error while reading an entry bundle, the encountered error will be returned by the corresponding call to next,
+// and the stream will be stopped - further calls to next will continue to return errors.
+//
+// When the caller has finished consuming entry bundles (either because of an error being returned via next, or having consumed all the bundles it needs),
+// it MUST call the returned cancel function to release resources.
+//
+// This adaptor is optimised for the case where calling getBundle has some appreciable latency, and works
+// around that by maintaining a read-ahead cache of subsequent bundles.
+// TODO(al): consider whether this should be factored out as a storage mix-in.
+func streamAdaptor(ctx context.Context, getBundle getBundleFn, fromEntry, N, treeSize uint64) (next func() (ri layout.RangeInfo, bundle []byte, err error), cancel func()) {
+	// bundleOrErr represents a fetched entry bundle and its params, or an error if we couldn't fetch it for
+	// some reason.
+	type bundleOrErr struct {
+		ri  layout.RangeInfo
+		b   []byte
+		err error
+	}
+	// TODO(al): this should probably be configurable - it's primarily intended to act as a means to balance throughput against
+	//           consumption of resources, but such balancing needs to be mindful of the nature of the source infrastructure, and
+	//           how concurrent requests affect performance (e.g. GCS buckets vs. files on a single disk).
+	nWorkers := 10
+
+	// bundles will be filled with futures for in-order entry bundles by the worker
+	// go routines below.
+	// This channel will be drained by the loop at the bottom of this func which
+	// yields the bundles to the caller.
+	bundles := make(chan func() bundleOrErr, nWorkers)
+	exit := make(chan struct{})
+
+	// Fetch entry bundle resources in parallel.
+	// We use a limited number of tokens here to prevent this from
+	// consuming an unbounded amount of resources.
+	go func() {
+		defer close(bundles)
+
+		// We'll limit ourselves to nWorkers worth of on-going work using these tokens:
+		tokens := make(chan struct{}, nWorkers)
+		for range nWorkers {
+			tokens <- struct{}{}
+		}
+
+		// For each bundle, pop a future into the bundles channel and kick off an async request
+		// to resolve it.
+		for ri := range layout.Range(fromEntry, N, treeSize) {
+			select {
+			case <-exit:
+				return
+			case <-tokens:
+				// We'll return a token below, once the bundle is fetched _and_ is being yielded.
+			}
+
+			c := make(chan bundleOrErr, 1)
+			go func(ri layout.RangeInfo) {
+				b, err := getBundle(ctx, ri.Index, ri.Partial)
+				c <- bundleOrErr{ri: ri, b: b, err: err}
+			}(ri)
+
+			f := func() bundleOrErr {
+				b := <-c
+				// We're about to yield a value, so we can now return the token and unblock another fetch.
+				tokens <- struct{}{}
+				return b
+			}
+
+			bundles <- f
+		}
+	}()
+
+	cancel = func() {
+		close(exit)
+	}
+
+	next = func() (layout.RangeInfo, []byte, error) {
+		f, ok := <-bundles
+		if !ok {
+			return layout.RangeInfo{}, nil, errors.New("no more bundles")
+		}
+		b := f()
+		return b.ri, b.b, b.err
+	}
+	return next, cancel
 }
 
 // getEntryBundle returns the serialised entry bundle at the location described by the given index and partial size.
@@ -538,7 +658,8 @@ func newSpannerSequencer(ctx context.Context, spannerDB string, maxOutstanding u
 //     This table coordinates integration of the batches of entries stored in
 //     Seq into the committed tree state.
 func (s *spannerSequencer) initDB(ctx context.Context, spannerDB string) error {
-	return createAndPrepareTables(ctx, spannerDB,
+	return createAndPrepareTables(
+		ctx, spannerDB,
 		[]string{
 			"CREATE TABLE IF NOT EXISTS Tessera (id INT64 NOT NULL, compatibilityVersion INT64 NOT NULL) PRIMARY KEY (id)",
 			"CREATE TABLE IF NOT EXISTS SeqCoord (id INT64 NOT NULL, next INT64 NOT NULL,) PRIMARY KEY (id)",
@@ -829,46 +950,36 @@ func (s *gcsStorage) lastModified(ctx context.Context, obj string) (time.Time, e
 	return r.Attrs.LastModified, r.Close()
 }
 
-// NewDedupe returns wrapped Add func which will use Spanner to maintain a mapping of
-// previously seen entries and their assigned indices. Future calls with the same entry
-// will return the previously assigned index, as yet unseen entries will be passed to the provided
-// delegate function to have an index assigned.
-//
-// For performance reasons, the ID -> index associations returned by the delegate are buffered before
-// being flushed to Spanner. This can result in duplicates occuring in some circumstances, but in
-// general this should not be a problem.
+// NewDedupe returns a dedupe driver which uses Spanner to maintain a mapping of
+// previously seen entries and their assigned indices.
 //
 // Note that the storage for this mapping is entirely separate and unconnected to the storage used for
 // maintaining the Merkle tree.
 //
 // This functionality is experimental!
-func NewDedupe(ctx context.Context, spannerDB string) (func(tessera.AddFn) tessera.AddFn, error) {
-	/*
-	   Schema for reference:
+func NewDedupe(ctx context.Context, spannerDB string) (*DedupStorage, error) {
+	if err := createAndPrepareTables(
+		ctx, spannerDB,
+		[]string{
+			"CREATE TABLE IF NOT EXISTS FollowCoord (id INT64 NOT NULL, nextIdx INT64 NOT NULL) PRIMARY KEY (id)",
+			"CREATE TABLE IF NOT EXISTS IDSeq (id INT64 NOT NULL, h BYTES(32) NOT NULL, idx INT64 NOT NULL) PRIMARY KEY (id, h)",
+		},
+		[][]*spanner.Mutation{
+			{spanner.Insert("FollowCoord", []string{"id", "nextIdx"}, []interface{}{0, 0})},
+		},
+	); err != nil {
+		return nil, fmt.Errorf("failed to create tables: %v", err)
+	}
 
-	   	CREATE TABLE IDSeq (
-	   	 id INT64 NOT NULL,
-	   	 h BYTES(MAX) NOT NULL,
-	   	 idx INT64 NOT NULL,
-	   	) PRIMARY KEY (id, h);
-	*/
 	dedupDB, err := spanner.NewClient(ctx, spannerDB)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to Spanner: %v", err)
 	}
 
-	r := &dedupStorage{
-		ctx:    ctx,
+	r := &DedupStorage{
 		dbPool: dedupDB,
 	}
 
-	// TODO(al): Make these configurable
-	r.buf = buffer.New(
-		buffer.WithSize(64),
-		buffer.WithFlushInterval(200*time.Millisecond),
-		buffer.WithFlusher(buffer.FlusherFunc(r.flush)),
-		buffer.WithPushTimeout(15*time.Second),
-	)
 	go func(ctx context.Context) {
 		t := time.NewTicker(time.Second)
 		for {
@@ -876,31 +987,30 @@ func NewDedupe(ctx context.Context, spannerDB string) (func(tessera.AddFn) tesse
 			case <-ctx.Done():
 				return
 			case <-t.C:
-				klog.V(1).Infof("DEDUP: # Writes %d, # Lookups %d, # DB hits %v, # buffer Push discards %d", r.numWrites.Load(), r.numLookups.Load(), r.numDBDedups.Load(), r.numPushErrs.Load())
+				klog.V(1).Infof("DEDUP: # Writes %d, # Lookups %d, # DB hits %v", r.numWrites.Load(), r.numLookups.Load(), r.numDBDedups.Load())
 			}
 		}
 	}(ctx)
-	return func(af tessera.AddFn) tessera.AddFn {
-		r.delegate = af
-		return r.add
-	}, nil
+
+	return r, nil
 }
 
-type dedupStorage struct {
-	ctx      context.Context
-	dbPool   *spanner.Client
-	delegate func(ctx context.Context, e *tessera.Entry) tessera.IndexFuture
+type DedupStorage struct {
+	dbPool *spanner.Client
+
+	// pushBack is used to prevent the follower from getting too far underwater.
+	// Populate dynamically will set this to true/false based on how far behind the follower is from the
+	// currently integrated tree size.
+	// When pushBack is true, the dedupe decorator will start returning ErrPushback to all calls.
+	pushBack atomic.Bool
 
 	numLookups  atomic.Uint64
 	numWrites   atomic.Uint64
 	numDBDedups atomic.Uint64
-	numPushErrs atomic.Uint64
-
-	buf *buffer.Buffer
 }
 
 // index returns the index (if any) previously associated with the provided hash
-func (d *dedupStorage) index(ctx context.Context, h []byte) (*uint64, error) {
+func (d *DedupStorage) index(ctx context.Context, h []byte) (*uint64, error) {
 	d.numLookups.Add(1)
 	var idx int64
 	if row, err := d.dbPool.Single().ReadRow(ctx, "IDSeq", spanner.Key{0, h}, []string{"idx"}); err != nil {
@@ -918,84 +1028,247 @@ func (d *dedupStorage) index(ctx context.Context, h []byte) (*uint64, error) {
 	}
 }
 
-// storeMappings stores the associations between the keys and IDs in a non-atomic fashion
-// (i.e. it does not store all or none in a transactional sense).
+// Decorator returns a function which will wrap an underlying Add delegate with
+// code to dedup against the stored data.
+func (d *DedupStorage) Decorator() func(f tessera.AddFn) tessera.AddFn {
+	return func(delegate tessera.AddFn) tessera.AddFn {
+		return func(ctx context.Context, e *tessera.Entry) tessera.IndexFuture {
+			if d.pushBack.Load() {
+				// The follower is too far behind the currently integrated tree, so we're going to push back against
+				// the incoming requests.
+				// This should have two effects:
+				//   1. The tree will cease growing, giving the follower a chance to catch up, and
+				//   2. We'll stop doing lookups for each submission, freeing up Spanner CPU to focus on catching up.
+				//
+				// We may decide in the future that serving duplicate reads is more important than catching up as quickly
+				// as possible, in which case we'd move this check down below the call to index.
+				return func() (uint64, error) { return 0, tessera.ErrPushback }
+			}
+			idx, err := d.index(ctx, e.Identity())
+			if err != nil {
+				return func() (uint64, error) { return 0, err }
+			}
+			if idx != nil {
+				return func() (uint64, error) { return *idx, nil }
+			}
+
+			return delegate(ctx, e)
+		}
+	}
+}
+
+// entryStreamReader converts a stream of {RangeInfo, EntryBundle} into a stream of individually processed entries.
 //
-// Returns an error if one or more mappings cannot be stored.
-func (d *dedupStorage) storeMappings(ctx context.Context, entries []dedupeMapping) error {
-	m := make([]*spanner.MutationGroup, 0, len(entries))
-	for _, e := range entries {
-		m = append(m, &spanner.MutationGroup{
-			Mutations: []*spanner.Mutation{spanner.Insert("IDSeq", []string{"id", "h", "idx"}, []interface{}{0, e.ID, int64(e.Idx)})},
-		})
-	}
+// TODO(al): Factor this out for re-use elsewhere when it's ready.
+type entryStreamReader[T any] struct {
+	bundleFn func([]byte) ([]T, error)
+	next     func() (layout.RangeInfo, []byte, error)
 
-	i := d.dbPool.BatchWrite(ctx, m)
-	return i.Do(func(r *spannerpb.BatchWriteResponse) error {
-		s := r.GetStatus()
-		if c := codes.Code(s.Code); c != codes.OK && c != codes.AlreadyExists {
-			return fmt.Errorf("failed to write dedup record: %v (%v)", s.GetMessage(), c)
+	curData []T
+	curRI   layout.RangeInfo
+	i       uint64
+}
+
+// newEntryStreamReader creates a new stream reader which uses the provided bundleFn to process bundles into processed entries of type T
+//
+// Different bundleFn implementations can be provided to return raw entry bytes, parsed entry structs, or derivations of entries (e.g. hashes) as needed.
+func newEntryStreamReader[T any](next func() (layout.RangeInfo, []byte, error), bundleFn func([]byte) ([]T, error)) *entryStreamReader[T] {
+	return &entryStreamReader[T]{
+		bundleFn: bundleFn,
+		next:     next,
+		i:        0,
+	}
+}
+
+// Next processes and returns the next available entry in the stream along with its index in the log.
+func (e *entryStreamReader[T]) Next() (uint64, T, error) {
+	var t T
+	if len(e.curData) == 0 {
+		var err error
+		var b []byte
+		e.curRI, b, err = e.next()
+		if err != nil {
+			return 0, t, fmt.Errorf("next: %v", err)
 		}
-		return nil
-	})
+		e.curData, err = e.bundleFn(b)
+		if err != nil {
+			return 0, t, fmt.Errorf("bundleFn(bundleEntry @%d): %v", e.curRI.Index, err)
+
+		}
+		if e.curRI.First > 0 {
+			e.curData = e.curData[e.curRI.First:]
+		}
+		if len(e.curData) > int(e.curRI.N) {
+			e.curData = e.curData[:e.curRI.N]
+		}
+		e.i = 0
+	}
+	t, e.curData = e.curData[0], e.curData[1:]
+	rIdx := e.curRI.Index*layout.EntryBundleWidth + uint64(e.curRI.First) + e.i
+	e.i++
+	return rIdx, t, nil
 }
 
-// dedupeMapping represents an ID -> index mapping.
-type dedupeMapping struct {
-	ID  []byte
-	Idx uint64
+// LogFollower provides read-only access to the log with an API tailored to bulk in-order
+// reads of entry bundles.
+//
+// TODO(al): factor this out into higher layer when it's ready.
+type LogFollower interface {
+	// IntegratedSize returns the size of the currently integrated tree.
+	// Note that this _may_ be larger than the currently _published_ checkpoint.
+	IntegratedSize(ctx context.Context) (uint64, error)
+
+	// StreamEntryBundles returns functions which act like a pull iterator for subsequent entry bundles starting at the given index.
+	//
+	// Implementations must:
+	//  - truncate the requested range if any or all of it is beyond the extent of the currently integrated tree.
+	//  - cease iterating if next() produces an error, or stop is called. next should continue to return an error if called again after either of these cases.
+	StreamEntryRange(ctx context.Context, fromIdx, N, treeSize uint64) (next func() (layout.RangeInfo, []byte, error), stop func())
 }
 
-// add adds the entry to the underlying delegate only if e isn't already known. In either case,
-// an IndexFuture will be returned that the client can use to get the sequence number of this entry.
-func (d *dedupStorage) add(ctx context.Context, e *tessera.Entry) tessera.IndexFuture {
-	idx, err := d.index(ctx, e.Identity())
-	if err != nil {
-		return func() (uint64, error) { return 0, err }
-	}
-	if idx != nil {
-		return func() (uint64, error) { return *idx, nil }
-	}
+// Populate uses entry data from the log to populate the dedupe storage.
+//
+// TODO(al):  add details
+func (d *DedupStorage) Populate(ctx context.Context, lf LogFollower, bundleFn BundleHasherFunc) error {
+	errOutOfSync := errors.New("out-of-sync")
 
-	i, err := d.delegate(ctx, e)()
-	if err != nil {
-		return func() (uint64, error) { return 0, err }
-	}
+	t := time.NewTicker(time.Second)
+	var (
+		entryReader *entryStreamReader[[]byte]
+		stop        func()
 
-	err = d.enqueueMapping(ctx, e.Identity(), i)
-	return func() (uint64, error) {
-		return i, err
-	}
-}
+		curEntries [][]byte
+		curIndex   uint64
+	)
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-t.C:
+		}
+		size, err := lf.IntegratedSize(ctx)
+		if err != nil {
+			klog.Errorf("Populate: IntegratedSize(): %v", err)
+			continue
+		}
 
-// enqueueMapping buffers the provided ID -> index mapping ready to be flushed to storage.
-func (d *dedupStorage) enqueueMapping(_ context.Context, h []byte, idx uint64) error {
-	err := d.buf.Push(dedupeMapping{ID: h, Idx: idx})
-	if err != nil {
-		d.numPushErrs.Add(1)
-		// This means there's pressure flushing dedup writes out, so discard this write.
-		if err != buffer.ErrTimeout {
-			return err
+		// Busy loop while there's work to be done
+		for workDone := true; workDone; {
+			_, err = d.dbPool.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
+				// Figure out the last entry we used to populate our dedup storage.
+				row, err := txn.ReadRowWithOptions(ctx, "FollowCoord", spanner.Key{0}, []string{"nextIdx"}, &spanner.ReadOptions{LockHint: spannerpb.ReadRequest_LOCK_HINT_EXCLUSIVE})
+				if err != nil {
+					return err
+				}
+
+				var f int64 // Spanner doesn't support uint64
+				if err := row.Columns(&f); err != nil {
+					return fmt.Errorf("failed to read follow coordination info: %v", err)
+				}
+				followFrom := uint64(f)
+				if followFrom >= size {
+					// Our view of the log is out of date, exit the busy loop and refresh it.
+					workDone = false
+					return nil
+				}
+
+				// TODO(al): Maybe make these configurable.
+				const batchSize = 64
+				const pushBackThreshold = batchSize * 16
+				d.pushBack.Store(size-followFrom > pushBackThreshold)
+
+				// If this is the first time around the loop we need to start the stream of entries now that we know where we want to
+				// start reading from:
+				if entryReader == nil {
+					next, st := lf.StreamEntryRange(ctx, followFrom, size-followFrom, size)
+					stop = st
+					entryReader = newEntryStreamReader(next, bundleFn)
+				}
+
+				if curIndex == followFrom && curEntries != nil {
+					// Note that it's possible for Spanner to automatically retry transactions in some circumstances, when it does
+					// it'll call this function again.
+					// If the above condition holds, then we're in a retry situation and we must use the same data again rather
+					// than continue reading entries which will take us out of sync.
+				} else {
+					bs := uint64(batchSize)
+					if r := size - followFrom; r < bs {
+						bs = r
+					}
+					batch := make([][]byte, 0, bs)
+					for i := 0; i < int(bs); i++ {
+						idx, c, err := entryReader.Next()
+						if err != nil {
+							return fmt.Errorf("entryReader.next: %v", err)
+						}
+						if wantIdx := followFrom + uint64(i); idx != wantIdx {
+							// We're out of sync
+							return errOutOfSync
+						}
+						batch = append(batch, c)
+					}
+					curEntries = batch
+					curIndex = followFrom
+				}
+
+				// Store dedup entries.
+				//
+				// Note that we're writing the dedup entries outside of the transaction here. The reason is because we absolutely do not want
+				// the transaction to fail if there's already an entry for the same hash in the IDSeq table.
+				//
+				// It looks unusual, but is ok because:
+				//  - individual dedupe entries fails because there's already an entry for that hash is perfectly ok
+				//  - we'll only continue on to update FollowCoord if no errors (other than AlreadyExists) occur while inserting entries
+				//  - similarly, if we manage to insert dedupe entries here, but then fail to update FollowCoord, we'll end up
+				//    retrying over the same set of log entries, and then ignoring the AlreadyExists which will occur.
+				//
+				// Alternative approaches are:
+				//  - Use InsertOrUpdate, but that will keep updating the index associated with the ID hash, and we'd rather keep serving
+				//    the earliest index known for that entry.
+				//  - Perform reads for each of the hashes we're about to write, and use that to filter writes.
+				//    This would work, but would also incur an extra round-trip of data which isn't really necessary but would
+				//    slow the process down considerably and add extra load to Spanner for no benefit.
+				{
+					m := make([]*spanner.MutationGroup, 0, len(curEntries))
+					for i, e := range curEntries {
+						m = append(m, &spanner.MutationGroup{
+							Mutations: []*spanner.Mutation{spanner.Insert("IDSeq", []string{"id", "h", "idx"}, []interface{}{0, e, int64(curIndex + uint64(i))})},
+						})
+					}
+
+					i := d.dbPool.BatchWrite(ctx, m)
+					err := i.Do(func(r *spannerpb.BatchWriteResponse) error {
+						s := r.GetStatus()
+						if c := codes.Code(s.Code); c != codes.OK && c != codes.AlreadyExists {
+							return fmt.Errorf("failed to write dedup record: %v (%v)", s.GetMessage(), c)
+						}
+						return nil
+					})
+					if err != nil {
+						return err
+					}
+				}
+
+				numAdded := uint64(len(curEntries))
+				d.numWrites.Add(numAdded)
+
+				// Insertion of dupe entries was successful, so update our follow coordination row:
+				m := make([]*spanner.Mutation, 0)
+				m = append(m, spanner.Update("FollowCoord", []string{"id", "nextIdx"}, []interface{}{0, int64(followFrom + numAdded)}))
+
+				return txn.BufferWrite(m)
+			})
+			if err != nil {
+				if err != errOutOfSync {
+					klog.Errorf("Failed to commit dedupe population tx: %v", err)
+				}
+				stop()
+				entryReader = nil
+				continue
+			}
+			curEntries = nil
 		}
 	}
-	return nil
-}
-
-// flush writes enqueued mappings to storage.
-func (d *dedupStorage) flush(items []interface{}) {
-	entries := make([]dedupeMapping, len(items))
-	for i := range items {
-		entries[i] = items[i].(dedupeMapping)
-	}
-
-	ctx, c := context.WithTimeout(d.ctx, 15*time.Second)
-	defer c()
-
-	if err := d.storeMappings(ctx, entries); err != nil {
-		klog.Infof("Failed to flush dedup entries: %v", err)
-		return
-	}
-	d.numWrites.Add(uint64(len(entries)))
 }
 
 // BundleHasherFunc is the signature of a function which knows how to parse an entry bundle and calculate leaf hashes for its entries.
