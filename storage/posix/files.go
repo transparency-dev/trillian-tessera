@@ -33,6 +33,7 @@ import (
 	"github.com/transparency-dev/trillian-tessera/api/layout"
 	"github.com/transparency-dev/trillian-tessera/internal/options"
 	storage "github.com/transparency-dev/trillian-tessera/storage/internal"
+	"golang.org/x/sys/unix"
 	"k8s.io/klog/v2"
 )
 
@@ -536,28 +537,34 @@ func (s *Storage) publishCheckpoint(minStaleness time.Duration) error {
 	return nil
 }
 
-// createExclusive creates a file at the given path and name before writing the data in d to it.
+// createExclusive atomically creates a file at the given path containing the provided data.
 // It will error if the file already exists, or it's unable to fully write the
 // data & close the file.
-func createExclusive(f string, d []byte) error {
-	tmpName := f + ".temp"
-	tmpF, err := os.OpenFile(tmpName, os.O_CREATE|os.O_RDWR|os.O_EXCL, filePerm)
+func createExclusive(p string, d []byte) error {
+	dir, f := filepath.Split(p)
+	tmpF, err := unix.Open(dir, unix.O_RDWR|unix.O_TMPFILE, filePerm)
 	if err != nil {
 		return fmt.Errorf("unable to open unlinked temp file: %w", err)
 	}
 
-	if n, err := tmpF.Write(d); err != nil {
-		return fmt.Errorf("unable to write data to temporary file %q: %w", tmpName, err)
+	if n, err := unix.Write(tmpF, d); err != nil {
+		return fmt.Errorf("unable to write data to temporary file: %w", err)
 	} else if l := len(d); n != l {
-		return fmt.Errorf("short write (%d < %d bytes) on %q", n, l, tmpName)
+		return fmt.Errorf("short write (%d < %d byte) on temporary file", n, l)
 	}
-	if err := os.Link(tmpName, f); err != nil {
-		return err
+
+	if err := unix.Linkat(0, fmt.Sprintf("/proc/self/fd/%d", tmpF), 0, p, unix.AT_SYMLINK_FOLLOW); err != nil {
+		if syscall.EEXIST == err {
+			return os.ErrExist
+		}
+		return &os.LinkError{
+			Op:  "linkat",
+			Old: f,
+			New: dir,
+			Err: err,
+		}
 	}
-	if err := os.Remove(tmpName); err != nil {
-		return err
-	}
-	return nil
+	return unix.Close(tmpF)
 }
 
 // BundleHasherFunc is the signature of a function which knows how to parse an entry bundle and calculate leaf hashes for its entries.
