@@ -59,7 +59,11 @@ const (
 
 // Storage is a MySQL-based storage implementation for Tessera.
 type Storage struct {
-	db    *sql.DB
+	db *sql.DB
+}
+
+type appender struct {
+	s     *Storage
 	queue *storage.Queue
 
 	newCheckpoint tessera.NewCPFunc
@@ -68,34 +72,39 @@ type Storage struct {
 }
 
 // New creates a new instance of the MySQL-based Storage.
-// Note that `tessera.WithCheckpointSigner()` is mandatory in the `opts` argument.
-func New(ctx context.Context, db *sql.DB, opts ...func(*tessera.StorageOptions)) (tessera.Driver, error) {
-	opt := storage.ResolveStorageOptions(opts...)
-	if opt.CheckpointInterval < minCheckpointInterval {
-		return nil, fmt.Errorf("requested CheckpointInterval too low - %v < %v", opt.CheckpointInterval, minCheckpointInterval)
-	}
-
+func New(ctx context.Context, db *sql.DB) (*Storage, error) {
 	s := &Storage{
-		db:            db,
-		newCheckpoint: opt.NewCP,
-		cpUpdated:     make(chan struct{}, 1),
+		db: db,
 	}
 	if err := s.db.Ping(); err != nil {
 		klog.Errorf("Failed to ping database: %v", err)
 		return nil, err
 	}
-	if s.newCheckpoint == nil {
-		return nil, errors.New("tessera.WithCheckpointSigner must be provided in New()")
-	}
 	if err := s.ensureVersion(ctx, schemaCompatibilityVersion); err != nil {
 		return nil, fmt.Errorf("incompatible schema version: %v", err)
 	}
+	return s, nil
+}
 
-	s.queue = storage.NewQueue(ctx, opt.BatchMaxAge, opt.BatchMaxSize, s.sequenceBatch)
+// Note that `tessera.WithCheckpointSigner()` is mandatory in the `opts` argument.
+func (s *Storage) Appender(ctx context.Context, opts *tessera.AppendOptions) (*tessera.Appender, tessera.LogReader, error) {
+	if opts.CheckpointInterval < minCheckpointInterval {
+		return nil, nil, fmt.Errorf("requested CheckpointInterval too low - %v < %v", opts.CheckpointInterval, minCheckpointInterval)
+	}
+	if opts.NewCP == nil {
+		return nil, nil, errors.New("tessera.WithCheckpointSigner must be provided in New()")
+	}
+	a := &appender{
+		s:             s,
+		newCheckpoint: opts.NewCP,
+		cpUpdated:     make(chan struct{}, 1),
+	}
+	a.queue = storage.NewQueue(ctx, opts.BatchMaxAge, opts.BatchMaxSize, a.sequenceBatch)
 
 	if err := s.maybeInitTree(ctx); err != nil {
-		return nil, fmt.Errorf("maybeInitTree: %v", err)
+		return nil, nil, fmt.Errorf("maybeInitTree: %v", err)
 	}
+	a.cpUpdated <- struct{}{}
 
 	go func(ctx context.Context, i time.Duration) {
 		t := time.NewTicker(i)
@@ -104,15 +113,18 @@ func New(ctx context.Context, db *sql.DB, opts ...func(*tessera.StorageOptions))
 			select {
 			case <-ctx.Done():
 				return
-			case <-s.cpUpdated:
+			case <-a.cpUpdated:
 			case <-t.C:
 			}
-			if err := s.publishCheckpoint(ctx, i); err != nil {
+			if err := a.publishCheckpoint(ctx, i); err != nil {
 				klog.Warningf("publishCheckpoint: %v", err)
 			}
 		}
-	}(ctx, opt.CheckpointInterval)
-	return s, nil
+	}(ctx, opts.CheckpointInterval)
+
+	return &tessera.Appender{
+		Add: a.Add,
+	}, s, nil
 }
 
 func (s *Storage) ensureVersion(ctx context.Context, wantVersion uint8) error {
@@ -165,7 +177,6 @@ func (s *Storage) maybeInitTree(ctx context.Context) error {
 		if err := tx.Commit(); err != nil {
 			return fmt.Errorf("commit init tree state: %v", err)
 		}
-		s.cpUpdated <- struct{}{}
 	}
 	return nil
 }
@@ -191,8 +202,8 @@ func (s *Storage) ReadCheckpoint(ctx context.Context) ([]byte, error) {
 
 // publishCheckpoint creates a new checkpoint for the given size and root hash, and stores it in the
 // Checkpoint table.
-func (s *Storage) publishCheckpoint(ctx context.Context, interval time.Duration) error {
-	tx, err := s.db.BeginTx(ctx, nil)
+func (a *appender) publishCheckpoint(ctx context.Context, interval time.Duration) error {
+	tx, err := a.s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin tx: %v", err)
 	}
@@ -213,12 +224,12 @@ func (s *Storage) publishCheckpoint(ctx context.Context, interval time.Duration)
 		return nil
 	}
 
-	treeState, err := s.readTreeState(ctx, tx)
+	treeState, err := a.s.readTreeState(ctx, tx)
 	if err != nil {
 		return fmt.Errorf("readTreeState: %v", err)
 	}
 
-	rawCheckpoint, err := s.newCheckpoint(treeState.size, treeState.root)
+	rawCheckpoint, err := a.newCheckpoint(treeState.size, treeState.root)
 	if err != nil {
 		return err
 	}
@@ -350,8 +361,8 @@ func (s *Storage) writeEntryBundle(ctx context.Context, tx *sql.Tx, index uint64
 }
 
 // Add is the entrypoint for adding entries to a sequencing log.
-func (s *Storage) Add(ctx context.Context, entry *tessera.Entry) tessera.IndexFuture {
-	return s.queue.Add(ctx, entry)
+func (a *appender) Add(ctx context.Context, entry *tessera.Entry) tessera.IndexFuture {
+	return a.queue.Add(ctx, entry)
 }
 
 // sequenceBatch writes the entries from the provided batch into the entry bundle files of the log.
@@ -362,14 +373,14 @@ func (s *Storage) Add(ctx context.Context, entry *tessera.Entry) tessera.IndexFu
 // than one-by-one.
 //
 // TODO(#21): Separate sequencing and integration for better performance.
-func (s *Storage) sequenceBatch(ctx context.Context, entries []*tessera.Entry) error {
+func (a *appender) sequenceBatch(ctx context.Context, entries []*tessera.Entry) error {
 	// Return when there is no entry to sequence.
 	if len(entries) == 0 {
 		return nil
 	}
 
 	// Get a Tx for making transaction requests.
-	tx, err := s.db.BeginTx(ctx, nil)
+	tx, err := a.s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin tx: %v", err)
 	}
@@ -391,7 +402,7 @@ func (s *Storage) sequenceBatch(ctx context.Context, entries []*tessera.Entry) e
 	}
 
 	// Integrate the new entries into the entry bundle (TiledLeaves table) and tile (Subtree table).
-	if err := s.appendEntries(ctx, tx, state.size, entries); err != nil {
+	if err := a.appendEntries(ctx, tx, state.size, entries); err != nil {
 		return fmt.Errorf("failed to integrate: %w", err)
 	}
 
@@ -399,7 +410,7 @@ func (s *Storage) sequenceBatch(ctx context.Context, entries []*tessera.Entry) e
 	err = tx.Commit()
 
 	select {
-	case s.cpUpdated <- struct{}{}:
+	case a.cpUpdated <- struct{}{}:
 	default:
 	}
 
@@ -407,7 +418,7 @@ func (s *Storage) sequenceBatch(ctx context.Context, entries []*tessera.Entry) e
 }
 
 // appendEntries incorporates the provided entries into the log starting at fromSeq.
-func (s *Storage) appendEntries(ctx context.Context, tx *sql.Tx, fromSeq uint64, entries []*tessera.Entry) error {
+func (a *appender) appendEntries(ctx context.Context, tx *sql.Tx, fromSeq uint64, entries []*tessera.Entry) error {
 
 	sequencedEntries := make([]storage.SequencedEntry, len(entries))
 	// Assign provisional sequence numbers to entries.
@@ -453,7 +464,7 @@ func (s *Storage) appendEntries(ctx context.Context, tx *sql.Tx, fromSeq uint64,
 
 		// This bundle is full, so we need to write it out.
 		if entriesInBundle == layout.EntryBundleWidth {
-			if err := s.writeEntryBundle(ctx, tx, bundleIndex, uint32(entriesInBundle), bundleWriter.Bytes()); err != nil {
+			if err := a.s.writeEntryBundle(ctx, tx, bundleIndex, uint32(entriesInBundle), bundleWriter.Bytes()); err != nil {
 				return fmt.Errorf("writeEntryBundle: %w", err)
 			}
 
@@ -467,7 +478,7 @@ func (s *Storage) appendEntries(ctx context.Context, tx *sql.Tx, fromSeq uint64,
 	// If we have a partial bundle remaining once we've added all the entries from the batch,
 	// this needs writing out too.
 	if entriesInBundle > 0 {
-		if err := s.writeEntryBundle(ctx, tx, bundleIndex, uint32(entriesInBundle), bundleWriter.Bytes()); err != nil {
+		if err := a.s.writeEntryBundle(ctx, tx, bundleIndex, uint32(entriesInBundle), bundleWriter.Bytes()); err != nil {
 			return fmt.Errorf("writeEntryBundle: %w", err)
 		}
 	}
@@ -476,13 +487,13 @@ func (s *Storage) appendEntries(ctx context.Context, tx *sql.Tx, fromSeq uint64,
 	for i, e := range sequencedEntries {
 		lh[i] = e.LeafHash
 	}
-	newSize, newRoot, err := s.integrate(ctx, tx, fromSeq, lh)
+	newSize, newRoot, err := a.integrate(ctx, tx, fromSeq, lh)
 	if err != nil {
 		return fmt.Errorf("integrate: %v", err)
 	}
 
 	// Write new tree state.
-	if err := s.writeTreeState(ctx, tx, newSize, newRoot); err != nil {
+	if err := a.s.writeTreeState(ctx, tx, newSize, newRoot); err != nil {
 		return fmt.Errorf("writeCheckpoint: %w", err)
 	}
 
@@ -490,58 +501,61 @@ func (s *Storage) appendEntries(ctx context.Context, tx *sql.Tx, fromSeq uint64,
 	return nil
 }
 
-// integrate adds the provided leaf hashes to the merkle tree, starting at the provided location.
-func (s *Storage) integrate(ctx context.Context, tx *sql.Tx, fromSeq uint64, lh [][]byte) (uint64, []byte, error) {
-	getTiles := func(ctx context.Context, tileIDs []storage.TileID, treeSize uint64) ([]*api.HashTile, error) {
-		hashTiles := make([]*api.HashTile, len(tileIDs))
-		if len(tileIDs) == 0 {
-			return hashTiles, nil
-		}
-
-		// Build the SQL and args to fetch the hash tiles.
-		var sql strings.Builder
-		args := make([]any, 0, len(tileIDs)*2)
-		for i, id := range tileIDs {
-			if i != 0 {
-				sql.WriteString(" UNION ALL ")
-			}
-			_, err := sql.WriteString(selectSubtreeByLevelAndIndexSQL)
-			if err != nil {
-				return nil, err
-			}
-			args = append(args, id.Level, id.Index)
-		}
-
-		rows, err := tx.QueryContext(ctx, sql.String(), args...)
-		if err != nil {
-			return nil, fmt.Errorf("failed to query the hash tiles with SQL (%s): %w", sql.String(), err)
-		}
-		defer func() {
-			if err := rows.Close(); err != nil {
-				klog.Warningf("Failed to close the rows: %v", err)
-			}
-		}()
-
-		i := 0
-		for rows.Next() {
-			var tile []byte
-			if err := rows.Scan(&tile); err != nil {
-				return nil, fmt.Errorf("scan subtree tile: %w", err)
-			}
-			t := &api.HashTile{}
-			if err := t.UnmarshalText(tile); err != nil {
-				return nil, fmt.Errorf("unmarshal tile: %w", err)
-			}
-			hashTiles[i] = t
-			i++
-		}
-		if err = rows.Err(); err != nil {
-			return nil, fmt.Errorf("rows error while fetching subtrees: %w", err)
-		}
-
+func getTiles(ctx context.Context, tx *sql.Tx, tileIDs []storage.TileID, treeSize uint64) ([]*api.HashTile, error) {
+	hashTiles := make([]*api.HashTile, len(tileIDs))
+	if len(tileIDs) == 0 {
 		return hashTiles, nil
 	}
 
+	// Build the SQL and args to fetch the hash tiles.
+	var sql strings.Builder
+	args := make([]any, 0, len(tileIDs)*2)
+	for i, id := range tileIDs {
+		if i != 0 {
+			sql.WriteString(" UNION ALL ")
+		}
+		_, err := sql.WriteString(selectSubtreeByLevelAndIndexSQL)
+		if err != nil {
+			return nil, err
+		}
+		args = append(args, id.Level, id.Index)
+	}
+
+	rows, err := tx.QueryContext(ctx, sql.String(), args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query the hash tiles with SQL (%s): %w", sql.String(), err)
+	}
+	defer func() {
+		if err := rows.Close(); err != nil {
+			klog.Warningf("Failed to close the rows: %v", err)
+		}
+	}()
+
+	i := 0
+	for rows.Next() {
+		var tile []byte
+		if err := rows.Scan(&tile); err != nil {
+			return nil, fmt.Errorf("scan subtree tile: %w", err)
+		}
+		t := &api.HashTile{}
+		if err := t.UnmarshalText(tile); err != nil {
+			return nil, fmt.Errorf("unmarshal tile: %w", err)
+		}
+		hashTiles[i] = t
+		i++
+	}
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows error while fetching subtrees: %w", err)
+	}
+
+	return hashTiles, nil
+}
+
+// integrate adds the provided leaf hashes to the merkle tree, starting at the provided location.
+func (a *appender) integrate(ctx context.Context, tx *sql.Tx, fromSeq uint64, lh [][]byte) (uint64, []byte, error) {
+	getTiles := func(ctx context.Context, tileIDs []storage.TileID, treeSize uint64) ([]*api.HashTile, error) {
+		return getTiles(ctx, tx, tileIDs, treeSize)
+	}
 	newSize, newRoot, tiles, err := storage.Integrate(ctx, getTiles, fromSeq, lh)
 	if err != nil {
 		return 0, nil, fmt.Errorf("storage.Integrate: %v", err)
@@ -552,7 +566,7 @@ func (s *Storage) integrate(ctx context.Context, tx *sql.Tx, fromSeq uint64, lh 
 			return 0, nil, err
 		}
 
-		if err := s.writeTile(ctx, tx, uint64(k.Level), k.Index, nodes); err != nil {
+		if err := a.s.writeTile(ctx, tx, uint64(k.Level), k.Index, nodes); err != nil {
 			return 0, nil, fmt.Errorf("failed to set tile(%v): %w", k, err)
 		}
 	}
