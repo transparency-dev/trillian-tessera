@@ -57,6 +57,8 @@ type Appender struct {
 	// Shutdown func(ctx context.Context)
 }
 
+type AppenderOptionFn func(*AppendOptions)
+
 // NewAppender returns an Appender, which allows a personality to incrementally append new
 // leaves to the log and to read from it.
 //
@@ -64,7 +66,7 @@ type Appender struct {
 // that wrap the base appender. This can be used to provide deduplication. Decorators will be
 // called in-order, and the last in the chain will be the base appender.
 // TODO(mhutchinson): switch the decorators over to a WithOpt for future flexibility.
-func NewAppender(d Driver, opts ...func(*AppendOptions)) (*Appender, LogReader, error) {
+func NewAppender(d Driver, opts ...AppenderOptionFn) (*Appender, LogReader, error) {
 	resolved := resolveAppendOptions(opts...)
 	type appender interface {
 		Add(ctx context.Context, entry *Entry) IndexFuture
@@ -120,13 +122,14 @@ type AppendOptions struct {
 }
 
 // resolveAppendOptions turns a variadic array of storage options into an AppendOptions instance.
-func resolveAppendOptions(opts ...func(*AppendOptions)) *AppendOptions {
+func resolveAppendOptions(opts ...AppenderOptionFn) *AppendOptions {
 	defaults := &AppendOptions{
-		BatchMaxSize:       DefaultBatchMaxSize,
-		BatchMaxAge:        DefaultBatchMaxAge,
-		EntriesPath:        layout.EntriesPath,
-		CheckpointInterval: DefaultCheckpointInterval,
-		AddDecorators:      make([]func(AddFn) AddFn, 0),
+		BatchMaxSize:           DefaultBatchMaxSize,
+		BatchMaxAge:            DefaultBatchMaxAge,
+		EntriesPath:            layout.EntriesPath,
+		CheckpointInterval:     DefaultCheckpointInterval,
+		AddDecorators:          make([]func(AddFn) AddFn, 0),
+		PushbackMaxOutstanding: DefaultPushbackMaxOutstanding,
 	}
 	for _, opt := range opts {
 		opt(defaults)

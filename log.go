@@ -33,6 +33,8 @@ const (
 	DefaultBatchMaxAge = 250 * time.Millisecond
 	// DefaultCheckpointInterval is used by storage implementations if no WithCheckpointInterval option is provided when instantiating it.
 	DefaultCheckpointInterval = 10 * time.Second
+	// DefaultPushbackMaxOutstanding is used by storage implementations if no WithPushback option is provided when instantiating it.
+	DefaultPushbackMaxOutstanding = 4096
 )
 
 // ErrPushback is returned by underlying storage implementations when there are too many
