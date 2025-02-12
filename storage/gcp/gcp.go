@@ -72,8 +72,7 @@ const (
 	logCacheControl  = "max-age=604800,immutable"
 	ckptCacheControl = "no-cache"
 
-	DefaultPushbackMaxOutstanding = 4096
-	DefaultIntegrationSizeLimit   = 5 * 4096
+	DefaultIntegrationSizeLimit = 5 * 4096
 
 	// SchemaCompatibilityVersion represents the expected version (e.g. layout & serialisation) of stored data.
 	//
@@ -87,11 +86,15 @@ const (
 
 // Storage is a GCP based storage implementation for Tessera.
 type Storage struct {
-	newCP       tessera.NewCPFunc
-	entriesPath tessera.EntriesPathFunc
+	cfg Config
+}
+
+// Appender is an implementation of the Tessera appender lifecycle contract.
+type Appender struct {
+	newCP func(uint64, []byte) ([]byte, error)
 
 	sequencer sequencer
-	objStore  objStore
+	logStore  *logResourceStore
 
 	queue *storage.Queue
 
@@ -103,6 +106,12 @@ type objStore interface {
 	getObject(ctx context.Context, obj string) ([]byte, int64, error)
 	setObject(ctx context.Context, obj string, data []byte, cond *gcs.Conditions, contType string, cacheCtl string) error
 	lastModified(ctx context.Context, obj string) (time.Time, error)
+}
+
+// logResourceStore knows how to read and write entries which represent a tiles log inside an objStore.
+type logResourceStore struct {
+	objStore    objStore
+	entriesPath func(uint64, uint8) string
 }
 
 // sequencer describes a type which knows how to sequence entries.
@@ -136,39 +145,43 @@ type Config struct {
 }
 
 // New creates a new instance of the GCP based Storage.
-func New(ctx context.Context, cfg Config, opts ...func(*tessera.StorageOptions)) (tessera.Driver, error) {
-	opt := storage.ResolveStorageOptions(opts...)
-	if opt.PushbackMaxOutstanding == 0 {
-		opt.PushbackMaxOutstanding = DefaultPushbackMaxOutstanding
-	}
-	if opt.CheckpointInterval < minCheckpointInterval {
-		return nil, fmt.Errorf("requested CheckpointInterval (%v) is less than minimum permitted %v", opt.CheckpointInterval, minCheckpointInterval)
+func New(ctx context.Context, cfg Config) (tessera.Driver, error) {
+	return &Storage{
+		cfg: cfg,
+	}, nil
+}
+
+func (s *Storage) Appender(ctx context.Context, opts *tessera.AppendOptions) (*tessera.Appender, tessera.LogReader, error) {
+	if opts.CheckpointInterval < minCheckpointInterval {
+		return nil, nil, fmt.Errorf("requested CheckpointInterval (%v) is less than minimum permitted %v", opts.CheckpointInterval, minCheckpointInterval)
 	}
 
 	c, err := gcs.NewClient(ctx, gcs.WithJSONReads())
 	if err != nil {
-		return nil, fmt.Errorf("failed to create GCS client: %v", err)
+		return nil, nil, fmt.Errorf("failed to create GCS client: %v", err)
 	}
 
-	seq, err := newSpannerSequencer(ctx, cfg.Spanner, uint64(opt.PushbackMaxOutstanding))
+	seq, err := newSpannerSequencer(ctx, s.cfg.Spanner, uint64(opts.PushbackMaxOutstanding))
 	if err != nil {
-		return nil, fmt.Errorf("failed to create Spanner sequencer: %v", err)
+		return nil, nil, fmt.Errorf("failed to create Spanner sequencer: %v", err)
 	}
 
-	r := &Storage{
-		objStore: &gcsStorage{
-			gcsClient: c,
-			bucket:    cfg.Bucket,
+	a := &Appender{
+		logStore: &logResourceStore{
+			objStore: &gcsStorage{
+				gcsClient: c,
+				bucket:    s.cfg.Bucket,
+			},
+			entriesPath: opts.EntriesPath,
 		},
-		sequencer:   seq,
-		newCP:       opt.NewCP,
-		entriesPath: opt.EntriesPath,
-		cpUpdated:   make(chan struct{}),
+		sequencer: seq,
+		newCP:     opts.NewCP,
+		cpUpdated: make(chan struct{}),
 	}
-	r.queue = storage.NewQueue(ctx, opt.BatchMaxAge, opt.BatchMaxSize, r.sequencer.assignEntries)
+	a.queue = storage.NewQueue(ctx, opts.BatchMaxAge, opts.BatchMaxSize, a.sequencer.assignEntries)
 
-	if err := r.init(ctx); err != nil {
-		return nil, fmt.Errorf("failed to initialise log storage: %v", err)
+	if err := a.init(ctx); err != nil {
+		return nil, nil, fmt.Errorf("failed to initialise log storage: %v", err)
 	}
 
 	go func() {
@@ -186,12 +199,12 @@ func New(ctx context.Context, cfg Config, opts ...func(*tessera.StorageOptions))
 				cctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 				defer cancel()
 
-				if _, err := r.sequencer.consumeEntries(cctx, DefaultIntegrationSizeLimit, r.appendEntries, false); err != nil {
+				if _, err := a.sequencer.consumeEntries(cctx, DefaultIntegrationSizeLimit, a.appendEntries, false); err != nil {
 					klog.Errorf("integrate: %v", err)
 					return
 				}
 				select {
-				case r.cpUpdated <- struct{}{}:
+				case a.cpUpdated <- struct{}{}:
 				default:
 				}
 			}()
@@ -205,47 +218,47 @@ func New(ctx context.Context, cfg Config, opts ...func(*tessera.StorageOptions))
 			select {
 			case <-ctx.Done():
 				return
-			case <-r.cpUpdated:
+			case <-a.cpUpdated:
 			case <-t.C:
 			}
-			if err := r.publishCheckpoint(ctx, i); err != nil {
+			if err := a.publishCheckpoint(ctx, i); err != nil {
 				klog.Warningf("publishCheckpoint: %v", err)
 			}
 		}
-	}(ctx, opt.CheckpointInterval)
+	}(ctx, opts.CheckpointInterval)
 
-	return r, nil
+	return &tessera.Appender{
+			Add: a.Add,
+		},
+		&LogReader{
+			lrs: *a.logStore,
+		}, nil
 }
 
 // Add is the entrypoint for adding entries to a sequencing log.
-func (s *Storage) Add(ctx context.Context, e *tessera.Entry) tessera.IndexFuture {
+func (s *Appender) Add(ctx context.Context, e *tessera.Entry) tessera.IndexFuture {
 	return s.queue.Add(ctx, e)
 }
 
-func (s *Storage) ReadCheckpoint(ctx context.Context) ([]byte, error) {
-	return s.get(ctx, layout.CheckpointPath)
+type LogReader struct {
+	lrs logResourceStore
 }
 
-func (s *Storage) ReadTile(ctx context.Context, l, i uint64, p uint8) ([]byte, error) {
-	return s.get(ctx, layout.TilePath(l, i, p))
+func (lr *LogReader) ReadCheckpoint(ctx context.Context) ([]byte, error) {
+	return lr.lrs.getCheckpoint(ctx)
 }
 
-func (s *Storage) ReadEntryBundle(ctx context.Context, i uint64, p uint8) ([]byte, error) {
-	return s.get(ctx, s.entriesPath(i, p))
+func (lr *LogReader) ReadTile(ctx context.Context, l, i uint64, p uint8) ([]byte, error) {
+	return lr.lrs.getTile(ctx, l, i, p)
 }
 
-// get returns the requested object.
-//
-// This is indended to be used to proxy read requests through the personality for debug/testing purposes.
-func (s *Storage) get(ctx context.Context, path string) ([]byte, error) {
-	d, _, err := s.objStore.getObject(ctx, path)
-	return d, err
+func (lr *LogReader) ReadEntryBundle(ctx context.Context, i uint64, p uint8) ([]byte, error) {
+	return lr.lrs.getEntryBundle(ctx, i, p)
 }
 
 // init ensures that the storage represents a log in a valid state.
-func (s *Storage) init(ctx context.Context) error {
-	_, err := s.get(ctx, layout.CheckpointPath)
-	if err != nil {
+func (s *Appender) init(ctx context.Context) error {
+	if _, err := s.logStore.getCheckpoint(ctx); err != nil {
 		if errors.Is(err, gcs.ErrObjectNotExist) {
 			// No checkpoint exists, do a forced (possibly empty) integration to create one in a safe
 			// way (setting the checkpoint directly here would not be safe as it's outside the transactional
@@ -267,8 +280,8 @@ func (s *Storage) init(ctx context.Context) error {
 	return nil
 }
 
-func (s *Storage) publishCheckpoint(ctx context.Context, minStaleness time.Duration) error {
-	m, err := s.objStore.lastModified(ctx, layout.CheckpointPath)
+func (s *Appender) publishCheckpoint(ctx context.Context, minStaleness time.Duration) error {
+	m, err := s.logStore.checkpointLastModified(ctx)
 	if err != nil && !errors.Is(err, gcs.ErrObjectNotExist) {
 		return fmt.Errorf("lastModified(%q): %v", layout.CheckpointPath, err)
 	}
@@ -285,25 +298,48 @@ func (s *Storage) publishCheckpoint(ctx context.Context, minStaleness time.Durat
 		return fmt.Errorf("newCP: %v", err)
 	}
 
-	if err := s.objStore.setObject(ctx, layout.CheckpointPath, cpRaw, nil, ckptContType, ckptCacheControl); err != nil {
+	if err := s.logStore.setCheckpoint(ctx, cpRaw); err != nil {
 		return fmt.Errorf("writeCheckpoint: %v", err)
 	}
 	return nil
 
 }
 
+func (lrs *logResourceStore) setCheckpoint(ctx context.Context, cpRaw []byte) error {
+	return lrs.objStore.setObject(ctx, layout.CheckpointPath, cpRaw, nil, ckptContType, ckptCacheControl)
+}
+
+func (lrs *logResourceStore) checkpointLastModified(ctx context.Context) (time.Time, error) {
+	t, err := lrs.objStore.lastModified(ctx, layout.CheckpointPath)
+	return t, err
+}
+
+func (lrs *logResourceStore) getCheckpoint(ctx context.Context) ([]byte, error) {
+	r, _, err := lrs.objStore.getObject(ctx, layout.CheckpointPath)
+	return r, err
+}
+
 // setTile idempotently stores the provided tile at the location implied by the given level, index, and treeSize.
 //
 // The location to which the tile is written is defined by the tile layout spec.
-func (s *Storage) setTile(ctx context.Context, level, index uint64, partial uint8, data []byte) error {
+func (s *logResourceStore) setTile(ctx context.Context, level, index uint64, partial uint8, data []byte) error {
 	tPath := layout.TilePath(level, index, partial)
 	return s.objStore.setObject(ctx, tPath, data, &gcs.Conditions{DoesNotExist: true}, logContType, logCacheControl)
+}
+
+// getTile retrieves the raw tile from the provided location.
+//
+// The location to which the tile is written is defined by the tile layout spec.
+func (s *logResourceStore) getTile(ctx context.Context, level, index uint64, partial uint8) ([]byte, error) {
+	tPath := layout.TilePath(level, index, partial)
+	d, _, err := s.objStore.getObject(ctx, tPath)
+	return d, err
 }
 
 // getTiles returns the tiles with the given tile-coords for the specified log size.
 //
 // Tiles are returned in the same order as they're requested, nils represent tiles which were not found.
-func (s *Storage) getTiles(ctx context.Context, tileIDs []storage.TileID, logSize uint64) ([]*api.HashTile, error) {
+func (s *logResourceStore) getTiles(ctx context.Context, tileIDs []storage.TileID, logSize uint64) ([]*api.HashTile, error) {
 	r := make([]*api.HashTile, len(tileIDs))
 	errG := errgroup.Group{}
 	for i, id := range tileIDs {
@@ -343,7 +379,7 @@ func (s *Storage) getTiles(ctx context.Context, tileIDs []storage.TileID, logSiz
 // data structures), but it should not be used as a substitute for reading the checkpoint.
 //
 // TODO(al): This needs to be reflected and documented in some tessera-level dedupe storage contract.
-func (s *Storage) IntegratedSize(ctx context.Context) (uint64, error) {
+func (s *Appender) IntegratedSize(ctx context.Context) (uint64, error) {
 	size, _, err := s.sequencer.currentTree(ctx)
 	return size, err
 }
@@ -359,7 +395,7 @@ func (s *Storage) IntegratedSize(ctx context.Context) (uint64, error) {
 // This implementation is intended to be relatively performant compared to the naive approach of serially fetching
 // and yielding each bundle in turn, and is intended for use cases where the caller is actively consuming large
 // sections of the log contents.
-func (s *Storage) StreamEntryRange(ctx context.Context, fromEntry, N, treeSize uint64) (next func() (ri layout.RangeInfo, bundle []byte, err error), cancel func()) {
+func (s *logResourceStore) StreamEntryRange(ctx context.Context, fromEntry, N, treeSize uint64) (next func() (ri layout.RangeInfo, bundle []byte, err error), cancel func()) {
 	klog.Infof("StreamEntryRange from %d, N %d, treeSize %d", fromEntry, N, treeSize)
 
 	return streamAdaptor(ctx, s.getEntryBundle, fromEntry, N, treeSize)
@@ -458,7 +494,7 @@ func streamAdaptor(ctx context.Context, getBundle getBundleFn, fromEntry, N, tre
 // A partial size of zero implies a full tile.
 //
 // Returns a wrapped os.ErrNotExist if the bundle does not exist.
-func (s *Storage) getEntryBundle(ctx context.Context, bundleIndex uint64, p uint8) ([]byte, error) {
+func (s *logResourceStore) getEntryBundle(ctx context.Context, bundleIndex uint64, p uint8) ([]byte, error) {
 	objName := s.entriesPath(bundleIndex, p)
 	data, _, err := s.objStore.getObject(ctx, objName)
 	if err != nil {
@@ -474,7 +510,7 @@ func (s *Storage) getEntryBundle(ctx context.Context, bundleIndex uint64, p uint
 }
 
 // setEntryBundle idempotently stores the serialised entry bundle at the location implied by the bundleIndex and treeSize.
-func (s *Storage) setEntryBundle(ctx context.Context, bundleIndex uint64, p uint8, bundleRaw []byte) error {
+func (s *logResourceStore) setEntryBundle(ctx context.Context, bundleIndex uint64, p uint8, bundleRaw []byte) error {
 	objName := s.entriesPath(bundleIndex, p)
 	// Note that setObject does an idempotent interpretation of DoesNotExist - it only
 	// returns an error if the named object exists _and_ contains different data to what's
@@ -487,7 +523,7 @@ func (s *Storage) setEntryBundle(ctx context.Context, bundleIndex uint64, p uint
 }
 
 // appendEntries incorporates the provided entries into the log starting at fromSeq.
-func (s *Storage) appendEntries(ctx context.Context, fromSeq uint64, entries []storage.SequencedEntry) ([]byte, error) {
+func (s *Appender) appendEntries(ctx context.Context, fromSeq uint64, entries []storage.SequencedEntry) ([]byte, error) {
 	var newRoot []byte
 
 	errG := errgroup.Group{}
@@ -504,7 +540,7 @@ func (s *Storage) appendEntries(ctx context.Context, fromSeq uint64, entries []s
 		for i, e := range entries {
 			lh[i] = e.LeafHash
 		}
-		r, err := s.integrate(ctx, fromSeq, lh)
+		r, err := integrate(ctx, fromSeq, lh, s.logStore)
 		if err != nil {
 			return fmt.Errorf("integrate: %v", err)
 		}
@@ -518,10 +554,10 @@ func (s *Storage) appendEntries(ctx context.Context, fromSeq uint64, entries []s
 }
 
 // integrate adds the provided leaf hashes to the merkle tree, starting at the provided location.
-func (s *Storage) integrate(ctx context.Context, fromSeq uint64, lh [][]byte) ([]byte, error) {
+func integrate(ctx context.Context, fromSeq uint64, lh [][]byte, logStore *logResourceStore) ([]byte, error) {
 	errG := errgroup.Group{}
 	getTiles := func(ctx context.Context, tileIDs []storage.TileID, treeSize uint64) ([]*api.HashTile, error) {
-		n, err := s.getTiles(ctx, tileIDs, treeSize)
+		n, err := logStore.getTiles(ctx, tileIDs, treeSize)
 		if err != nil {
 			return nil, fmt.Errorf("getTiles: %w", err)
 		}
@@ -539,7 +575,7 @@ func (s *Storage) integrate(ctx context.Context, fromSeq uint64, lh [][]byte) ([
 				if err != nil {
 					return err
 				}
-				return s.setTile(ctx, k.Level, k.Index, layout.PartialTileSize(k.Level, k.Index, newSize), data)
+				return logStore.setTile(ctx, k.Level, k.Index, layout.PartialTileSize(k.Level, k.Index, newSize), data)
 			})
 		}(ctx, k, v)
 	}
@@ -554,7 +590,7 @@ func (s *Storage) integrate(ctx context.Context, fromSeq uint64, lh [][]byte) ([
 // updateEntryBundles adds the entries being integrated into the entry bundles.
 //
 // The right-most bundle will be grown, if it's partial, and/or new bundles will be created as required.
-func (s *Storage) updateEntryBundles(ctx context.Context, fromSeq uint64, entries []storage.SequencedEntry) error {
+func (s *Appender) updateEntryBundles(ctx context.Context, fromSeq uint64, entries []storage.SequencedEntry) error {
 	if len(entries) == 0 {
 		return nil
 	}
@@ -564,7 +600,7 @@ func (s *Storage) updateEntryBundles(ctx context.Context, fromSeq uint64, entrie
 	bundleWriter := &bytes.Buffer{}
 	if entriesInBundle > 0 {
 		// If the latest bundle is partial, we need to read the data it contains in for our newer, larger, bundle.
-		part, err := s.getEntryBundle(ctx, uint64(bundleIndex), uint8(entriesInBundle))
+		part, err := s.logStore.getEntryBundle(ctx, uint64(bundleIndex), uint8(entriesInBundle))
 		if err != nil {
 			return err
 		}
@@ -580,7 +616,7 @@ func (s *Storage) updateEntryBundles(ctx context.Context, fromSeq uint64, entrie
 	// It's used in the for loop below.
 	goSetEntryBundle := func(ctx context.Context, bundleIndex uint64, p uint8, bundleRaw []byte) {
 		seqErr.Go(func() error {
-			if err := s.setEntryBundle(ctx, bundleIndex, p, bundleRaw); err != nil {
+			if err := s.logStore.setEntryBundle(ctx, bundleIndex, p, bundleRaw); err != nil {
 				return err
 			}
 			return nil
@@ -1274,36 +1310,31 @@ func (d *DedupStorage) Populate(ctx context.Context, lf LogFollower, bundleFn Bu
 type BundleHasherFunc func(entryBundle []byte) (LeafHashes [][]byte, err error)
 
 // NewMigrationTarget creates a new GCP storage for the MigrationTarget lifecycle mode.
-func NewMigrationTarget(ctx context.Context, cfg Config, bundleHasher BundleHasherFunc, opts ...func(*tessera.StorageOptions)) (*MigrationStorage, error) {
-	opt := storage.ResolveStorageOptions(opts...)
-	if opt.PushbackMaxOutstanding == 0 {
-		opt.PushbackMaxOutstanding = DefaultPushbackMaxOutstanding
-	}
-
+func (s *Storage) NewMigrationTarget(ctx context.Context, bundleHasher BundleHasherFunc, opts tessera.AppendOptions) (*MigrationStorage, error) {
 	c, err := gcs.NewClient(ctx, gcs.WithJSONReads())
 	if err != nil {
 		return nil, fmt.Errorf("failed to create GCS client: %v", err)
 	}
 
-	seq, err := newSpannerSequencer(ctx, cfg.Spanner, uint64(opt.PushbackMaxOutstanding))
+	seq, err := newSpannerSequencer(ctx, s.cfg.Spanner, uint64(opts.PushbackMaxOutstanding))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Spanner sequencer: %v", err)
 	}
 
-	r := &Storage{
-		objStore: &gcsStorage{
-			gcsClient: c,
-			bucket:    cfg.Bucket,
-		},
-		sequencer:   seq,
-		newCP:       opt.NewCP,
-		entriesPath: opt.EntriesPath,
-	}
+	r := &Storage{}
 
 	m := &MigrationStorage{
 		s:            r,
 		dbPool:       seq.dbPool,
 		bundleHasher: bundleHasher,
+		sequencer:    seq,
+		entriesPath:  opts.EntriesPath,
+		logStore: &logResourceStore{
+			objStore: &gcsStorage{
+				gcsClient: c,
+				bucket:    s.cfg.Bucket,
+			},
+		},
 	}
 
 	return m, nil
@@ -1313,6 +1344,9 @@ type MigrationStorage struct {
 	s            *Storage
 	dbPool       *spanner.Client
 	bundleHasher BundleHasherFunc
+	sequencer    sequencer
+	logStore     *logResourceStore
+	entriesPath  tessera.EntriesPathFunc
 }
 
 func (m *MigrationStorage) AwaitIntegration(ctx context.Context, sourceSize uint64) ([]byte, error) {
@@ -1323,7 +1357,7 @@ func (m *MigrationStorage) AwaitIntegration(ctx context.Context, sourceSize uint
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		case <-t.C:
-			from, _, err := m.s.sequencer.currentTree(ctx)
+			from, _, err := m.sequencer.currentTree(ctx)
 			if err != nil && !errors.Is(err, os.ErrNotExist) {
 				klog.Warningf("readTreeState: %v", err)
 				continue
@@ -1342,11 +1376,11 @@ func (m *MigrationStorage) AwaitIntegration(ctx context.Context, sourceSize uint
 }
 
 func (m *MigrationStorage) SetEntryBundle(ctx context.Context, index uint64, partial uint8, bundle []byte) error {
-	return m.s.setEntryBundle(ctx, index, partial, bundle)
+	return m.logStore.setEntryBundle(ctx, index, partial, bundle)
 }
 
 func (m *MigrationStorage) State(ctx context.Context) (uint64, []byte, error) {
-	return m.s.sequencer.currentTree(ctx)
+	return m.sequencer.currentTree(ctx)
 }
 
 func (m *MigrationStorage) fetchLeafHashes(ctx context.Context, from, to, sourceSize uint64) ([][]byte, error) {
@@ -1358,9 +1392,9 @@ func (m *MigrationStorage) fetchLeafHashes(ctx context.Context, from, to, source
 	n := 0
 	for ri := range layout.Range(from, to, sourceSize) {
 		eg.Go(func() error {
-			b, err := m.s.ReadEntryBundle(ctx, ri.Index, ri.Partial)
+			b, err := m.logStore.getEntryBundle(ctx, ri.Index, ri.Partial)
 			if err != nil {
-				return fmt.Errorf("ReadEntryBundle(%d.%d): %v", ri.Index, ri.Partial, err)
+				return fmt.Errorf("getEntryBundle(%d.%d): %v", ri.Index, ri.Partial, err)
 			}
 
 			bh, err := m.bundleHasher(b)
@@ -1422,7 +1456,7 @@ func (m *MigrationStorage) buildTree(ctx context.Context, sourceSize uint64) (ui
 
 		added := uint64(len(lh))
 		klog.Infof("Integrate: adding %d entries to existing tree size %d", len(lh), from)
-		newRoot, err = m.s.integrate(ctx, from, lh)
+		newRoot, err = integrate(ctx, from, lh, m.logStore)
 		if err != nil {
 			klog.Warningf("integrate failed: %v", err)
 			return fmt.Errorf("Integrate failed: %v", err)
