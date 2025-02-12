@@ -20,6 +20,7 @@ import (
 	"time"
 
 	f_log "github.com/transparency-dev/formats/log"
+	"github.com/transparency-dev/trillian-tessera/api/layout"
 )
 
 // LogReader provides read-only access to the log.
@@ -63,8 +64,8 @@ type Appender struct {
 // that wrap the base appender. This can be used to provide deduplication. Decorators will be
 // called in-order, and the last in the chain will be the base appender.
 // TODO(mhutchinson): switch the decorators over to a WithOpt for future flexibility.
-func NewAppender(d Driver, opts ...func(*appendOptions)) (*Appender, LogReader, error) {
-	resolved := resolveAppendOpts(opts...)
+func NewAppender(d Driver, opts ...func(*AppendOptions)) (*Appender, LogReader, error) {
+	resolved := resolveAppendOptions(opts...)
 	type appender interface {
 		Add(ctx context.Context, entry *Entry) IndexFuture
 		// Shutdown(ctx context.Context)
@@ -74,8 +75,8 @@ func NewAppender(d Driver, opts ...func(*appendOptions)) (*Appender, LogReader, 
 		return nil, nil, fmt.Errorf("driver %T does not implement Appender", d)
 	}
 	add := a.Add
-	for i := len(resolved.addDecorators) - 1; i >= 0; i-- {
-		add = resolved.addDecorators[i](add)
+	for i := len(resolved.AddDecorators) - 1; i >= 0; i-- {
+		add = resolved.AddDecorators[i](add)
 	}
 	reader, ok := d.(LogReader)
 	if !ok {
@@ -87,9 +88,9 @@ func NewAppender(d Driver, opts ...func(*appendOptions)) (*Appender, LogReader, 
 	}, reader, nil
 }
 
-func WithAppendDeduplication(decorators ...func(AddFn) AddFn) func(*appendOptions) {
-	return func(o *appendOptions) {
-		o.addDecorators = decorators
+func WithAppendDeduplication(decorators ...func(AddFn) AddFn) func(*AppendOptions) {
+	return func(o *AppendOptions) {
+		o.AddDecorators = decorators
 	}
 }
 
@@ -102,8 +103,8 @@ type ParseCPFunc func(raw []byte) (*f_log.Checkpoint, error)
 // EntriesPathFunc is the signature of a function which knows how to format entry bundle paths.
 type EntriesPathFunc func(n uint64, p uint8) string
 
-// StorageOptions holds optional settings for all storage implementations.
-type StorageOptions struct {
+// AppendOptions holds optional settings for all storage implementations.
+type AppendOptions struct {
 	NewCP NewCPFunc
 
 	BatchMaxAge  time.Duration
@@ -118,12 +119,17 @@ type StorageOptions struct {
 	AddDecorators []func(AddFn) AddFn
 }
 
-func resolveAppendOpts(opts ...func(*appendOptions)) appendOptions {
-	defaults := &appendOptions{
-		addDecorators: make([]func(AddFn) AddFn, 0),
+// resolveAppendOptions turns a variadic array of storage options into an AppendOptions instance.
+func resolveAppendOptions(opts ...func(*AppendOptions)) *AppendOptions {
+	defaults := &AppendOptions{
+		BatchMaxSize:       DefaultBatchMaxSize,
+		BatchMaxAge:        DefaultBatchMaxAge,
+		EntriesPath:        layout.EntriesPath,
+		CheckpointInterval: DefaultCheckpointInterval,
+		AddDecorators:      make([]func(AddFn) AddFn, 0),
 	}
 	for _, opt := range opts {
 		opt(defaults)
 	}
-	return *defaults
+	return defaults
 }
