@@ -71,8 +71,7 @@ type NewTreeFunc func(size uint64, root []byte) error
 
 // New creates a new POSIX storage.
 // - path is a directory in which the log should be stored
-// - create must only be set when first creating the log, and will create the directory structure and an empty checkpoint
-func New(ctx context.Context, path string, create bool, opts ...func(*options.StorageOptions)) (tessera.Driver, error) {
+func New(ctx context.Context, path string, opts ...func(*options.StorageOptions)) (tessera.Driver, error) {
 	opt := storage.ResolveStorageOptions(opts...)
 	if opt.CheckpointInterval < minCheckpointInterval {
 		return nil, fmt.Errorf("requested CheckpointInterval (%v) is less than minimum permitted %v", opt.CheckpointInterval, minCheckpointInterval)
@@ -84,7 +83,7 @@ func New(ctx context.Context, path string, create bool, opts ...func(*options.St
 		entriesPath: opt.EntriesPath,
 		cpUpdated:   make(chan struct{}),
 	}
-	if err := r.initialise(create); err != nil {
+	if err := r.initialise(); err != nil {
 		return nil, err
 	}
 	r.queue = storage.NewQueue(ctx, opt.BatchMaxAge, opt.BatchMaxSize, r.sequenceBatch)
@@ -178,7 +177,7 @@ func (s *Storage) ReadTile(_ context.Context, level, index uint64, p uint8) ([]b
 func (s *Storage) sequenceBatch(ctx context.Context, entries []*tessera.Entry) error {
 	// Double locking:
 	// - The mutex `Lock()` ensures that multiple concurrent calls to this function within a task are serialised.
-	// - The POSIX `lockForTreeUpdate()` ensures that distinct tasks are serialised.
+	// - The POSIX `lockFile()` ensures that distinct tasks are serialised.
 	s.mu.Lock()
 	unlock, err := lockFile(filepath.Join(s.path, stateDir, "treeState.lock"))
 	if err != nil {
@@ -277,7 +276,7 @@ func (s *Storage) doIntegrate(ctx context.Context, fromSeq uint64, leafHashes []
 	newSize, newRoot, tiles, err := storage.Integrate(ctx, getTiles, fromSeq, leafHashes)
 	if err != nil {
 		klog.Errorf("Integrate: %v", err)
-		return fmt.Errorf("Integrate: %v", err)
+		return fmt.Errorf("error in Integrate: %v", err)
 	}
 	for k, v := range tiles {
 		if err := s.storeTile(ctx, uint64(k.Level), k.Index, newSize, v); err != nil {
@@ -393,11 +392,32 @@ func (s *Storage) writeBundle(_ context.Context, index uint64, partial uint8, bu
 	return nil
 }
 
-// initialise ensures that the storage location is valid by loading the checkpoint from this location.
-// If `create` is set to true, then this will first ensure that the directory path is created, and
-// an empty checkpoint is created in this directory.
-func (s *Storage) initialise(create bool) error {
-	if create {
+// initialise ensures that the storage location is valid by loading the tree state from this location.
+// If the directory does not exist or is empty, then this will first ensure that the directory path
+// is created, and a tree state and an empty checkpoint are created in this directory.
+func (s *Storage) initialise() error {
+	// Idempotent: If folder exists, nothing happens.
+	if err := os.MkdirAll(filepath.Join(s.path, stateDir), dirPerm); err != nil {
+		return fmt.Errorf("failed to create log directory: %q", err)
+	}
+	// Double locking:
+	// - The mutex `Lock()` ensures that multiple concurrent calls to this function within a task are serialised.
+	// - The POSIX `lockFile()` ensures that distinct tasks are serialised.
+	s.mu.Lock()
+	unlock, err := lockFile(filepath.Join(s.path, stateDir, "initialise.lock"))
+	if err != nil {
+		panic(err)
+	}
+	defer func() {
+		if err := unlock(); err != nil {
+			panic(err)
+		}
+		s.mu.Unlock()
+	}()
+
+	if create, err := s.isNotInitialised(); err != nil {
+		return err
+	} else if create {
 		// Create the directory structure and write out an empty checkpoint
 		klog.Infof("Initializing directory for POSIX log at %q (this should only happen ONCE per log!)", s.path)
 		if err := os.MkdirAll(filepath.Join(s.path, stateDir), dirPerm); err != nil {
@@ -429,9 +449,44 @@ type treeState struct {
 	Root []byte `json:"root"`
 }
 
+// isNotInitialised returns true if the provided directory for the log does not exist,
+// is empty, or if the tree state is missing.
+func (s *Storage) isNotInitialised() (bool, error) {
+	_, err := os.Stat(s.path)
+	// check if the directory exists
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return true, nil
+		}
+		// unrecoverable error, log cannot be initialised
+		return false, err
+	}
+
+	// check if directory is empty by trying to read one file name
+	f, err := os.Open(s.path)
+	if err != nil {
+		return false, err
+	}
+	_, err = f.Readdirnames(1)
+	if err == io.EOF {
+		return true, nil
+	}
+
+	// check if tree state has been initialized
+	if _, _, err := s.readTreeState(); errors.Is(err, os.ErrNotExist) {
+		return true, nil
+	}
+
+	return false, nil
+}
+
 // ensureVersion will fail if the compatibility version stored in the state directory
 // is not the expected version. If no file exists, then it is created with the expected version.
 func (s *Storage) ensureVersion(version uint16) error {
+	if _, err := os.Stat(filepath.Join(s.path, stateDir)); err != nil {
+		return err
+	}
+
 	versionFile := filepath.Join(s.path, stateDir, "version")
 
 	if _, err := os.Stat(versionFile); errors.Is(err, os.ErrNotExist) {
@@ -463,7 +518,7 @@ func (s *Storage) ensureVersion(version uint16) error {
 func (s *Storage) writeTreeState(size uint64, root []byte) error {
 	raw, err := json.Marshal(treeState{Size: size, Root: root})
 	if err != nil {
-		return fmt.Errorf("Marshal: %v", err)
+		return fmt.Errorf("error in Marshal: %v", err)
 	}
 
 	if err := overwrite(filepath.Join(s.path, stateDir, "treeState"), raw); err != nil {
@@ -487,7 +542,7 @@ func (s *Storage) readTreeState() (uint64, []byte, error) {
 	}
 	ts := &treeState{}
 	if err := json.Unmarshal(raw, ts); err != nil {
-		return 0, nil, fmt.Errorf("Unmarshal: %v", err)
+		return 0, nil, fmt.Errorf("error in Unmarshal: %v", err)
 	}
 	return ts.Size, ts.Root, nil
 }
@@ -616,7 +671,7 @@ type BundleHasherFunc func(entryBundle []byte) (LeafHashes [][]byte, err error)
 // - path is a directory in which the log should be stored
 // - create must only be set when first creating the log, and will create the directory structure and an empty checkpoint
 // - bundleHasher knows how to parse the provided entry bundle, and returns a slice of leaf hashes for the entries it contains.
-func NewMigrationTarget(ctx context.Context, path string, create bool, bundleHasher BundleHasherFunc, opts ...func(*options.StorageOptions)) (*MigrationStorage, error) {
+func NewMigrationTarget(ctx context.Context, path string, bundleHasher BundleHasherFunc, opts ...func(*options.StorageOptions)) (*MigrationStorage, error) {
 	opt := storage.ResolveStorageOptions(opts...)
 
 	r := &MigrationStorage{
@@ -626,7 +681,7 @@ func NewMigrationTarget(ctx context.Context, path string, create bool, bundleHas
 		},
 		bundleHasher: bundleHasher,
 	}
-	if err := r.s.initialise(create); err != nil {
+	if err := r.s.initialise(); err != nil {
 		return nil, err
 	}
 	return r, nil
@@ -670,7 +725,7 @@ func (m *MigrationStorage) State(_ context.Context) (uint64, []byte, error) {
 func (m *MigrationStorage) buildTree(ctx context.Context, targetSize uint64) error {
 	// Double locking:
 	// - The mutex `Lock()` ensures that multiple concurrent calls to this function within a task are serialised.
-	// - The POSIX `lockForTreeUpdate()` ensures that distinct tasks are serialised.
+	// - The POSIX `lockFile()` ensures that distinct tasks are serialised.
 	m.s.mu.Lock()
 	unlock, err := lockFile(filepath.Join(m.s.path, stateDir, "treeState.lock"))
 	if err != nil {

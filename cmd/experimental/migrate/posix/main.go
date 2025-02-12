@@ -32,7 +32,6 @@ import (
 
 var (
 	storageDir = flag.String("storage_dir", "", "Root directory to store log data.")
-	initialise = flag.Bool("initialise", false, "Set when creating a new log to initialise the structure.")
 	sourceURL  = flag.String("source_url", "", "Base URL for the source log.")
 	numWorkers = flag.Int("num_workers", 30, "Number of migration worker goroutines.")
 )
@@ -65,7 +64,7 @@ func main() {
 	}
 
 	// Create our Tessera storage backend:
-	st, err := posix.NewMigrationTarget(ctx, *storageDir, *initialise, internal.BundleHasher)
+	st, err := posix.NewMigrationTarget(ctx, *storageDir, internal.BundleHasher)
 	if err != nil {
 		klog.Exitf("Failed to create new POSIX storage: %v", err)
 	}

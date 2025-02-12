@@ -36,7 +36,6 @@ import (
 
 var (
 	storageDir  = flag.String("storage_dir", "", "Root directory to store log data.")
-	initialise  = flag.Bool("initialise", false, "Set when creating a new log to initialise the structure.")
 	entries     = flag.String("entries", "", "File path glob of entries to add to the log.")
 	privKeyFile = flag.String("private_key", "", "Location of private key file. If unset, uses the contents of the LOG_PRIVATE_KEY environment variable.")
 )
@@ -68,12 +67,6 @@ func main() {
 
 	// Handle the case where no entries are to be added.
 	if len(*entries) == 0 {
-		if *initialise {
-			_, err := posix.New(ctx, *storageDir, *initialise, tessera.WithCheckpointSigner(s))
-			if err != nil {
-				klog.Exitf("Failed to initialise storage: %v", err)
-			}
-		}
 		klog.Info("No entries provided to integrate; exiting")
 		os.Exit(0)
 	}
@@ -88,7 +81,6 @@ func main() {
 	driver, err := posix.New(
 		ctx,
 		*storageDir,
-		*initialise,
 		tessera.WithCheckpointSigner(s),
 		tessera.WithCheckpointInterval(checkpointInterval),
 		tessera.WithBatching(uint(len(filesToAdd)), time.Second))

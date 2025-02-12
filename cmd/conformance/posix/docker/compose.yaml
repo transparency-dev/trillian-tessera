@@ -12,7 +12,6 @@ services:
       LOG_PUBLIC_KEY: "example.com/log/testdata+33d7b496+AeHTu4Q3hEIMHNqc6fASMsq3rKNx280NI+oO5xCFkkSx"
     command: [
       "--storage_dir=/tmp/tessera-posix-log",
-      "--initialise",
       "--listen=:2025",
       "--alsologtostderr",
       "--v=2",
