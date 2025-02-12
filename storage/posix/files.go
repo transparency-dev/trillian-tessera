@@ -449,8 +449,8 @@ type treeState struct {
 	Root []byte `json:"root"`
 }
 
-// isNotInitialised returns true if the provided directory for the log does not exist
-// or is empty.
+// isNotInitialised returns true if the provided directory for the log does not exist,
+// is empty, or if the tree state is missing.
 func (s *Storage) isNotInitialised() (bool, error) {
 	_, err := os.Stat(s.path)
 	// check if the directory exists
