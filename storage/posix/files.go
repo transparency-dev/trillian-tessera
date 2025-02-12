@@ -177,7 +177,7 @@ func (s *Storage) ReadTile(_ context.Context, level, index uint64, p uint8) ([]b
 func (s *Storage) sequenceBatch(ctx context.Context, entries []*tessera.Entry) error {
 	// Double locking:
 	// - The mutex `Lock()` ensures that multiple concurrent calls to this function within a task are serialised.
-	// - The POSIX `lockForTreeUpdate()` ensures that distinct tasks are serialised.
+	// - The POSIX `lockFile()` ensures that distinct tasks are serialised.
 	s.mu.Lock()
 	unlock, err := lockFile(filepath.Join(s.path, stateDir, "treeState.lock"))
 	if err != nil {
@@ -396,6 +396,25 @@ func (s *Storage) writeBundle(_ context.Context, index uint64, partial uint8, bu
 // If the directory does not exist or is empty, then this will first ensure that the directory path
 // is created, and a tree state and an empty checkpoint are created in this directory.
 func (s *Storage) initialise() error {
+	// Idempotent: If folder exists, nothing happens.
+	if err := os.MkdirAll(filepath.Join(s.path, stateDir), dirPerm); err != nil {
+		return fmt.Errorf("failed to create log directory: %q", err)
+	}
+	// Double locking:
+	// - The mutex `Lock()` ensures that multiple concurrent calls to this function within a task are serialised.
+	// - The POSIX `lockFile()` ensures that distinct tasks are serialised.
+	s.mu.Lock()
+	unlock, err := lockFile(filepath.Join(s.path, stateDir, "initialise.lock"))
+	if err != nil {
+		panic(err)
+	}
+	defer func() {
+		if err := unlock(); err != nil {
+			panic(err)
+		}
+		s.mu.Unlock()
+	}()
+
 	if create, err := s.isNotInitialised(); err != nil {
 		return err
 	} else if create {
@@ -436,7 +455,7 @@ func (s *Storage) isNotInitialised() (bool, error) {
 	_, err := os.Stat(s.path)
 	// check if the directory exists
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return true, nil
 		}
 		// unrecoverable error, log cannot be initialised
@@ -452,6 +471,12 @@ func (s *Storage) isNotInitialised() (bool, error) {
 	if err == io.EOF {
 		return true, nil
 	}
+
+	// check if tree state has been initialized
+	if _, _, err := s.readTreeState(); errors.Is(err, os.ErrNotExist) {
+		return true, nil
+	}
+
 	return false, nil
 }
 
@@ -700,7 +725,7 @@ func (m *MigrationStorage) State(_ context.Context) (uint64, []byte, error) {
 func (m *MigrationStorage) buildTree(ctx context.Context, targetSize uint64) error {
 	// Double locking:
 	// - The mutex `Lock()` ensures that multiple concurrent calls to this function within a task are serialised.
-	// - The POSIX `lockForTreeUpdate()` ensures that distinct tasks are serialised.
+	// - The POSIX `lockFile()` ensures that distinct tasks are serialised.
 	m.s.mu.Lock()
 	unlock, err := lockFile(filepath.Join(m.s.path, stateDir, "treeState.lock"))
 	if err != nil {
