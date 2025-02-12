@@ -62,15 +62,15 @@ func main() {
 	noteSigner, additionalSigners := createSignersOrDie()
 
 	// Initialise the Tessera MySQL storage
-	driver, err := mysql.New(ctx, db,
-		tessera.WithCheckpointSigner(noteSigner, additionalSigners...),
-		tessera.WithCheckpointInterval(*publishInterval),
-	)
+	driver, err := mysql.New(ctx, db)
 	if err != nil {
 		klog.Exitf("Failed to create new MySQL storage: %v", err)
 	}
 
-	appender, reader, err := tessera.NewAppender(driver, tessera.WithAppendDeduplication(tessera.InMemoryDedupe(256)))
+	appender, reader, err := tessera.NewAppender(ctx, driver,
+		tessera.WithCheckpointSigner(noteSigner, additionalSigners...),
+		tessera.WithCheckpointInterval(*publishInterval),
+		tessera.WithAppendDeduplication(tessera.InMemoryDedupe(256)))
 	addFn := appender.Add
 	if err != nil {
 		klog.Exit(err)
