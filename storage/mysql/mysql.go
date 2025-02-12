@@ -62,15 +62,6 @@ type Storage struct {
 	db *sql.DB
 }
 
-type appender struct {
-	s     *Storage
-	queue *storage.Queue
-
-	newCheckpoint tessera.NewCPFunc
-
-	cpUpdated chan struct{}
-}
-
 // New creates a new instance of the MySQL-based Storage.
 func New(ctx context.Context, db *sql.DB) (*Storage, error) {
 	s := &Storage{
@@ -200,47 +191,6 @@ func (s *Storage) ReadCheckpoint(ctx context.Context) ([]byte, error) {
 	return checkpoint, nil
 }
 
-// publishCheckpoint creates a new checkpoint for the given size and root hash, and stores it in the
-// Checkpoint table.
-func (a *appender) publishCheckpoint(ctx context.Context, interval time.Duration) error {
-	tx, err := a.s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("begin tx: %v", err)
-	}
-	defer func() {
-		if err := tx.Rollback(); err != nil && err != sql.ErrTxDone {
-			klog.Warningf("publishCheckpoint rollback failed: %v", err)
-		}
-	}()
-
-	var note string
-	var at int64
-	if err := tx.QueryRowContext(ctx, selectCheckpointByIDForUpdateSQL, checkpointID).Scan(&note, &at); err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return fmt.Errorf("scan checkpoint: %v", err)
-	}
-	if time.Since(time.UnixMilli(at)) < interval {
-		// Too soon, try again later.
-		klog.V(1).Info("skipping publish - too soon")
-		return nil
-	}
-
-	treeState, err := a.s.readTreeState(ctx, tx)
-	if err != nil {
-		return fmt.Errorf("readTreeState: %v", err)
-	}
-
-	rawCheckpoint, err := a.newCheckpoint(treeState.size, treeState.root)
-	if err != nil {
-		return err
-	}
-
-	if _, err := tx.ExecContext(ctx, replaceCheckpointSQL, checkpointID, rawCheckpoint, time.Now().UnixMilli()); err != nil {
-		return err
-	}
-
-	return tx.Commit()
-}
-
 type treeState struct {
 	size uint64
 	root []byte
@@ -358,6 +308,55 @@ func (s *Storage) writeEntryBundle(ctx context.Context, tx *sql.Tx, index uint64
 	}
 
 	return nil
+}
+
+// appender implements the tessera Append lifecycle.
+type appender struct {
+	s             *Storage
+	queue         *storage.Queue
+	newCheckpoint tessera.NewCPFunc
+	cpUpdated     chan struct{}
+}
+
+// publishCheckpoint creates a new checkpoint for the given size and root hash, and stores it in the
+// Checkpoint table.
+func (a *appender) publishCheckpoint(ctx context.Context, interval time.Duration) error {
+	tx, err := a.s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin tx: %v", err)
+	}
+	defer func() {
+		if err := tx.Rollback(); err != nil && err != sql.ErrTxDone {
+			klog.Warningf("publishCheckpoint rollback failed: %v", err)
+		}
+	}()
+
+	var note string
+	var at int64
+	if err := tx.QueryRowContext(ctx, selectCheckpointByIDForUpdateSQL, checkpointID).Scan(&note, &at); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("scan checkpoint: %v", err)
+	}
+	if time.Since(time.UnixMilli(at)) < interval {
+		// Too soon, try again later.
+		klog.V(1).Info("skipping publish - too soon")
+		return nil
+	}
+
+	treeState, err := a.s.readTreeState(ctx, tx)
+	if err != nil {
+		return fmt.Errorf("readTreeState: %v", err)
+	}
+
+	rawCheckpoint, err := a.newCheckpoint(treeState.size, treeState.root)
+	if err != nil {
+		return err
+	}
+
+	if _, err := tx.ExecContext(ctx, replaceCheckpointSQL, checkpointID, rawCheckpoint, time.Now().UnixMilli()); err != nil {
+		return err
+	}
+
+	return tx.Commit()
 }
 
 // Add is the entrypoint for adding entries to a sequencing log.
