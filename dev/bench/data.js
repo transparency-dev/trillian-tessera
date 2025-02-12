@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1739297526025,
+  "lastUpdate": 1739360006085,
   "repoUrl": "https://github.com/transparency-dev/trillian-tessera",
   "entries": {
     "Benchmark": [
@@ -7320,6 +7320,126 @@ window.BENCHMARK_DATA = {
             "value": 3040,
             "unit": "allocs/op",
             "extra": "3957 times\n4 procs"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "mhutchinson@gmail.com",
+            "name": "Martin Hutchinson",
+            "username": "mhutchinson"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "84fabd2d9612204fbff713d5f898ac3b9c1cd82e",
+          "message": "[API] Refactoring to make appender API future-proof (#461)\n\nThe inflexibility of this was noticed while looking at options to fix #341. This PR includes a comment indicating that in future we want to add a Shutdown method, but more interesting are the other changes that:\r\n  a) move the dedupe decorators behind an options, and\r\n  b) making Appender more than just a function to allow new methods (such as Shutdown) to be added in the future.",
+          "timestamp": "2025-02-12T11:32:40Z",
+          "tree_id": "493b4fa88105b3cabd7952cc4fa1f386141f7e77",
+          "url": "https://github.com/transparency-dev/trillian-tessera/commit/84fabd2d9612204fbff713d5f898ac3b9c1cd82e"
+        },
+        "date": 1739360005157,
+        "tool": "go",
+        "benches": [
+          {
+            "name": "BenchmarkDedupe",
+            "value": 1197611,
+            "unit": "ns/op\t  689964 B/op\t   19565 allocs/op",
+            "extra": "1008 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDedupe - ns/op",
+            "value": 1197611,
+            "unit": "ns/op",
+            "extra": "1008 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDedupe - B/op",
+            "value": 689964,
+            "unit": "B/op",
+            "extra": "1008 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDedupe - allocs/op",
+            "value": 19565,
+            "unit": "allocs/op",
+            "extra": "1008 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLeafBundle_UnmarshalText",
+            "value": 1796,
+            "unit": "ns/op\t    6528 B/op\t       1 allocs/op",
+            "extra": "616708 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLeafBundle_UnmarshalText - ns/op",
+            "value": 1796,
+            "unit": "ns/op",
+            "extra": "616708 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLeafBundle_UnmarshalText - B/op",
+            "value": 6528,
+            "unit": "B/op",
+            "extra": "616708 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLeafBundle_UnmarshalText - allocs/op",
+            "value": 1,
+            "unit": "allocs/op",
+            "extra": "616708 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkCheckpointUnsafe",
+            "value": 117.2,
+            "unit": "ns/op\t     112 B/op\t       3 allocs/op",
+            "extra": "10173142 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkCheckpointUnsafe - ns/op",
+            "value": 117.2,
+            "unit": "ns/op",
+            "extra": "10173142 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkCheckpointUnsafe - B/op",
+            "value": 112,
+            "unit": "B/op",
+            "extra": "10173142 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkCheckpointUnsafe - allocs/op",
+            "value": 3,
+            "unit": "allocs/op",
+            "extra": "10173142 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkIntegrate",
+            "value": 345646,
+            "unit": "ns/op\t  290125 B/op\t    3033 allocs/op",
+            "extra": "3820 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkIntegrate - ns/op",
+            "value": 345646,
+            "unit": "ns/op",
+            "extra": "3820 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkIntegrate - B/op",
+            "value": 290125,
+            "unit": "B/op",
+            "extra": "3820 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkIntegrate - allocs/op",
+            "value": 3033,
+            "unit": "allocs/op",
+            "extra": "3820 times\n4 procs"
           }
         ]
       }
