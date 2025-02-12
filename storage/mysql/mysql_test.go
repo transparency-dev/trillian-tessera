@@ -475,5 +475,5 @@ func newTestMySQLStorage(t *testing.T, ctx context.Context) (tessera.AddFn, tess
 	if err != nil {
 		t.Fatal(err)
 	}
-	return a, r
+	return a.Add, r
 }
