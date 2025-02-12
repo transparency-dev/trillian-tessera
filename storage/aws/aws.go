@@ -52,7 +52,6 @@ import (
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/api"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
-	"github.com/transparency-dev/trillian-tessera/internal/options"
 	storage "github.com/transparency-dev/trillian-tessera/storage/internal"
 	"golang.org/x/sync/errgroup"
 	"k8s.io/klog/v2"
@@ -80,8 +79,8 @@ const (
 
 // Storage is an AWS based storage implementation for Tessera.
 type Storage struct {
-	newCP       options.NewCPFunc
-	entriesPath options.EntriesPathFunc
+	newCP       tessera.NewCPFunc
+	entriesPath tessera.EntriesPathFunc
 
 	sequencer sequencer
 	objStore  objStore
@@ -146,7 +145,7 @@ type Config struct {
 //
 // Storage instances created via this c'tor will participate in integrating newly sequenced entries into the log
 // and periodically publishing a new checkpoint which commits to the state of the tree.
-func New(ctx context.Context, cfg Config, opts ...func(*options.StorageOptions)) (tessera.Driver, error) {
+func New(ctx context.Context, cfg Config, opts ...func(*tessera.StorageOptions)) (tessera.Driver, error) {
 	opt := storage.ResolveStorageOptions(opts...)
 	if opt.PushbackMaxOutstanding == 0 {
 		opt.PushbackMaxOutstanding = DefaultPushbackMaxOutstanding

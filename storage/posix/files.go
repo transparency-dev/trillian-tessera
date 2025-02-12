@@ -31,7 +31,6 @@ import (
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/api"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
-	"github.com/transparency-dev/trillian-tessera/internal/options"
 	storage "github.com/transparency-dev/trillian-tessera/storage/internal"
 	"k8s.io/klog/v2"
 )
@@ -59,11 +58,11 @@ type Storage struct {
 	queue *storage.Queue
 
 	curSize uint64
-	newCP   options.NewCPFunc // May be nil for mirrored logs.
+	newCP   tessera.NewCPFunc // May be nil for mirrored logs.
 
 	cpUpdated chan struct{}
 
-	entriesPath options.EntriesPathFunc
+	entriesPath tessera.EntriesPathFunc
 }
 
 // NewTreeFunc is the signature of a function which receives information about newly integrated trees.
@@ -72,7 +71,7 @@ type NewTreeFunc func(size uint64, root []byte) error
 // New creates a new POSIX storage.
 // - path is a directory in which the log should be stored
 // - create must only be set when first creating the log, and will create the directory structure and an empty checkpoint
-func New(ctx context.Context, path string, create bool, opts ...func(*options.StorageOptions)) (tessera.Driver, error) {
+func New(ctx context.Context, path string, create bool, opts ...func(*tessera.StorageOptions)) (tessera.Driver, error) {
 	opt := storage.ResolveStorageOptions(opts...)
 	if opt.CheckpointInterval < minCheckpointInterval {
 		return nil, fmt.Errorf("requested CheckpointInterval (%v) is less than minimum permitted %v", opt.CheckpointInterval, minCheckpointInterval)
@@ -616,7 +615,7 @@ type BundleHasherFunc func(entryBundle []byte) (LeafHashes [][]byte, err error)
 // - path is a directory in which the log should be stored
 // - create must only be set when first creating the log, and will create the directory structure and an empty checkpoint
 // - bundleHasher knows how to parse the provided entry bundle, and returns a slice of leaf hashes for the entries it contains.
-func NewMigrationTarget(ctx context.Context, path string, create bool, bundleHasher BundleHasherFunc, opts ...func(*options.StorageOptions)) (*MigrationStorage, error) {
+func NewMigrationTarget(ctx context.Context, path string, create bool, bundleHasher BundleHasherFunc, opts ...func(*tessera.StorageOptions)) (*MigrationStorage, error) {
 	opt := storage.ResolveStorageOptions(opts...)
 
 	r := &MigrationStorage{

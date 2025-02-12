@@ -32,7 +32,6 @@ import (
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/api"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
-	options "github.com/transparency-dev/trillian-tessera/internal/options"
 	storage "github.com/transparency-dev/trillian-tessera/storage/internal"
 	"k8s.io/klog/v2"
 )
@@ -63,14 +62,14 @@ type Storage struct {
 	db    *sql.DB
 	queue *storage.Queue
 
-	newCheckpoint options.NewCPFunc
+	newCheckpoint tessera.NewCPFunc
 
 	cpUpdated chan struct{}
 }
 
 // New creates a new instance of the MySQL-based Storage.
 // Note that `tessera.WithCheckpointSigner()` is mandatory in the `opts` argument.
-func New(ctx context.Context, db *sql.DB, opts ...func(*options.StorageOptions)) (tessera.Driver, error) {
+func New(ctx context.Context, db *sql.DB, opts ...func(*tessera.StorageOptions)) (tessera.Driver, error) {
 	opt := storage.ResolveStorageOptions(opts...)
 	if opt.CheckpointInterval < minCheckpointInterval {
 		return nil, fmt.Errorf("requested CheckpointInterval too low - %v < %v", opt.CheckpointInterval, minCheckpointInterval)

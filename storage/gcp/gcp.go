@@ -52,7 +52,6 @@ import (
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/api"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
-	"github.com/transparency-dev/trillian-tessera/internal/options"
 	storage "github.com/transparency-dev/trillian-tessera/storage/internal"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/api/googleapi"
@@ -88,8 +87,8 @@ const (
 
 // Storage is a GCP based storage implementation for Tessera.
 type Storage struct {
-	newCP       options.NewCPFunc
-	entriesPath options.EntriesPathFunc
+	newCP       tessera.NewCPFunc
+	entriesPath tessera.EntriesPathFunc
 
 	sequencer sequencer
 	objStore  objStore
@@ -137,7 +136,7 @@ type Config struct {
 }
 
 // New creates a new instance of the GCP based Storage.
-func New(ctx context.Context, cfg Config, opts ...func(*options.StorageOptions)) (tessera.Driver, error) {
+func New(ctx context.Context, cfg Config, opts ...func(*tessera.StorageOptions)) (tessera.Driver, error) {
 	opt := storage.ResolveStorageOptions(opts...)
 	if opt.PushbackMaxOutstanding == 0 {
 		opt.PushbackMaxOutstanding = DefaultPushbackMaxOutstanding
@@ -1275,7 +1274,7 @@ func (d *DedupStorage) Populate(ctx context.Context, lf LogFollower, bundleFn Bu
 type BundleHasherFunc func(entryBundle []byte) (LeafHashes [][]byte, err error)
 
 // NewMigrationTarget creates a new GCP storage for the MigrationTarget lifecycle mode.
-func NewMigrationTarget(ctx context.Context, cfg Config, bundleHasher BundleHasherFunc, opts ...func(*options.StorageOptions)) (*MigrationStorage, error) {
+func NewMigrationTarget(ctx context.Context, cfg Config, bundleHasher BundleHasherFunc, opts ...func(*tessera.StorageOptions)) (*MigrationStorage, error) {
 	opt := storage.ResolveStorageOptions(opts...)
 	if opt.PushbackMaxOutstanding == 0 {
 		opt.PushbackMaxOutstanding = DefaultPushbackMaxOutstanding

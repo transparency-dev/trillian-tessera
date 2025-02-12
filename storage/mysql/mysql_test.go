@@ -36,7 +36,6 @@ import (
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/api"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
-	options "github.com/transparency-dev/trillian-tessera/internal/options"
 	"github.com/transparency-dev/trillian-tessera/storage/mysql"
 	"golang.org/x/mod/sumdb/note"
 	"golang.org/x/sync/errgroup"
@@ -134,7 +133,7 @@ func TestNew(t *testing.T) {
 
 	for _, test := range []struct {
 		name    string
-		opts    []func(*options.StorageOptions)
+		opts    []func(*tessera.StorageOptions)
 		wantErr bool
 	}{
 		{
@@ -144,13 +143,13 @@ func TestNew(t *testing.T) {
 		},
 		{
 			name: "standard tessera.WithCheckpointSigner",
-			opts: []func(*options.StorageOptions){
+			opts: []func(*tessera.StorageOptions){
 				tessera.WithCheckpointSigner(noteSigner),
 			},
 		},
 		{
 			name: "all tessera.StorageOption",
-			opts: []func(*options.StorageOptions){
+			opts: []func(*tessera.StorageOptions){
 				tessera.WithCheckpointSigner(noteSigner),
 				tessera.WithBatching(1, 1*time.Second),
 				tessera.WithPushback(10),
