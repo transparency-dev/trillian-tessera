@@ -17,6 +17,9 @@ package tessera
 import (
 	"context"
 	"fmt"
+	"time"
+
+	f_log "github.com/transparency-dev/formats/log"
 )
 
 // LogReader provides read-only access to the log.
@@ -48,7 +51,7 @@ type LogReader interface {
 // in sequencing mode. This only has a single method, but other methods are likely to be added
 // such as a Shutdown method for #341.
 type Appender struct {
-	Add      AddFn
+	Add AddFn
 	// TODO(#341): add this method and implement it in all drivers
 	// Shutdown func(ctx context.Context)
 }
@@ -79,7 +82,7 @@ func NewAppender(d Driver, opts ...func(*appendOptions)) (*Appender, LogReader, 
 		return nil, nil, fmt.Errorf("driver %T does not implement LogReader", d)
 	}
 	return &Appender{
-		Add:      add,
+		Add: add,
 		// Shutdown: a.Shutdown,
 	}, reader, nil
 }
@@ -90,8 +93,29 @@ func WithAppendDeduplication(decorators ...func(AddFn) AddFn) func(*appendOption
 	}
 }
 
-type appendOptions struct {
-	addDecorators []func(AddFn) AddFn
+// NewCPFunc is the signature of a function which knows how to format and sign checkpoints.
+type NewCPFunc func(size uint64, hash []byte) ([]byte, error)
+
+// ParseCPFunc is the signature of a function which knows how to verify and parse checkpoints.
+type ParseCPFunc func(raw []byte) (*f_log.Checkpoint, error)
+
+// EntriesPathFunc is the signature of a function which knows how to format entry bundle paths.
+type EntriesPathFunc func(n uint64, p uint8) string
+
+// StorageOptions holds optional settings for all storage implementations.
+type StorageOptions struct {
+	NewCP NewCPFunc
+
+	BatchMaxAge  time.Duration
+	BatchMaxSize uint
+
+	PushbackMaxOutstanding uint
+
+	EntriesPath EntriesPathFunc
+
+	CheckpointInterval time.Duration
+
+	AddDecorators []func(AddFn) AddFn
 }
 
 func resolveAppendOpts(opts ...func(*appendOptions)) appendOptions {

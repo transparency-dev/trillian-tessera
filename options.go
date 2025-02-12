@@ -20,6 +20,8 @@ import (
 	f_log "github.com/transparency-dev/formats/log"
 )
 
+type OptionsFunc[T any] func(*T)
+
 // NewCPFunc is the signature of a function which knows how to format and sign checkpoints.
 type NewCPFunc func(size uint64, hash []byte) ([]byte, error)
 
