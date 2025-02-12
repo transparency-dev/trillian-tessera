@@ -57,37 +57,29 @@ type Appender struct {
 	// Shutdown func(ctx context.Context)
 }
 
-type AppenderOptionFn func(*AppendOptions)
-
 // NewAppender returns an Appender, which allows a personality to incrementally append new
 // leaves to the log and to read from it.
 //
 // decorators provides a list of optional constructor functions that will return decorators
 // that wrap the base appender. This can be used to provide deduplication. Decorators will be
 // called in-order, and the last in the chain will be the base appender.
-// TODO(mhutchinson): switch the decorators over to a WithOpt for future flexibility.
-func NewAppender(d Driver, opts ...AppenderOptionFn) (*Appender, LogReader, error) {
+func NewAppender(ctx context.Context, d Driver, opts ...func(*AppendOptions)) (*Appender, LogReader, error) {
 	resolved := resolveAppendOptions(opts...)
-	type appender interface {
-		Add(ctx context.Context, entry *Entry) IndexFuture
-		// Shutdown(ctx context.Context)
+	type appendLifecycle interface {
+		Appender(context.Context, *AppendOptions) (*Appender, LogReader, error)
 	}
-	a, ok := d.(appender)
+	lc, ok := d.(appendLifecycle)
 	if !ok {
-		return nil, nil, fmt.Errorf("driver %T does not implement Appender", d)
+		return nil, nil, fmt.Errorf("driver %T does not implement Appender lifecycle", d)
 	}
-	add := a.Add
+	a, r, err := lc.Appender(ctx, resolved)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to init appender lifecycle: %v", err)
+	}
 	for i := len(resolved.AddDecorators) - 1; i >= 0; i-- {
-		add = resolved.AddDecorators[i](add)
+		a.Add = resolved.AddDecorators[i](a.Add)
 	}
-	reader, ok := d.(LogReader)
-	if !ok {
-		return nil, nil, fmt.Errorf("driver %T does not implement LogReader", d)
-	}
-	return &Appender{
-		Add: add,
-		// Shutdown: a.Shutdown,
-	}, reader, nil
+	return a, r, nil
 }
 
 func WithAppendDeduplication(decorators ...func(AddFn) AddFn) func(*AppendOptions) {
@@ -122,7 +114,7 @@ type AppendOptions struct {
 }
 
 // resolveAppendOptions turns a variadic array of storage options into an AppendOptions instance.
-func resolveAppendOptions(opts ...AppenderOptionFn) *AppendOptions {
+func resolveAppendOptions(opts ...func(*AppendOptions)) *AppendOptions {
 	defaults := &AppendOptions{
 		BatchMaxSize:           DefaultBatchMaxSize,
 		BatchMaxAge:            DefaultBatchMaxAge,
