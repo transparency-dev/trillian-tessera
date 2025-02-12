@@ -13,7 +13,7 @@ export LOG_PUBLIC_KEY="example.com/log/testdata+33d7b496+AeHTu4Q3hEIMHNqc6fASMsq
 
 # Initialize a new log
 export LOG_DIR=/tmp/mylog
-go run ./cmd/examples/posix-oneshot --storage_dir=${LOG_DIR} --initialise
+go run ./cmd/examples/posix-oneshot --storage_dir=${LOG_DIR}
 
 # Create files containing new leaves to add
 mkdir /tmp/stuff
