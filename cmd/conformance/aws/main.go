@@ -79,10 +79,10 @@ func main() {
 		tessera.WithBatching(1024, time.Second),
 		tessera.WithPushback(10*4096),
 		tessera.WithAppendDeduplication(tessera.InMemoryDedupe(256)))
-	addFn := appender.Add
 	if err != nil {
 		klog.Exit(err)
 	}
+	addFn := appender.Add
 
 	// Expose a HTTP handler for the conformance test writes.
 	// This should accept arbitrary bytes POSTed to /add, and return an ascii
