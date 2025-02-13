@@ -269,9 +269,7 @@ func makeTile(t *testing.T, size uint64) *api.HashTile {
 func TestTileRoundtrip(t *testing.T) {
 	ctx := context.Background()
 	m := newMemObjStore()
-	s := &Storage{
-		objStore: m,
-	}
+	s := &logResourceStore{objStore: m}
 
 	for _, test := range []struct {
 		name     string
@@ -326,7 +324,7 @@ func makeBundle(t *testing.T, size uint64) []byte {
 func TestBundleRoundtrip(t *testing.T) {
 	ctx := context.Background()
 	m := newMemObjStore()
-	s := &Storage{
+	s := &logResourceStore{
 		objStore:    m,
 		entriesPath: layout.EntriesPath,
 	}
@@ -401,11 +399,13 @@ func TestPublishCheckpoint(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			m := newMemObjStore()
-			storage := &Storage{
-				objStore:    m,
-				sequencer:   s,
-				entriesPath: layout.EntriesPath,
-				newCP:       func(size uint64, hash []byte) ([]byte, error) { return []byte(fmt.Sprintf("%d/%x,", size, hash)), nil },
+			storage := &Appender{
+				logStore: &logResourceStore{
+					objStore:    m,
+					entriesPath: layout.EntriesPath,
+				},
+				sequencer: s,
+				newCP:     func(size uint64, hash []byte) ([]byte, error) { return []byte(fmt.Sprintf("%d/%x,", size, hash)), nil },
 			}
 			// Call init so we've got a zero-sized checkpoint to work with.
 			if err := storage.init(ctx); err != nil {
