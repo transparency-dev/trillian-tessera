@@ -51,7 +51,7 @@ const (
 )
 
 // Storage implements storage functions for a POSIX filesystem.
-// It leverages the POSIX atomic operations.
+// It leverages the POSIX atomic operations where needed.
 type Storage struct {
 	mu   sync.Mutex
 	path string
@@ -69,7 +69,8 @@ type appender struct {
 	cpUpdated chan struct{}
 }
 
-// logResourceStorage knows how to read and write tiles log resources.
+// logResourceStorage knows how to read and write tiled log resources via a
+// POSIX storage instance
 type logResourceStorage struct {
 	s           *Storage
 	entriesPath tessera.EntriesPathFunc
@@ -80,8 +81,7 @@ type NewTreeFunc func(size uint64, root []byte) error
 
 // New creates a new POSIX storage.
 // - path is a directory in which the log should be stored
-// - create must only be set when first creating the log, and will create the directory structure and an empty checkpoint
-func New(ctx context.Context, path string, create bool) (tessera.Driver, error) {
+func New(ctx context.Context, path string) (tessera.Driver, error) {
 	return &Storage{
 		path: path,
 	}, nil
@@ -93,6 +93,7 @@ func (s *Storage) Appender(ctx context.Context, opts *tessera.AppendOptions) (*t
 	}
 
 	a := &appender{
+		s: s,
 		logStorage: &logResourceStorage{
 			s:           s,
 			entriesPath: opts.EntriesPath,
@@ -100,7 +101,7 @@ func (s *Storage) Appender(ctx context.Context, opts *tessera.AppendOptions) (*t
 		newCP:     opts.NewCP,
 		cpUpdated: make(chan struct{}),
 	}
-	if err := a.initialise(create); err != nil {
+	if err := a.initialise(); err != nil {
 		return nil, nil, err
 	}
 	a.queue = storage.NewQueue(ctx, opts.BatchMaxAge, opts.BatchMaxSize, a.sequenceBatch)
@@ -412,11 +413,17 @@ func (lrs *logResourceStorage) writeBundle(_ context.Context, index uint64, part
 	return nil
 }
 
-// initialise ensures that the storage location is valid by loading the checkpoint from this location.
-// If `create` is set to true, then this will first ensure that the directory path is created, and
-// an empty checkpoint is created in this directory.
-func (a *appender) initialise(create bool) error {
-	if create {
+// initialise ensures that the storage location is valid by loading the checkpoint from this location, or
+// creating a zero-sized one if it doesn't already exist.
+func (a *appender) initialise() error {
+	if err := a.s.ensureVersion(compatibilityVersion); err != nil {
+		return err
+	}
+	curSize, _, err := a.s.readTreeState()
+	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("failed to load checkpoint for log: %v", err)
+		}
 		// Create the directory structure and write out an empty checkpoint
 		klog.Infof("Initializing directory for POSIX log at %q (this should only happen ONCE per log!)", a.s.path)
 		if err := os.MkdirAll(filepath.Join(a.s.path, stateDir), dirPerm); err != nil {
@@ -430,13 +437,7 @@ func (a *appender) initialise(create bool) error {
 				return fmt.Errorf("failed to publish checkpoint: %v", err)
 			}
 		}
-	}
-	if err := a.s.ensureVersion(compatibilityVersion); err != nil {
-		return err
-	}
-	curSize, _, err := a.s.readTreeState()
-	if err != nil {
-		return fmt.Errorf("failed to load checkpoint for log: %v", err)
+		return nil
 	}
 	a.curSize = curSize
 

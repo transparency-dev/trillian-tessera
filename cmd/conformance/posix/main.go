@@ -36,7 +36,6 @@ import (
 
 var (
 	storageDir                = flag.String("storage_dir", "", "Root directory to store log data.")
-	initialise                = flag.Bool("initialise", false, "Set when creating a new log to initialise the structure.")
 	listen                    = flag.String("listen", ":2025", "Address:port to listen on")
 	privKeyFile               = flag.String("private_key", "", "Location of private key file. If unset, uses the contents of the LOG_PRIVATE_KEY environment variable.")
 	additionalPrivateKeyFiles = []string{}
@@ -65,15 +64,18 @@ func main() {
 	s, a := getSignersOrDie()
 
 	// Create the Tessera POSIX storage, using the directory from the --storage_dir flag
-	driver, err := posix.New(ctx, *storageDir, *initialise, tessera.WithCheckpointSigner(s, a...), tessera.WithBatching(256, time.Second))
+	driver, err := posix.New(ctx, *storageDir)
 	if err != nil {
 		klog.Exitf("Failed to construct storage: %v", err)
 	}
-	appender, _, err := tessera.NewAppender(driver, tessera.WithAppendDeduplication(tessera.InMemoryDedupe(256)))
-	addFn := appender.Add
+	appender, _, err := tessera.NewAppender(ctx, driver,
+		tessera.WithCheckpointSigner(s, a...),
+		tessera.WithBatching(256, time.Second),
+		tessera.WithAppendDeduplication(tessera.InMemoryDedupe(256)))
 	if err != nil {
 		klog.Exit(err)
 	}
+	addFn := appender.Add
 
 	// Define a handler for /add that accepts POST requests and adds the POST body to the log
 	http.HandleFunc("POST /add", func(w http.ResponseWriter, r *http.Request) {
