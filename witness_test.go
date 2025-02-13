@@ -29,6 +29,16 @@ var (
 	wit3Sign, _ = note.NewSigner(wit3_skey)
 )
 
+func TestWitnessGroup_Empty(t *testing.T) {
+	group := tessera.WitnessGroup{}
+	if !group.Satisfied([]byte("definitely a checkpoint\n")) {
+		t.Error("empty group should be satisfied")
+	}
+	if len(group.URLs()) != 0 {
+		t.Error("empty group should have no URLs")
+	}
+}
+
 func TestWitnessGroup_Satisfied(t *testing.T) {
 	testCases := []struct {
 		desc            string
@@ -169,15 +179,11 @@ func TestWitnessGroup_URLs(t *testing.T) {
 	for _, tC := range testCases {
 		t.Run(tC.desc, func(t *testing.T) {
 			gotURLs := tC.group.URLs()
-			gotStrings := make([]string, len(gotURLs))
-			for i, u := range gotURLs {
-				gotStrings[i] = u.String()
-			}
-			slices.Sort(gotStrings)
+			slices.Sort(gotURLs)
 			slices.Sort(tC.expectedURLs)
 
-			if !slices.Equal(gotStrings, tC.expectedURLs) {
-				t.Errorf("Expected %s but got %s", tC.expectedURLs, gotStrings)
+			if !slices.Equal(gotURLs, tC.expectedURLs) {
+				t.Errorf("Expected %s but got %s", tC.expectedURLs, gotURLs)
 			}
 		})
 	}

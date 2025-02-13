@@ -107,14 +107,12 @@ func (s *Storage) Appender(ctx context.Context, opts *tessera.AppendOptions) (*t
 	a.queue = storage.NewQueue(ctx, opts.BatchMaxAge, opts.BatchMaxSize, a.sequenceBatch)
 
 	go func(ctx context.Context, i time.Duration) {
-		t := time.NewTicker(i)
-		defer t.Stop()
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case <-a.cpUpdated:
-			case <-t.C:
+			case <-time.After(i):
 			}
 			if err := a.publishCheckpoint(i); err != nil {
 				klog.Warningf("publishCheckpoint: %v", err)
@@ -568,6 +566,8 @@ func (a *appender) publishCheckpoint(minStaleness time.Duration) error {
 	if err != nil {
 		return fmt.Errorf("newCP: %v", err)
 	}
+
+	// TODO(mhutchinson): grab witness signatures
 
 	if err := a.s.overwrite(layout.CheckpointPath, cpRaw); err != nil {
 		return fmt.Errorf("overwrite(%s): %v", layout.CheckpointPath, err)

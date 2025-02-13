@@ -163,3 +163,16 @@ func WithCheckpointInterval(interval time.Duration) func(*AppendOptions) {
 		o.CheckpointInterval = interval
 	}
 }
+
+// WithWitnesses configures the set of witnesses that Tessera will contact in order to counter-sign
+// a checkpoint before publishing it. A request will be sent to every witness referenced by the group
+// using the URLs method. The checkpoint will be accepted for publishing when a sufficient number of
+// witnesses to Satisfy the group have responded.
+//
+// If this method is not called, then the default empty WitnessGroup will be used, which contacts zero
+// witnesses and requires zero witnesses in order to publish.
+func WithWitnesses(witnesses WitnessGroup) func(*AppendOptions) {
+	return func(o *AppendOptions) {
+		o.Witnesses = witnesses
+	}
+}
