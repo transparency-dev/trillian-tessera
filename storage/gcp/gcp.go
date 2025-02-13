@@ -1310,29 +1310,31 @@ func (d *DedupStorage) Populate(ctx context.Context, lf LogFollower, bundleFn Bu
 type BundleHasherFunc func(entryBundle []byte) (LeafHashes [][]byte, err error)
 
 // NewMigrationTarget creates a new GCP storage for the MigrationTarget lifecycle mode.
-func (s *Storage) NewMigrationTarget(ctx context.Context, bundleHasher BundleHasherFunc, opts tessera.AppendOptions) (*MigrationStorage, error) {
+// TODO(al): Make this work with the new tessera package lifecycle c'tors.
+func NewMigrationTarget(ctx context.Context, cfg Config, bundleHasher BundleHasherFunc) (*MigrationStorage, error) {
 	c, err := gcs.NewClient(ctx, gcs.WithJSONReads())
 	if err != nil {
 		return nil, fmt.Errorf("failed to create GCS client: %v", err)
 	}
 
-	seq, err := newSpannerSequencer(ctx, s.cfg.Spanner, uint64(opts.PushbackMaxOutstanding))
+	r := &Storage{
+		cfg: cfg,
+	}
+
+	seq, err := newSpannerSequencer(ctx, cfg.Spanner, 0)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Spanner sequencer: %v", err)
 	}
-
-	r := &Storage{}
-
 	m := &MigrationStorage{
 		s:            r,
 		dbPool:       seq.dbPool,
 		bundleHasher: bundleHasher,
 		sequencer:    seq,
-		entriesPath:  opts.EntriesPath,
+		entriesPath:  layout.EntriesPath,
 		logStore: &logResourceStore{
 			objStore: &gcsStorage{
 				gcsClient: c,
-				bucket:    s.cfg.Bucket,
+				bucket:    cfg.Bucket,
 			},
 		},
 	}
