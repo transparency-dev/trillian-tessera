@@ -82,30 +82,12 @@ type Storage struct {
 	cfg Config
 }
 
-// Appender is an implementation of the Tessera appender lifecycle contract.
-type Appender struct {
-	newCP tessera.NewCPFunc
-
-	sequencer sequencer
-	logStore  *logResourceStore
-
-	queue *storage.Queue
-
-	treeUpdated chan struct{}
-}
-
 // objStore describes a type which can store and retrieve objects.
 type objStore interface {
 	getObject(ctx context.Context, obj string) ([]byte, error)
 	setObject(ctx context.Context, obj string, data []byte, contType string) error
 	setObjectIfNoneMatch(ctx context.Context, obj string, data []byte, contType string) error
 	lastModified(ctx context.Context, obj string) (time.Time, error)
-}
-
-// logResourceStore knows how to read and write entries which represent a tiles log inside an objStore.
-type logResourceStore struct {
-	objStore    objStore
-	entriesPath func(uint64, uint8) string
 }
 
 // sequencer describes a type which knows how to sequence entries.
@@ -217,6 +199,18 @@ func (s *Storage) Appender(ctx context.Context, opts *tessera.AppendOptions) (*t
 	}, r.logStore, nil
 }
 
+// Appender is an implementation of the Tessera appender lifecycle contract.
+type Appender struct {
+	newCP tessera.NewCPFunc
+
+	sequencer sequencer
+	logStore  *logResourceStore
+
+	queue *storage.Queue
+
+	treeUpdated chan struct{}
+}
+
 // sequenceEntriesTask periodically integrates newly sequenced entries.
 //
 // This function does not return until the passed context is done.
@@ -272,26 +266,6 @@ func (a *Appender) Add(ctx context.Context, e *tessera.Entry) tessera.IndexFutur
 	return a.queue.Add(ctx, e)
 }
 
-func (lr *logResourceStore) ReadCheckpoint(ctx context.Context) ([]byte, error) {
-	return lr.get(ctx, layout.CheckpointPath)
-}
-
-func (lr *logResourceStore) ReadTile(ctx context.Context, l, i uint64, p uint8) ([]byte, error) {
-	return lr.get(ctx, layout.TilePath(l, i, p))
-}
-
-func (lr *logResourceStore) ReadEntryBundle(ctx context.Context, i uint64, p uint8) ([]byte, error) {
-	return lr.get(ctx, lr.entriesPath(i, p))
-}
-
-// get returns the requested object.
-//
-// This is indended to be used to proxy read requests through the personality for debug/testing purposes.
-func (s *logResourceStore) get(ctx context.Context, path string) ([]byte, error) {
-	d, err := s.objStore.getObject(ctx, path)
-	return d, err
-}
-
 // init ensures that the storage represents a log in a valid state.
 func (a *Appender) init(ctx context.Context) error {
 	_, err := a.logStore.ReadCheckpoint(ctx)
@@ -343,6 +317,129 @@ func (a *Appender) publishCheckpoint(ctx context.Context, minStaleness time.Dura
 		return fmt.Errorf("writeCheckpoint: %v", err)
 	}
 	return nil
+}
+
+// appendEntries incorporates the provided entries into the log starting at fromSeq.
+//
+// Returns the new root hash of the log with the entries added.
+func (a *Appender) appendEntries(ctx context.Context, fromSeq uint64, entries []storage.SequencedEntry) ([]byte, error) {
+	var newRoot []byte
+
+	errG := errgroup.Group{}
+
+	errG.Go(func() error {
+		if err := a.updateEntryBundles(ctx, fromSeq, entries); err != nil {
+			return fmt.Errorf("updateEntryBundles: %v", err)
+		}
+		return nil
+	})
+
+	errG.Go(func() error {
+		lh := make([][]byte, len(entries))
+		for i, e := range entries {
+			lh[i] = e.LeafHash
+		}
+		r, err := integrate(ctx, fromSeq, lh, a.logStore)
+		if err != nil {
+			return fmt.Errorf("integrate: %v", err)
+		}
+		newRoot = r
+		return nil
+	})
+
+	err := errG.Wait()
+	return newRoot, err
+}
+
+// updateEntryBundles adds the entries being integrated into the entry bundles.
+//
+// The right-most bundle will be grown, if it's partial, and/or new bundles will be created as required.
+func (a *Appender) updateEntryBundles(ctx context.Context, fromSeq uint64, entries []storage.SequencedEntry) error {
+	if len(entries) == 0 {
+		return nil
+	}
+
+	numAdded := uint64(0)
+	bundleIndex, entriesInBundle := fromSeq/layout.EntryBundleWidth, fromSeq%layout.EntryBundleWidth
+	bundleWriter := &bytes.Buffer{}
+	if entriesInBundle > 0 {
+		// If the latest bundle is partial, we need to read the data it contains in for our newer, larger, bundle.
+		part, err := a.logStore.getEntryBundle(ctx, uint64(bundleIndex), uint8(entriesInBundle))
+		if err != nil {
+			return err
+		}
+
+		if _, err := bundleWriter.Write(part); err != nil {
+			return fmt.Errorf("bundleWriter: %v", err)
+		}
+	}
+
+	seqErr := errgroup.Group{}
+
+	// goSetEntryBundle is a function which uses seqErr to spin off a go-routine to write out an entry bundle.
+	// It's used in the for loop below.
+	goSetEntryBundle := func(ctx context.Context, bundleIndex uint64, p uint8, bundleRaw []byte) {
+		seqErr.Go(func() error {
+			if err := a.logStore.setEntryBundle(ctx, bundleIndex, p, bundleRaw); err != nil {
+				return err
+			}
+			return nil
+		})
+	}
+
+	// Add new entries to the bundle
+	for _, e := range entries {
+		if _, err := bundleWriter.Write(e.BundleData); err != nil {
+			return fmt.Errorf("Write: %v", err)
+		}
+		entriesInBundle++
+		fromSeq++
+		numAdded++
+		if entriesInBundle == layout.EntryBundleWidth {
+			//  This bundle is full, so we need to write it out...
+			klog.V(1).Infof("In-memory bundle idx %d is full, attempting write to S3", bundleIndex)
+			goSetEntryBundle(ctx, bundleIndex, 0, bundleWriter.Bytes())
+			// ... and prepare the next entry bundle for any remaining entries in the batch
+			bundleIndex++
+			entriesInBundle = 0
+			// Don't use Reset/Truncate here - the backing []bytes is still being used by goSetEntryBundle above.
+			bundleWriter = &bytes.Buffer{}
+			klog.V(1).Infof("Starting to fill in-memory bundle idx %d", bundleIndex)
+		}
+	}
+	// If we have a partial bundle remaining once we've added all the entries from the batch,
+	// this needs writing out too.
+	if entriesInBundle > 0 {
+		klog.V(1).Infof("Attempting to write in-memory partial bundle idx %d.%d to S3", bundleIndex, entriesInBundle)
+		goSetEntryBundle(ctx, bundleIndex, uint8(entriesInBundle), bundleWriter.Bytes())
+	}
+	return seqErr.Wait()
+}
+
+// logResourceStore knows how to read and write entries which represent a tiles log inside an objStore.
+type logResourceStore struct {
+	objStore    objStore
+	entriesPath tessera.EntriesPathFunc
+}
+
+func (lr *logResourceStore) ReadCheckpoint(ctx context.Context) ([]byte, error) {
+	return lr.get(ctx, layout.CheckpointPath)
+}
+
+func (lr *logResourceStore) ReadTile(ctx context.Context, l, i uint64, p uint8) ([]byte, error) {
+	return lr.get(ctx, layout.TilePath(l, i, p))
+}
+
+func (lr *logResourceStore) ReadEntryBundle(ctx context.Context, i uint64, p uint8) ([]byte, error) {
+	return lr.get(ctx, lr.entriesPath(i, p))
+}
+
+// get returns the requested object.
+//
+// This is indended to be used to proxy read requests through the personality for debug/testing purposes.
+func (s *logResourceStore) get(ctx context.Context, path string) ([]byte, error) {
+	d, err := s.objStore.getObject(ctx, path)
+	return d, err
 }
 
 func (lrs *logResourceStore) setCheckpoint(ctx context.Context, cpRaw []byte) error {
@@ -438,38 +535,6 @@ func (lrs *logResourceStore) setEntryBundle(ctx context.Context, bundleIndex uin
 	return nil
 }
 
-// appendEntries incorporates the provided entries into the log starting at fromSeq.
-//
-// Returns the new root hash of the log with the entries added.
-func (a *Appender) appendEntries(ctx context.Context, fromSeq uint64, entries []storage.SequencedEntry) ([]byte, error) {
-	var newRoot []byte
-
-	errG := errgroup.Group{}
-
-	errG.Go(func() error {
-		if err := a.updateEntryBundles(ctx, fromSeq, entries); err != nil {
-			return fmt.Errorf("updateEntryBundles: %v", err)
-		}
-		return nil
-	})
-
-	errG.Go(func() error {
-		lh := make([][]byte, len(entries))
-		for i, e := range entries {
-			lh[i] = e.LeafHash
-		}
-		r, err := integrate(ctx, fromSeq, lh, a.logStore)
-		if err != nil {
-			return fmt.Errorf("integrate: %v", err)
-		}
-		newRoot = r
-		return nil
-	})
-
-	err := errG.Wait()
-	return newRoot, err
-}
-
 // integrate adds the provided leaf hashes to the merkle tree, starting at the provided location.
 func integrate(ctx context.Context, fromSeq uint64, lh [][]byte, lrs *logResourceStore) ([]byte, error) {
 	getTiles := func(ctx context.Context, tileIDs []storage.TileID, treeSize uint64) ([]*api.HashTile, error) {
@@ -497,71 +562,6 @@ func integrate(ctx context.Context, fromSeq uint64, lh [][]byte, lrs *logResourc
 	}
 	klog.Infof("New tree: %d, %x", newSize, newRoot)
 	return newRoot, nil
-}
-
-// updateEntryBundles adds the entries being integrated into the entry bundles.
-//
-// The right-most bundle will be grown, if it's partial, and/or new bundles will be created as required.
-func (a *Appender) updateEntryBundles(ctx context.Context, fromSeq uint64, entries []storage.SequencedEntry) error {
-	if len(entries) == 0 {
-		return nil
-	}
-
-	numAdded := uint64(0)
-	bundleIndex, entriesInBundle := fromSeq/layout.EntryBundleWidth, fromSeq%layout.EntryBundleWidth
-	bundleWriter := &bytes.Buffer{}
-	if entriesInBundle > 0 {
-		// If the latest bundle is partial, we need to read the data it contains in for our newer, larger, bundle.
-		part, err := a.logStore.getEntryBundle(ctx, uint64(bundleIndex), uint8(entriesInBundle))
-		if err != nil {
-			return err
-		}
-
-		if _, err := bundleWriter.Write(part); err != nil {
-			return fmt.Errorf("bundleWriter: %v", err)
-		}
-	}
-
-	seqErr := errgroup.Group{}
-
-	// goSetEntryBundle is a function which uses seqErr to spin off a go-routine to write out an entry bundle.
-	// It's used in the for loop below.
-	goSetEntryBundle := func(ctx context.Context, bundleIndex uint64, p uint8, bundleRaw []byte) {
-		seqErr.Go(func() error {
-			if err := a.logStore.setEntryBundle(ctx, bundleIndex, p, bundleRaw); err != nil {
-				return err
-			}
-			return nil
-		})
-	}
-
-	// Add new entries to the bundle
-	for _, e := range entries {
-		if _, err := bundleWriter.Write(e.BundleData); err != nil {
-			return fmt.Errorf("Write: %v", err)
-		}
-		entriesInBundle++
-		fromSeq++
-		numAdded++
-		if entriesInBundle == layout.EntryBundleWidth {
-			//  This bundle is full, so we need to write it out...
-			klog.V(1).Infof("In-memory bundle idx %d is full, attempting write to S3", bundleIndex)
-			goSetEntryBundle(ctx, bundleIndex, 0, bundleWriter.Bytes())
-			// ... and prepare the next entry bundle for any remaining entries in the batch
-			bundleIndex++
-			entriesInBundle = 0
-			// Don't use Reset/Truncate here - the backing []bytes is still being used by goSetEntryBundle above.
-			bundleWriter = &bytes.Buffer{}
-			klog.V(1).Infof("Starting to fill in-memory bundle idx %d", bundleIndex)
-		}
-	}
-	// If we have a partial bundle remaining once we've added all the entries from the batch,
-	// this needs writing out too.
-	if entriesInBundle > 0 {
-		klog.V(1).Infof("Attempting to write in-memory partial bundle idx %d.%d to S3", bundleIndex, entriesInBundle)
-		goSetEntryBundle(ctx, bundleIndex, uint8(entriesInBundle), bundleWriter.Bytes())
-	}
-	return seqErr.Wait()
 }
 
 // mySQLSequencer uses MySQL to provide
