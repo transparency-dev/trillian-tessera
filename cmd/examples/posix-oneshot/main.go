@@ -78,21 +78,20 @@ func main() {
 
 	// Evaluate the glob provided by the --entries flag to determine the files containing leaves
 	filesToAdd := readEntriesOrDie()
+	batchSize := uint(len(filesToAdd))
+	if batchSize == 0 {
+		// batchSize can't be zero
+		batchSize = 1
+	}
 
 	appender, r, err := tessera.NewAppender(ctx, driver,
 		tessera.WithCheckpointSigner(s),
 		tessera.WithCheckpointInterval(checkpointInterval),
-		tessera.WithBatching(uint(len(filesToAdd)), time.Second))
+		tessera.WithBatching(batchSize, time.Second))
 	if err != nil {
 		klog.Exit(err)
 	}
 	addFn := appender.Add
-
-	// Handle the case where no entries are to be added.
-	if len(*entries) == 0 {
-		klog.Info("No entries provided to integrate; exiting")
-		os.Exit(0)
-	}
 
 	// We don't want to exit until our entries have been integrated into the tree, so we'll use Tessera's
 	// IntegrationAwaiter to help with that.
@@ -159,8 +158,5 @@ func readEntriesOrDie() []string {
 		klog.Exitf("Failed to glob entries %q: %q", *entries, err)
 	}
 	klog.V(1).Infof("toAdd: %v", toAdd)
-	if len(toAdd) == 0 {
-		klog.Exit("Sequence must be run with at least one valid entry")
-	}
 	return toAdd
 }
