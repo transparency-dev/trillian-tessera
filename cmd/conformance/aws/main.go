@@ -69,16 +69,16 @@ func main() {
 
 	// Create our Tessera storage backend:
 	awsCfg := storageConfigFromFlags()
-	driver, err := aws.New(ctx, awsCfg,
+	driver, err := aws.New(ctx, awsCfg)
+	if err != nil {
+		klog.Exitf("Failed to create new AWS storage: %v", err)
+	}
+	appender, _, err := tessera.NewAppender(ctx, driver,
 		tessera.WithCheckpointSigner(s, a...),
 		tessera.WithCheckpointInterval(*publishInterval),
 		tessera.WithBatching(1024, time.Second),
 		tessera.WithPushback(10*4096),
-	)
-	if err != nil {
-		klog.Exitf("Failed to create new AWS storage: %v", err)
-	}
-	appender, _, err := tessera.NewAppender(driver, tessera.WithAppendDeduplication(tessera.InMemoryDedupe(256)))
+		tessera.WithAppendDeduplication(tessera.InMemoryDedupe(256)))
 	addFn := appender.Add
 	if err != nil {
 		klog.Exit(err)
