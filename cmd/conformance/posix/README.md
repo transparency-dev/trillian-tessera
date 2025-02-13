@@ -19,7 +19,6 @@ Then, start the personality:
 ```shell
 go run ./cmd/conformance/posix \
   --storage_dir=${LOG_DIR} \
-  --initialise \
   --listen=:2025 \
   --v=2
 ```
