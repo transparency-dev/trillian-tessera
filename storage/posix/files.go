@@ -64,7 +64,7 @@ type appender struct {
 	queue      *storage.Queue
 
 	curSize uint64
-	newCP   tessera.NewCPFunc // May be nil for mirrored logs.
+	newCP   func(uint64, []byte) ([]byte, error) // May be nil for mirrored logs.
 
 	cpUpdated chan struct{}
 }
@@ -73,7 +73,7 @@ type appender struct {
 // POSIX storage instance
 type logResourceStorage struct {
 	s           *Storage
-	entriesPath tessera.EntriesPathFunc
+	entriesPath func(uint64, uint8) string
 }
 
 // NewTreeFunc is the signature of a function which receives information about newly integrated trees.
@@ -678,7 +678,7 @@ type MigrationStorage struct {
 	s            *Storage
 	logStorage   *logResourceStorage
 	bundleHasher BundleHasherFunc
-	entriesPath  tessera.EntriesPathFunc
+	entriesPath  func(uint64, uint8) string
 	curSize      uint64
 }
 

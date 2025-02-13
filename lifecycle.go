@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"time"
 
-	f_log "github.com/transparency-dev/formats/log"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
 )
 
@@ -88,25 +87,18 @@ func WithAppendDeduplication(decorators ...func(AddFn) AddFn) func(*AppendOption
 	}
 }
 
-// NewCPFunc is the signature of a function which knows how to format and sign checkpoints.
-type NewCPFunc func(size uint64, hash []byte) ([]byte, error)
-
-// ParseCPFunc is the signature of a function which knows how to verify and parse checkpoints.
-type ParseCPFunc func(raw []byte) (*f_log.Checkpoint, error)
-
-// EntriesPathFunc is the signature of a function which knows how to format entry bundle paths.
-type EntriesPathFunc func(n uint64, p uint8) string
-
 // AppendOptions holds optional settings for all storage implementations.
 type AppendOptions struct {
-	NewCP NewCPFunc
+	// NewCP knows how to format and sign checkpoints.
+	NewCP func(size uint64, hash []byte) ([]byte, error)
 
 	BatchMaxAge  time.Duration
 	BatchMaxSize uint
 
 	PushbackMaxOutstanding uint
 
-	EntriesPath EntriesPathFunc
+	// EntriesPath knows how to format entry bundle paths.
+	EntriesPath func(n uint64, p uint8) string
 
 	CheckpointInterval time.Duration
 

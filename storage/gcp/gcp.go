@@ -1348,7 +1348,7 @@ type MigrationStorage struct {
 	bundleHasher BundleHasherFunc
 	sequencer    sequencer
 	logStore     *logResourceStore
-	entriesPath  tessera.EntriesPathFunc
+	entriesPath  func(uint64, uint8) string
 }
 
 func (m *MigrationStorage) AwaitIntegration(ctx context.Context, sourceSize uint64) ([]byte, error) {

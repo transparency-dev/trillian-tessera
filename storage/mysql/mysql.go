@@ -314,7 +314,7 @@ func (s *Storage) writeEntryBundle(ctx context.Context, tx *sql.Tx, index uint64
 type appender struct {
 	s             *Storage
 	queue         *storage.Queue
-	newCheckpoint tessera.NewCPFunc
+	newCheckpoint func(uint64, []byte) ([]byte, error)
 	cpUpdated     chan struct{}
 }
 

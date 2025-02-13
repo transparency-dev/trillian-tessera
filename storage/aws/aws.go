@@ -201,7 +201,7 @@ func (s *Storage) Appender(ctx context.Context, opts *tessera.AppendOptions) (*t
 
 // Appender is an implementation of the Tessera appender lifecycle contract.
 type Appender struct {
-	newCP tessera.NewCPFunc
+	newCP func(uint64, []byte) ([]byte, error)
 
 	sequencer sequencer
 	logStore  *logResourceStore
@@ -419,7 +419,7 @@ func (a *Appender) updateEntryBundles(ctx context.Context, fromSeq uint64, entri
 // logResourceStore knows how to read and write entries which represent a tiles log inside an objStore.
 type logResourceStore struct {
 	objStore    objStore
-	entriesPath tessera.EntriesPathFunc
+	entriesPath func(uint64, uint8) string
 }
 
 func (lr *logResourceStore) ReadCheckpoint(ctx context.Context) ([]byte, error) {
