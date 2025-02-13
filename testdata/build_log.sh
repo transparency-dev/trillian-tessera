@@ -13,7 +13,7 @@ export LOG_PUBLIC_KEY="example.com/log/testdata+33d7b496+AeHTu4Q3hEIMHNqc6fASMsq
 cd ${DIR}
 rm -fr log
 
-go run ../cmd/examples/posix-oneshot --storage_dir=${LOG} --initialise
+go run ../cmd/examples/posix-oneshot --storage_dir=${LOG} 
 cp ${LOG}/checkpoint ${LOG}/checkpoint.0
 
 export LEAF=`mktemp`

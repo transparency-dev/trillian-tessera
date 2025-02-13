@@ -36,7 +36,6 @@ import (
 
 var (
 	storageDir  = flag.String("storage_dir", "", "Root directory to store log data.")
-	initialise  = flag.Bool("initialise", false, "Set when creating a new log to initialise the structure.")
 	entries     = flag.String("entries", "", "File path glob of entries to add to the log.")
 	privKeyFile = flag.String("private_key", "", "Location of private key file. If unset, uses the contents of the LOG_PRIVATE_KEY environment variable.")
 )
@@ -65,22 +64,6 @@ func main() {
 
 	// Gather the info needed for reading/writing checkpoints
 	s := getSignerOrDie()
-
-	// Handle the case where no entries are to be added.
-	if len(*entries) == 0 {
-		if *initialise {
-			_, err := posix.New(ctx, *storageDir, *initialise, tessera.WithCheckpointSigner(s))
-			if err != nil {
-				klog.Exitf("Failed to initialise storage: %v", err)
-			}
-		}
-		klog.Info("No entries provided to integrate; exiting")
-		os.Exit(0)
-	}
-
-	// Evaluate the glob provided by the --entries flag to determine the files containing leaves
-	filesToAdd := readEntriesOrDie()
-
 	// Construct a new Tessera POSIX log storage, anchored at the correct directory, and initialising it if requested.
 	// The options provide the checkpoint signer & verifier, and batch options.
 	// In this case, we want to create a single batch containing all of the leaves being added in order to
@@ -88,18 +71,27 @@ func main() {
 	driver, err := posix.New(
 		ctx,
 		*storageDir,
-		*initialise,
-		tessera.WithCheckpointSigner(s),
-		tessera.WithCheckpointInterval(checkpointInterval),
-		tessera.WithBatching(uint(len(filesToAdd)), time.Second))
+	)
 	if err != nil {
 		klog.Exitf("Failed to construct storage: %v", err)
 	}
-	appender, r, err := tessera.NewAppender(driver)
-	addFn := appender.Add
+
+	// Evaluate the glob provided by the --entries flag to determine the files containing leaves
+	filesToAdd := readEntriesOrDie()
+	batchSize := uint(len(filesToAdd))
+	if batchSize == 0 {
+		// batchSize can't be zero
+		batchSize = 1
+	}
+
+	appender, r, err := tessera.NewAppender(ctx, driver,
+		tessera.WithCheckpointSigner(s),
+		tessera.WithCheckpointInterval(checkpointInterval),
+		tessera.WithBatching(batchSize, time.Second))
 	if err != nil {
 		klog.Exit(err)
 	}
+	addFn := appender.Add
 
 	// We don't want to exit until our entries have been integrated into the tree, so we'll use Tessera's
 	// IntegrationAwaiter to help with that.
@@ -166,8 +158,5 @@ func readEntriesOrDie() []string {
 		klog.Exitf("Failed to glob entries %q: %q", *entries, err)
 	}
 	klog.V(1).Infof("toAdd: %v", toAdd)
-	if len(toAdd) == 0 {
-		klog.Exit("Sequence must be run with at least one valid entry")
-	}
 	return toAdd
 }

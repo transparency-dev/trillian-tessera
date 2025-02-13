@@ -11,10 +11,6 @@ The commands below create a new log and add entries to it, and then show a few a
 export LOG_PRIVATE_KEY="PRIVATE+KEY+example.com/log/testdata+33d7b496+AeymY/SZAX0jZcJ8enZ5FY1Dz+wTML2yWSkK+9DSF3eg"
 export LOG_PUBLIC_KEY="example.com/log/testdata+33d7b496+AeHTu4Q3hEIMHNqc6fASMsq3rKNx280NI+oO5xCFkkSx"
 
-# Initialize a new log
-export LOG_DIR=/tmp/mylog
-go run ./cmd/examples/posix-oneshot --storage_dir=${LOG_DIR} --initialise
-
 # Create files containing new leaves to add
 mkdir /tmp/stuff
 echo "foo" > /tmp/stuff/foo

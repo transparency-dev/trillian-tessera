@@ -59,12 +59,7 @@ func main() {
 
 	// Create our Tessera storage backend:
 	gcpCfg := storageConfigFromFlags()
-	driver, err := gcp.New(ctx, gcpCfg,
-		tessera.WithCheckpointSigner(s, a...),
-		tessera.WithCheckpointInterval(10*time.Second),
-		tessera.WithBatching(1024, time.Second),
-		tessera.WithPushback(10*4096),
-	)
+	driver, err := gcp.New(ctx, gcpCfg)
 	if err != nil {
 		klog.Exitf("Failed to create new GCP storage: %v", err)
 	}
@@ -92,11 +87,17 @@ func main() {
 		}()
 	}
 
-	appender, _, err := tessera.NewAppender(driver, tessera.WithAppendDeduplication(dedups...))
-	addFn := appender.Add
+	appender, _, err := tessera.NewAppender(ctx, driver,
+		tessera.WithCheckpointSigner(s, a...),
+		tessera.WithCheckpointInterval(10*time.Second),
+		tessera.WithBatching(1024, time.Second),
+		tessera.WithPushback(10*4096),
+		tessera.WithAppendDeduplication(dedups...),
+	)
 	if err != nil {
 		klog.Exit(err)
 	}
+	addFn := appender.Add
 
 	// Expose a HTTP handler for the conformance test writes.
 	// This should accept arbitrary bytes POSTed to /add, and return an ascii

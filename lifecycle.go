@@ -17,6 +17,9 @@ package tessera
 import (
 	"context"
 	"fmt"
+	"time"
+
+	"github.com/transparency-dev/trillian-tessera/api/layout"
 )
 
 // LogReader provides read-only access to the log.
@@ -48,7 +51,7 @@ type LogReader interface {
 // in sequencing mode. This only has a single method, but other methods are likely to be added
 // such as a Shutdown method for #341.
 type Appender struct {
-	Add      AddFn
+	Add AddFn
 	// TODO(#341): add this method and implement it in all drivers
 	// Shutdown func(ctx context.Context)
 }
@@ -59,47 +62,61 @@ type Appender struct {
 // decorators provides a list of optional constructor functions that will return decorators
 // that wrap the base appender. This can be used to provide deduplication. Decorators will be
 // called in-order, and the last in the chain will be the base appender.
-// TODO(mhutchinson): switch the decorators over to a WithOpt for future flexibility.
-func NewAppender(d Driver, opts ...func(*appendOptions)) (*Appender, LogReader, error) {
-	resolved := resolveAppendOpts(opts...)
-	type appender interface {
-		Add(ctx context.Context, entry *Entry) IndexFuture
-		// Shutdown(ctx context.Context)
+func NewAppender(ctx context.Context, d Driver, opts ...func(*AppendOptions)) (*Appender, LogReader, error) {
+	resolved := resolveAppendOptions(opts...)
+	type appendLifecycle interface {
+		Appender(context.Context, *AppendOptions) (*Appender, LogReader, error)
 	}
-	a, ok := d.(appender)
+	lc, ok := d.(appendLifecycle)
 	if !ok {
-		return nil, nil, fmt.Errorf("driver %T does not implement Appender", d)
+		return nil, nil, fmt.Errorf("driver %T does not implement Appender lifecycle", d)
 	}
-	add := a.Add
-	for i := len(resolved.addDecorators) - 1; i >= 0; i-- {
-		add = resolved.addDecorators[i](add)
+	a, r, err := lc.Appender(ctx, resolved)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to init appender lifecycle: %v", err)
 	}
-	reader, ok := d.(LogReader)
-	if !ok {
-		return nil, nil, fmt.Errorf("driver %T does not implement LogReader", d)
+	for i := len(resolved.AddDecorators) - 1; i >= 0; i-- {
+		a.Add = resolved.AddDecorators[i](a.Add)
 	}
-	return &Appender{
-		Add:      add,
-		// Shutdown: a.Shutdown,
-	}, reader, nil
+	return a, r, nil
 }
 
-func WithAppendDeduplication(decorators ...func(AddFn) AddFn) func(*appendOptions) {
-	return func(o *appendOptions) {
-		o.addDecorators = decorators
+func WithAppendDeduplication(decorators ...func(AddFn) AddFn) func(*AppendOptions) {
+	return func(o *AppendOptions) {
+		o.AddDecorators = decorators
 	}
 }
 
-type appendOptions struct {
-	addDecorators []func(AddFn) AddFn
+// AppendOptions holds settings for all storage implementations.
+type AppendOptions struct {
+	// NewCP knows how to format and sign checkpoints.
+	NewCP func(size uint64, hash []byte) ([]byte, error)
+
+	BatchMaxAge  time.Duration
+	BatchMaxSize uint
+
+	PushbackMaxOutstanding uint
+
+	// EntriesPath knows how to format entry bundle paths.
+	EntriesPath func(n uint64, p uint8) string
+
+	CheckpointInterval time.Duration
+
+	AddDecorators []func(AddFn) AddFn
 }
 
-func resolveAppendOpts(opts ...func(*appendOptions)) appendOptions {
-	defaults := &appendOptions{
-		addDecorators: make([]func(AddFn) AddFn, 0),
+// resolveAppendOptions turns a variadic array of storage options into an AppendOptions instance.
+func resolveAppendOptions(opts ...func(*AppendOptions)) *AppendOptions {
+	defaults := &AppendOptions{
+		BatchMaxSize:           DefaultBatchMaxSize,
+		BatchMaxAge:            DefaultBatchMaxAge,
+		EntriesPath:            layout.EntriesPath,
+		CheckpointInterval:     DefaultCheckpointInterval,
+		AddDecorators:          make([]func(AddFn) AddFn, 0),
+		PushbackMaxOutstanding: DefaultPushbackMaxOutstanding,
 	}
 	for _, opt := range opts {
 		opt(defaults)
 	}
-	return *defaults
+	return defaults
 }

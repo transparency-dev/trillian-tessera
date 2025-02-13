@@ -52,7 +52,6 @@ import (
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/api"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
-	"github.com/transparency-dev/trillian-tessera/internal/options"
 	storage "github.com/transparency-dev/trillian-tessera/storage/internal"
 	"golang.org/x/sync/errgroup"
 	"k8s.io/klog/v2"
@@ -80,15 +79,7 @@ const (
 
 // Storage is an AWS based storage implementation for Tessera.
 type Storage struct {
-	newCP       options.NewCPFunc
-	entriesPath options.EntriesPathFunc
-
-	sequencer sequencer
-	objStore  objStore
-
-	queue *storage.Queue
-
-	treeUpdated chan struct{}
+	cfg Config
 }
 
 // objStore describes a type which can store and retrieve objects.
@@ -146,15 +137,7 @@ type Config struct {
 //
 // Storage instances created via this c'tor will participate in integrating newly sequenced entries into the log
 // and periodically publishing a new checkpoint which commits to the state of the tree.
-func New(ctx context.Context, cfg Config, opts ...func(*options.StorageOptions)) (tessera.Driver, error) {
-	opt := storage.ResolveStorageOptions(opts...)
-	if opt.PushbackMaxOutstanding == 0 {
-		opt.PushbackMaxOutstanding = DefaultPushbackMaxOutstanding
-	}
-	if opt.CheckpointInterval < minCheckpointInterval {
-		return nil, fmt.Errorf("requested CheckpointInterval (%v) is less than minimum permitted %v", opt.CheckpointInterval, minCheckpointInterval)
-	}
-
+func New(ctx context.Context, cfg Config) (tessera.Driver, error) {
 	if cfg.SDKConfig == nil {
 		// We're running on AWS so use the SDK's default config which will will handle credentials etc.
 		sdkConfig, err := config.LoadDefaultConfig(ctx)
@@ -168,42 +151,70 @@ func New(ctx context.Context, cfg Config, opts ...func(*options.StorageOptions))
 	} else {
 		printDragonsWarning()
 	}
-	c := s3.NewFromConfig(*cfg.SDKConfig, cfg.S3Options)
 
-	seq, err := newMySQLSequencer(ctx, cfg.DSN, uint64(opt.PushbackMaxOutstanding), cfg.MaxOpenConns, cfg.MaxIdleConns)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create MySQL sequencer: %v", err)
+	return &Storage{
+		cfg: cfg,
+	}, nil
+}
+
+func (s *Storage) Appender(ctx context.Context, opts *tessera.AppendOptions) (*tessera.Appender, tessera.LogReader, error) {
+	if opts.PushbackMaxOutstanding == 0 {
+		opts.PushbackMaxOutstanding = DefaultPushbackMaxOutstanding
+	}
+	if opts.CheckpointInterval < minCheckpointInterval {
+		return nil, nil, fmt.Errorf("requested CheckpointInterval (%v) is less than minimum permitted %v", opts.CheckpointInterval, minCheckpointInterval)
 	}
 
-	r := &Storage{
-		objStore: &s3Storage{
-			s3Client: c,
-			bucket:   cfg.Bucket,
+	seq, err := newMySQLSequencer(ctx, s.cfg.DSN, uint64(opts.PushbackMaxOutstanding), s.cfg.MaxOpenConns, s.cfg.MaxIdleConns)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create MySQL sequencer: %v", err)
+	}
+
+	r := &Appender{
+		logStore: &logResourceStore{
+			objStore: &s3Storage{
+				s3Client: s3.NewFromConfig(*s.cfg.SDKConfig, s.cfg.S3Options),
+				bucket:   s.cfg.Bucket,
+			},
+			entriesPath: opts.EntriesPath,
 		},
 		sequencer:   seq,
-		newCP:       opt.NewCP,
-		entriesPath: opt.EntriesPath,
+		newCP:       opts.NewCP,
 		treeUpdated: make(chan struct{}),
 	}
-	r.queue = storage.NewQueue(ctx, opt.BatchMaxAge, opt.BatchMaxSize, r.sequencer.assignEntries)
+	r.queue = storage.NewQueue(ctx, opts.BatchMaxAge, opts.BatchMaxSize, r.sequencer.assignEntries)
 
 	if err := r.init(ctx); err != nil {
-		return nil, fmt.Errorf("failed to initialise log storage: %v", err)
+		return nil, nil, fmt.Errorf("failed to initialise log storage: %v", err)
 	}
 
 	// Kick off go-routine which handles the integration of entries.
 	go r.consumeEntriesTask(ctx)
 
 	// Kick off go-routine which handles the publication of checkpoints.
-	go r.publishCheckpointTask(ctx, opt.CheckpointInterval)
+	go r.publishCheckpointTask(ctx, opts.CheckpointInterval)
 
-	return r, nil
+	return &tessera.Appender{
+		Add: r.Add,
+	}, r.logStore, nil
+}
+
+// Appender is an implementation of the Tessera appender lifecycle contract.
+type Appender struct {
+	newCP func(uint64, []byte) ([]byte, error)
+
+	sequencer sequencer
+	logStore  *logResourceStore
+
+	queue *storage.Queue
+
+	treeUpdated chan struct{}
 }
 
 // sequenceEntriesTask periodically integrates newly sequenced entries.
 //
 // This function does not return until the passed context is done.
-func (s *Storage) consumeEntriesTask(ctx context.Context) {
+func (a *Appender) consumeEntriesTask(ctx context.Context) {
 	t := time.NewTicker(1 * time.Second)
 	defer t.Stop()
 	for {
@@ -218,12 +229,12 @@ func (s *Storage) consumeEntriesTask(ctx context.Context) {
 			cctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 			defer cancel()
 
-			if _, err := s.sequencer.consumeEntries(cctx, DefaultIntegrationSizeLimit, s.appendEntries, false); err != nil {
+			if _, err := a.sequencer.consumeEntries(cctx, DefaultIntegrationSizeLimit, a.appendEntries, false); err != nil {
 				klog.Errorf("integrate: %v", err)
 				return
 			}
 			select {
-			case s.treeUpdated <- struct{}{}:
+			case a.treeUpdated <- struct{}{}:
 			default:
 			}
 		}()
@@ -234,50 +245,30 @@ func (s *Storage) consumeEntriesTask(ctx context.Context) {
 // of the tree, once per interval.
 //
 // This function does not return until the passed in context is done.
-func (s *Storage) publishCheckpointTask(ctx context.Context, interval time.Duration) {
+func (a *Appender) publishCheckpointTask(ctx context.Context, interval time.Duration) {
 	t := time.NewTicker(interval)
 	defer t.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-s.treeUpdated:
+		case <-a.treeUpdated:
 		case <-t.C:
 		}
-		if err := s.publishCheckpoint(ctx, interval); err != nil {
+		if err := a.publishCheckpoint(ctx, interval); err != nil {
 			klog.Warningf("publishCheckpoint: %v", err)
 		}
 	}
 }
 
 // Add is the entrypoint for adding entries to a sequencing log.
-func (s *Storage) Add(ctx context.Context, e *tessera.Entry) tessera.IndexFuture {
-	return s.queue.Add(ctx, e)
-}
-
-func (s *Storage) ReadCheckpoint(ctx context.Context) ([]byte, error) {
-	return s.get(ctx, layout.CheckpointPath)
-}
-
-func (s *Storage) ReadTile(ctx context.Context, l, i uint64, p uint8) ([]byte, error) {
-	return s.get(ctx, layout.TilePath(l, i, p))
-}
-
-func (s *Storage) ReadEntryBundle(ctx context.Context, i uint64, p uint8) ([]byte, error) {
-	return s.get(ctx, s.entriesPath(i, p))
-}
-
-// get returns the requested object.
-//
-// This is indended to be used to proxy read requests through the personality for debug/testing purposes.
-func (s *Storage) get(ctx context.Context, path string) ([]byte, error) {
-	d, err := s.objStore.getObject(ctx, path)
-	return d, err
+func (a *Appender) Add(ctx context.Context, e *tessera.Entry) tessera.IndexFuture {
+	return a.queue.Add(ctx, e)
 }
 
 // init ensures that the storage represents a log in a valid state.
-func (s *Storage) init(ctx context.Context) error {
-	_, err := s.get(ctx, layout.CheckpointPath)
+func (a *Appender) init(ctx context.Context) error {
+	_, err := a.logStore.ReadCheckpoint(ctx)
 	if err != nil {
 		// Do not use errors.Is. Keep errors.As to compare by type and not by value.
 		var nske *types.NoSuchKey
@@ -287,11 +278,11 @@ func (s *Storage) init(ctx context.Context) error {
 			// framework which prevents the tree from rolling backwards or otherwise forking).
 			cctx, c := context.WithTimeout(ctx, 10*time.Second)
 			defer c()
-			if _, err := s.sequencer.consumeEntries(cctx, DefaultIntegrationSizeLimit, s.appendEntries, true); err != nil {
+			if _, err := a.sequencer.consumeEntries(cctx, DefaultIntegrationSizeLimit, a.appendEntries, true); err != nil {
 				return fmt.Errorf("forced integrate: %v", err)
 			}
 			select {
-			case s.treeUpdated <- struct{}{}:
+			case a.treeUpdated <- struct{}{}:
 			default:
 			}
 			return nil
@@ -302,113 +293,28 @@ func (s *Storage) init(ctx context.Context) error {
 	return nil
 }
 
-func (s *Storage) publishCheckpoint(ctx context.Context, minStaleness time.Duration) error {
-	m, err := s.objStore.lastModified(ctx, layout.CheckpointPath)
+func (a *Appender) publishCheckpoint(ctx context.Context, minStaleness time.Duration) error {
+	m, err := a.logStore.checkpointLastModified(ctx)
 	// Do not use errors.Is. Keep errors.As to compare by type and not by value.
 	var nske *types.NoSuchKey
 	if err != nil && !errors.As(err, &nske) {
-		return fmt.Errorf("lastModified(%q): %v", layout.CheckpointPath, err)
+		return fmt.Errorf("checkpointLastModified(): %v", err)
 	}
 	if time.Since(m) < minStaleness {
 		return nil
 	}
 
-	size, root, err := s.sequencer.currentTree(ctx)
+	size, root, err := a.sequencer.currentTree(ctx)
 	if err != nil {
 		return fmt.Errorf("currentTree: %v", err)
 	}
-	cpRaw, err := s.newCP(size, root)
+	cpRaw, err := a.newCP(size, root)
 	if err != nil {
 		return fmt.Errorf("newCP: %v", err)
 	}
 
-	if err := s.objStore.setObject(ctx, layout.CheckpointPath, cpRaw, ckptContType); err != nil {
+	if err := a.logStore.setCheckpoint(ctx, cpRaw); err != nil {
 		return fmt.Errorf("writeCheckpoint: %v", err)
-	}
-	return nil
-
-}
-
-// setTile idempotently stores the provided tile at the location implied by the given level, index, and treeSize.
-//
-// The location to which the tile is written is defined by the tile layout spec.
-func (s *Storage) setTile(ctx context.Context, level, index, logSize uint64, tile *api.HashTile) error {
-	data, err := tile.MarshalText()
-	if err != nil {
-		return err
-	}
-	tPath := layout.TilePath(level, index, layout.PartialTileSize(level, index, logSize))
-	klog.V(2).Infof("StoreTile: %s (%d entries)", tPath, len(tile.Nodes))
-
-	return s.objStore.setObjectIfNoneMatch(ctx, tPath, data, logContType)
-}
-
-// getTiles returns the tiles with the given tile-coords for the specified log size.
-//
-// Tiles are returned in the same order as they're requested, nils represent tiles which were not found.
-func (s *Storage) getTiles(ctx context.Context, tileIDs []storage.TileID, logSize uint64) ([]*api.HashTile, error) {
-	r := make([]*api.HashTile, len(tileIDs))
-	errG := errgroup.Group{}
-	for i, id := range tileIDs {
-		i := i
-		id := id
-		errG.Go(func() error {
-			objName := layout.TilePath(id.Level, id.Index, layout.PartialTileSize(id.Level, id.Index, logSize))
-			data, err := s.objStore.getObject(ctx, objName)
-			if err != nil {
-				// Do not use errors.Is. Keep errors.As to compare by type and not by value.
-				var nske *types.NoSuchKey
-				if errors.As(err, &nske) {
-					// Depending on context, this may be ok.
-					// We'll signal to higher levels that it wasn't found by retuning a nil for this tile.
-					return nil
-				}
-				return err
-			}
-			t := &api.HashTile{}
-			if err := t.UnmarshalText(data); err != nil {
-				return fmt.Errorf("unmarshal(%q): %v", objName, err)
-			}
-			r[i] = t
-			return nil
-		})
-	}
-	if err := errG.Wait(); err != nil {
-		return nil, err
-	}
-	return r, nil
-
-}
-
-// getEntryBundle returns the serialised entry bundle at the location implied by the given index and treeSize.
-//
-// Returns a wrapped os.ErrNotExist if the bundle does not exist.
-func (s *Storage) getEntryBundle(ctx context.Context, bundleIndex uint64, p uint8) ([]byte, error) {
-	objName := s.entriesPath(bundleIndex, p)
-	data, err := s.objStore.getObject(ctx, objName)
-	if err != nil {
-		// Do not use errors.Is. Keep errors.As to compare by type and not by value.
-		var nske *types.NoSuchKey
-		if errors.As(err, &nske) {
-			// Return the generic NotExist error so that higher levels can differentiate
-			// between this and other errors.
-			return nil, fmt.Errorf("%v: %w", objName, os.ErrNotExist)
-		}
-		return nil, err
-	}
-
-	return data, nil
-}
-
-// setEntryBundle idempotently stores the serialised entry bundle at the location implied by the bundleIndex and treeSize.
-func (s *Storage) setEntryBundle(ctx context.Context, bundleIndex uint64, p uint8, bundleRaw []byte) error {
-	objName := s.entriesPath(bundleIndex, p)
-	// Note that setObject does an idempotent interpretation of IfNoneMatch - it only
-	// returns an error if the named object exists _and_ contains different data to what's
-	// passed in here.
-	if err := s.objStore.setObjectIfNoneMatch(ctx, objName, bundleRaw, logContType); err != nil {
-		return fmt.Errorf("setObjectIfNoneMatch(%q): %v", objName, err)
-
 	}
 	return nil
 }
@@ -416,13 +322,13 @@ func (s *Storage) setEntryBundle(ctx context.Context, bundleIndex uint64, p uint
 // appendEntries incorporates the provided entries into the log starting at fromSeq.
 //
 // Returns the new root hash of the log with the entries added.
-func (s *Storage) appendEntries(ctx context.Context, fromSeq uint64, entries []storage.SequencedEntry) ([]byte, error) {
+func (a *Appender) appendEntries(ctx context.Context, fromSeq uint64, entries []storage.SequencedEntry) ([]byte, error) {
 	var newRoot []byte
 
 	errG := errgroup.Group{}
 
 	errG.Go(func() error {
-		if err := s.updateEntryBundles(ctx, fromSeq, entries); err != nil {
+		if err := a.updateEntryBundles(ctx, fromSeq, entries); err != nil {
 			return fmt.Errorf("updateEntryBundles: %v", err)
 		}
 		return nil
@@ -433,7 +339,7 @@ func (s *Storage) appendEntries(ctx context.Context, fromSeq uint64, entries []s
 		for i, e := range entries {
 			lh[i] = e.LeafHash
 		}
-		r, err := s.integrate(ctx, fromSeq, lh)
+		r, err := integrate(ctx, fromSeq, lh, a.logStore)
 		if err != nil {
 			return fmt.Errorf("integrate: %v", err)
 		}
@@ -445,39 +351,10 @@ func (s *Storage) appendEntries(ctx context.Context, fromSeq uint64, entries []s
 	return newRoot, err
 }
 
-// integrate adds the provided leaf hashes to the merkle tree, starting at the provided location.
-func (s *Storage) integrate(ctx context.Context, fromSeq uint64, lh [][]byte) ([]byte, error) {
-	getTiles := func(ctx context.Context, tileIDs []storage.TileID, treeSize uint64) ([]*api.HashTile, error) {
-		n, err := s.getTiles(ctx, tileIDs, treeSize)
-		if err != nil {
-			return nil, fmt.Errorf("getTiles: %w", err)
-		}
-		return n, nil
-	}
-
-	newSize, newRoot, tiles, err := storage.Integrate(ctx, getTiles, fromSeq, lh)
-	if err != nil {
-		return nil, fmt.Errorf("Integrate: %v", err)
-	}
-	errG := errgroup.Group{}
-	for k, v := range tiles {
-		func(ctx context.Context, k storage.TileID, v *api.HashTile) {
-			errG.Go(func() error {
-				return s.setTile(ctx, uint64(k.Level), k.Index, newSize, v)
-			})
-		}(ctx, k, v)
-	}
-	if err := errG.Wait(); err != nil {
-		return nil, err
-	}
-	klog.Infof("New tree: %d, %x", newSize, newRoot)
-	return newRoot, nil
-}
-
 // updateEntryBundles adds the entries being integrated into the entry bundles.
 //
 // The right-most bundle will be grown, if it's partial, and/or new bundles will be created as required.
-func (s *Storage) updateEntryBundles(ctx context.Context, fromSeq uint64, entries []storage.SequencedEntry) error {
+func (a *Appender) updateEntryBundles(ctx context.Context, fromSeq uint64, entries []storage.SequencedEntry) error {
 	if len(entries) == 0 {
 		return nil
 	}
@@ -487,7 +364,7 @@ func (s *Storage) updateEntryBundles(ctx context.Context, fromSeq uint64, entrie
 	bundleWriter := &bytes.Buffer{}
 	if entriesInBundle > 0 {
 		// If the latest bundle is partial, we need to read the data it contains in for our newer, larger, bundle.
-		part, err := s.getEntryBundle(ctx, uint64(bundleIndex), uint8(entriesInBundle))
+		part, err := a.logStore.getEntryBundle(ctx, uint64(bundleIndex), uint8(entriesInBundle))
 		if err != nil {
 			return err
 		}
@@ -503,7 +380,7 @@ func (s *Storage) updateEntryBundles(ctx context.Context, fromSeq uint64, entrie
 	// It's used in the for loop below.
 	goSetEntryBundle := func(ctx context.Context, bundleIndex uint64, p uint8, bundleRaw []byte) {
 		seqErr.Go(func() error {
-			if err := s.setEntryBundle(ctx, bundleIndex, p, bundleRaw); err != nil {
+			if err := a.logStore.setEntryBundle(ctx, bundleIndex, p, bundleRaw); err != nil {
 				return err
 			}
 			return nil
@@ -537,6 +414,154 @@ func (s *Storage) updateEntryBundles(ctx context.Context, fromSeq uint64, entrie
 		goSetEntryBundle(ctx, bundleIndex, uint8(entriesInBundle), bundleWriter.Bytes())
 	}
 	return seqErr.Wait()
+}
+
+// logResourceStore knows how to read and write entries which represent a tiles log inside an objStore.
+type logResourceStore struct {
+	objStore    objStore
+	entriesPath func(uint64, uint8) string
+}
+
+func (lr *logResourceStore) ReadCheckpoint(ctx context.Context) ([]byte, error) {
+	return lr.get(ctx, layout.CheckpointPath)
+}
+
+func (lr *logResourceStore) ReadTile(ctx context.Context, l, i uint64, p uint8) ([]byte, error) {
+	return lr.get(ctx, layout.TilePath(l, i, p))
+}
+
+func (lr *logResourceStore) ReadEntryBundle(ctx context.Context, i uint64, p uint8) ([]byte, error) {
+	return lr.get(ctx, lr.entriesPath(i, p))
+}
+
+// get returns the requested object.
+//
+// This is indended to be used to proxy read requests through the personality for debug/testing purposes.
+func (s *logResourceStore) get(ctx context.Context, path string) ([]byte, error) {
+	d, err := s.objStore.getObject(ctx, path)
+	return d, err
+}
+
+func (lrs *logResourceStore) setCheckpoint(ctx context.Context, cpRaw []byte) error {
+	return lrs.objStore.setObject(ctx, layout.CheckpointPath, cpRaw, ckptContType)
+}
+
+func (lrs *logResourceStore) checkpointLastModified(ctx context.Context) (time.Time, error) {
+	t, err := lrs.objStore.lastModified(ctx, layout.CheckpointPath)
+	return t, err
+}
+
+// setTile idempotently stores the provided tile at the location implied by the given level, index, and treeSize.
+//
+// The location to which the tile is written is defined by the tile layout spec.
+func (lrs *logResourceStore) setTile(ctx context.Context, level, index, logSize uint64, tile *api.HashTile) error {
+	data, err := tile.MarshalText()
+	if err != nil {
+		return err
+	}
+	tPath := layout.TilePath(level, index, layout.PartialTileSize(level, index, logSize))
+	klog.V(2).Infof("StoreTile: %s (%d entries)", tPath, len(tile.Nodes))
+
+	return lrs.objStore.setObjectIfNoneMatch(ctx, tPath, data, logContType)
+}
+
+// getTiles returns the tiles with the given tile-coords for the specified log size.
+//
+// Tiles are returned in the same order as they're requested, nils represent tiles which were not found.
+func (lrs *logResourceStore) getTiles(ctx context.Context, tileIDs []storage.TileID, logSize uint64) ([]*api.HashTile, error) {
+	r := make([]*api.HashTile, len(tileIDs))
+	errG := errgroup.Group{}
+	for i, id := range tileIDs {
+		i := i
+		id := id
+		errG.Go(func() error {
+			objName := layout.TilePath(id.Level, id.Index, layout.PartialTileSize(id.Level, id.Index, logSize))
+			data, err := lrs.objStore.getObject(ctx, objName)
+			if err != nil {
+				// Do not use errors.Is. Keep errors.As to compare by type and not by value.
+				var nske *types.NoSuchKey
+				if errors.As(err, &nske) {
+					// Depending on context, this may be ok.
+					// We'll signal to higher levels that it wasn't found by retuning a nil for this tile.
+					return nil
+				}
+				return err
+			}
+			t := &api.HashTile{}
+			if err := t.UnmarshalText(data); err != nil {
+				return fmt.Errorf("unmarshal(%q): %v", objName, err)
+			}
+			r[i] = t
+			return nil
+		})
+	}
+	if err := errG.Wait(); err != nil {
+		return nil, err
+	}
+	return r, nil
+
+}
+
+// getEntryBundle returns the serialised entry bundle at the location implied by the given index and treeSize.
+//
+// Returns a wrapped os.ErrNotExist if the bundle does not exist.
+func (lrs *logResourceStore) getEntryBundle(ctx context.Context, bundleIndex uint64, p uint8) ([]byte, error) {
+	objName := lrs.entriesPath(bundleIndex, p)
+	data, err := lrs.objStore.getObject(ctx, objName)
+	if err != nil {
+		// Do not use errors.Is. Keep errors.As to compare by type and not by value.
+		var nske *types.NoSuchKey
+		if errors.As(err, &nske) {
+			// Return the generic NotExist error so that higher levels can differentiate
+			// between this and other errors.
+			return nil, fmt.Errorf("%v: %w", objName, os.ErrNotExist)
+		}
+		return nil, err
+	}
+
+	return data, nil
+}
+
+// setEntryBundle idempotently stores the serialised entry bundle at the location implied by the bundleIndex and treeSize.
+func (lrs *logResourceStore) setEntryBundle(ctx context.Context, bundleIndex uint64, p uint8, bundleRaw []byte) error {
+	objName := lrs.entriesPath(bundleIndex, p)
+	// Note that setObject does an idempotent interpretation of IfNoneMatch - it only
+	// returns an error if the named object exists _and_ contains different data to what's
+	// passed in here.
+	if err := lrs.objStore.setObjectIfNoneMatch(ctx, objName, bundleRaw, logContType); err != nil {
+		return fmt.Errorf("setObjectIfNoneMatch(%q): %v", objName, err)
+
+	}
+	return nil
+}
+
+// integrate adds the provided leaf hashes to the merkle tree, starting at the provided location.
+func integrate(ctx context.Context, fromSeq uint64, lh [][]byte, lrs *logResourceStore) ([]byte, error) {
+	getTiles := func(ctx context.Context, tileIDs []storage.TileID, treeSize uint64) ([]*api.HashTile, error) {
+		n, err := lrs.getTiles(ctx, tileIDs, treeSize)
+		if err != nil {
+			return nil, fmt.Errorf("getTiles: %w", err)
+		}
+		return n, nil
+	}
+
+	newSize, newRoot, tiles, err := storage.Integrate(ctx, getTiles, fromSeq, lh)
+	if err != nil {
+		return nil, fmt.Errorf("Integrate: %v", err)
+	}
+	errG := errgroup.Group{}
+	for k, v := range tiles {
+		func(ctx context.Context, k storage.TileID, v *api.HashTile) {
+			errG.Go(func() error {
+				return lrs.setTile(ctx, uint64(k.Level), k.Index, newSize, v)
+			})
+		}(ctx, k, v)
+	}
+	if err := errG.Wait(); err != nil {
+		return nil, err
+	}
+	klog.Infof("New tree: %d, %x", newSize, newRoot)
+	return newRoot, nil
 }
 
 // mySQLSequencer uses MySQL to provide

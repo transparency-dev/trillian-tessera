@@ -36,7 +36,6 @@ import (
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/api"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
-	options "github.com/transparency-dev/trillian-tessera/internal/options"
 	"github.com/transparency-dev/trillian-tessera/storage/mysql"
 	"golang.org/x/mod/sumdb/note"
 	"golang.org/x/sync/errgroup"
@@ -129,28 +128,28 @@ func initDatabaseSchema(ctx context.Context) {
 	}
 }
 
-func TestNew(t *testing.T) {
+func TestAppend(t *testing.T) {
 	ctx := context.Background()
 
 	for _, test := range []struct {
 		name    string
-		opts    []func(*options.StorageOptions)
+		opts    []func(*tessera.AppendOptions)
 		wantErr bool
 	}{
 		{
-			name:    "no tessera.StorageOption",
+			name:    "no tessera.AppendOptions",
 			opts:    nil,
 			wantErr: true,
 		},
 		{
 			name: "standard tessera.WithCheckpointSigner",
-			opts: []func(*options.StorageOptions){
+			opts: []func(*tessera.AppendOptions){
 				tessera.WithCheckpointSigner(noteSigner),
 			},
 		},
 		{
-			name: "all tessera.StorageOption",
-			opts: []func(*options.StorageOptions){
+			name: "all tessera.AppendOptions",
+			opts: []func(*tessera.AppendOptions){
 				tessera.WithCheckpointSigner(noteSigner),
 				tessera.WithBatching(1, 1*time.Second),
 				tessera.WithPushback(10),
@@ -158,7 +157,11 @@ func TestNew(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			_, err := mysql.New(ctx, testDB, test.opts...)
+			drv, err := mysql.New(ctx, testDB)
+			if err != nil {
+				t.Fatalf("New: %v", err)
+			}
+			_, _, err = tessera.NewAppender(ctx, drv, test.opts...)
 			gotErr := err != nil
 			if gotErr != test.wantErr {
 				t.Errorf("got err: %v", err)
@@ -463,15 +466,15 @@ func newTestMySQLStorage(t *testing.T, ctx context.Context) (tessera.AddFn, tess
 	t.Helper()
 	initDatabaseSchema(ctx)
 
-	s, err := mysql.New(ctx, testDB,
-		tessera.WithCheckpointSigner(noteSigner),
-		tessera.WithCheckpointInterval(time.Second),
-		tessera.WithBatching(128, 100*time.Millisecond))
+	s, err := mysql.New(ctx, testDB)
 	if err != nil {
 		t.Fatalf("Failed to create mysql.Storage: %v", err)
 	}
 
-	a, r, err := tessera.NewAppender(s)
+	a, r, err := tessera.NewAppender(ctx, s,
+		tessera.WithCheckpointSigner(noteSigner),
+		tessera.WithCheckpointInterval(time.Second),
+		tessera.WithBatching(128, 100*time.Millisecond))
 	if err != nil {
 		t.Fatal(err)
 	}
