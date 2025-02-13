@@ -87,7 +87,7 @@ func WithAppendDeduplication(decorators ...func(AddFn) AddFn) func(*AppendOption
 	}
 }
 
-// AppendOptions holds optional settings for all storage implementations.
+// AppendOptions holds settings for all storage implementations.
 type AppendOptions struct {
 	// NewCP knows how to format and sign checkpoints.
 	NewCP func(size uint64, hash []byte) ([]byte, error)
