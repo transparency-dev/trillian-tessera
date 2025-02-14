@@ -232,6 +232,10 @@ func (s *Storage) Appender(ctx context.Context, opts *tessera.AppendOptions) (*t
 		},
 		&LogReader{
 			lrs: *a.logStore,
+			integratedSize: func(context.Context) (uint64, error) {
+				s, _, err := a.sequencer.currentTree(ctx)
+				return s, err
+			},
 		}, nil
 }
 
@@ -241,7 +245,8 @@ func (s *Appender) Add(ctx context.Context, e *tessera.Entry) tessera.IndexFutur
 }
 
 type LogReader struct {
-	lrs logResourceStore
+	lrs            logResourceStore
+	integratedSize func(context.Context) (uint64, error)
 }
 
 func (lr *LogReader) ReadCheckpoint(ctx context.Context) ([]byte, error) {
@@ -254,6 +259,16 @@ func (lr *LogReader) ReadTile(ctx context.Context, l, i uint64, p uint8) ([]byte
 
 func (lr *LogReader) ReadEntryBundle(ctx context.Context, i uint64, p uint8) ([]byte, error) {
 	return lr.lrs.getEntryBundle(ctx, i, p)
+}
+
+func (lr *LogReader) IntegratedSize(ctx context.Context) (uint64, error) {
+	return lr.integratedSize(ctx)
+}
+
+func (lr *LogReader) StreamEntries(ctx context.Context, fromEntry uint64) (next func() (ri layout.RangeInfo, bundle []byte, err error), cancel func()) {
+	klog.Infof("StreamEntries from %d", fromEntry)
+
+	return streamAdaptor(ctx, lr.integratedSize, lr.lrs.getEntryBundle, fromEntry)
 }
 
 // init ensures that the storage represents a log in a valid state.
@@ -370,39 +385,11 @@ func (s *logResourceStore) getTiles(ctx context.Context, tileIDs []storage.TileI
 	return r, nil
 }
 
-// IntegratedSize returns the current size of the integrated tree.
-//
-// This tree size has all the static resources it implies created, but may not have had a checkpoint
-// for it signed, witnessed, or published yet.
-//
-// It's safe to use this value for processes internal to the operation of the log (e.g. populating antispam
-// data structures), but it should not be used as a substitute for reading the checkpoint.
-//
-// TODO(al): This needs to be reflected and documented in some tessera-level dedupe storage contract.
-func (s *Appender) IntegratedSize(ctx context.Context) (uint64, error) {
-	size, _, err := s.sequencer.currentTree(ctx)
-	return size, err
-}
-
-// StreamEntryRange provides a mechanism to quickly read sequential entry bundles covering a range of entries [fromEntry, fromEntry+N).
-//
-// Note that input parameters reference the raw leaf indices, and these will be returned bundled according to the tiles spec along with
-// "RangeInfo" structs with information about which entries in each bundle are within the requested range.
-//
-// Returns a "next" function, which can be used to retrieve subsequent entry bundles, and a "cancel" function which must be
-// called when no further bundles are required.
-//
-// This implementation is intended to be relatively performant compared to the naive approach of serially fetching
-// and yielding each bundle in turn, and is intended for use cases where the caller is actively consuming large
-// sections of the log contents.
-func (s *logResourceStore) StreamEntryRange(ctx context.Context, fromEntry, N, treeSize uint64) (next func() (ri layout.RangeInfo, bundle []byte, err error), cancel func()) {
-	klog.Infof("StreamEntryRange from %d, N %d, treeSize %d", fromEntry, N, treeSize)
-
-	return streamAdaptor(ctx, s.getEntryBundle, fromEntry, N, treeSize)
-}
-
 // getbundleFn is a function which knows how to fetch a single entry bundle from the specified address.
 type getBundleFn func(ctx context.Context, bundleIdx uint64, partial uint8) ([]byte, error)
+
+// getSizeFn is a function which knows how to return a tree size.
+type getSizeFn func(ctx context.Context) (uint64, error)
 
 // streamAdaptor uses the provided function to produce a stream of entry bundles accesible via the returned functions.
 //
@@ -415,8 +402,9 @@ type getBundleFn func(ctx context.Context, bundleIdx uint64, partial uint8) ([]b
 //
 // This adaptor is optimised for the case where calling getBundle has some appreciable latency, and works
 // around that by maintaining a read-ahead cache of subsequent bundles.
+//
 // TODO(al): consider whether this should be factored out as a storage mix-in.
-func streamAdaptor(ctx context.Context, getBundle getBundleFn, fromEntry, N, treeSize uint64) (next func() (ri layout.RangeInfo, bundle []byte, err error), cancel func()) {
+func streamAdaptor(ctx context.Context, getSize getSizeFn, getBundle getBundleFn, fromEntry uint64) (next func() (ri layout.RangeInfo, bundle []byte, err error), cancel func()) {
 	// bundleOrErr represents a fetched entry bundle and its params, or an error if we couldn't fetch it for
 	// some reason.
 	type bundleOrErr struct {
@@ -448,30 +436,53 @@ func streamAdaptor(ctx context.Context, getBundle getBundleFn, fromEntry, N, tre
 			tokens <- struct{}{}
 		}
 
-		// For each bundle, pop a future into the bundles channel and kick off an async request
-		// to resolve it.
-		for ri := range layout.Range(fromEntry, N, treeSize) {
+		// We'll keep looping around until told to exit.
+		for {
+			// Check afresh what size the tree is so we can keep streaming entries as the tree grows.
+			treeSize, err := getSize(ctx)
+			if err != nil {
+				klog.Warningf("streamAdaptor: failed to get current tree size: %v", err)
+				continue
+			}
+			klog.Infof("tick from %d to %d", fromEntry, treeSize)
+
+			// For each bundle, pop a future into the bundles channel and kick off an async request
+			// to resolve it.
+			for ri := range layout.Range(fromEntry, treeSize, treeSize) {
+				select {
+				case <-exit:
+					break
+				case <-tokens:
+					// We'll return a token below, once the bundle is fetched _and_ is being yielded.
+				}
+
+				c := make(chan bundleOrErr, 1)
+				go func(ri layout.RangeInfo) {
+					b, err := getBundle(ctx, ri.Index, ri.Partial)
+					c <- bundleOrErr{ri: ri, b: b, err: err}
+				}(ri)
+
+				f := func() bundleOrErr {
+					b := <-c
+					// We're about to yield a value, so we can now return the token and unblock another fetch.
+					tokens <- struct{}{}
+					return b
+				}
+
+				bundles <- f
+			}
+
+			// Next loop, carry on from where we got to.
+			fromEntry = treeSize
+
 			select {
 			case <-exit:
+				klog.Infof("streamAdaptor exiting")
 				return
-			case <-tokens:
-				// We'll return a token below, once the bundle is fetched _and_ is being yielded.
+			case <-time.After(time.Second):
+				// We've caught up with and hit the end of the tree, so wait a bit before looping to avoid busy waiting.
+				// TODO(al): could consider a shallow channel of sizes here.
 			}
-
-			c := make(chan bundleOrErr, 1)
-			go func(ri layout.RangeInfo) {
-				b, err := getBundle(ctx, ri.Index, ri.Partial)
-				c <- bundleOrErr{ri: ri, b: b, err: err}
-			}(ri)
-
-			f := func() bundleOrErr {
-				b := <-c
-				// We're about to yield a value, so we can now return the token and unblock another fetch.
-				tokens <- struct{}{}
-				return b
-			}
-
-			bundles <- f
 		}
 	}()
 
@@ -479,13 +490,25 @@ func streamAdaptor(ctx context.Context, getBundle getBundleFn, fromEntry, N, tre
 		close(exit)
 	}
 
+	var streamErr error
 	next = func() (layout.RangeInfo, []byte, error) {
-		f, ok := <-bundles
-		if !ok {
-			return layout.RangeInfo{}, nil, errors.New("no more bundles")
+		if streamErr != nil {
+			return layout.RangeInfo{}, nil, streamErr
 		}
-		b := f()
-		return b.ri, b.b, b.err
+		select {
+		case f, ok := <-bundles:
+			if !ok {
+				streamErr = errors.New("stream stopped")
+				return layout.RangeInfo{}, nil, streamErr
+			}
+			b := f()
+			if b.err != nil {
+				streamErr = b.err
+			}
+			return b.ri, b.b, b.err
+		default:
+		}
+		return layout.RangeInfo{}, nil, tessera.ErrNoMoreEntries
 	}
 	return next, cancel
 }
@@ -1144,27 +1167,10 @@ func (e *entryStreamReader[T]) Next() (uint64, T, error) {
 	return rIdx, t, nil
 }
 
-// LogFollower provides read-only access to the log with an API tailored to bulk in-order
-// reads of entry bundles.
-//
-// TODO(al): factor this out into higher layer when it's ready.
-type LogFollower interface {
-	// IntegratedSize returns the size of the currently integrated tree.
-	// Note that this _may_ be larger than the currently _published_ checkpoint.
-	IntegratedSize(ctx context.Context) (uint64, error)
-
-	// StreamEntryBundles returns functions which act like a pull iterator for subsequent entry bundles starting at the given index.
-	//
-	// Implementations must:
-	//  - truncate the requested range if any or all of it is beyond the extent of the currently integrated tree.
-	//  - cease iterating if next() produces an error, or stop is called. next should continue to return an error if called again after either of these cases.
-	StreamEntryRange(ctx context.Context, fromIdx, N, treeSize uint64) (next func() (layout.RangeInfo, []byte, error), stop func())
-}
-
 // Populate uses entry data from the log to populate the dedupe storage.
 //
 // TODO(al):  add details
-func (d *DedupStorage) Populate(ctx context.Context, lf LogFollower, bundleFn BundleHasherFunc) error {
+func (d *DedupStorage) Populate(ctx context.Context, lr tessera.LogReader, bundleFn func([]byte) ([][]byte, error)) {
 	errOutOfSync := errors.New("out-of-sync")
 
 	t := time.NewTicker(time.Second)
@@ -1178,10 +1184,10 @@ func (d *DedupStorage) Populate(ctx context.Context, lf LogFollower, bundleFn Bu
 	for {
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return
 		case <-t.C:
 		}
-		size, err := lf.IntegratedSize(ctx)
+		size, err := lr.IntegratedSize(ctx)
 		if err != nil {
 			klog.Errorf("Populate: IntegratedSize(): %v", err)
 			continue
@@ -1215,7 +1221,7 @@ func (d *DedupStorage) Populate(ctx context.Context, lf LogFollower, bundleFn Bu
 				// If this is the first time around the loop we need to start the stream of entries now that we know where we want to
 				// start reading from:
 				if entryReader == nil {
-					next, st := lf.StreamEntryRange(ctx, followFrom, size-followFrom, size)
+					next, st := lr.StreamEntries(ctx, followFrom)
 					stop = st
 					entryReader = newEntryStreamReader(next, bundleFn)
 				}
@@ -1306,12 +1312,9 @@ func (d *DedupStorage) Populate(ctx context.Context, lf LogFollower, bundleFn Bu
 	}
 }
 
-// BundleHasherFunc is the signature of a function which knows how to parse an entry bundle and calculate leaf hashes for its entries.
-type BundleHasherFunc func(entryBundle []byte) (LeafHashes [][]byte, err error)
-
 // NewMigrationTarget creates a new GCP storage for the MigrationTarget lifecycle mode.
 // TODO(al): Make this work with the new tessera package lifecycle c'tors.
-func NewMigrationTarget(ctx context.Context, cfg Config, bundleHasher BundleHasherFunc) (*MigrationStorage, error) {
+func NewMigrationTarget(ctx context.Context, cfg Config, bundleHasher func([]byte) ([][]byte, error)) (*MigrationStorage, error) {
 	c, err := gcs.NewClient(ctx, gcs.WithJSONReads())
 	if err != nil {
 		return nil, fmt.Errorf("failed to create GCS client: %v", err)
@@ -1345,7 +1348,7 @@ func NewMigrationTarget(ctx context.Context, cfg Config, bundleHasher BundleHash
 type MigrationStorage struct {
 	s            *Storage
 	dbPool       *spanner.Client
-	bundleHasher BundleHasherFunc
+	bundleHasher func([]byte) ([][]byte, error)
 	sequencer    sequencer
 	logStore     *logResourceStore
 	entriesPath  func(uint64, uint8) string

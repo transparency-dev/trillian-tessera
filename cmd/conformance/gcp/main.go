@@ -17,7 +17,6 @@ package main
 
 import (
 	"context"
-	"crypto/sha256"
 	"errors"
 	"flag"
 	"fmt"
@@ -26,7 +25,6 @@ import (
 	"time"
 
 	tessera "github.com/transparency-dev/trillian-tessera"
-	"github.com/transparency-dev/trillian-tessera/api"
 	"github.com/transparency-dev/trillian-tessera/storage/gcp"
 	"golang.org/x/mod/sumdb/note"
 	"golang.org/x/net/http2"
@@ -64,27 +62,13 @@ func main() {
 		klog.Exitf("Failed to create new GCP storage: %v", err)
 	}
 
-	dedups := make([]func(tessera.AddFn) tessera.AddFn, 0, 2)
-	dedups = append(dedups, tessera.InMemoryDedupe(256))
+	var antispam tessera.Antispam
 	// PersistentDedup is currently experimental, so there's no terraform or documentation yet!
 	if *persistentDedup {
-		dd, err := gcp.NewDedupe(ctx, fmt.Sprintf("%s_dedup", *spanner))
+		antispam, err = gcp.NewDedupe(ctx, fmt.Sprintf("%s_dedup", *spanner))
 		if err != nil {
 			klog.Exitf("Failed to create new GCP dedupe: %v", err)
 		}
-		dedups = append(dedups, dd.Decorator())
-
-		// TODO(al): Figure out how this will be for realz.
-		follower, ok := driver.(gcp.LogFollower)
-		if !ok {
-			klog.Exitf("Storage driver %T doesn't support LogFollower", driver)
-		}
-		// Start populating the dedupe data:
-		go func() {
-			if err := dd.Populate(ctx, follower, idHasher); err != nil {
-				klog.Exitf("Populate: %v", err)
-			}
-		}()
 	}
 
 	appender, _, err := tessera.NewAppender(ctx, driver,
@@ -92,7 +76,7 @@ func main() {
 		tessera.WithCheckpointInterval(10*time.Second),
 		tessera.WithBatching(1024, time.Second),
 		tessera.WithPushback(10*4096),
-		tessera.WithAppendDeduplication(dedups...),
+		tessera.WithAntispam(256, antispam),
 	)
 	if err != nil {
 		klog.Exit(err)
@@ -133,20 +117,6 @@ func main() {
 	if err := h1s.ListenAndServe(); err != nil {
 		klog.Exitf("ListenAndServe: %v", err)
 	}
-}
-
-// idHasher returns a list of identity hashes corresponding to entries in the provided bundle.
-func idHasher(bundle []byte) ([][]byte, error) {
-	eb := &api.EntryBundle{}
-	if err := eb.UnmarshalText(bundle); err != nil {
-		return nil, fmt.Errorf("unmarshal: %v", err)
-	}
-	r := make([][]byte, 0, len(eb.Entries))
-	for _, e := range eb.Entries {
-		h := sha256.Sum256(e)
-		r = append(r, h[:])
-	}
-	return r, nil
 }
 
 // storageConfigFromFlags returns a gcp.Config struct populated with values
