@@ -16,12 +16,17 @@ package tessera
 
 import (
 	"context"
+	"crypto/sha256"
+	"errors"
 	"fmt"
 	"time"
 
+	"github.com/transparency-dev/trillian-tessera/api"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
-	"github.com/transparency-dev/trillian-tessera/storage/antispam"
 )
+
+// NoMoreEntries is a sentinel error returned by StreamEntries when no more entries will be returned by calls to the next function.
+var ErrNoMoreEntries = errors.New("no more entries")
 
 // LogReader provides read-only access to the log.
 type LogReader interface {
@@ -46,23 +51,33 @@ type LogReader interface {
 	// it exists.
 	// The expected usage and corresponding behaviours are similar to ReadTile.
 	ReadEntryBundle(ctx context.Context, index uint64, p uint8) ([]byte, error)
-}
 
-// LogFollower provides read-only access to the log with an API tailored to bulk in-order
-// reads of all integrated entry bundles.
-//
-// This API allows the storage implementation to tailor its approach to
-type LogFollower interface {
-	// IntegratedSize returns the size of the currently integrated tree.
-	// Note that this _may_ be larger than the currently _published_ checkpoint.
+	// IntegratedSize returns the current size of the integrated tree.
+	//
+	// This tree will have in place all the static resources the returned size implies, but
+	// there may not yet be a checkpoint for this size signed, witnessed, or published.
+	//
+	// It's ONLY safe to use this value for processes internal to the operation of the log (e.g.
+	// populating antispam data structures); it MUST NOT not be used as a substitute for
+	// reading the checkpoint when only data which has been publicly committed to by the
+	// log should be used. If in doubt, use ReadCheckpoint instead.
 	IntegratedSize(ctx context.Context) (uint64, error)
 
-	// StreamEntryBundles returns functions which act like a pull iterator for subsequent entry bundles starting at the given index.
+	// StreamEntries() returns functions `next` and `stop` which act like a pull iterator for
+	// consecutive entry bundles, starting with the entry bundle which contains the requested entry
+	// index.
 	//
-	// Implementations must:
-	//  - truncate the requested range if any or all of it is beyond the extent of the currently integrated tree.
-	//  - cease iterating if next() produces an error, or cancel is called. next should continue to return an error if called again after either of these cases.
-	StreamEntryRange(ctx context.Context, fromIdx, N, treeSize uint64) (next func() (layout.RangeInfo, []byte, error), cancel func())
+	// Each call to `next` will return raw entry bundle bytes along with a RangeInfo struct which
+	// contains information on which entries within that bundle are to be considered valid.
+	//
+	// next will return ErrNoMoreEntries if it has reached the extent of the current tree, but
+	// later calls will resume returning entry bundles if the tree has grown in the meantime.
+	//
+	// next will cease iterating if either:
+	//   - it produces an error (e.g. via the underlying calls to the log storage)
+	//   - the returned cancel function is called
+	// and will continue to return an error if called again after either of these cases.
+	StreamEntries(ctx context.Context, fromEntryIdx uint64) (next func() (layout.RangeInfo, []byte, error), cancel func())
 }
 
 // Appender allows personalities access to the lifecycle methods associated with logs
@@ -99,21 +114,52 @@ func NewAppender(ctx context.Context, d Driver, opts ...func(*AppendOptions)) (*
 	return a, r, nil
 }
 
+// Antispam describes the contract that an antispam implementation must meet in order to be used via the
+// WithAntispam option below.
 type Antispam interface {
-	AddDecorator() func(AddFn) AddFn
-	Populate(context.Context, antispam.LogFollower, func(entryBundle []byte) ([][]byte, error))
+	// Decorator must return a function which knows how to decorate an Appender's Add function in order
+	// to return an index previously assigned to an entry with the same identity hash, if one exists, or
+	// delegate to the next Add function in the chain otherwise.
+	Decorator() func(AddFn) AddFn
+	// Populate should be a long-running function which uses the provided log reader to build the
+	// antispam index used by the dectorator above.
+	//
+	// Typically, implementations of this function  will tail the contents of the log using the provided
+	// log reader to stream entry bundles from the log, and, for each entry bundle, use the
+	// provided bundle function to convert the bundle into a slice of identity hashes which
+	// corresponds to the entries the bundle contains. These hashes should then be used to populate
+	// some form of an identity hash -> index mapping.
+	//
+	// This function will be called automatically by Tessera, and is expected to block until the context
+	// is done.
+	Populate(context.Context, LogReader, func(entryBundle []byte) ([][]byte, error))
 }
 
 func WithAntispam(inMemEntries uint, as Antispam) func(*AppendOptions) {
 	return func(o *AppendOptions) {
 		o.AddDecorators = append(o.AddDecorators, InMemoryDedupe(inMemEntries))
 		if as != nil {
-			o.AddDecorators = append(o.AddDecorators, as.AddDecorator())
-			o.Followers = append(o.Followers, func(ctx context.Context, lf LogFollower) error {
-				return as.Populate(ctx, lf, idHasher)
+			o.AddDecorators = append(o.AddDecorators, as.Decorator())
+			o.Followers = append(o.Followers, func(ctx context.Context, lr LogReader) {
+				as.Populate(ctx, lr, defaultIDHasher)
 			})
 		}
 	}
+}
+
+// defaultIDHasher returns a list of identity hashes corresponding to entries in the provided bundle.
+// Currently, these are simply SHA256 hashes of the raw byte of each entry.
+func defaultIDHasher(bundle []byte) ([][]byte, error) {
+	eb := &api.EntryBundle{}
+	if err := eb.UnmarshalText(bundle); err != nil {
+		return nil, fmt.Errorf("unmarshal: %v", err)
+	}
+	r := make([][]byte, 0, len(eb.Entries))
+	for _, e := range eb.Entries {
+		h := sha256.Sum256(e)
+		r = append(r, h[:])
+	}
+	return r, nil
 }
 
 // AppendOptions holds settings for all storage implementations.
@@ -132,7 +178,7 @@ type AppendOptions struct {
 	CheckpointInterval time.Duration
 
 	AddDecorators []func(AddFn) AddFn
-	Followers     []func(context.Context, LogFollower) error
+	Followers     []func(context.Context, LogReader)
 }
 
 // resolveAppendOptions turns a variadic array of storage options into an AppendOptions instance.
