@@ -424,7 +424,7 @@ func (a *appender) initialise() error {
 	// - The mutex `Lock()` ensures that multiple concurrent calls to this function within a task are serialised.
 	// - The POSIX `lockFile()` ensures that distinct tasks are serialised.
 	a.s.mu.Lock()
-	unlock, err := a.s.lockFile("initialise.lock")
+	unlock, err := a.s.lockFile("treeState.lock")
 	if err != nil {
 		panic(err)
 	}
@@ -499,7 +499,7 @@ func (s *Storage) ensureVersion(version uint16) error {
 func (s *Storage) writeTreeState(size uint64, root []byte) error {
 	raw, err := json.Marshal(treeState{Size: size, Root: root})
 	if err != nil {
-		return fmt.Errorf("json.Marshal: %v", err)
+		return fmt.Errorf("error in Marshal: %v", err)
 	}
 
 	if err := s.overwrite(filepath.Join(stateDir, "treeState"), raw); err != nil {
@@ -513,11 +513,11 @@ func (s *Storage) readTreeState() (uint64, []byte, error) {
 	p := filepath.Join(s.path, stateDir, "treeState")
 	raw, err := os.ReadFile(p)
 	if err != nil {
-		return 0, nil, fmt.Errorf("os.ReadFile(%q): %w", p, err)
+		return 0, nil, fmt.Errorf("error in ReadFile(%q): %w", p, err)
 	}
 	ts := &treeState{}
 	if err := json.Unmarshal(raw, ts); err != nil {
-		return 0, nil, fmt.Errorf("json.Unmarshal: %v", err)
+		return 0, nil, fmt.Errorf("error in Unmarshal: %v", err)
 	}
 	return ts.Size, ts.Root, nil
 }
@@ -729,7 +729,7 @@ func (m *MigrationStorage) initialise() error {
 	// - The mutex `Lock()` ensures that multiple concurrent calls to this function within a task are serialised.
 	// - The POSIX `lockFile()` ensures that distinct tasks are serialised.
 	m.s.mu.Lock()
-	unlock, err := m.s.lockFile("initialise.lock")
+	unlock, err := m.s.lockFile("treeState.lock")
 	if err != nil {
 		panic(err)
 	}
