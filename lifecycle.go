@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/transparency-dev/trillian-tessera/api/layout"
+	"github.com/transparency-dev/trillian-tessera/storage/antispam"
 )
 
 // LogReader provides read-only access to the log.
@@ -45,6 +46,23 @@ type LogReader interface {
 	// it exists.
 	// The expected usage and corresponding behaviours are similar to ReadTile.
 	ReadEntryBundle(ctx context.Context, index uint64, p uint8) ([]byte, error)
+}
+
+// LogFollower provides read-only access to the log with an API tailored to bulk in-order
+// reads of all integrated entry bundles.
+//
+// This API allows the storage implementation to tailor its approach to
+type LogFollower interface {
+	// IntegratedSize returns the size of the currently integrated tree.
+	// Note that this _may_ be larger than the currently _published_ checkpoint.
+	IntegratedSize(ctx context.Context) (uint64, error)
+
+	// StreamEntryBundles returns functions which act like a pull iterator for subsequent entry bundles starting at the given index.
+	//
+	// Implementations must:
+	//  - truncate the requested range if any or all of it is beyond the extent of the currently integrated tree.
+	//  - cease iterating if next() produces an error, or cancel is called. next should continue to return an error if called again after either of these cases.
+	StreamEntryRange(ctx context.Context, fromIdx, N, treeSize uint64) (next func() (layout.RangeInfo, []byte, error), cancel func())
 }
 
 // Appender allows personalities access to the lifecycle methods associated with logs
@@ -81,9 +99,20 @@ func NewAppender(ctx context.Context, d Driver, opts ...func(*AppendOptions)) (*
 	return a, r, nil
 }
 
-func WithAppendDeduplication(decorators ...func(AddFn) AddFn) func(*AppendOptions) {
+type Antispam interface {
+	AddDecorator() func(AddFn) AddFn
+	Populate(context.Context, antispam.LogFollower, func(entryBundle []byte) ([][]byte, error))
+}
+
+func WithAntispam(inMemEntries uint, as Antispam) func(*AppendOptions) {
 	return func(o *AppendOptions) {
-		o.AddDecorators = decorators
+		o.AddDecorators = append(o.AddDecorators, InMemoryDedupe(inMemEntries))
+		if as != nil {
+			o.AddDecorators = append(o.AddDecorators, as.AddDecorator())
+			o.Followers = append(o.Followers, func(ctx context.Context, lf LogFollower) error {
+				return as.Populate(ctx, lf, idHasher)
+			})
+		}
 	}
 }
 
@@ -103,6 +132,7 @@ type AppendOptions struct {
 	CheckpointInterval time.Duration
 
 	AddDecorators []func(AddFn) AddFn
+	Followers     []func(context.Context, LogFollower) error
 }
 
 // resolveAppendOptions turns a variadic array of storage options into an AppendOptions instance.
