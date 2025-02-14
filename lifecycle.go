@@ -70,8 +70,8 @@ type LogReader interface {
 	// Each call to `next` will return raw entry bundle bytes along with a RangeInfo struct which
 	// contains information on which entries within that bundle are to be considered valid.
 	//
-	// next will return ErrNoMoreEntries if it has reached the extent of the current tree, but
-	// later calls will resume returning entry bundles if the tree has grown in the meantime.
+	// next will hang if it has reached the extent of the current tree, and return once either
+	// the tree has grown and more entries are available, or cancel was called.
 	//
 	// next will cease iterating if either:
 	//   - it produces an error (e.g. via the underlying calls to the log storage)

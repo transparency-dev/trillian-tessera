@@ -495,20 +495,17 @@ func streamAdaptor(ctx context.Context, getSize getSizeFn, getBundle getBundleFn
 		if streamErr != nil {
 			return layout.RangeInfo{}, nil, streamErr
 		}
-		select {
-		case f, ok := <-bundles:
-			if !ok {
-				streamErr = errors.New("stream stopped")
-				return layout.RangeInfo{}, nil, streamErr
-			}
-			b := f()
-			if b.err != nil {
-				streamErr = b.err
-			}
-			return b.ri, b.b, b.err
-		default:
+
+		f, ok := <-bundles
+		if !ok {
+			streamErr = tessera.ErrNoMoreEntries
+			return layout.RangeInfo{}, nil, streamErr
 		}
-		return layout.RangeInfo{}, nil, tessera.ErrNoMoreEntries
+		b := f()
+		if b.err != nil {
+			streamErr = b.err
+		}
+		return b.ri, b.b, b.err
 	}
 	return next, cancel
 }

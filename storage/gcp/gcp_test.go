@@ -399,15 +399,7 @@ func TestStreamEntries(t *testing.T) {
 		gotRI, _, gotErr := next()
 		if gotErr != nil {
 			if errors.Is(gotErr, tessera.ErrNoMoreEntries) {
-				if seenEntries == uint64(logSize) {
-					// We've fetched all the entries from the original tree size, now we'll make
-					// the tree appear to have grown to the final size.
-					// The stream should start returning bundles again until we've consumed them all.
-					t.Log("Reached logSize, growing tree")
-					logSize = logSize2
-					time.Sleep(time.Second)
-				}
-				continue
+				break
 			}
 			t.Fatalf("gotErr after %d: %v", seenEntries, gotErr)
 		}
@@ -417,10 +409,17 @@ func TestStreamEntries(t *testing.T) {
 		seenEntries += uint64(gotRI.N)
 		t.Logf("got RI %d / %d", gotRI.Index, seenEntries)
 
-		if seenEntries == uint64(logSize2) {
-			// We've seen all the entries we created
+		switch seenEntries {
+		case uint64(logSize1):
+			// We've fetched all the entries from the original tree size, now we'll make
+			// the tree appear to have grown to the final size.
+			// The stream should start returning bundles again until we've consumed them all.
+			t.Log("Reached logSize, growing tree")
+			logSize = logSize2
+			time.Sleep(time.Second)
+		case uint64(logSize2):
+			// We've seen all the entries we created, stop the iterator
 			stop()
-			break
 		}
 	}
 }
