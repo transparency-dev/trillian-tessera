@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1739467091336,
+  "lastUpdate": 1739557883797,
   "repoUrl": "https://github.com/transparency-dev/trillian-tessera",
   "entries": {
     "Benchmark": [
@@ -7680,6 +7680,126 @@ window.BENCHMARK_DATA = {
             "value": 3035,
             "unit": "allocs/op",
             "extra": "4084 times\n4 procs"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "hblauzvern@google.com",
+            "name": "Hayden B",
+            "username": "haydentherapper"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "6d36a7e7714cda791de0fb1ef5f54f2cfc1e0fb0",
+          "message": "Lock initialise to prevent concurrent initialisation  (#480)\n\n* Lock initialise to prevent concurrent initialisation\r\n\r\nIf two tasks attempted to initialise an empty checkpoint, and one task\r\nstalled while the other began accepting traffic, then the tree state and\r\ncheckpoint would be invalidated by the stalled task. This guarantees\r\ninitialisation only once per log.",
+          "timestamp": "2025-02-14T18:30:37Z",
+          "tree_id": "6718f6654db7fe9dbedca7ed7eaa8fa943a2f63b",
+          "url": "https://github.com/transparency-dev/trillian-tessera/commit/6d36a7e7714cda791de0fb1ef5f54f2cfc1e0fb0"
+        },
+        "date": 1739557883290,
+        "tool": "go",
+        "benches": [
+          {
+            "name": "BenchmarkDedupe",
+            "value": 4760041,
+            "unit": "ns/op\t  703657 B/op\t   19706 allocs/op",
+            "extra": "266 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDedupe - ns/op",
+            "value": 4760041,
+            "unit": "ns/op",
+            "extra": "266 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDedupe - B/op",
+            "value": 703657,
+            "unit": "B/op",
+            "extra": "266 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDedupe - allocs/op",
+            "value": 19706,
+            "unit": "allocs/op",
+            "extra": "266 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLeafBundle_UnmarshalText",
+            "value": 7196,
+            "unit": "ns/op\t    6528 B/op\t       1 allocs/op",
+            "extra": "167580 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLeafBundle_UnmarshalText - ns/op",
+            "value": 7196,
+            "unit": "ns/op",
+            "extra": "167580 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLeafBundle_UnmarshalText - B/op",
+            "value": 6528,
+            "unit": "B/op",
+            "extra": "167580 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLeafBundle_UnmarshalText - allocs/op",
+            "value": 1,
+            "unit": "allocs/op",
+            "extra": "167580 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkCheckpointUnsafe",
+            "value": 116.8,
+            "unit": "ns/op\t     112 B/op\t       3 allocs/op",
+            "extra": "10194333 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkCheckpointUnsafe - ns/op",
+            "value": 116.8,
+            "unit": "ns/op",
+            "extra": "10194333 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkCheckpointUnsafe - B/op",
+            "value": 112,
+            "unit": "B/op",
+            "extra": "10194333 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkCheckpointUnsafe - allocs/op",
+            "value": 3,
+            "unit": "allocs/op",
+            "extra": "10194333 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkIntegrate",
+            "value": 351204,
+            "unit": "ns/op\t  290135 B/op\t    3033 allocs/op",
+            "extra": "3819 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkIntegrate - ns/op",
+            "value": 351204,
+            "unit": "ns/op",
+            "extra": "3819 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkIntegrate - B/op",
+            "value": 290135,
+            "unit": "B/op",
+            "extra": "3819 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkIntegrate - allocs/op",
+            "value": 3033,
+            "unit": "allocs/op",
+            "extra": "3819 times\n4 procs"
           }
         ]
       }
