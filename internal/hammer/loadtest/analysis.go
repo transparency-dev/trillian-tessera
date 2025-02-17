@@ -123,7 +123,6 @@ func (a *HammerAnalyser) errorLoop(ctx context.Context) {
 			if lastErrCount > 0 {
 				klog.Warningf("(%d x) %s", lastErrCount, lastErr)
 				lastErrCount = 0
-
 			}
 		case err := <-a.ErrChan:
 			if errors.Is(err, ErrRetry) {
@@ -137,6 +136,7 @@ func (a *HammerAnalyser) errorLoop(ctx context.Context) {
 				lastErrCount = 0
 				continue
 			}
+			lastErr = es
 			lastErrCount++
 		}
 	}
