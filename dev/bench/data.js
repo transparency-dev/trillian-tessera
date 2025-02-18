@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1739829301872,
+  "lastUpdate": 1739898367320,
   "repoUrl": "https://github.com/transparency-dev/trillian-tessera",
   "entries": {
     "Benchmark": [
@@ -8160,6 +8160,150 @@ window.BENCHMARK_DATA = {
             "value": 3038,
             "unit": "allocs/op",
             "extra": "4173 times\n4 procs"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "mhutchinson@gmail.com",
+            "name": "Martin Hutchinson",
+            "username": "mhutchinson"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "5165141dc2107d8a72f4f43ca4c588b29b67b9de",
+          "message": "Defined witness policy configuration (#488)\n\nThis allows the required witnesses to be defined and the theshold\r\npolicies that apply within each group. Arbitrarily nested structures can\r\nbe built, each with different numbers of signatures.\r\n\r\nEach WitnessGroup provides the URLs at which the witness can be reached\r\nto perform witnessing, and a function that determines if the group is\r\nsatisfied.\r\n\r\nThis format is consistent with the only other known witness policy\r\nconfiguration format out there:\r\nhttps://git.glasklar.is/sigsum/core/sigsum-go/-/blob/main/doc/policy.md\r\n\r\nTowards #309.",
+          "timestamp": "2025-02-18T17:05:12Z",
+          "tree_id": "0502237e5a2727bf6ae72d8a646b8eadb17d602c",
+          "url": "https://github.com/transparency-dev/trillian-tessera/commit/5165141dc2107d8a72f4f43ca4c588b29b67b9de"
+        },
+        "date": 1739898366916,
+        "tool": "go",
+        "benches": [
+          {
+            "name": "BenchmarkDedupe",
+            "value": 4447211,
+            "unit": "ns/op\t  699190 B/op\t   19661 allocs/op",
+            "extra": "261 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDedupe - ns/op",
+            "value": 4447211,
+            "unit": "ns/op",
+            "extra": "261 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDedupe - B/op",
+            "value": 699190,
+            "unit": "B/op",
+            "extra": "261 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDedupe - allocs/op",
+            "value": 19661,
+            "unit": "allocs/op",
+            "extra": "261 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWitnessGroupSatisfaction",
+            "value": 232975,
+            "unit": "ns/op\t    3152 B/op\t      36 allocs/op",
+            "extra": "5430 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWitnessGroupSatisfaction - ns/op",
+            "value": 232975,
+            "unit": "ns/op",
+            "extra": "5430 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWitnessGroupSatisfaction - B/op",
+            "value": 3152,
+            "unit": "B/op",
+            "extra": "5430 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWitnessGroupSatisfaction - allocs/op",
+            "value": 36,
+            "unit": "allocs/op",
+            "extra": "5430 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLeafBundle_UnmarshalText",
+            "value": 8320,
+            "unit": "ns/op\t    6528 B/op\t       1 allocs/op",
+            "extra": "163221 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLeafBundle_UnmarshalText - ns/op",
+            "value": 8320,
+            "unit": "ns/op",
+            "extra": "163221 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLeafBundle_UnmarshalText - B/op",
+            "value": 6528,
+            "unit": "B/op",
+            "extra": "163221 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLeafBundle_UnmarshalText - allocs/op",
+            "value": 1,
+            "unit": "allocs/op",
+            "extra": "163221 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkCheckpointUnsafe",
+            "value": 114.7,
+            "unit": "ns/op\t     112 B/op\t       3 allocs/op",
+            "extra": "10394272 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkCheckpointUnsafe - ns/op",
+            "value": 114.7,
+            "unit": "ns/op",
+            "extra": "10394272 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkCheckpointUnsafe - B/op",
+            "value": 112,
+            "unit": "B/op",
+            "extra": "10394272 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkCheckpointUnsafe - allocs/op",
+            "value": 3,
+            "unit": "allocs/op",
+            "extra": "10394272 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkIntegrate",
+            "value": 347806,
+            "unit": "ns/op\t  290346 B/op\t    3036 allocs/op",
+            "extra": "4120 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkIntegrate - ns/op",
+            "value": 347806,
+            "unit": "ns/op",
+            "extra": "4120 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkIntegrate - B/op",
+            "value": 290346,
+            "unit": "B/op",
+            "extra": "4120 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkIntegrate - allocs/op",
+            "value": 3036,
+            "unit": "allocs/op",
+            "extra": "4120 times\n4 procs"
           }
         ]
       }
