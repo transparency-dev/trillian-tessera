@@ -31,10 +31,10 @@ type policyComponent interface {
 	// witnesses involved in this policy component.
 	Satisfied(cp []byte) bool
 
-	// Urls returns the URLs for requesting a counter signature from all
+	// URLs returns the URLs for requesting a counter signature from all
 	// witnesses that are involved in determining the satisfaction of this
 	// PolicyComponent.
-	Urls() []*url.URL
+	URLs() []*url.URL
 }
 
 // NewWitness returns a Witness given a verifier key and the root URL for where this
@@ -45,7 +45,7 @@ func NewWitness(vkey string, witnessRoot *url.URL) (Witness, error) {
 		return Witness{}, err
 	}
 	// "key hash" MUST be a lowercase hex-encoded SHA-256 hash of a 32-byte Ed25519 public key.
-	// This expression cuts off the identity name and hash
+	// This expression cuts off the identity name and hash.
 	key64 := strings.SplitAfterN(vkey, "+", 3)[2]
 	key, err := base64.StdEncoding.DecodeString(key64)
 	if err != nil {
@@ -62,7 +62,7 @@ func NewWitness(vkey string, witnessRoot *url.URL) (Witness, error) {
 }
 
 // Witness represents a single witness that can be reached in order to perform a witnessing operation.
-// The Urls() method returns the URL where it can be reached for witnessing, and the Satisfied method
+// The URLs() method returns the URL where it can be reached for witnessing, and the Satisfied method
 // provides a predicate to check whether this witness has signed a checkpoint.
 type Witness struct {
 	Key note.Verifier
@@ -81,10 +81,10 @@ func (w Witness) Satisfied(cp []byte) bool {
 	return len(n.Sigs) == 1
 }
 
-// Urls returns the single URL at which this witness can be reached.
+// URLs returns the single URL at which this witness can be reached.
 // The return type is a slice in order to allow this method to match the same signature
 // of WitnessGroup.
-func (w Witness) Urls() []*url.URL {
+func (w Witness) URLs() []*url.URL {
 	return []*url.URL{w.Url}
 }
 
@@ -133,13 +133,13 @@ func (wg WitnessGroup) Satisfied(cp []byte) bool {
 	return false
 }
 
-// Urls returns the URLs for requesting a counter signature from all
+// URLs returns the URLs for requesting a counter signature from all
 // witnesses that are involved in determining the satisfaction of this
 // PolicyComponent.
-func (wg WitnessGroup) Urls() []*url.URL {
+func (wg WitnessGroup) URLs() []*url.URL {
 	urls := make([]*url.URL, 0)
 	for _, c := range wg.Components {
-		urls = append(urls, c.Urls()...)
+		urls = append(urls, c.URLs()...)
 	}
 	return urls
 }

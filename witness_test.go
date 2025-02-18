@@ -125,31 +125,31 @@ func TestWitnessGroup_Satisfied(t *testing.T) {
 	}
 }
 
-func TestWitnessGroup_Urls(t *testing.T) {
+func TestWitnessGroup_URLs(t *testing.T) {
 	testCases := []struct {
 		desc         string
 		group        tessera.WitnessGroup
-		expectedUrls []string
+		expectedURLs []string
 	}{
 		{
 			desc:         "witness 1",
 			group:        tessera.NewWitnessGroup(1, wit1),
-			expectedUrls: []string{"https://b1.example.com/b490a162bf632bdd72181cd9eb5b8ab8b13e4e973a9ce9a12a0810fd981bc186/add"},
+			expectedURLs: []string{"https://b1.example.com/b490a162bf632bdd72181cd9eb5b8ab8b13e4e973a9ce9a12a0810fd981bc186/add"},
 		},
 		{
 			desc:         "witness 2",
 			group:        tessera.NewWitnessGroup(1, wit2),
-			expectedUrls: []string{"https://b1.example.com/7a99cf3d04ea875d413c4b3fb70d74ef483efaf667eac56e35f0b96a112b1c84/add"},
+			expectedURLs: []string{"https://b1.example.com/7a99cf3d04ea875d413c4b3fb70d74ef483efaf667eac56e35f0b96a112b1c84/add"},
 		},
 		{
 			desc:         "witness 3",
 			group:        tessera.NewWitnessGroup(1, wit3),
-			expectedUrls: []string{"https://b2.example.com/ae59f4e59ea1802501b6000f875f09eb49d267055d4a1df8b6d862edc004334c/add"},
+			expectedURLs: []string{"https://b2.example.com/ae59f4e59ea1802501b6000f875f09eb49d267055d4a1df8b6d862edc004334c/add"},
 		},
 		{
 			desc:  "all witnesses in one group",
 			group: tessera.NewWitnessGroup(1, wit1, wit2, wit3),
-			expectedUrls: []string{
+			expectedURLs: []string{
 				"https://b1.example.com/b490a162bf632bdd72181cd9eb5b8ab8b13e4e973a9ce9a12a0810fd981bc186/add",
 				"https://b1.example.com/7a99cf3d04ea875d413c4b3fb70d74ef483efaf667eac56e35f0b96a112b1c84/add",
 				"https://b2.example.com/ae59f4e59ea1802501b6000f875f09eb49d267055d4a1df8b6d862edc004334c/add",
@@ -158,7 +158,7 @@ func TestWitnessGroup_Urls(t *testing.T) {
 		{
 			desc:  "all witnesses with duplicates in nests", // This currently expects duplicates, but this behaviour may change
 			group: tessera.NewWitnessGroup(2, tessera.NewWitnessGroup(1, wit1, wit2), tessera.NewWitnessGroup(1, wit1, wit3)),
-			expectedUrls: []string{
+			expectedURLs: []string{
 				"https://b1.example.com/b490a162bf632bdd72181cd9eb5b8ab8b13e4e973a9ce9a12a0810fd981bc186/add",
 				"https://b1.example.com/b490a162bf632bdd72181cd9eb5b8ab8b13e4e973a9ce9a12a0810fd981bc186/add",
 				"https://b1.example.com/7a99cf3d04ea875d413c4b3fb70d74ef483efaf667eac56e35f0b96a112b1c84/add",
@@ -168,16 +168,16 @@ func TestWitnessGroup_Urls(t *testing.T) {
 	}
 	for _, tC := range testCases {
 		t.Run(tC.desc, func(t *testing.T) {
-			gotUrls := tC.group.Urls()
-			gotStrings := make([]string, len(gotUrls))
-			for i, u := range gotUrls {
+			gotURLs := tC.group.URLs()
+			gotStrings := make([]string, len(gotURLs))
+			for i, u := range gotURLs {
 				gotStrings[i] = u.String()
 			}
 			slices.Sort(gotStrings)
-			slices.Sort(tC.expectedUrls)
+			slices.Sort(tC.expectedURLs)
 
-			if !slices.Equal(gotStrings, tC.expectedUrls) {
-				t.Errorf("Expected %s but got %s", tC.expectedUrls, gotStrings)
+			if !slices.Equal(gotStrings, tC.expectedURLs) {
+				t.Errorf("Expected %s but got %s", tC.expectedURLs, gotStrings)
 			}
 		})
 	}
