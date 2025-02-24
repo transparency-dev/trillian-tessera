@@ -301,6 +301,16 @@ func (s *Storage) ReadEntryBundle(ctx context.Context, index uint64, p uint8) ([
 	return entryBundle, nil
 }
 
+func (s *Storage) IntegratedSize(ctx context.Context) (uint64, error) {
+	return 0, errors.New("unimplemented")
+}
+
+func (s *Storage) StreamEntries(ctx context.Context, fromEntry uint64) (next func() (ri layout.RangeInfo, bundle []byte, err error), cancel func()) {
+	return func() (layout.RangeInfo, []byte, error) {
+		return layout.RangeInfo{}, nil, errors.New("unimplemented")
+	}, func() {}
+}
+
 func (s *Storage) writeEntryBundle(ctx context.Context, tx *sql.Tx, index uint64, size uint32, entryBundle []byte) error {
 	if _, err := tx.ExecContext(ctx, replaceTiledLeavesSQL, index, size, entryBundle); err != nil {
 		klog.Errorf("Failed to execute replaceTiledLeavesSQL: %v", err)
