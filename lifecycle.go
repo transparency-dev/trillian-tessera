@@ -111,6 +111,9 @@ func NewAppender(ctx context.Context, d Driver, opts ...func(*AppendOptions)) (*
 	for i := len(resolved.AddDecorators) - 1; i >= 0; i-- {
 		a.Add = resolved.AddDecorators[i](a.Add)
 	}
+	for _, f := range resolved.Followers {
+		go f(ctx, r)
+	}
 	return a, r, nil
 }
 
