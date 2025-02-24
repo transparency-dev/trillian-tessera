@@ -23,6 +23,7 @@ import (
 	"os"
 	"reflect"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -353,14 +354,15 @@ func TestStreamEntries(t *testing.T) {
 	logSize1 := 12345
 	logSize2 := 100045
 
-	logSize := logSize1
+	var logSize atomic.Uint64
+	logSize.Store(uint64(logSize1))
 
 	s := &LogReader{
 		lrs: logResourceStore{
 			objStore:    m,
 			entriesPath: layout.EntriesPath,
 		},
-		integratedSize: func(context.Context) (uint64, error) { return uint64(logSize), nil },
+		integratedSize: func(context.Context) (uint64, error) { return logSize.Load(), nil },
 	}
 
 	// Populate entry bundles:
@@ -415,7 +417,7 @@ func TestStreamEntries(t *testing.T) {
 			// the tree appear to have grown to the final size.
 			// The stream should start returning bundles again until we've consumed them all.
 			t.Log("Reached logSize, growing tree")
-			logSize = logSize2
+			logSize.Store(uint64(logSize2))
 			time.Sleep(time.Second)
 		case uint64(logSize2):
 			// We've seen all the entries we created, stop the iterator
