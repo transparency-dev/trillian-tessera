@@ -189,6 +189,17 @@ func (l *logResourceStorage) ReadTile(_ context.Context, level, index uint64, p 
 	return os.ReadFile(filepath.Join(l.s.path, layout.TilePath(level, index, p)))
 }
 
+func (l *logResourceStorage) IntegratedSize(_ context.Context) (uint64, error) {
+	size, _, err := l.s.readTreeState()
+	return size, err
+}
+
+func (l *logResourceStorage) StreamEntries(ctx context.Context, fromEntry uint64) (next func() (ri layout.RangeInfo, bundle []byte, err error), cancel func()) {
+	return func() (layout.RangeInfo, []byte, error) {
+		return layout.RangeInfo{}, nil, errors.New("unimplemented")
+	}, func() {}
+}
+
 // sequenceBatch writes the entries from the provided batch into the entry bundle files of the log.
 //
 // This func starts filling entries bundles at the next available slot in the log, ensuring that the
