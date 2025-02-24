@@ -33,12 +33,12 @@ import (
 )
 
 var (
-	bucket            = flag.String("bucket", "", "Bucket to use for storing log")
-	listen            = flag.String("listen", ":2024", "Address:port to listen on")
-	spanner           = flag.String("spanner", "", "Spanner resource URI ('projects/.../...')")
-	signer            = flag.String("signer", "", "Note signer to use to sign checkpoints")
-	persistentDedup   = flag.Bool("gcp_dedup", false, "EXPERIMENTAL: Set to true to enable persistent dedupe storage")
-	additionalSigners = []string{}
+	bucket             = flag.String("bucket", "", "Bucket to use for storing log")
+	listen             = flag.String("listen", ":2024", "Address:port to listen on")
+	spanner            = flag.String("spanner", "", "Spanner resource URI ('projects/.../...')")
+	signer             = flag.String("signer", "", "Note signer to use to sign checkpoints")
+	persistentAntispam = flag.Bool("antispam", false, "EXPERIMENTAL: Set to true to enable GCP-based persistent antispam storage")
+	additionalSigners  = []string{}
 )
 
 func init() {
@@ -63,11 +63,11 @@ func main() {
 	}
 
 	var antispam tessera.Antispam
-	// PersistentDedup is currently experimental, so there's no terraform or documentation yet!
-	if *persistentDedup {
-		antispam, err = gcp.NewDedupe(ctx, fmt.Sprintf("%s_dedup", *spanner))
+	// Persistent antispam is currently experimental, so there's no terraform or documentation yet!
+	if *persistentAntispam {
+		antispam, err = gcp.NewAntispam(ctx, fmt.Sprintf("%s_dedup", *spanner))
 		if err != nil {
-			klog.Exitf("Failed to create new GCP dedupe: %v", err)
+			klog.Exitf("Failed to create new GCP antispam storage: %v", err)
 		}
 	}
 

@@ -1005,14 +1005,14 @@ func (s *gcsStorage) lastModified(ctx context.Context, obj string) (time.Time, e
 	return r.Attrs.LastModified, r.Close()
 }
 
-// NewDedupe returns a dedupe driver which uses Spanner to maintain a mapping of
+// NewAntispam returns an antispam driver which uses Spanner to maintain a mapping of
 // previously seen entries and their assigned indices.
 //
 // Note that the storage for this mapping is entirely separate and unconnected to the storage used for
 // maintaining the Merkle tree.
 //
 // This functionality is experimental!
-func NewDedupe(ctx context.Context, spannerDB string) (*DedupStorage, error) {
+func NewAntispam(ctx context.Context, spannerDB string) (*AntispamStorage, error) {
 	if err := createAndPrepareTables(
 		ctx, spannerDB,
 		[]string{
@@ -1026,13 +1026,13 @@ func NewDedupe(ctx context.Context, spannerDB string) (*DedupStorage, error) {
 		return nil, fmt.Errorf("failed to create tables: %v", err)
 	}
 
-	dedupDB, err := spanner.NewClient(ctx, spannerDB)
+	db, err := spanner.NewClient(ctx, spannerDB)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to Spanner: %v", err)
 	}
 
-	r := &DedupStorage{
-		dbPool: dedupDB,
+	r := &AntispamStorage{
+		dbPool: db,
 	}
 
 	go func(ctx context.Context) {
@@ -1042,7 +1042,7 @@ func NewDedupe(ctx context.Context, spannerDB string) (*DedupStorage, error) {
 			case <-ctx.Done():
 				return
 			case <-t.C:
-				klog.V(1).Infof("DEDUP: # Writes %d, # Lookups %d, # DB hits %v", r.numWrites.Load(), r.numLookups.Load(), r.numDBDedups.Load())
+				klog.V(1).Infof("ANTISPAM: # Writes %d, # Lookups %d, # DB hits %v", r.numWrites.Load(), r.numLookups.Load(), r.numHits.Load())
 			}
 		}
 	}(ctx)
@@ -1050,22 +1050,22 @@ func NewDedupe(ctx context.Context, spannerDB string) (*DedupStorage, error) {
 	return r, nil
 }
 
-type DedupStorage struct {
+type AntispamStorage struct {
 	dbPool *spanner.Client
 
 	// pushBack is used to prevent the follower from getting too far underwater.
 	// Populate dynamically will set this to true/false based on how far behind the follower is from the
 	// currently integrated tree size.
-	// When pushBack is true, the dedupe decorator will start returning ErrPushback to all calls.
+	// When pushBack is true, the decorator will start returning ErrPushback to all calls.
 	pushBack atomic.Bool
 
-	numLookups  atomic.Uint64
-	numWrites   atomic.Uint64
-	numDBDedups atomic.Uint64
+	numLookups atomic.Uint64
+	numWrites  atomic.Uint64
+	numHits    atomic.Uint64
 }
 
 // index returns the index (if any) previously associated with the provided hash
-func (d *DedupStorage) index(ctx context.Context, h []byte) (*uint64, error) {
+func (d *AntispamStorage) index(ctx context.Context, h []byte) (*uint64, error) {
 	d.numLookups.Add(1)
 	var idx int64
 	if row, err := d.dbPool.Single().ReadRow(ctx, "IDSeq", spanner.Key{0, h}, []string{"idx"}); err != nil {
@@ -1075,17 +1075,17 @@ func (d *DedupStorage) index(ctx context.Context, h []byte) (*uint64, error) {
 		return nil, err
 	} else {
 		if err := row.Column(0, &idx); err != nil {
-			return nil, fmt.Errorf("failed to read dedup index: %v", err)
+			return nil, fmt.Errorf("failed to read antispam index: %v", err)
 		}
 		idx := uint64(idx)
-		d.numDBDedups.Add(1)
+		d.numHits.Add(1)
 		return &idx, nil
 	}
 }
 
 // Decorator returns a function which will wrap an underlying Add delegate with
 // code to dedup against the stored data.
-func (d *DedupStorage) Decorator() func(f tessera.AddFn) tessera.AddFn {
+func (d *AntispamStorage) Decorator() func(f tessera.AddFn) tessera.AddFn {
 	return func(delegate tessera.AddFn) tessera.AddFn {
 		return func(ctx context.Context, e *tessera.Entry) tessera.IndexFuture {
 			if d.pushBack.Load() {
@@ -1164,10 +1164,10 @@ func (e *entryStreamReader[T]) Next() (uint64, T, error) {
 	return rIdx, t, nil
 }
 
-// Populate uses entry data from the log to populate the dedupe storage.
+// Populate uses entry data from the log to populate the antispam storage.
 //
 // TODO(al):  add details
-func (d *DedupStorage) Populate(ctx context.Context, lr tessera.LogReader, bundleFn func([]byte) ([][]byte, error)) {
+func (d *AntispamStorage) Populate(ctx context.Context, lr tessera.LogReader, bundleFn func([]byte) ([][]byte, error)) {
 	errOutOfSync := errors.New("out-of-sync")
 
 	t := time.NewTicker(time.Second)
@@ -1193,7 +1193,7 @@ func (d *DedupStorage) Populate(ctx context.Context, lr tessera.LogReader, bundl
 		// Busy loop while there's work to be done
 		for workDone := true; workDone; {
 			_, err = d.dbPool.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
-				// Figure out the last entry we used to populate our dedup storage.
+				// Figure out the last entry we used to populate our antispam storage.
 				row, err := txn.ReadRowWithOptions(ctx, "FollowCoord", spanner.Key{0}, []string{"nextIdx"}, &spanner.ReadOptions{LockHint: spannerpb.ReadRequest_LOCK_HINT_EXCLUSIVE})
 				if err != nil {
 					return err
@@ -1249,15 +1249,15 @@ func (d *DedupStorage) Populate(ctx context.Context, lr tessera.LogReader, bundl
 					curIndex = followFrom
 				}
 
-				// Store dedup entries.
+				// Store antispam entries.
 				//
-				// Note that we're writing the dedup entries outside of the transaction here. The reason is because we absolutely do not want
+				// Note that we're writing the antispam entries outside of the transaction here. The reason is because we absolutely do not want
 				// the transaction to fail if there's already an entry for the same hash in the IDSeq table.
 				//
 				// It looks unusual, but is ok because:
-				//  - individual dedupe entries fails because there's already an entry for that hash is perfectly ok
+				//  - individual antispam entries fails because there's already an entry for that hash is perfectly ok
 				//  - we'll only continue on to update FollowCoord if no errors (other than AlreadyExists) occur while inserting entries
-				//  - similarly, if we manage to insert dedupe entries here, but then fail to update FollowCoord, we'll end up
+				//  - similarly, if we manage to insert antispam entries here, but then fail to update FollowCoord, we'll end up
 				//    retrying over the same set of log entries, and then ignoring the AlreadyExists which will occur.
 				//
 				// Alternative approaches are:
@@ -1278,7 +1278,7 @@ func (d *DedupStorage) Populate(ctx context.Context, lr tessera.LogReader, bundl
 					err := i.Do(func(r *spannerpb.BatchWriteResponse) error {
 						s := r.GetStatus()
 						if c := codes.Code(s.Code); c != codes.OK && c != codes.AlreadyExists {
-							return fmt.Errorf("failed to write dedup record: %v (%v)", s.GetMessage(), c)
+							return fmt.Errorf("failed to write antispam record: %v (%v)", s.GetMessage(), c)
 						}
 						return nil
 					})
@@ -1298,7 +1298,7 @@ func (d *DedupStorage) Populate(ctx context.Context, lr tessera.LogReader, bundl
 			})
 			if err != nil {
 				if err != errOutOfSync {
-					klog.Errorf("Failed to commit dedupe population tx: %v", err)
+					klog.Errorf("Failed to commit antispam population tx: %v", err)
 				}
 				stop()
 				entryReader = nil
