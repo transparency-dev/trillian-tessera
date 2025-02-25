@@ -127,7 +127,7 @@ type Antispam interface {
 	// Populate should be a long-running function which uses the provided log reader to build the
 	// antispam index used by the dectorator above.
 	//
-	// Typically, implementations of this function  will tail the contents of the log using the provided
+	// Typically, implementations of this function will tail the contents of the log using the provided
 	// log reader to stream entry bundles from the log, and, for each entry bundle, use the
 	// provided bundle function to convert the bundle into a slice of identity hashes which
 	// corresponds to the entries the bundle contains. These hashes should then be used to populate
