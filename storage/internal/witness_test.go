@@ -18,8 +18,12 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"testing"
 
+	tessera "github.com/transparency-dev/trillian-tessera"
 	"golang.org/x/mod/sumdb/note"
 )
 
@@ -35,12 +39,122 @@ const (
 		"Ux/vc6m0VqNe7o2MbLNrCSwFzFvGBCGNClW2x3up/YI=\n"
 )
 
-func TestWitness_UpdateRequest(t *testing.T) {
-	cpSize := uint64(34840403)
-	s, err := note.NewSigner(log_skey)
+func TestWitnessGateway_Update(t *testing.T) {
+	logVerifier := mustCreateVerifier(t, log_vkey)
+	logSigner := mustCreateSigner(t, log_skey)
+
+	logSignedCheckpoint, err := note.Sign(&note.Note{Text: cp}, logSigner)
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	// Set up a fake server hosting the witnesses.
+	// The witnesses just sign the checkpoint with whatever key is requested, they don't check the body at all.
+	// An improvement on this would be to make the fake witnesses more realistic, but it's a non-trivial
+	// amount of code to add to this already long test!
+	var wit1 tessera.Witness
+	var wit2 tessera.Witness
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w1u, err := url.Parse(wit1.Url)
+		if err != nil {
+			t.Fatal(err)
+		}
+		w2u, err := url.Parse(wit2.Url)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		switch r.URL.String() {
+		case w1u.Path:
+			_, _ = w.Write(append(sigForSigner(t, cp, wit1_skey), '\n'))
+		case w2u.Path:
+			_, _ = w.Write(append(sigForSigner(t, cp, wit2_skey), '\n'))
+		default:
+			t.Fatalf("Unknown case: %s", r.URL.String())
+		}
+	}))
+	baseUrl, err := url.Parse(ts.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wit1, err = tessera.NewWitness(wit1_vkey, baseUrl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wit2, err = tessera.NewWitness(wit2_vkey, baseUrl)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	testCases := []struct {
+		desc     string
+		group    tessera.WitnessGroup
+		wantSigs int
+	}{
+		{
+			desc:     "no witnesses",
+			group:    tessera.WitnessGroup{},
+			wantSigs: 0,
+		},
+		{
+			desc:     "one optional witness",
+			group:    tessera.NewWitnessGroup(0, wit1),
+			wantSigs: 0,
+		},
+		{
+			desc:     "two optional witnesses",
+			group:    tessera.NewWitnessGroup(0, wit1, wit2),
+			wantSigs: 0,
+		},
+		{
+			desc:     "one required witness",
+			group:    tessera.NewWitnessGroup(1, wit1),
+			wantSigs: 1,
+		},
+		{
+			desc:     "one required witness out of 2",
+			group:    tessera.NewWitnessGroup(1, wit1, wit2),
+			wantSigs: 1,
+		},
+		{
+			desc:     "two required witnesses",
+			group:    tessera.NewWitnessGroup(2, wit1, wit2),
+			wantSigs: 2,
+		},
+		{
+			desc:     "one required witness twice",
+			group:    tessera.NewWitnessGroup(2, wit1, wit1),
+			wantSigs: 1,
+		},
+	}
+	for _, tC := range testCases {
+		t.Run(tC.desc, func(t *testing.T) {
+			ctx := context.Background()
+
+			fetchProof := func(ctx context.Context, from, to uint64) [][]byte {
+				return nil
+			}
+			g := NewWitnessGateway(tC.group, ts.Client(), fetchProof)
+
+			witnessedCP, err := g.Witness(ctx, logSignedCheckpoint)
+			if err != nil {
+				t.Fatal(err)
+			}
+			n, err := note.Open(witnessedCP, note.VerifierList(logVerifier, wit1.Key, wit2.Key))
+			if err != nil {
+				t.Fatalf("failed to open note %q: %v", witnessedCP, err)
+			}
+			if len(n.Sigs)-1 < tC.wantSigs {
+				t.Errorf("wanted %d sigs but got %d", tC.wantSigs, len(n.Sigs)-1)
+			}
+		})
+	}
+}
+
+func TestWitness_UpdateRequest(t *testing.T) {
+	cpSize := uint64(34840403)
+	s := mustCreateSigner(t, log_skey)
+
 	logSignedCheckpoint, err := note.Sign(&note.Note{Text: cp}, s)
 	if err != nil {
 		t.Fatal(err)
@@ -186,4 +300,22 @@ func sigForSigner(t *testing.T, cp, skey string) []byte {
 		t.Fatal(err)
 	}
 	return bytes.Trim(witSignedCheckpoint[len(cp):], "\n")
+}
+
+func mustCreateVerifier(t *testing.T, vkey string) note.Verifier {
+	t.Helper()
+	verifier, err := note.NewVerifier(vkey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return verifier
+}
+
+func mustCreateSigner(t *testing.T, skey string) note.Signer {
+	t.Helper()
+	signer, err := note.NewSigner(skey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return signer
 }

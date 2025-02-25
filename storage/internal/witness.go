@@ -29,7 +29,6 @@ import (
 
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/internal/parse"
-	"k8s.io/klog/v2"
 )
 
 // ProofFetchFn is the signature of a function that can return the consistency proof
@@ -43,7 +42,7 @@ func NewWitnessGateway(group tessera.WitnessGroup, client *http.Client, fetchPro
 	urls := group.URLs()
 	slices.Sort(urls)
 	urls = slices.Compact(urls)
-	witnesses := make([]witness, len(urls))
+	witnesses := make([]witness, 0, len(urls))
 	postFnImpl := func(ctx context.Context, url string, body string) (pr postResponse, err error) {
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader(body))
 		if err != nil {
@@ -130,9 +129,9 @@ func (wg WitnessGateway) Witness(ctx context.Context, cp []byte) ([]byte, error)
 			err = errors.Join(err, r.err)
 			continue
 		}
+		fmt.Printf("got this sig: %q\n", r.sig)
 		// Add new signature to the new note we're building
 		sigBlock.Write(r.sig)
-		sigBlock.WriteRune('\n')
 
 		// See whether the group is satisfied now
 		if newCp := sigBlock.Bytes(); wg.group.Satisfied(newCp) {
@@ -141,7 +140,7 @@ func (wg WitnessGateway) Witness(ctx context.Context, cp []byte) ([]byte, error)
 	}
 
 	// We can only get here if all witnesses have returned and we're still not satisfied.
-	return nil, err
+	return sigBlock.Bytes(), err
 }
 
 // postResponse contains the parts of the witness response needed for logic flow in order to
@@ -189,11 +188,14 @@ func (w witness) update(ctx context.Context, cp []byte, size uint64) ([]byte, er
 
 	resp, err := w.post(ctx, w.url, body)
 	if err != nil {
-		klog.Warningf("Failed to post to witness at %q: %v", w.url, err)
+		return nil, fmt.Errorf("failed to post to witness at %q: %v", w.url, err)
 	}
 
 	switch resp.statusCode {
 	case http.StatusOK:
+		if len(resp.body) == 0 {
+			return nil, errors.New("expected response body from witness, but got empty body")
+		}
 		return resp.body, nil
 	case http.StatusConflict:
 		// Two cases here: the first is a situation we can recover from, the second isn't.
