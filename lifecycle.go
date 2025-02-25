@@ -200,3 +200,36 @@ func resolveAppendOptions(opts ...func(*AppendOptions)) *AppendOptions {
 	}
 	return defaults
 }
+
+type MigrationTarget struct {
+	SetBundle        func(ctx context.Context, idx uint64, bundle []byte) error
+	AwaitIntegration func(ctx context.Context, size uint64) ([]byte, error)
+}
+
+// BundleProcessorFunc is a function which knows how to turn a serialised entry bundle into a slice of
+// []byte representing each of the entries within the bundle.
+type BundleProcessorFunc func(entryBundle []byte) ([][]byte, error)
+
+// NewMigrationTarget returns a MigrationTarget, which allows a personality to "import" a C2SP
+// tlog-tiles or static-ct compliant log into a Tessera instance.
+//
+// TODO(al): bundleHasher should be implicit from WithCTLayout being present or not.
+// TODO(al): AppendOptions should be somehow replaced - perhaps MigrationOptions, or some other way of limiting options to those which make sense for this lifecycle mode.
+func NewMigrationTarget(ctx context.Context, d Driver, bundleHasher BundleProcessorFunc, opts ...func(*AppendOptions)) (*MigrationTarget, LogReader, error) {
+	resolved := resolveAppendOptions(opts...)
+	type migrateLifecycle interface {
+		MigrationTarget(context.Context, func([]byte) ([][]byte, error), *AppendOptions) (*MigrationTarget, LogReader, error)
+	}
+	lc, ok := d.(migrateLifecycle)
+	if !ok {
+		return nil, nil, fmt.Errorf("driver %T does not implement MigrationTarget lifecycle", d)
+	}
+	a, r, err := lc.MigrationTarget(ctx, bundleHasher, resolved)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to init appender lifecycle: %v", err)
+	}
+	for _, f := range resolved.Followers {
+		go f(ctx, r)
+	}
+	return a, r, nil
+}
