@@ -675,17 +675,8 @@ func createEx(p string, d []byte) error {
 	return nil
 }
 
-// BundleHasherFunc is the signature of a function which knows how to parse an entry bundle and calculate leaf hashes for its entries.
-type BundleHasherFunc func(entryBundle []byte) (LeafHashes [][]byte, err error)
-
-// NewMigrationTarget creates a new POSIX storage for the MigrationTarget lifecycle mode.
-// - path is a directory in which the log should be stored
-// - create must only be set when first creating the log, and will create the directory structure and an empty checkpoint
-// - bundleHasher knows how to parse the provided entry bundle, and returns a slice of leaf hashes for the entries it contains.
-func NewMigrationTarget(ctx context.Context, path string, create bool, bundleHasher BundleHasherFunc, opts *tessera.AppendOptions) (*MigrationStorage, error) {
-	s := &Storage{
-		path: path,
-	}
+// MigrationTarget creates a new POSIX storage for the MigrationTarget lifecycle mode.
+func (s *Storage) MigrationTarget(ctx context.Context, bundleHasher tessera.BundleProcessorFunc, opts *tessera.AppendOptions) (tessera.MigrationTarget, tessera.LogReader, error) {
 	r := &MigrationStorage{
 		s: s,
 		logStorage: &logResourceStorage{
@@ -696,18 +687,21 @@ func NewMigrationTarget(ctx context.Context, path string, create bool, bundleHas
 		entriesPath:  opts.EntriesPath,
 	}
 	if err := r.initialise(); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return r, nil
+	return r, r.logStorage, nil
 }
 
+// MigrationStorgage implements the tessera.MigrationTarget lifecycle contract.
 type MigrationStorage struct {
 	s            *Storage
 	logStorage   *logResourceStorage
-	bundleHasher BundleHasherFunc
+	bundleHasher tessera.BundleProcessorFunc
 	entriesPath  func(uint64, uint8) string
 	curSize      uint64
 }
+
+var _ tessera.MigrationTarget = &MigrationStorage{}
 
 func (m *MigrationStorage) AwaitIntegration(ctx context.Context, sourceSize uint64) ([]byte, error) {
 	t := time.NewTicker(time.Second)
@@ -756,7 +750,15 @@ func (m *MigrationStorage) initialise() error {
 	}
 	curSize, _, err := m.s.readTreeState()
 	if err != nil {
-		return fmt.Errorf("failed to load checkpoint for log: %v", err)
+		if !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("failed to load checkpoint for log: %v", err)
+		}
+		// Create the directory structure and write out an empty checkpoint
+		klog.Infof("Initializing directory for POSIX log at %q (this should only happen ONCE per log!)", m.s.path)
+		if err := m.s.writeTreeState(0, rfc6962.DefaultHasher.EmptyRoot()); err != nil {
+			return fmt.Errorf("failed to write tree-state checkpoint: %v", err)
+		}
+		return nil
 	}
 	m.curSize = curSize
 
@@ -767,8 +769,9 @@ func (m *MigrationStorage) SetEntryBundle(ctx context.Context, index uint64, par
 	return m.logStorage.writeBundle(ctx, index, partial, bundle)
 }
 
-func (m *MigrationStorage) State(_ context.Context) (uint64, []byte, error) {
-	return m.s.readTreeState()
+func (m *MigrationStorage) IntegratedSize(_ context.Context) (uint64, error) {
+	sz, _, err := m.s.readTreeState()
+	return sz, err
 }
 
 func (m *MigrationStorage) buildTree(ctx context.Context, targetSize uint64) error {
@@ -799,6 +802,12 @@ func (m *MigrationStorage) buildTree(ctx context.Context, targetSize uint64) err
 
 	lh, err := m.fetchLeafHashes(ctx, size, targetSize, targetSize)
 	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			// We just don't have the bundle yet.
+			// Bail quietly and the caller can retry.
+			klog.V(1).Infof("fetchLeafHashes(%d, %d): %v", size, targetSize, err)
+			return nil
+		}
 		return fmt.Errorf("fetchLeafHashes(%d, %d): %v", size, targetSize, err)
 	}
 
@@ -821,7 +830,7 @@ func (m *MigrationStorage) fetchLeafHashes(ctx context.Context, from, to, source
 	for ri := range layout.Range(from, to, sourceSize) {
 		b, err := m.logStorage.ReadEntryBundle(ctx, ri.Index, ri.Partial)
 		if err != nil {
-			return nil, fmt.Errorf("ReadEntryBundle(%d.%d): %v", ri.Index, ri.Partial, err)
+			return nil, fmt.Errorf("ReadEntryBundle(%d.%d): %w", ri.Index, ri.Partial, err)
 		}
 
 		bh, err := m.bundleHasher(b)
