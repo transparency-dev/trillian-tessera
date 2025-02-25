@@ -71,7 +71,7 @@ func main() {
 	appender, _, err := tessera.NewAppender(ctx, driver,
 		tessera.WithCheckpointSigner(s, a...),
 		tessera.WithBatching(256, time.Second),
-		tessera.WithAppendDeduplication(tessera.InMemoryDedupe(256)))
+		tessera.WithAntispam(256, nil))
 	if err != nil {
 		klog.Exit(err)
 	}

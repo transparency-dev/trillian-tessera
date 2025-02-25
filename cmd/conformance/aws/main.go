@@ -78,7 +78,7 @@ func main() {
 		tessera.WithCheckpointInterval(*publishInterval),
 		tessera.WithBatching(1024, time.Second),
 		tessera.WithPushback(10*4096),
-		tessera.WithAppendDeduplication(tessera.InMemoryDedupe(256)))
+		tessera.WithAntispam(256, nil))
 	if err != nil {
 		klog.Exit(err)
 	}

@@ -434,6 +434,16 @@ func (lr *logResourceStore) ReadEntryBundle(ctx context.Context, i uint64, p uin
 	return lr.get(ctx, lr.entriesPath(i, p))
 }
 
+func (lr *logResourceStore) IntegratedSize(ctx context.Context) (uint64, error) {
+	return 0, errors.New("unimplemented")
+}
+
+func (lr *logResourceStore) StreamEntries(ctx context.Context, fromEntry uint64) (next func() (ri layout.RangeInfo, bundle []byte, err error), cancel func()) {
+	return func() (layout.RangeInfo, []byte, error) {
+		return layout.RangeInfo{}, nil, errors.New("unimplemented")
+	}, func() {}
+}
+
 // get returns the requested object.
 //
 // This is indended to be used to proxy read requests through the personality for debug/testing purposes.

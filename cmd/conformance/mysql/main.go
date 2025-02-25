@@ -70,7 +70,7 @@ func main() {
 	appender, reader, err := tessera.NewAppender(ctx, driver,
 		tessera.WithCheckpointSigner(noteSigner, additionalSigners...),
 		tessera.WithCheckpointInterval(*publishInterval),
-		tessera.WithAppendDeduplication(tessera.InMemoryDedupe(256)))
+		tessera.WithAntispam(256, nil))
 	addFn := appender.Add
 	if err != nil {
 		klog.Exit(err)
