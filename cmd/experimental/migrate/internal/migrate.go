@@ -71,8 +71,8 @@ type MigrationStorage interface {
 	// and return the locally calculated root hash.
 	// An error should be returned if there is a problem integrating.
 	AwaitIntegration(ctx context.Context, sourceSize uint64) ([]byte, error)
-	// State returns the current integrated size and root hash of the local tree.
-	State(ctx context.Context) (uint64, []byte, error)
+	// IntegratedSize returns the current integrated size of the local tree.
+	IntegratedSize(ctx context.Context) (uint64, error)
 }
 
 // Migrate starts the work of copying sourceSize entries from the source to the target log.
@@ -94,30 +94,27 @@ func Migrate(ctx context.Context, numWorkers int, sourceSize uint64, sourceRoot 
 	}
 
 	// init
-	targetSize, targetRoot, err := m.storage.State(ctx)
+	targetSize, err := m.storage.IntegratedSize(ctx)
 	if err != nil {
 		return fmt.Errorf("size: %v", err)
 	}
 	if targetSize > sourceSize {
 		return fmt.Errorf("target size %d > source size %d", targetSize, sourceSize)
 	}
-	if targetSize == sourceSize {
-		if !bytes.Equal(targetRoot, sourceRoot) {
-			return fmt.Errorf("migration completed, but local root hash %x != source root hash %x", targetRoot, sourceRoot)
-		}
-		return nil
-	}
 
-	bundlesToMigrate := (sourceSize / layout.EntryBundleWidth) - (targetSize / layout.EntryBundleWidth) + 1
 	go m.populateWork(targetSize, sourceSize)
 
 	// Print stats
 	go func() {
+		bundlesToMigrate := (sourceSize / layout.EntryBundleWidth) - (targetSize / layout.EntryBundleWidth) + 1
+		if bundlesToMigrate == 0 {
+			return
+		}
 		for {
 			time.Sleep(time.Second)
 			bn := m.bundlesMigrated.Load()
 			bnp := float64(bn*100) / float64(bundlesToMigrate)
-			s, _, err := m.storage.State(ctx)
+			s, err := m.storage.IntegratedSize(ctx)
 			if err != nil {
 				klog.Warningf("Size: %v", err)
 			}
@@ -148,7 +145,7 @@ func Migrate(ctx context.Context, numWorkers int, sourceSize uint64, sourceRoot 
 	}
 
 	if !bytes.Equal(root, sourceRoot) {
-		return fmt.Errorf("migration completed, but local root hash %x != source root hash %x", targetRoot, sourceRoot)
+		return fmt.Errorf("migration completed, but local root hash %x != source root hash %x", root, sourceRoot)
 	}
 
 	klog.Infof("Migration successful.")
