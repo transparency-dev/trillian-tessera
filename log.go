@@ -83,35 +83,33 @@ type AddFn func(ctx context.Context, entry *Entry) IndexFuture
 // as the checkpoint Origin line.
 //
 // Checkpoints signed by these signer(s) will be standard checkpoints as defined by https://c2sp.org/tlog-checkpoint.
-func WithCheckpointSigner(s note.Signer, additionalSigners ...note.Signer) func(*AppendOptions) {
+func (o *AppendOptions) WithCheckpointSigner(s note.Signer, additionalSigners ...note.Signer) *AppendOptions {
 	origin := s.Name()
 	for _, signer := range additionalSigners {
 		if origin != signer.Name() {
 			klog.Exitf("WithCheckpointSigner: additional signer name (%q) does not match primary signer name (%q)", signer.Name(), origin)
 		}
-
 	}
-	return func(o *AppendOptions) {
-		o.NewCP = func(size uint64, hash []byte) ([]byte, error) {
-			// If we're signing a zero-sized tree, the tlog-checkpoint spec says (via RFC6962) that
-			// the root must be SHA256 of the empty string, so we'll enforce that here:
-			if size == 0 {
-				emptyRoot := sha256.Sum256([]byte{})
-				hash = emptyRoot[:]
-			}
-			cpRaw := f_log.Checkpoint{
-				Origin: origin,
-				Size:   size,
-				Hash:   hash,
-			}.Marshal()
-
-			n, err := note.Sign(&note.Note{Text: string(cpRaw)}, append([]note.Signer{s}, additionalSigners...)...)
-			if err != nil {
-				return nil, fmt.Errorf("note.Sign: %w", err)
-			}
-			return n, nil
+	o.newCP = func(size uint64, hash []byte) ([]byte, error) {
+		// If we're signing a zero-sized tree, the tlog-checkpoint spec says (via RFC6962) that
+		// the root must be SHA256 of the empty string, so we'll enforce that here:
+		if size == 0 {
+			emptyRoot := sha256.Sum256([]byte{})
+			hash = emptyRoot[:]
 		}
+		cpRaw := f_log.Checkpoint{
+			Origin: origin,
+			Size:   size,
+			Hash:   hash,
+		}.Marshal()
+
+		n, err := note.Sign(&note.Note{Text: string(cpRaw)}, append([]note.Signer{s}, additionalSigners...)...)
+		if err != nil {
+			return nil, fmt.Errorf("note.Sign: %w", err)
+		}
+		return n, nil
 	}
+	return o
 }
 
 // WithBatching configures the batching behaviour of leaves being sequenced.
@@ -127,21 +125,19 @@ func WithCheckpointSigner(s note.Signer, additionalSigners ...note.Signer) func(
 // required for entries to be included in the log.
 //
 // If this option isn't provided, storage implementations with use the DefaultBatchMaxSize and DefaultBatchMaxAge consts above.
-func WithBatching(maxSize uint, maxAge time.Duration) func(*AppendOptions) {
-	return func(o *AppendOptions) {
-		o.BatchMaxSize = maxSize
-		o.BatchMaxAge = maxAge
-	}
+func (o *AppendOptions) WithBatching(maxSize uint, maxAge time.Duration) *AppendOptions {
+	o.batchMaxSize = maxSize
+	o.batchMaxAge = maxAge
+	return o
 }
 
 // WithPushback allows configuration of when the storage should start pushing back on add requests.
 //
 // maxOutstanding is the number of "in-flight" add requests - i.e. the number of entries with sequence numbers
 // assigned, but which are not yet integrated into the log.
-func WithPushback(maxOutstanding uint) func(*AppendOptions) {
-	return func(o *AppendOptions) {
-		o.PushbackMaxOutstanding = maxOutstanding
-	}
+func (o *AppendOptions) WithPushback(maxOutstanding uint) *AppendOptions {
+	o.pushbackMaxOutstanding = maxOutstanding
+	return o
 }
 
 // WithCheckpointInterval configures the frequency at which Tessera will attempt to create & publish
@@ -158,10 +154,9 @@ func WithPushback(maxOutstanding uint) func(*AppendOptions) {
 // Note that this option probably only makes sense for long-lived applications (e.g. HTTP servers).
 //
 // If this option isn't provided, storage implementations will use the DefaultCheckpointInterval const above.
-func WithCheckpointInterval(interval time.Duration) func(*AppendOptions) {
-	return func(o *AppendOptions) {
-		o.CheckpointInterval = interval
-	}
+func (o *AppendOptions) WithCheckpointInterval(interval time.Duration) *AppendOptions {
+	o.checkpointInterval = interval
+	return o
 }
 
 // WithWitnesses configures the set of witnesses that Tessera will contact in order to counter-sign
@@ -171,8 +166,7 @@ func WithCheckpointInterval(interval time.Duration) func(*AppendOptions) {
 //
 // If this method is not called, then the default empty WitnessGroup will be used, which contacts zero
 // witnesses and requires zero witnesses in order to publish.
-func WithWitnesses(witnesses WitnessGroup) func(*AppendOptions) {
-	return func(o *AppendOptions) {
-		o.Witnesses = witnesses
-	}
+func (o *AppendOptions) WithWitnesses(witnesses WitnessGroup) *AppendOptions {
+	o.witnesses = witnesses
+	return o
 }

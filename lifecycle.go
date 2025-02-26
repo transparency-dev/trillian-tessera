@@ -95,8 +95,7 @@ type Appender struct {
 // decorators provides a list of optional constructor functions that will return decorators
 // that wrap the base appender. This can be used to provide deduplication. Decorators will be
 // called in-order, and the last in the chain will be the base appender.
-func NewAppender(ctx context.Context, d Driver, opts ...func(*AppendOptions)) (*Appender, LogReader, error) {
-	resolved := resolveAppendOptions(opts...)
+func NewAppender(ctx context.Context, d Driver, opts *AppendOptions) (*Appender, LogReader, error) {
 	type appendLifecycle interface {
 		Appender(context.Context, *AppendOptions) (*Appender, LogReader, error)
 	}
@@ -104,14 +103,14 @@ func NewAppender(ctx context.Context, d Driver, opts ...func(*AppendOptions)) (*
 	if !ok {
 		return nil, nil, fmt.Errorf("driver %T does not implement Appender lifecycle", d)
 	}
-	a, r, err := lc.Appender(ctx, resolved)
+	a, r, err := lc.Appender(ctx, opts)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to init appender lifecycle: %v", err)
 	}
-	for i := len(resolved.AddDecorators) - 1; i >= 0; i-- {
-		a.Add = resolved.AddDecorators[i](a.Add)
+	for i := len(opts.addDecorators) - 1; i >= 0; i-- {
+		a.Add = opts.addDecorators[i](a.Add)
 	}
-	for _, f := range resolved.Followers {
+	for _, f := range opts.followers {
 		go f(ctx, r)
 	}
 	return a, r, nil
@@ -138,16 +137,15 @@ type Antispam interface {
 	Populate(context.Context, LogReader, func(entryBundle []byte) ([][]byte, error))
 }
 
-func WithAntispam(inMemEntries uint, as Antispam) func(*AppendOptions) {
-	return func(o *AppendOptions) {
-		o.AddDecorators = append(o.AddDecorators, InMemoryDedupe(inMemEntries))
-		if as != nil {
-			o.AddDecorators = append(o.AddDecorators, as.Decorator())
-			o.Followers = append(o.Followers, func(ctx context.Context, lr LogReader) {
-				as.Populate(ctx, lr, defaultIDHasher)
-			})
-		}
+func (o *AppendOptions) WithAntispam(inMemEntries uint, as Antispam) *AppendOptions {
+	o.addDecorators = append(o.addDecorators, InMemoryDedupe(inMemEntries))
+	if as != nil {
+		o.addDecorators = append(o.addDecorators, as.Decorator())
+		o.followers = append(o.followers, func(ctx context.Context, lr LogReader) {
+			as.Populate(ctx, lr, defaultIDHasher)
+		})
 	}
+	return o
 }
 
 // defaultIDHasher returns a list of identity hashes corresponding to entries in the provided bundle.
@@ -165,40 +163,71 @@ func defaultIDHasher(bundle []byte) ([][]byte, error) {
 	return r, nil
 }
 
-// AppendOptions holds settings for all storage implementations.
-type AppendOptions struct {
-	// NewCP knows how to format and sign checkpoints.
-	NewCP func(size uint64, hash []byte) ([]byte, error)
-
-	BatchMaxAge  time.Duration
-	BatchMaxSize uint
-
-	PushbackMaxOutstanding uint
-
-	// EntriesPath knows how to format entry bundle paths.
-	EntriesPath func(n uint64, p uint8) string
-
-	CheckpointInterval time.Duration
-	Witnesses          WitnessGroup
-
-	AddDecorators []func(AddFn) AddFn
-	Followers     []func(context.Context, LogReader)
+func NewAppendOptions() *AppendOptions {
+	return &AppendOptions{
+		batchMaxSize:           DefaultBatchMaxSize,
+		batchMaxAge:            DefaultBatchMaxAge,
+		entriesPath:            layout.EntriesPath,
+		checkpointInterval:     DefaultCheckpointInterval,
+		addDecorators:          make([]func(AddFn) AddFn, 0),
+		pushbackMaxOutstanding: DefaultPushbackMaxOutstanding,
+	}
 }
 
-// resolveAppendOptions turns a variadic array of storage options into an AppendOptions instance.
-func resolveAppendOptions(opts ...func(*AppendOptions)) *AppendOptions {
-	defaults := &AppendOptions{
-		BatchMaxSize:           DefaultBatchMaxSize,
-		BatchMaxAge:            DefaultBatchMaxAge,
-		EntriesPath:            layout.EntriesPath,
-		CheckpointInterval:     DefaultCheckpointInterval,
-		AddDecorators:          make([]func(AddFn) AddFn, 0),
-		PushbackMaxOutstanding: DefaultPushbackMaxOutstanding,
-	}
-	for _, opt := range opts {
-		opt(defaults)
-	}
-	return defaults
+// AppendOptions holds settings for all storage implementations.
+type AppendOptions struct {
+	// newCP knows how to format and sign checkpoints.
+	newCP func(size uint64, hash []byte) ([]byte, error)
+
+	batchMaxAge  time.Duration
+	batchMaxSize uint
+
+	pushbackMaxOutstanding uint
+
+	// EntriesPath knows how to format entry bundle paths.
+	entriesPath func(n uint64, p uint8) string
+
+	checkpointInterval time.Duration
+	witnesses          WitnessGroup
+
+	addDecorators []func(AddFn) AddFn
+	followers     []func(context.Context, LogReader)
+}
+
+func (o AppendOptions) NewCP() func(uint64, []byte) ([]byte, error) {
+	return o.newCP
+}
+
+func (o AppendOptions) BatchMaxAge() time.Duration {
+	return o.batchMaxAge
+}
+
+func (o AppendOptions) BatchMaxSize() uint {
+	return o.batchMaxSize
+}
+
+func (o AppendOptions) PushbackMaxOutstanding() uint {
+	return o.pushbackMaxOutstanding
+}
+
+func (o AppendOptions) EntriesPath() func(uint64, uint8) string {
+	return o.entriesPath
+}
+
+func (o AppendOptions) CheckpointInterval() time.Duration {
+	return o.checkpointInterval
+}
+
+func (o AppendOptions) Witnesses() WitnessGroup {
+	return o.witnesses
+}
+
+func (o AppendOptions) AddDecorators() []func(AddFn) AddFn {
+	return o.addDecorators
+}
+
+func (o AppendOptions) Followers() []func(context.Context, LogReader) {
+	return o.followers
 }
 
 // MigrationTarget describes the contract of the Migration lifecycle.
@@ -232,8 +261,7 @@ type UnbundlerFunc func(entryBundle []byte) ([][]byte, error)
 //
 // TODO(al): bundleHasher should be implicit from WithCTLayout being present or not.
 // TODO(al): AppendOptions should be somehow replaced - perhaps MigrationOptions, or some other way of limiting options to those which make sense for this lifecycle mode.
-func NewMigrationTarget(ctx context.Context, d Driver, bundleHasher UnbundlerFunc, opts ...func(*AppendOptions)) (MigrationTarget, error) {
-	resolved := resolveAppendOptions(opts...)
+func NewMigrationTarget(ctx context.Context, d Driver, bundleHasher UnbundlerFunc, opts *AppendOptions) (MigrationTarget, error) {
 	type migrateLifecycle interface {
 		MigrationTarget(context.Context, UnbundlerFunc, *AppendOptions) (MigrationTarget, LogReader, error)
 	}
@@ -241,11 +269,11 @@ func NewMigrationTarget(ctx context.Context, d Driver, bundleHasher UnbundlerFun
 	if !ok {
 		return nil, fmt.Errorf("driver %T does not implement MigrationTarget lifecycle", d)
 	}
-	m, r, err := lc.MigrationTarget(ctx, bundleHasher, resolved)
+	m, r, err := lc.MigrationTarget(ctx, bundleHasher, opts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to init MigrationTarget lifecycle: %v", err)
 	}
-	for _, f := range resolved.Followers {
+	for _, f := range opts.followers {
 		go f(ctx, r)
 	}
 	return m, nil
