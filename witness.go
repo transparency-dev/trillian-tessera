@@ -34,7 +34,7 @@ type policyComponent interface {
 	// URLs returns the URLs for requesting a counter signature from all
 	// witnesses that are involved in determining the satisfaction of this
 	// PolicyComponent.
-	URLs() []*url.URL
+	URLs() []string
 }
 
 // NewWitness returns a Witness given a verifier key and the root URL for where this
@@ -53,11 +53,11 @@ func NewWitness(vkey string, witnessRoot *url.URL) (Witness, error) {
 	}
 	h := sha256.Sum256(key)
 
-	u := witnessRoot.JoinPath(fmt.Sprintf("/%x/add", h))
+	u := witnessRoot.JoinPath(fmt.Sprintf("/%x/add-checkpoint", h))
 
 	return Witness{
 		Key: v,
-		Url: u,
+		Url: u.String(),
 	}, err
 }
 
@@ -66,7 +66,7 @@ func NewWitness(vkey string, witnessRoot *url.URL) (Witness, error) {
 // provides a predicate to check whether this witness has signed a checkpoint.
 type Witness struct {
 	Key note.Verifier
-	Url *url.URL
+	Url string
 }
 
 // Satisfied returns true if the checkpoint provided is signed by this witness.
@@ -84,8 +84,8 @@ func (w Witness) Satisfied(cp []byte) bool {
 // URLs returns the single URL at which this witness can be reached.
 // The return type is a slice in order to allow this method to match the same signature
 // of WitnessGroup.
-func (w Witness) URLs() []*url.URL {
-	return []*url.URL{w.Url}
+func (w Witness) URLs() []string {
+	return []string{w.Url}
 }
 
 // NewWitnessGroup creates a grouping of Witness or WitnessGroup with a configurable threshold
@@ -120,7 +120,15 @@ type WitnessGroup struct {
 // This will return false if there are insufficient signatures, and also if the
 // checkpoint cannot be read as a valid note. It is up to the caller to ensure
 // that the input value represents a valid note.
+//
+// The implementation of this requires every witness in the group to verify the
+// checkpoint, which is O(N). If this is called every time a witness returns a
+// checkpoint then this algorithm is O(N^2). To support large N, this may require
+// some rewriting in order to maintain performance.
 func (wg WitnessGroup) Satisfied(cp []byte) bool {
+	if wg.N <= 0 {
+		return true
+	}
 	satisfaction := 0
 	for _, c := range wg.Components {
 		if c.Satisfied(cp) {
@@ -136,8 +144,8 @@ func (wg WitnessGroup) Satisfied(cp []byte) bool {
 // URLs returns the URLs for requesting a counter signature from all
 // witnesses that are involved in determining the satisfaction of this
 // PolicyComponent.
-func (wg WitnessGroup) URLs() []*url.URL {
-	urls := make([]*url.URL, 0)
+func (wg WitnessGroup) URLs() []string {
+	urls := make([]string, 0)
 	for _, c := range wg.Components {
 		urls = append(urls, c.URLs()...)
 	}
