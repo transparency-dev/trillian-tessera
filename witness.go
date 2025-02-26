@@ -31,10 +31,11 @@ type policyComponent interface {
 	// witnesses involved in this policy component.
 	Satisfied(cp []byte) bool
 
-	// URLs returns the URLs for requesting a counter signature from all
-	// witnesses that are involved in determining the satisfaction of this
-	// PolicyComponent.
-	URLs() []string
+	// Endpoints returns the details required for updating a witness and checking the
+	// response. The returned result is a map from the URL that should be used to update
+	// the witness with a new checkpoint, to the value which is the verifier to check
+	// the response is well formed.
+	Endpoints() map[string]note.Verifier
 }
 
 // NewWitness returns a Witness given a verifier key and the root URL for where this
@@ -81,11 +82,9 @@ func (w Witness) Satisfied(cp []byte) bool {
 	return len(n.Sigs) == 1
 }
 
-// URLs returns the single URL at which this witness can be reached.
-// The return type is a slice in order to allow this method to match the same signature
-// of WitnessGroup.
-func (w Witness) URLs() []string {
-	return []string{w.Url}
+// Endpoints implements policyComponent.Endpoints.
+func (w Witness) Endpoints() map[string]note.Verifier {
+	return map[string]note.Verifier{w.Url: w.Key}
 }
 
 // NewWitnessGroup creates a grouping of Witness or WitnessGroup with a configurable threshold
@@ -141,13 +140,13 @@ func (wg WitnessGroup) Satisfied(cp []byte) bool {
 	return false
 }
 
-// URLs returns the URLs for requesting a counter signature from all
-// witnesses that are involved in determining the satisfaction of this
-// PolicyComponent.
-func (wg WitnessGroup) URLs() []string {
-	urls := make([]string, 0)
+// Endpoints implements policyComponent.Endpoints.
+func (wg WitnessGroup) Endpoints() map[string]note.Verifier {
+	endpoints := make(map[string]note.Verifier)
 	for _, c := range wg.Components {
-		urls = append(urls, c.URLs()...)
+		for u, v := range c.Endpoints() {
+			endpoints[u] = v
+		}
 	}
-	return urls
+	return endpoints
 }

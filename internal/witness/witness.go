@@ -24,13 +24,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"slices"
 	"strconv"
 	"strings"
 	"sync"
 
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/internal/parse"
+	"golang.org/x/mod/sumdb/note"
 )
 
 var PolicyNotSatisfiedErr = errors.New("witness policy was not satisfied")
@@ -43,10 +43,7 @@ type ProofFetchFn func(ctx context.Context, from, to uint64) [][]byte
 // in the group, and will ensure that the policy is satisfied before returning. All outbound
 // requests will be done using the given client.
 func NewWitnessGateway(group tessera.WitnessGroup, client *http.Client, fetchProof ProofFetchFn) WitnessGateway {
-	urls := group.URLs()
-	slices.Sort(urls)
-	urls = slices.Compact(urls)
-	witnesses := make([]witness, 0, len(urls))
+	endpoints := group.Endpoints()
 	postFnImpl := func(ctx context.Context, url string, body string) (pr postResponse, err error) {
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader(body))
 		if err != nil {
@@ -67,9 +64,11 @@ func NewWitnessGateway(group tessera.WitnessGroup, client *http.Client, fetchPro
 			headers:    httpResp.Header,
 		}, nil
 	}
-	for _, u := range urls {
+	witnesses := make([]witness, 0, len(endpoints))
+	for u, v := range endpoints {
 		witnesses = append(witnesses, witness{
 			url:        u,
+			verifier:   v,
 			size:       0,
 			post:       postFnImpl,
 			fetchProof: fetchProof,
@@ -173,6 +172,7 @@ type postFn func(ctx context.Context, url, body string) (pr postResponse, err er
 // `If a client doesn't have information on the latest cosigned checkpoint, it MAY initially make a request with a old size of zero to obtain it`
 type witness struct {
 	url        string
+	verifier   note.Verifier
 	size       uint64
 	post       postFn
 	fetchProof ProofFetchFn
@@ -203,10 +203,12 @@ func (w witness) update(ctx context.Context, cp []byte, size uint64) ([]byte, er
 
 	switch resp.statusCode {
 	case http.StatusOK:
-		if len(resp.body) == 0 {
-			return nil, errors.New("expected response body from witness, but got empty body")
+		signed := append(cp, resp.body...)
+		if n, err := note.Open(signed, note.VerifierList(w.verifier)); err != nil {
+			return nil, fmt.Errorf("witness at %q replied with invalid signature: %q", w.url, resp.body)
+		} else {
+			return []byte(fmt.Sprintf("— %s %s\n", n.Sigs[0].Name, n.Sigs[0].Base64)), nil
 		}
-		return resp.body, nil
 	case http.StatusConflict:
 		// Two cases here: the first is a situation we can recover from, the second isn't.
 
