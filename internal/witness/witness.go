@@ -33,6 +33,8 @@ import (
 	"github.com/transparency-dev/trillian-tessera/internal/parse"
 )
 
+var PolicyNotSatisfiedErr = errors.New("witness policy was not satisfied")
+
 // ProofFetchFn is the signature of a function that can return the consistency proof
 // for append-only between the two given tree sizes.
 type ProofFetchFn func(ctx context.Context, from, to uint64) [][]byte
@@ -89,7 +91,9 @@ type WitnessGateway struct {
 // and returns the checkpoint as soon as the policy the WitnessGateway was constructed with
 // is Satisfied.
 func (wg WitnessGateway) Witness(ctx context.Context, cp []byte) ([]byte, error) {
-	// TODO(mhutchinson): also set a deadline?
+	if len(wg.witnesses) == 0 {
+		return cp, nil
+	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -131,6 +135,11 @@ func (wg WitnessGateway) Witness(ctx context.Context, cp []byte) ([]byte, error)
 			err = errors.Join(err, r.err)
 			continue
 		}
+		// Some basic validation, which can be extended if needed.
+		if !bytes.HasSuffix(r.sig, []byte("\n")) {
+			err = errors.Join(err, fmt.Errorf("invalid signature from witness: %q", r.sig))
+			continue
+		}
 		// Add new signature to the new note we're building
 		sigBlock.Write(r.sig)
 
@@ -141,7 +150,7 @@ func (wg WitnessGateway) Witness(ctx context.Context, cp []byte) ([]byte, error)
 	}
 
 	// We can only get here if all witnesses have returned and we're still not satisfied.
-	return sigBlock.Bytes(), err
+	return sigBlock.Bytes(), errors.Join(PolicyNotSatisfiedErr, err)
 }
 
 // postResponse contains the parts of the witness response needed for logic flow in order to
