@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1740573526082,
+  "lastUpdate": 1740583268918,
   "repoUrl": "https://github.com/transparency-dev/trillian-tessera",
   "entries": {
     "Benchmark": [
@@ -9168,6 +9168,150 @@ window.BENCHMARK_DATA = {
             "value": 3032,
             "unit": "allocs/op",
             "extra": "3712 times\n4 procs"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "mhutchinson@gmail.com",
+            "name": "Martin Hutchinson",
+            "username": "mhutchinson"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "04da9c83c3848add0ee9515f9f825adec7192910",
+          "message": "[Witnessing] Check responses for valid signatures (#500)\n\nThis now verifies the body of 200 responses. It checks that the note can\nbe verified using the signature, and then returns only the signature\nthat the log has a verifier for.\n\nThis means that witnesses that return a valid signature and then a load\nof other signatures will not be able to pollute the checkpoint with\nthese other signatures. On the other hand, it means we will need to\nconsider how to support witness key rotation in Tessera in the future.\nThere are a few ways to solve this, but I don't believe this approach\nblocks any of them.",
+          "timestamp": "2025-02-26T15:20:23Z",
+          "tree_id": "a288c34df7e0710c108e78211210a957a2358ef3",
+          "url": "https://github.com/transparency-dev/trillian-tessera/commit/04da9c83c3848add0ee9515f9f825adec7192910"
+        },
+        "date": 1740583268535,
+        "tool": "go",
+        "benches": [
+          {
+            "name": "BenchmarkDedupe",
+            "value": 4568836,
+            "unit": "ns/op\t  700623 B/op\t   19675 allocs/op",
+            "extra": "244 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDedupe - ns/op",
+            "value": 4568836,
+            "unit": "ns/op",
+            "extra": "244 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDedupe - B/op",
+            "value": 700623,
+            "unit": "B/op",
+            "extra": "244 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDedupe - allocs/op",
+            "value": 19675,
+            "unit": "allocs/op",
+            "extra": "244 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWitnessGroupSatisfaction",
+            "value": 225976,
+            "unit": "ns/op\t    3152 B/op\t      36 allocs/op",
+            "extra": "5044 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWitnessGroupSatisfaction - ns/op",
+            "value": 225976,
+            "unit": "ns/op",
+            "extra": "5044 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWitnessGroupSatisfaction - B/op",
+            "value": 3152,
+            "unit": "B/op",
+            "extra": "5044 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWitnessGroupSatisfaction - allocs/op",
+            "value": 36,
+            "unit": "allocs/op",
+            "extra": "5044 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLeafBundle_UnmarshalText",
+            "value": 7807,
+            "unit": "ns/op\t    6529 B/op\t       1 allocs/op",
+            "extra": "155664 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLeafBundle_UnmarshalText - ns/op",
+            "value": 7807,
+            "unit": "ns/op",
+            "extra": "155664 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLeafBundle_UnmarshalText - B/op",
+            "value": 6529,
+            "unit": "B/op",
+            "extra": "155664 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLeafBundle_UnmarshalText - allocs/op",
+            "value": 1,
+            "unit": "allocs/op",
+            "extra": "155664 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkCheckpointUnsafe",
+            "value": 115.1,
+            "unit": "ns/op\t     112 B/op\t       3 allocs/op",
+            "extra": "10398758 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkCheckpointUnsafe - ns/op",
+            "value": 115.1,
+            "unit": "ns/op",
+            "extra": "10398758 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkCheckpointUnsafe - B/op",
+            "value": 112,
+            "unit": "B/op",
+            "extra": "10398758 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkCheckpointUnsafe - allocs/op",
+            "value": 3,
+            "unit": "allocs/op",
+            "extra": "10398758 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkIntegrate",
+            "value": 355555,
+            "unit": "ns/op\t  290436 B/op\t    3037 allocs/op",
+            "extra": "3873 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkIntegrate - ns/op",
+            "value": 355555,
+            "unit": "ns/op",
+            "extra": "3873 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkIntegrate - B/op",
+            "value": 290436,
+            "unit": "B/op",
+            "extra": "3873 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkIntegrate - allocs/op",
+            "value": 3037,
+            "unit": "allocs/op",
+            "extra": "3873 times\n4 procs"
           }
         ]
       }
