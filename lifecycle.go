@@ -19,7 +19,6 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/transparency-dev/trillian-tessera/api"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
@@ -80,42 +79,6 @@ type LogReader interface {
 	StreamEntries(ctx context.Context, fromEntryIdx uint64) (next func() (layout.RangeInfo, []byte, error), cancel func())
 }
 
-// Appender allows personalities access to the lifecycle methods associated with logs
-// in sequencing mode. This only has a single method, but other methods are likely to be added
-// such as a Shutdown method for #341.
-type Appender struct {
-	Add AddFn
-	// TODO(#341): add this method and implement it in all drivers
-	// Shutdown func(ctx context.Context)
-}
-
-// NewAppender returns an Appender, which allows a personality to incrementally append new
-// leaves to the log and to read from it.
-//
-// decorators provides a list of optional constructor functions that will return decorators
-// that wrap the base appender. This can be used to provide deduplication. Decorators will be
-// called in-order, and the last in the chain will be the base appender.
-func NewAppender(ctx context.Context, d Driver, opts *AppendOptions) (*Appender, LogReader, error) {
-	type appendLifecycle interface {
-		Appender(context.Context, *AppendOptions) (*Appender, LogReader, error)
-	}
-	lc, ok := d.(appendLifecycle)
-	if !ok {
-		return nil, nil, fmt.Errorf("driver %T does not implement Appender lifecycle", d)
-	}
-	a, r, err := lc.Appender(ctx, opts)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to init appender lifecycle: %v", err)
-	}
-	for i := len(opts.addDecorators) - 1; i >= 0; i-- {
-		a.Add = opts.addDecorators[i](a.Add)
-	}
-	for _, f := range opts.followers {
-		go f(ctx, r)
-	}
-	return a, r, nil
-}
-
 // Antispam describes the contract that an antispam implementation must meet in order to be used via the
 // WithAntispam option below.
 type Antispam interface {
@@ -137,17 +100,6 @@ type Antispam interface {
 	Populate(context.Context, LogReader, func(entryBundle []byte) ([][]byte, error))
 }
 
-func (o *AppendOptions) WithAntispam(inMemEntries uint, as Antispam) *AppendOptions {
-	o.addDecorators = append(o.addDecorators, InMemoryDedupe(inMemEntries))
-	if as != nil {
-		o.addDecorators = append(o.addDecorators, as.Decorator())
-		o.followers = append(o.followers, func(ctx context.Context, lr LogReader) {
-			as.Populate(ctx, lr, defaultIDHasher)
-		})
-	}
-	return o
-}
-
 // defaultIDHasher returns a list of identity hashes corresponding to entries in the provided bundle.
 // Currently, these are simply SHA256 hashes of the raw byte of each entry.
 func defaultIDHasher(bundle []byte) ([][]byte, error) {
@@ -161,73 +113,6 @@ func defaultIDHasher(bundle []byte) ([][]byte, error) {
 		r = append(r, h[:])
 	}
 	return r, nil
-}
-
-func NewAppendOptions() *AppendOptions {
-	return &AppendOptions{
-		batchMaxSize:           DefaultBatchMaxSize,
-		batchMaxAge:            DefaultBatchMaxAge,
-		entriesPath:            layout.EntriesPath,
-		checkpointInterval:     DefaultCheckpointInterval,
-		addDecorators:          make([]func(AddFn) AddFn, 0),
-		pushbackMaxOutstanding: DefaultPushbackMaxOutstanding,
-	}
-}
-
-// AppendOptions holds settings for all storage implementations.
-type AppendOptions struct {
-	// newCP knows how to format and sign checkpoints.
-	newCP func(size uint64, hash []byte) ([]byte, error)
-
-	batchMaxAge  time.Duration
-	batchMaxSize uint
-
-	pushbackMaxOutstanding uint
-
-	// EntriesPath knows how to format entry bundle paths.
-	entriesPath func(n uint64, p uint8) string
-
-	checkpointInterval time.Duration
-	witnesses          WitnessGroup
-
-	addDecorators []func(AddFn) AddFn
-	followers     []func(context.Context, LogReader)
-}
-
-func (o AppendOptions) NewCP() func(uint64, []byte) ([]byte, error) {
-	return o.newCP
-}
-
-func (o AppendOptions) BatchMaxAge() time.Duration {
-	return o.batchMaxAge
-}
-
-func (o AppendOptions) BatchMaxSize() uint {
-	return o.batchMaxSize
-}
-
-func (o AppendOptions) PushbackMaxOutstanding() uint {
-	return o.pushbackMaxOutstanding
-}
-
-func (o AppendOptions) EntriesPath() func(uint64, uint8) string {
-	return o.entriesPath
-}
-
-func (o AppendOptions) CheckpointInterval() time.Duration {
-	return o.checkpointInterval
-}
-
-func (o AppendOptions) Witnesses() WitnessGroup {
-	return o.witnesses
-}
-
-func (o AppendOptions) AddDecorators() []func(AddFn) AddFn {
-	return o.addDecorators
-}
-
-func (o AppendOptions) Followers() []func(context.Context, LogReader) {
-	return o.followers
 }
 
 // MigrationTarget describes the contract of the Migration lifecycle.
