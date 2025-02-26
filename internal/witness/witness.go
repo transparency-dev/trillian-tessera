@@ -12,7 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package storage
+// Package witness contains the implementation for sending out a checkpoint to witnesses
+// and retrieving sufficient signatures to satisfy a policy.
+package witness
 
 import (
 	"bytes"
@@ -129,7 +131,7 @@ func (wg WitnessGateway) Witness(ctx context.Context, cp []byte) ([]byte, error)
 			err = errors.Join(err, r.err)
 			continue
 		}
-		fmt.Printf("got this sig: %q\n", r.sig)
+		fmt.Printf("got this sig: %q", r.sig)
 		// Add new signature to the new note we're building
 		sigBlock.Write(r.sig)
 
