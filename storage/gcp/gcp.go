@@ -89,31 +89,6 @@ type Storage struct {
 	cfg Config
 }
 
-// Appender is an implementation of the Tessera appender lifecycle contract.
-type Appender struct {
-	newCP func(uint64, []byte) ([]byte, error)
-
-	sequencer sequencer
-	logStore  *logResourceStore
-
-	queue *storage.Queue
-
-	cpUpdated chan struct{}
-}
-
-// objStore describes a type which can store and retrieve objects.
-type objStore interface {
-	getObject(ctx context.Context, obj string) ([]byte, int64, error)
-	setObject(ctx context.Context, obj string, data []byte, cond *gcs.Conditions, contType string, cacheCtl string) error
-	lastModified(ctx context.Context, obj string) (time.Time, error)
-}
-
-// logResourceStore knows how to read and write entries which represent a tiles log inside an objStore.
-type logResourceStore struct {
-	objStore    objStore
-	entriesPath func(uint64, uint8) string
-}
-
 // sequencer describes a type which knows how to sequence entries.
 //
 // TODO(al): rename this as it's really more of a coordination for the log.
@@ -149,6 +124,33 @@ func New(ctx context.Context, cfg Config) (tessera.Driver, error) {
 	return &Storage{
 		cfg: cfg,
 	}, nil
+}
+
+type LogReader struct {
+	lrs            logResourceStore
+	integratedSize func(context.Context) (uint64, error)
+}
+
+func (lr *LogReader) ReadCheckpoint(ctx context.Context) ([]byte, error) {
+	return lr.lrs.getCheckpoint(ctx)
+}
+
+func (lr *LogReader) ReadTile(ctx context.Context, l, i uint64, p uint8) ([]byte, error) {
+	return lr.lrs.getTile(ctx, l, i, p)
+}
+
+func (lr *LogReader) ReadEntryBundle(ctx context.Context, i uint64, p uint8) ([]byte, error) {
+	return lr.lrs.getEntryBundle(ctx, i, p)
+}
+
+func (lr *LogReader) IntegratedSize(ctx context.Context) (uint64, error) {
+	return lr.integratedSize(ctx)
+}
+
+func (lr *LogReader) StreamEntries(ctx context.Context, fromEntry uint64) (next func() (ri layout.RangeInfo, bundle []byte, err error), cancel func()) {
+	klog.Infof("StreamEntries from %d", fromEntry)
+
+	return streamAdaptor(ctx, lr.integratedSize, lr.lrs.getEntryBundle, fromEntry)
 }
 
 func (s *Storage) Appender(ctx context.Context, opts *tessera.AppendOptions) (*tessera.Appender, tessera.LogReader, error) {
@@ -239,36 +241,21 @@ func (s *Storage) Appender(ctx context.Context, opts *tessera.AppendOptions) (*t
 		}, nil
 }
 
+// Appender is an implementation of the Tessera appender lifecycle contract.
+type Appender struct {
+	newCP func(uint64, []byte) ([]byte, error)
+
+	sequencer sequencer
+	logStore  *logResourceStore
+
+	queue *storage.Queue
+
+	cpUpdated chan struct{}
+}
+
 // Add is the entrypoint for adding entries to a sequencing log.
 func (s *Appender) Add(ctx context.Context, e *tessera.Entry) tessera.IndexFuture {
 	return s.queue.Add(ctx, e)
-}
-
-type LogReader struct {
-	lrs            logResourceStore
-	integratedSize func(context.Context) (uint64, error)
-}
-
-func (lr *LogReader) ReadCheckpoint(ctx context.Context) ([]byte, error) {
-	return lr.lrs.getCheckpoint(ctx)
-}
-
-func (lr *LogReader) ReadTile(ctx context.Context, l, i uint64, p uint8) ([]byte, error) {
-	return lr.lrs.getTile(ctx, l, i, p)
-}
-
-func (lr *LogReader) ReadEntryBundle(ctx context.Context, i uint64, p uint8) ([]byte, error) {
-	return lr.lrs.getEntryBundle(ctx, i, p)
-}
-
-func (lr *LogReader) IntegratedSize(ctx context.Context) (uint64, error) {
-	return lr.integratedSize(ctx)
-}
-
-func (lr *LogReader) StreamEntries(ctx context.Context, fromEntry uint64) (next func() (ri layout.RangeInfo, bundle []byte, err error), cancel func()) {
-	klog.Infof("StreamEntries from %d", fromEntry)
-
-	return streamAdaptor(ctx, lr.integratedSize, lr.lrs.getEntryBundle, fromEntry)
 }
 
 // init ensures that the storage represents a log in a valid state.
@@ -318,6 +305,19 @@ func (s *Appender) publishCheckpoint(ctx context.Context, minStaleness time.Dura
 	}
 	return nil
 
+}
+
+// objStore describes a type which can store and retrieve objects.
+type objStore interface {
+	getObject(ctx context.Context, obj string) ([]byte, int64, error)
+	setObject(ctx context.Context, obj string, data []byte, cond *gcs.Conditions, contType string, cacheCtl string) error
+	lastModified(ctx context.Context, obj string) (time.Time, error)
+}
+
+// logResourceStore knows how to read and write entries which represent a tiles log inside an objStore.
+type logResourceStore struct {
+	objStore    objStore
+	entriesPath func(uint64, uint8) string
 }
 
 func (lrs *logResourceStore) setCheckpoint(ctx context.Context, cpRaw []byte) error {
