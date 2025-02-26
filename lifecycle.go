@@ -261,9 +261,9 @@ type UnbundlerFunc func(entryBundle []byte) ([][]byte, error)
 //
 // TODO(al): bundleHasher should be implicit from WithCTLayout being present or not.
 // TODO(al): AppendOptions should be somehow replaced - perhaps MigrationOptions, or some other way of limiting options to those which make sense for this lifecycle mode.
-func NewMigrationTarget(ctx context.Context, d Driver, bundleHasher UnbundlerFunc, opts *AppendOptions) (MigrationTarget, error) {
+func NewMigrationTarget(ctx context.Context, d Driver, bundleHasher UnbundlerFunc, opts *MigrationOptions) (MigrationTarget, error) {
 	type migrateLifecycle interface {
-		MigrationTarget(context.Context, UnbundlerFunc, *AppendOptions) (MigrationTarget, LogReader, error)
+		MigrationTarget(context.Context, UnbundlerFunc, *MigrationOptions) (MigrationTarget, LogReader, error)
 	}
 	lc, ok := d.(migrateLifecycle)
 	if !ok {
@@ -277,4 +277,25 @@ func NewMigrationTarget(ctx context.Context, d Driver, bundleHasher UnbundlerFun
 		go f(ctx, r)
 	}
 	return m, nil
+}
+
+func NewMigrationOptions() *MigrationOptions {
+	return &MigrationOptions{
+		entriesPath: layout.EntriesPath,
+	}
+}
+
+// MigrationOptions holds migration lifecycle settings for all storage implementations.
+type MigrationOptions struct {
+	// entriesPath knows how to format entry bundle paths.
+	entriesPath func(n uint64, p uint8) string
+	followers   []func(context.Context, LogReader)
+}
+
+func (o MigrationOptions) EntriesPath() func(uint64, uint8) string {
+	return o.entriesPath
+}
+
+func (o MigrationOptions) Followers() []func(context.Context, LogReader) {
+	return o.followers
 }

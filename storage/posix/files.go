@@ -676,7 +676,7 @@ func createEx(p string, d []byte) error {
 }
 
 // MigrationTarget creates a new POSIX storage for the MigrationTarget lifecycle mode.
-func (s *Storage) MigrationTarget(ctx context.Context, bundleHasher tessera.UnbundlerFunc, opts *tessera.AppendOptions) (tessera.MigrationTarget, tessera.LogReader, error) {
+func (s *Storage) MigrationTarget(ctx context.Context, bundleHasher tessera.UnbundlerFunc, opts *tessera.MigrationOptions) (tessera.MigrationTarget, tessera.LogReader, error) {
 	r := &MigrationStorage{
 		s: s,
 		logStorage: &logResourceStorage{
@@ -684,7 +684,6 @@ func (s *Storage) MigrationTarget(ctx context.Context, bundleHasher tessera.Unbu
 			s:           s,
 		},
 		bundleHasher: bundleHasher,
-		entriesPath:  opts.EntriesPath(),
 	}
 	if err := r.initialise(); err != nil {
 		return nil, nil, err
@@ -697,7 +696,6 @@ type MigrationStorage struct {
 	s            *Storage
 	logStorage   *logResourceStorage
 	bundleHasher tessera.UnbundlerFunc
-	entriesPath  func(uint64, uint8) string
 	curSize      uint64
 }
 
