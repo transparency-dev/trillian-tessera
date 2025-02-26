@@ -1309,47 +1309,51 @@ func (d *AntispamStorage) Populate(ctx context.Context, lr tessera.LogReader, bu
 	}
 }
 
-// NewMigrationTarget creates a new GCP storage for the MigrationTarget lifecycle mode.
-// TODO(al): Make this work with the new tessera package lifecycle c'tors.
-func NewMigrationTarget(ctx context.Context, cfg Config, bundleHasher func([]byte) ([][]byte, error)) (*MigrationStorage, error) {
+// MigrationTarget creates a new GCP storage for the MigrationTarget lifecycle mode.
+func (s *Storage) MigrationTarget(ctx context.Context, bundleHasher tessera.UnbundlerFunc, opts *tessera.AppendOptions) (tessera.MigrationTarget, tessera.LogReader, error) {
 	c, err := gcs.NewClient(ctx, gcs.WithJSONReads())
 	if err != nil {
-		return nil, fmt.Errorf("failed to create GCS client: %v", err)
+		return nil, nil, fmt.Errorf("failed to create GCS client: %v", err)
 	}
 
-	r := &Storage{
-		cfg: cfg,
-	}
-
-	seq, err := newSpannerSequencer(ctx, cfg.Spanner, 0)
+	seq, err := newSpannerSequencer(ctx, s.cfg.Spanner, 0)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create Spanner sequencer: %v", err)
+		return nil, nil, fmt.Errorf("failed to create Spanner sequencer: %v", err)
 	}
 	m := &MigrationStorage{
-		s:            r,
+		s:            s,
 		dbPool:       seq.dbPool,
 		bundleHasher: bundleHasher,
 		sequencer:    seq,
-		entriesPath:  layout.EntriesPath,
 		logStore: &logResourceStore{
 			objStore: &gcsStorage{
 				gcsClient: c,
-				bucket:    cfg.Bucket,
+				bucket:    s.cfg.Bucket,
 			},
+			entriesPath: layout.EntriesPath,
 		},
 	}
 
-	return m, nil
+	r := &LogReader{
+		lrs: *m.logStore,
+		integratedSize: func(context.Context) (uint64, error) {
+			s, _, err := m.sequencer.currentTree(ctx)
+			return s, err
+		},
+	}
+	return m, r, nil
 }
 
+// MigrationStorgage implements the tessera.MigrationTarget lifecycle contract.
 type MigrationStorage struct {
 	s            *Storage
 	dbPool       *spanner.Client
 	bundleHasher func([]byte) ([][]byte, error)
 	sequencer    sequencer
 	logStore     *logResourceStore
-	entriesPath  func(uint64, uint8) string
 }
+
+var _ tessera.MigrationTarget = &MigrationStorage{}
 
 func (m *MigrationStorage) AwaitIntegration(ctx context.Context, sourceSize uint64) ([]byte, error) {
 	t := time.NewTicker(time.Second)
@@ -1381,8 +1385,9 @@ func (m *MigrationStorage) SetEntryBundle(ctx context.Context, index uint64, par
 	return m.logStore.setEntryBundle(ctx, index, partial, bundle)
 }
 
-func (m *MigrationStorage) State(ctx context.Context) (uint64, []byte, error) {
-	return m.sequencer.currentTree(ctx)
+func (m *MigrationStorage) IntegratedSize(ctx context.Context) (uint64, error) {
+	sz, _, err := m.sequencer.currentTree(ctx)
+	return sz, err
 }
 
 func (m *MigrationStorage) fetchLeafHashes(ctx context.Context, from, to, sourceSize uint64) ([][]byte, error) {

@@ -24,6 +24,7 @@ import (
 	"strconv"
 	"strings"
 
+	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/client"
 	"github.com/transparency-dev/trillian-tessera/cmd/experimental/migrate/internal"
 	"github.com/transparency-dev/trillian-tessera/storage/gcp"
@@ -67,12 +68,17 @@ func main() {
 
 	// Create our Tessera storage backend:
 	gcpCfg := storageConfigFromFlags()
-	driver, err := gcp.NewMigrationTarget(ctx, gcpCfg, internal.BundleHasher)
+	driver, err := gcp.New(ctx, gcpCfg)
 	if err != nil {
-		klog.Exitf("Failed to create new GCP storage: %v", err)
+		klog.Exitf("Failed to create new GCP storage driver: %v", err)
 	}
 
-	if err := internal.Migrate(context.Background(), *numWorkers, sourceSize, sourceRoot, src.ReadEntryBundle, driver); err != nil {
+	m, err := tessera.NewMigrationTarget(ctx, driver, internal.BundleHasher)
+	if err != nil {
+		klog.Exitf("Failed to create MigrationTarget: %v", err)
+	}
+
+	if err := internal.Migrate(context.Background(), *numWorkers, sourceSize, sourceRoot, src.ReadEntryBundle, m); err != nil {
 		klog.Exitf("Migrate failed: %v", err)
 	}
 }

@@ -24,6 +24,7 @@ import (
 	"strconv"
 	"strings"
 
+	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/client"
 	"github.com/transparency-dev/trillian-tessera/cmd/experimental/migrate/internal"
 	"github.com/transparency-dev/trillian-tessera/storage/posix"
@@ -32,7 +33,6 @@ import (
 
 var (
 	storageDir = flag.String("storage_dir", "", "Root directory to store log data.")
-	initialise = flag.Bool("initialise", false, "Set when creating a new log to initialise the structure.")
 	sourceURL  = flag.String("source_url", "", "Base URL for the source log.")
 	numWorkers = flag.Int("num_workers", 30, "Number of migration worker goroutines.")
 )
@@ -64,8 +64,12 @@ func main() {
 		klog.Exitf("invalid checkpoint roothash %q: %v", bits[2], err)
 	}
 
-	// Create our Tessera storage backend:
-	st, err := posix.NewMigrationTarget(ctx, *storageDir, *initialise, internal.BundleHasher, nil)
+	driver, err := posix.New(ctx, *storageDir)
+	if err != nil {
+		klog.Exitf("Failed to create new POSIX storage driver: %v", err)
+	}
+	// Create our Tessera migration target instance
+	st, err := tessera.NewMigrationTarget(ctx, driver, internal.BundleHasher)
 	if err != nil {
 		klog.Exitf("Failed to create new POSIX storage: %v", err)
 	}
