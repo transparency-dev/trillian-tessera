@@ -1310,7 +1310,7 @@ func (d *AntispamStorage) Populate(ctx context.Context, lr tessera.LogReader, bu
 }
 
 // MigrationTarget creates a new GCP storage for the MigrationTarget lifecycle mode.
-func (s *Storage) MigrationTarget(ctx context.Context, bundleHasher tessera.BundleProcessorFunc, opts *tessera.AppendOptions) (tessera.MigrationTarget, tessera.LogReader, error) {
+func (s *Storage) MigrationTarget(ctx context.Context, bundleHasher tessera.UnbundlerFunc, opts *tessera.AppendOptions) (tessera.MigrationTarget, tessera.LogReader, error) {
 	c, err := gcs.NewClient(ctx, gcs.WithJSONReads())
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create GCS client: %v", err)

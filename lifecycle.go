@@ -211,6 +211,9 @@ type MigrationTarget interface {
 	//
 	// Bundles may be set in any order (not just consecutively), and the implementation should integrate
 	// them into the local tree in the most efficient way possible.
+	//
+	// Writes should be idempotent; repeated calls to set the same bundle with the same data should not
+	// return an error.
 	SetEntryBundle(ctx context.Context, idx uint64, partial uint8, bundle []byte) error
 	// AwaitIntegration should block until the local integrated tree has grown to the provided size,
 	// and should return the locally calculated root hash derived from the integration of the contents of
@@ -220,19 +223,19 @@ type MigrationTarget interface {
 	IntegratedSize(ctx context.Context) (uint64, error)
 }
 
-// BundleProcessorFunc is a function which knows how to turn a serialised entry bundle into a slice of
+// UnbundlerFunc is a function which knows how to turn a serialised entry bundle into a slice of
 // []byte representing each of the entries within the bundle.
-type BundleProcessorFunc func(entryBundle []byte) ([][]byte, error)
+type UnbundlerFunc func(entryBundle []byte) ([][]byte, error)
 
 // NewMigrationTarget returns a MigrationTarget, which allows a personality to "import" a C2SP
 // tlog-tiles or static-ct compliant log into a Tessera instance.
 //
 // TODO(al): bundleHasher should be implicit from WithCTLayout being present or not.
 // TODO(al): AppendOptions should be somehow replaced - perhaps MigrationOptions, or some other way of limiting options to those which make sense for this lifecycle mode.
-func NewMigrationTarget(ctx context.Context, d Driver, bundleHasher BundleProcessorFunc, opts ...func(*AppendOptions)) (MigrationTarget, error) {
+func NewMigrationTarget(ctx context.Context, d Driver, bundleHasher UnbundlerFunc, opts ...func(*AppendOptions)) (MigrationTarget, error) {
 	resolved := resolveAppendOptions(opts...)
 	type migrateLifecycle interface {
-		MigrationTarget(context.Context, BundleProcessorFunc, *AppendOptions) (MigrationTarget, LogReader, error)
+		MigrationTarget(context.Context, UnbundlerFunc, *AppendOptions) (MigrationTarget, LogReader, error)
 	}
 	lc, ok := d.(migrateLifecycle)
 	if !ok {
