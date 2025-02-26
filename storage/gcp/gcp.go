@@ -186,48 +186,8 @@ func (s *Storage) Appender(ctx context.Context, opts *tessera.AppendOptions) (*t
 		return nil, nil, fmt.Errorf("failed to initialise log storage: %v", err)
 	}
 
-	go func() {
-		t := time.NewTicker(1 * time.Second)
-		defer t.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-t.C:
-			}
-
-			func() {
-				// Don't quickloop for now, it causes issues updating checkpoint too frequently.
-				cctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-				defer cancel()
-
-				if _, err := a.sequencer.consumeEntries(cctx, DefaultIntegrationSizeLimit, a.appendEntries, false); err != nil {
-					klog.Errorf("integrate: %v", err)
-					return
-				}
-				select {
-				case a.cpUpdated <- struct{}{}:
-				default:
-				}
-			}()
-		}
-	}()
-
-	go func(ctx context.Context, i time.Duration) {
-		t := time.NewTicker(i)
-		defer t.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-a.cpUpdated:
-			case <-t.C:
-			}
-			if err := a.publishCheckpoint(ctx, i); err != nil {
-				klog.Warningf("publishCheckpoint: %v", err)
-			}
-		}
-	}(ctx, opts.CheckpointInterval)
+	go a.sequencerJob(ctx)
+	go a.publisherJob(ctx, opts.CheckpointInterval)
 
 	return &tessera.Appender{
 			Add: a.Add,
@@ -256,6 +216,53 @@ type Appender struct {
 // Add is the entrypoint for adding entries to a sequencing log.
 func (s *Appender) Add(ctx context.Context, e *tessera.Entry) tessera.IndexFuture {
 	return s.queue.Add(ctx, e)
+}
+
+// sequencerJob is a long-running function which handles the periodic integration of sequenced entries.
+// Blocks until ctx is done.
+func (a *Appender) sequencerJob(ctx context.Context) {
+	t := time.NewTicker(1 * time.Second)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+
+		func() {
+			// Don't quickloop for now, it causes issues updating checkpoint too frequently.
+			cctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+			defer cancel()
+
+			if _, err := a.sequencer.consumeEntries(cctx, DefaultIntegrationSizeLimit, a.appendEntries, false); err != nil {
+				klog.Errorf("integrate: %v", err)
+				return
+			}
+			select {
+			case a.cpUpdated <- struct{}{}:
+			default:
+			}
+		}()
+	}
+}
+
+// publisherJob is a long-running function which handles the periodic publishing of checkpoints.
+// Blocks until ctx is done.
+func (a *Appender) publisherJob(ctx context.Context, i time.Duration) {
+	t := time.NewTicker(i)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-a.cpUpdated:
+		case <-t.C:
+		}
+		if err := a.publishCheckpoint(ctx, i); err != nil {
+			klog.Warningf("publishCheckpoint failed: %v", err)
+		}
+	}
 }
 
 // init ensures that the storage represents a log in a valid state.
