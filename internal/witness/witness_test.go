@@ -73,11 +73,11 @@ func TestWitnessGateway_Update(t *testing.T) {
 
 		switch r.URL.String() {
 		case w1u.Path:
-			_, _ = w.Write(append(sigForSigner(t, cp, wit1_skey), '\n'))
+			_, _ = w.Write(sigForSigner(t, cp, wit1_skey))
 		case w2u.Path:
-			_, _ = w.Write(append(sigForSigner(t, cp, wit2_skey), '\n'))
+			_, _ = w.Write(sigForSigner(t, cp, wit2_skey))
 		case wbu.Path:
-			_, _ = w.Write([]byte("this is not a signature and doesn't have a newline"))
+			_, _ = w.Write([]byte("this is not a signature\n"))
 		default:
 			t.Fatalf("Unknown case: %s", r.URL.String())
 		}
@@ -176,6 +176,7 @@ func TestWitnessGateway_Update(t *testing.T) {
 func TestWitness_UpdateRequest(t *testing.T) {
 	cpSize := uint64(34840403)
 	s := mustCreateSigner(t, log_skey)
+	wv1 := mustCreateVerifier(t, wit1_vkey)
 
 	logSignedCheckpoint, err := note.Sign(&note.Note{Text: cp}, s)
 	if err != nil {
@@ -207,13 +208,14 @@ func TestWitness_UpdateRequest(t *testing.T) {
 			ctx := context.Background()
 			var gotBody string
 			w := witness{
-				url:  "https://example.com/thislittlelogofmine/add-checkpoint",
-				size: tC.witSize,
+				url:      "https://example.com/thislittlelogofmine/add-checkpoint",
+				verifier: wv1,
+				size:     tC.witSize,
 				post: func(ctx context.Context, url string, body string) (postResponse, error) {
 					gotBody = body
 					return postResponse{
 						statusCode: 200,
-						body:       append(sig1, '\n'),
+						body:       sig1,
 					}, nil
 				},
 				fetchProof: func(ctx context.Context, from uint64, to uint64) [][]byte {
@@ -237,14 +239,22 @@ func TestWitness_UpdateRequest(t *testing.T) {
 }
 
 func TestWitness_UpdateResponse(t *testing.T) {
+	wv1 := mustCreateVerifier(t, wit1_vkey)
 	sig1 := sigForSigner(t, cp, wit1_skey)
 	sig2 := sigForSigner(t, cp, wit2_skey)
 
+	s := mustCreateSigner(t, log_skey)
+	logSignedCheckpoint, err := note.Sign(&note.Note{Text: cp}, s)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	testCases := []struct {
-		desc    string
-		pr      postResponse
-		pre     error
-		wantErr bool
+		desc       string
+		pr         postResponse
+		pre        error
+		wantErr    bool
+		wantResult []byte
 	}{
 		{
 			desc: "all good",
@@ -252,12 +262,14 @@ func TestWitness_UpdateResponse(t *testing.T) {
 				statusCode: 200,
 				body:       sig1,
 			},
+			wantResult: sig1,
 		}, {
 			desc: "all good, two sigs",
 			pr: postResponse{
 				statusCode: 200,
-				body:       append(append(sig1, byte('\n')), sig2...),
+				body:       append(sig1, sig2...),
 			},
+			wantResult: sig1,
 		}, {
 			desc: "404 is an error",
 			pr: postResponse{
@@ -288,8 +300,9 @@ func TestWitness_UpdateResponse(t *testing.T) {
 		t.Run(tC.desc, func(t *testing.T) {
 			ctx := context.Background()
 			w := witness{
-				url:  "https://example.com/thislittlelogofmine/add-checkpoint",
-				size: 0,
+				url:      "https://example.com/thislittlelogofmine/add-checkpoint",
+				verifier: wv1,
+				size:     0,
 				post: func(ctx context.Context, url string, body string) (postResponse, error) {
 					return tC.pr, tC.pre
 				},
@@ -298,12 +311,12 @@ func TestWitness_UpdateResponse(t *testing.T) {
 				},
 			}
 
-			resp, err := w.update(ctx, []byte{}, 0)
+			resp, err := w.update(ctx, logSignedCheckpoint, 0)
 			if got, want := err != nil, tC.wantErr; got != want {
 				t.Fatalf("got != want (%t != %t): %v", got, want, err)
 			}
 			if err == nil {
-				if !bytes.Equal(resp, tC.pr.body) {
+				if !bytes.Equal(resp, tC.wantResult) {
 					t.Errorf("expected result %q but got %q", tC.pr.body, resp)
 				}
 			}
@@ -321,7 +334,7 @@ func sigForSigner(t *testing.T, cp, skey string) []byte {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return bytes.Trim(witSignedCheckpoint[len(cp):], "\n")
+	return append(bytes.Trim(witSignedCheckpoint[len(cp):], "\n"), '\n')
 }
 
 func mustCreateVerifier(t *testing.T, vkey string) note.Verifier {

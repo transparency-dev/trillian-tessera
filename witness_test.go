@@ -34,7 +34,7 @@ func TestWitnessGroup_Empty(t *testing.T) {
 	if !group.Satisfied([]byte("definitely a checkpoint\n")) {
 		t.Error("empty group should be satisfied")
 	}
-	if len(group.URLs()) != 0 {
+	if len(group.Endpoints()) != 0 {
 		t.Error("empty group should have no URLs")
 	}
 }
@@ -166,10 +166,9 @@ func TestWitnessGroup_URLs(t *testing.T) {
 			},
 		},
 		{
-			desc:  "all witnesses with duplicates in nests", // This currently expects duplicates, but this behaviour may change
+			desc:  "all witnesses with duplicates in nests",
 			group: tessera.NewWitnessGroup(2, tessera.NewWitnessGroup(1, wit1, wit2), tessera.NewWitnessGroup(1, wit1, wit3)),
 			expectedURLs: []string{
-				"https://b1.example.com/b490a162bf632bdd72181cd9eb5b8ab8b13e4e973a9ce9a12a0810fd981bc186/add-checkpoint",
 				"https://b1.example.com/b490a162bf632bdd72181cd9eb5b8ab8b13e4e973a9ce9a12a0810fd981bc186/add-checkpoint",
 				"https://b1.example.com/7a99cf3d04ea875d413c4b3fb70d74ef483efaf667eac56e35f0b96a112b1c84/add-checkpoint",
 				"https://b2.example.com/ae59f4e59ea1802501b6000f875f09eb49d267055d4a1df8b6d862edc004334c/add-checkpoint",
@@ -178,7 +177,10 @@ func TestWitnessGroup_URLs(t *testing.T) {
 	}
 	for _, tC := range testCases {
 		t.Run(tC.desc, func(t *testing.T) {
-			gotURLs := tC.group.URLs()
+			gotURLs := make([]string, 0)
+			for u := range tC.group.Endpoints() {
+				gotURLs = append(gotURLs, u)
+			}
 			slices.Sort(gotURLs)
 			slices.Sort(tC.expectedURLs)
 
