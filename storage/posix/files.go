@@ -88,23 +88,23 @@ func New(ctx context.Context, path string) (tessera.Driver, error) {
 }
 
 func (s *Storage) Appender(ctx context.Context, opts *tessera.AppendOptions) (*tessera.Appender, tessera.LogReader, error) {
-	if opts.CheckpointInterval < minCheckpointInterval {
-		return nil, nil, fmt.Errorf("requested CheckpointInterval (%v) is less than minimum permitted %v", opts.CheckpointInterval, minCheckpointInterval)
+	if opts.CheckpointInterval() < minCheckpointInterval {
+		return nil, nil, fmt.Errorf("requested CheckpointInterval (%v) is less than minimum permitted %v", opts.CheckpointInterval(), minCheckpointInterval)
 	}
 
 	a := &appender{
 		s: s,
 		logStorage: &logResourceStorage{
 			s:           s,
-			entriesPath: opts.EntriesPath,
+			entriesPath: opts.EntriesPath(),
 		},
-		newCP:     opts.NewCP,
+		newCP:     opts.NewCP(),
 		cpUpdated: make(chan struct{}),
 	}
 	if err := a.initialise(); err != nil {
 		return nil, nil, err
 	}
-	a.queue = storage.NewQueue(ctx, opts.BatchMaxAge, opts.BatchMaxSize, a.sequenceBatch)
+	a.queue = storage.NewQueue(ctx, opts.BatchMaxAge(), opts.BatchMaxSize(), a.sequenceBatch)
 
 	go func(ctx context.Context, i time.Duration) {
 		for {
@@ -118,7 +118,7 @@ func (s *Storage) Appender(ctx context.Context, opts *tessera.AppendOptions) (*t
 				klog.Warningf("publishCheckpoint: %v", err)
 			}
 		}
-	}(ctx, opts.CheckpointInterval)
+	}(ctx, opts.CheckpointInterval())
 
 	return &tessera.Appender{
 		Add: a.Add,
@@ -680,11 +680,11 @@ func (s *Storage) MigrationTarget(ctx context.Context, bundleHasher tessera.Unbu
 	r := &MigrationStorage{
 		s: s,
 		logStorage: &logResourceStorage{
-			entriesPath: opts.EntriesPath,
+			entriesPath: opts.EntriesPath(),
 			s:           s,
 		},
 		bundleHasher: bundleHasher,
-		entriesPath:  opts.EntriesPath,
+		entriesPath:  opts.EntriesPath(),
 	}
 	if err := r.initialise(); err != nil {
 		return nil, nil, err

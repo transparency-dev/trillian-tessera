@@ -158,14 +158,15 @@ func New(ctx context.Context, cfg Config) (tessera.Driver, error) {
 }
 
 func (s *Storage) Appender(ctx context.Context, opts *tessera.AppendOptions) (*tessera.Appender, tessera.LogReader, error) {
-	if opts.PushbackMaxOutstanding == 0 {
-		opts.PushbackMaxOutstanding = DefaultPushbackMaxOutstanding
+	pb := uint64(opts.PushbackMaxOutstanding())
+	if pb == 0 {
+		pb = DefaultPushbackMaxOutstanding
 	}
-	if opts.CheckpointInterval < minCheckpointInterval {
-		return nil, nil, fmt.Errorf("requested CheckpointInterval (%v) is less than minimum permitted %v", opts.CheckpointInterval, minCheckpointInterval)
+	if opts.CheckpointInterval() < minCheckpointInterval {
+		return nil, nil, fmt.Errorf("requested CheckpointInterval (%v) is less than minimum permitted %v", opts.CheckpointInterval(), minCheckpointInterval)
 	}
 
-	seq, err := newMySQLSequencer(ctx, s.cfg.DSN, uint64(opts.PushbackMaxOutstanding), s.cfg.MaxOpenConns, s.cfg.MaxIdleConns)
+	seq, err := newMySQLSequencer(ctx, s.cfg.DSN, pb, s.cfg.MaxOpenConns, s.cfg.MaxIdleConns)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create MySQL sequencer: %v", err)
 	}
@@ -176,13 +177,13 @@ func (s *Storage) Appender(ctx context.Context, opts *tessera.AppendOptions) (*t
 				s3Client: s3.NewFromConfig(*s.cfg.SDKConfig, s.cfg.S3Options),
 				bucket:   s.cfg.Bucket,
 			},
-			entriesPath: opts.EntriesPath,
+			entriesPath: opts.EntriesPath(),
 		},
 		sequencer:   seq,
-		newCP:       opts.NewCP,
+		newCP:       opts.NewCP(),
 		treeUpdated: make(chan struct{}),
 	}
-	r.queue = storage.NewQueue(ctx, opts.BatchMaxAge, opts.BatchMaxSize, r.sequencer.assignEntries)
+	r.queue = storage.NewQueue(ctx, opts.BatchMaxAge(), opts.BatchMaxSize(), r.sequencer.assignEntries)
 
 	if err := r.init(ctx); err != nil {
 		return nil, nil, fmt.Errorf("failed to initialise log storage: %v", err)
@@ -192,7 +193,7 @@ func (s *Storage) Appender(ctx context.Context, opts *tessera.AppendOptions) (*t
 	go r.consumeEntriesTask(ctx)
 
 	// Kick off go-routine which handles the publication of checkpoints.
-	go r.publishCheckpointTask(ctx, opts.CheckpointInterval)
+	go r.publishCheckpointTask(ctx, opts.CheckpointInterval())
 
 	return &tessera.Appender{
 		Add: r.Add,

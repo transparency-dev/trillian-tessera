@@ -154,8 +154,8 @@ func (lr *LogReader) StreamEntries(ctx context.Context, fromEntry uint64) (next 
 }
 
 func (s *Storage) Appender(ctx context.Context, opts *tessera.AppendOptions) (*tessera.Appender, tessera.LogReader, error) {
-	if opts.CheckpointInterval < minCheckpointInterval {
-		return nil, nil, fmt.Errorf("requested CheckpointInterval (%v) is less than minimum permitted %v", opts.CheckpointInterval, minCheckpointInterval)
+	if opts.CheckpointInterval() < minCheckpointInterval {
+		return nil, nil, fmt.Errorf("requested CheckpointInterval (%v) is less than minimum permitted %v", opts.CheckpointInterval(), minCheckpointInterval)
 	}
 
 	c, err := gcs.NewClient(ctx, gcs.WithJSONReads())
@@ -163,7 +163,7 @@ func (s *Storage) Appender(ctx context.Context, opts *tessera.AppendOptions) (*t
 		return nil, nil, fmt.Errorf("failed to create GCS client: %v", err)
 	}
 
-	seq, err := newSpannerCoordinator(ctx, s.cfg.Spanner, uint64(opts.PushbackMaxOutstanding))
+	seq, err := newSpannerCoordinator(ctx, s.cfg.Spanner, uint64(opts.PushbackMaxOutstanding()))
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create Spanner coordinator: %v", err)
 	}
@@ -174,20 +174,20 @@ func (s *Storage) Appender(ctx context.Context, opts *tessera.AppendOptions) (*t
 				gcsClient: c,
 				bucket:    s.cfg.Bucket,
 			},
-			entriesPath: opts.EntriesPath,
+			entriesPath: opts.EntriesPath(),
 		},
 		sequencer: seq,
-		newCP:     opts.NewCP,
+		newCP:     opts.NewCP(),
 		cpUpdated: make(chan struct{}),
 	}
-	a.queue = storage.NewQueue(ctx, opts.BatchMaxAge, opts.BatchMaxSize, a.sequencer.assignEntries)
+	a.queue = storage.NewQueue(ctx, opts.BatchMaxAge(), opts.BatchMaxSize(), a.sequencer.assignEntries)
 
 	if err := a.init(ctx); err != nil {
 		return nil, nil, fmt.Errorf("failed to initialise log storage: %v", err)
 	}
 
 	go a.sequencerJob(ctx)
-	go a.publisherJob(ctx, opts.CheckpointInterval)
+	go a.publisherJob(ctx, opts.CheckpointInterval())
 
 	return &tessera.Appender{
 			Add: a.Add,
