@@ -214,8 +214,8 @@ type Appender struct {
 }
 
 // Add is the entrypoint for adding entries to a sequencing log.
-func (s *Appender) Add(ctx context.Context, e *tessera.Entry) tessera.IndexFuture {
-	return s.queue.Add(ctx, e)
+func (a *Appender) Add(ctx context.Context, e *tessera.Entry) tessera.IndexFuture {
+	return a.queue.Add(ctx, e)
 }
 
 // sequencerJob is a long-running function which handles the periodic integration of sequenced entries.
@@ -266,19 +266,19 @@ func (a *Appender) publisherJob(ctx context.Context, i time.Duration) {
 }
 
 // init ensures that the storage represents a log in a valid state.
-func (s *Appender) init(ctx context.Context) error {
-	if _, err := s.logStore.getCheckpoint(ctx); err != nil {
+func (a *Appender) init(ctx context.Context) error {
+	if _, err := a.logStore.getCheckpoint(ctx); err != nil {
 		if errors.Is(err, gcs.ErrObjectNotExist) {
 			// No checkpoint exists, do a forced (possibly empty) integration to create one in a safe
 			// way (setting the checkpoint directly here would not be safe as it's outside the transactional
 			// framework which prevents the tree from rolling backwards or otherwise forking).
 			cctx, c := context.WithTimeout(ctx, 10*time.Second)
 			defer c()
-			if _, err := s.sequencer.consumeEntries(cctx, DefaultIntegrationSizeLimit, s.appendEntries, true); err != nil {
+			if _, err := a.sequencer.consumeEntries(cctx, DefaultIntegrationSizeLimit, a.appendEntries, true); err != nil {
 				return fmt.Errorf("forced integrate: %v", err)
 			}
 			select {
-			case s.cpUpdated <- struct{}{}:
+			case a.cpUpdated <- struct{}{}:
 			default:
 			}
 			return nil
@@ -289,8 +289,8 @@ func (s *Appender) init(ctx context.Context) error {
 	return nil
 }
 
-func (s *Appender) publishCheckpoint(ctx context.Context, minStaleness time.Duration) error {
-	m, err := s.logStore.checkpointLastModified(ctx)
+func (a *Appender) publishCheckpoint(ctx context.Context, minStaleness time.Duration) error {
+	m, err := a.logStore.checkpointLastModified(ctx)
 	if err != nil && !errors.Is(err, gcs.ErrObjectNotExist) {
 		return fmt.Errorf("lastModified(%q): %v", layout.CheckpointPath, err)
 	}
@@ -298,16 +298,16 @@ func (s *Appender) publishCheckpoint(ctx context.Context, minStaleness time.Dura
 		return nil
 	}
 
-	size, root, err := s.sequencer.currentTree(ctx)
+	size, root, err := a.sequencer.currentTree(ctx)
 	if err != nil {
 		return fmt.Errorf("currentTree: %v", err)
 	}
-	cpRaw, err := s.newCP(size, root)
+	cpRaw, err := a.newCP(size, root)
 	if err != nil {
 		return fmt.Errorf("newCP: %v", err)
 	}
 
-	if err := s.logStore.setCheckpoint(ctx, cpRaw); err != nil {
+	if err := a.logStore.setCheckpoint(ctx, cpRaw); err != nil {
 		return fmt.Errorf("writeCheckpoint: %v", err)
 	}
 	return nil
@@ -550,13 +550,13 @@ func (s *logResourceStore) setEntryBundle(ctx context.Context, bundleIndex uint6
 }
 
 // appendEntries incorporates the provided entries into the log starting at fromSeq.
-func (s *Appender) appendEntries(ctx context.Context, fromSeq uint64, entries []storage.SequencedEntry) ([]byte, error) {
+func (a *Appender) appendEntries(ctx context.Context, fromSeq uint64, entries []storage.SequencedEntry) ([]byte, error) {
 	var newRoot []byte
 
 	errG := errgroup.Group{}
 
 	errG.Go(func() error {
-		if err := s.updateEntryBundles(ctx, fromSeq, entries); err != nil {
+		if err := a.updateEntryBundles(ctx, fromSeq, entries); err != nil {
 			return fmt.Errorf("updateEntryBundles: %v", err)
 		}
 		return nil
@@ -567,7 +567,7 @@ func (s *Appender) appendEntries(ctx context.Context, fromSeq uint64, entries []
 		for i, e := range entries {
 			lh[i] = e.LeafHash
 		}
-		r, err := integrate(ctx, fromSeq, lh, s.logStore)
+		r, err := integrate(ctx, fromSeq, lh, a.logStore)
 		if err != nil {
 			return fmt.Errorf("integrate: %v", err)
 		}
@@ -617,7 +617,7 @@ func integrate(ctx context.Context, fromSeq uint64, lh [][]byte, logStore *logRe
 // updateEntryBundles adds the entries being integrated into the entry bundles.
 //
 // The right-most bundle will be grown, if it's partial, and/or new bundles will be created as required.
-func (s *Appender) updateEntryBundles(ctx context.Context, fromSeq uint64, entries []storage.SequencedEntry) error {
+func (a *Appender) updateEntryBundles(ctx context.Context, fromSeq uint64, entries []storage.SequencedEntry) error {
 	if len(entries) == 0 {
 		return nil
 	}
@@ -627,7 +627,7 @@ func (s *Appender) updateEntryBundles(ctx context.Context, fromSeq uint64, entri
 	bundleWriter := &bytes.Buffer{}
 	if entriesInBundle > 0 {
 		// If the latest bundle is partial, we need to read the data it contains in for our newer, larger, bundle.
-		part, err := s.logStore.getEntryBundle(ctx, uint64(bundleIndex), uint8(entriesInBundle))
+		part, err := a.logStore.getEntryBundle(ctx, uint64(bundleIndex), uint8(entriesInBundle))
 		if err != nil {
 			return err
 		}
@@ -643,7 +643,7 @@ func (s *Appender) updateEntryBundles(ctx context.Context, fromSeq uint64, entri
 	// It's used in the for loop below.
 	goSetEntryBundle := func(ctx context.Context, bundleIndex uint64, p uint8, bundleRaw []byte) {
 		seqErr.Go(func() error {
-			if err := s.logStore.setEntryBundle(ctx, bundleIndex, p, bundleRaw); err != nil {
+			if err := a.logStore.setEntryBundle(ctx, bundleIndex, p, bundleRaw); err != nil {
 				return err
 			}
 			return nil
