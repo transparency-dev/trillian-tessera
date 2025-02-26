@@ -21,6 +21,7 @@ package parse
 
 import (
 	"bytes"
+	"encoding/base64"
 	"fmt"
 	"strconv"
 )
@@ -32,16 +33,21 @@ import (
 // Parsing a checkpoint like this is only acceptable in the same binary as the
 // log implementation that generated it and thus we can safely assume it's a well formed and
 // validly signed checkpoint. Anyone copying similar logic into client code will get hurt.
-func CheckpointUnsafe(rawCp []byte) (string, uint64, error) {
-	parts := bytes.SplitN(rawCp, []byte{'\n'}, 3)
-	if want, got := 3, len(parts); want != got {
-		return "", 0, fmt.Errorf("invalid checkpoint: %q", rawCp)
+func CheckpointUnsafe(rawCp []byte) (string, uint64, []byte, error) {
+	parts := bytes.SplitN(rawCp, []byte{'\n'}, 4)
+	if want, got := 4, len(parts); want != got {
+		return "", 0, nil, fmt.Errorf("invalid checkpoint: %q", rawCp)
 	}
 	origin := string(parts[0])
 	sizeStr := string(parts[1])
+	hashStr := string(parts[2])
 	size, err := strconv.ParseUint(sizeStr, 10, 64)
 	if err != nil {
-		return "", 0, fmt.Errorf("failed to turn checkpoint size of %q into uint64: %v", sizeStr, err)
+		return "", 0, nil, fmt.Errorf("failed to turn checkpoint size of %q into uint64: %v", sizeStr, err)
 	}
-	return origin, size, nil
+	hash, err := base64.StdEncoding.DecodeString(hashStr)
+	if err != nil {
+		return "", 0, nil, fmt.Errorf("failed to decode hash: %v", err)
+	}
+	return origin, size, hash, nil
 }
