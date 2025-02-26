@@ -28,13 +28,15 @@ import (
 )
 
 const (
-	log_vkey  = "LilLog+b65b2501+Af40T+NgLuQzeKqU1mbUL4pcmQwCVDK67QSmdJ3Q8LTl"
-	log_skey  = "PRIVATE+KEY+LilLog+b65b2501+AbKaNq0e8nx6WOuOH0eYAgPeKPtk8KM3fZBhwr5qzo+p"
-	wit1_vkey = "Wit1+55ee4561+AVhZSmQj9+SoL+p/nN0Hh76xXmF7QcHfytUrI1XfSClk"
-	wit1_skey = "PRIVATE+KEY+Wit1+55ee4561+AeadRiG7XM4XiieCHzD8lxysXMwcViy5nYsoXURWGrlE"
-	wit2_vkey = "Wit2+85ecc407+AWVbwFJte9wMQIPSnEnj4KibeO6vSIOEDUTDp3o63c2x"
-	wit2_skey = "PRIVATE+KEY+Wit2+85ecc407+AfPTvxw5eUcqSgivo2vaiC7JPOMUZ/9baHPSDrWqgdGm"
-	cp        = "LilLog\n" +
+	log_vkey    = "LilLog+b65b2501+Af40T+NgLuQzeKqU1mbUL4pcmQwCVDK67QSmdJ3Q8LTl"
+	log_skey    = "PRIVATE+KEY+LilLog+b65b2501+AbKaNq0e8nx6WOuOH0eYAgPeKPtk8KM3fZBhwr5qzo+p"
+	wit1_vkey   = "Wit1+55ee4561+AVhZSmQj9+SoL+p/nN0Hh76xXmF7QcHfytUrI1XfSClk"
+	wit1_skey   = "PRIVATE+KEY+Wit1+55ee4561+AeadRiG7XM4XiieCHzD8lxysXMwcViy5nYsoXURWGrlE"
+	wit2_vkey   = "Wit2+85ecc407+AWVbwFJte9wMQIPSnEnj4KibeO6vSIOEDUTDp3o63c2x"
+	wit2_skey   = "PRIVATE+KEY+Wit2+85ecc407+AfPTvxw5eUcqSgivo2vaiC7JPOMUZ/9baHPSDrWqgdGm"
+	witBad_vkey = "WitBad+b82b4b16+AY5FLOcqxs5lD+OpC6cVTrxsyNJktaCGYHNfnE5vKBQX"
+	witBad_skey = "PRIVATE+KEY+WitBad+b82b4b16+AYSil2PKfSN1a0LhdbzmK1uXqDFZbp+P1OyR54k3gdJY"
+	cp          = "LilLog\n" +
 		"34840403\n" +
 		"Ux/vc6m0VqNe7o2MbLNrCSwFzFvGBCGNClW2x3up/YI=\n"
 )
@@ -54,6 +56,7 @@ func TestWitnessGateway_Update(t *testing.T) {
 	// amount of code to add to this already long test!
 	var wit1 tessera.Witness
 	var wit2 tessera.Witness
+	var witBad tessera.Witness
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w1u, err := url.Parse(wit1.Url)
 		if err != nil {
@@ -63,12 +66,18 @@ func TestWitnessGateway_Update(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		wbu, err := url.Parse(witBad.Url)
+		if err != nil {
+			t.Fatal(err)
+		}
 
 		switch r.URL.String() {
 		case w1u.Path:
 			_, _ = w.Write(append(sigForSigner(t, cp, wit1_skey), '\n'))
 		case w2u.Path:
 			_, _ = w.Write(append(sigForSigner(t, cp, wit2_skey), '\n'))
+		case wbu.Path:
+			_, _ = w.Write([]byte("this is not a signature and doesn't have a newline"))
 		default:
 			t.Fatalf("Unknown case: %s", r.URL.String())
 		}
@@ -85,11 +94,16 @@ func TestWitnessGateway_Update(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	witBad, err = tessera.NewWitness(witBad_vkey, baseUrl)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	testCases := []struct {
 		desc     string
 		group    tessera.WitnessGroup
 		wantSigs int
+		wantErr  bool
 	}{
 		{
 			desc:     "no witnesses",
@@ -126,6 +140,11 @@ func TestWitnessGateway_Update(t *testing.T) {
 			group:    tessera.NewWitnessGroup(2, wit1, wit1),
 			wantSigs: 1,
 		},
+		{
+			desc:    "bad witness",
+			group:   tessera.NewWitnessGroup(1, witBad),
+			wantErr: true,
+		},
 	}
 	for _, tC := range testCases {
 		t.Run(tC.desc, func(t *testing.T) {
@@ -137,8 +156,11 @@ func TestWitnessGateway_Update(t *testing.T) {
 			g := NewWitnessGateway(tC.group, ts.Client(), fetchProof)
 
 			witnessedCP, err := g.Witness(ctx, logSignedCheckpoint)
-			if err != nil {
-				t.Fatal(err)
+			if got, want := err != nil, tC.wantErr; got != want {
+				t.Fatalf("got != want (%t != %t): %v", got, want, err)
+			}
+			if tC.wantErr {
+				return
 			}
 			n, err := note.Open(witnessedCP, note.VerifierList(logVerifier, wit1.Key, wit2.Key))
 			if err != nil {
