@@ -131,7 +131,6 @@ func (wg WitnessGateway) Witness(ctx context.Context, cp []byte) ([]byte, error)
 			err = errors.Join(err, r.err)
 			continue
 		}
-		fmt.Printf("got this sig: %q", r.sig)
 		// Add new signature to the new note we're building
 		sigBlock.Write(r.sig)
 
