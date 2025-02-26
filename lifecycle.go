@@ -287,7 +287,7 @@ func NewMigrationOptions() *MigrationOptions {
 
 // MigrationOptions holds migration lifecycle settings for all storage implementations.
 type MigrationOptions struct {
-	// EntriesPath knows how to format entry bundle paths.
+	// entriesPath knows how to format entry bundle paths.
 	entriesPath func(n uint64, p uint8) string
 	followers   []func(context.Context, LogReader)
 }
