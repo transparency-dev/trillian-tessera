@@ -73,7 +73,7 @@ func main() {
 		klog.Exitf("Failed to create new GCP storage driver: %v", err)
 	}
 
-	m, err := tessera.NewMigrationTarget(ctx, driver, internal.BundleHasher)
+	m, err := tessera.NewMigrationTarget(ctx, driver, internal.BundleHasher, tessera.NewAppendOptions())
 	if err != nil {
 		klog.Exitf("Failed to create MigrationTarget: %v", err)
 	}

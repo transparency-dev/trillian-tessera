@@ -133,27 +133,24 @@ func TestAppend(t *testing.T) {
 
 	for _, test := range []struct {
 		name    string
-		opts    []func(*tessera.AppendOptions)
+		opts    *tessera.AppendOptions
 		wantErr bool
 	}{
 		{
 			name:    "no tessera.AppendOptions",
-			opts:    nil,
+			opts:    tessera.NewAppendOptions(),
 			wantErr: true,
 		},
 		{
 			name: "standard tessera.WithCheckpointSigner",
-			opts: []func(*tessera.AppendOptions){
-				tessera.WithCheckpointSigner(noteSigner),
-			},
+			opts: tessera.NewAppendOptions().WithCheckpointSigner(noteSigner),
 		},
 		{
 			name: "all tessera.AppendOptions",
-			opts: []func(*tessera.AppendOptions){
-				tessera.WithCheckpointSigner(noteSigner),
-				tessera.WithBatching(1, 1*time.Second),
-				tessera.WithPushback(10),
-			},
+			opts: tessera.NewAppendOptions().
+				WithCheckpointSigner(noteSigner).
+				WithBatching(1, 1*time.Second).
+				WithPushback(10),
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -161,7 +158,7 @@ func TestAppend(t *testing.T) {
 			if err != nil {
 				t.Fatalf("New: %v", err)
 			}
-			_, _, err = tessera.NewAppender(ctx, drv, test.opts...)
+			_, _, err = tessera.NewAppender(ctx, drv, test.opts)
 			gotErr := err != nil
 			if gotErr != test.wantErr {
 				t.Errorf("got err: %v", err)
@@ -471,10 +468,10 @@ func newTestMySQLStorage(t *testing.T, ctx context.Context) (tessera.AddFn, tess
 		t.Fatalf("Failed to create mysql.Storage: %v", err)
 	}
 
-	a, r, err := tessera.NewAppender(ctx, s,
-		tessera.WithCheckpointSigner(noteSigner),
-		tessera.WithCheckpointInterval(time.Second),
-		tessera.WithBatching(128, 100*time.Millisecond))
+	a, r, err := tessera.NewAppender(ctx, s, tessera.NewAppendOptions().
+		WithCheckpointSigner(noteSigner).
+		WithCheckpointInterval(time.Second).
+		WithBatching(128, 100*time.Millisecond))
 	if err != nil {
 		t.Fatal(err)
 	}

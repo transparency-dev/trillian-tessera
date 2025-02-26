@@ -68,10 +68,10 @@ func main() {
 	if err != nil {
 		klog.Exitf("Failed to construct storage: %v", err)
 	}
-	appender, _, err := tessera.NewAppender(ctx, driver,
-		tessera.WithCheckpointSigner(s, a...),
-		tessera.WithBatching(256, time.Second),
-		tessera.WithAntispam(256, nil))
+	appender, _, err := tessera.NewAppender(ctx, driver, tessera.NewAppendOptions().
+		WithCheckpointSigner(s, a...).
+		WithBatching(256, time.Second).
+		WithAntispam(256, nil))
 	if err != nil {
 		klog.Exit(err)
 	}

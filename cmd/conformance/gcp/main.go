@@ -71,13 +71,12 @@ func main() {
 		}
 	}
 
-	appender, _, err := tessera.NewAppender(ctx, driver,
-		tessera.WithCheckpointSigner(s, a...),
-		tessera.WithCheckpointInterval(10*time.Second),
-		tessera.WithBatching(1024, time.Second),
-		tessera.WithPushback(10*4096),
-		tessera.WithAntispam(256, antispam),
-	)
+	appender, _, err := tessera.NewAppender(ctx, driver, tessera.NewAppendOptions().
+		WithCheckpointSigner(s, a...).
+		WithCheckpointInterval(10*time.Second).
+		WithBatching(1024, time.Second).
+		WithPushback(10*4096).
+		WithAntispam(256, antispam))
 	if err != nil {
 		klog.Exit(err)
 	}

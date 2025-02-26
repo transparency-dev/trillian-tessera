@@ -67,10 +67,10 @@ func main() {
 		klog.Exitf("Failed to create new MySQL storage: %v", err)
 	}
 
-	appender, reader, err := tessera.NewAppender(ctx, driver,
-		tessera.WithCheckpointSigner(noteSigner, additionalSigners...),
-		tessera.WithCheckpointInterval(*publishInterval),
-		tessera.WithAntispam(256, nil))
+	appender, reader, err := tessera.NewAppender(ctx, driver, tessera.NewAppendOptions().
+		WithCheckpointSigner(noteSigner, additionalSigners...).
+		WithCheckpointInterval(*publishInterval).
+		WithAntispam(256, nil))
 	addFn := appender.Add
 	if err != nil {
 		klog.Exit(err)

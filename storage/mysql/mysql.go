@@ -79,18 +79,18 @@ func New(ctx context.Context, db *sql.DB) (*Storage, error) {
 
 // Note that `tessera.WithCheckpointSigner()` is mandatory in the `opts` argument.
 func (s *Storage) Appender(ctx context.Context, opts *tessera.AppendOptions) (*tessera.Appender, tessera.LogReader, error) {
-	if opts.CheckpointInterval < minCheckpointInterval {
-		return nil, nil, fmt.Errorf("requested CheckpointInterval too low - %v < %v", opts.CheckpointInterval, minCheckpointInterval)
+	if opts.CheckpointInterval() < minCheckpointInterval {
+		return nil, nil, fmt.Errorf("requested CheckpointInterval too low - %v < %v", opts.CheckpointInterval(), minCheckpointInterval)
 	}
-	if opts.NewCP == nil {
+	if opts.NewCP() == nil {
 		return nil, nil, errors.New("tessera.WithCheckpointSigner must be provided in New()")
 	}
 	a := &appender{
 		s:             s,
-		newCheckpoint: opts.NewCP,
+		newCheckpoint: opts.NewCP(),
 		cpUpdated:     make(chan struct{}, 1),
 	}
-	a.queue = storage.NewQueue(ctx, opts.BatchMaxAge, opts.BatchMaxSize, a.sequenceBatch)
+	a.queue = storage.NewQueue(ctx, opts.BatchMaxAge(), opts.BatchMaxSize(), a.sequenceBatch)
 
 	if err := s.maybeInitTree(ctx); err != nil {
 		return nil, nil, fmt.Errorf("maybeInitTree: %v", err)
@@ -111,7 +111,7 @@ func (s *Storage) Appender(ctx context.Context, opts *tessera.AppendOptions) (*t
 				klog.Warningf("publishCheckpoint: %v", err)
 			}
 		}
-	}(ctx, opts.CheckpointInterval)
+	}(ctx, opts.CheckpointInterval())
 
 	return &tessera.Appender{
 		Add: a.Add,
