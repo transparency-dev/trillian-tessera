@@ -69,7 +69,7 @@ func main() {
 		klog.Exitf("Failed to create new POSIX storage driver: %v", err)
 	}
 	// Create our Tessera migration target instance
-	st, err := tessera.NewMigrationTarget(ctx, driver, internal.BundleHasher)
+	st, err := tessera.NewMigrationTarget(ctx, driver, internal.BundleHasher, tessera.NewAppendOptions())
 	if err != nil {
 		klog.Exitf("Failed to create new POSIX storage: %v", err)
 	}

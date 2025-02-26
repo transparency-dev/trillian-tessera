@@ -84,10 +84,10 @@ func main() {
 		batchSize = 1
 	}
 
-	appender, r, err := tessera.NewAppender(ctx, driver,
-		tessera.WithCheckpointSigner(s),
-		tessera.WithCheckpointInterval(checkpointInterval),
-		tessera.WithBatching(batchSize, time.Second))
+	appender, r, err := tessera.NewAppender(ctx, driver, tessera.NewAppendOptions().
+		WithCheckpointSigner(s).
+		WithCheckpointInterval(checkpointInterval).
+		WithBatching(batchSize, time.Second))
 	if err != nil {
 		klog.Exit(err)
 	}
