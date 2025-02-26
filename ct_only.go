@@ -67,6 +67,12 @@ func (o *AppendOptions) WithCTLayout() *AppendOptions {
 	return o
 }
 
+// WithCTLayout instructs the underlying storage to use a Static CT API compatible scheme for layout.
+func (o *MigrationOptions) WithCTLayout() *MigrationOptions {
+	o.entriesPath = ctEntriesPath
+	return o
+}
+
 func ctEntriesPath(n uint64, p uint8) string {
 	return fmt.Sprintf("tile/data/%s", layout.NWithSuffix(0, n, p))
 }
