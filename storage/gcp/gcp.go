@@ -89,31 +89,6 @@ type Storage struct {
 	cfg Config
 }
 
-// Appender is an implementation of the Tessera appender lifecycle contract.
-type Appender struct {
-	newCP func(uint64, []byte) ([]byte, error)
-
-	sequencer sequencer
-	logStore  *logResourceStore
-
-	queue *storage.Queue
-
-	cpUpdated chan struct{}
-}
-
-// objStore describes a type which can store and retrieve objects.
-type objStore interface {
-	getObject(ctx context.Context, obj string) ([]byte, int64, error)
-	setObject(ctx context.Context, obj string, data []byte, cond *gcs.Conditions, contType string, cacheCtl string) error
-	lastModified(ctx context.Context, obj string) (time.Time, error)
-}
-
-// logResourceStore knows how to read and write entries which represent a tiles log inside an objStore.
-type logResourceStore struct {
-	objStore    objStore
-	entriesPath func(uint64, uint8) string
-}
-
 // sequencer describes a type which knows how to sequence entries.
 //
 // TODO(al): rename this as it's really more of a coordination for the log.
@@ -151,99 +126,6 @@ func New(ctx context.Context, cfg Config) (tessera.Driver, error) {
 	}, nil
 }
 
-func (s *Storage) Appender(ctx context.Context, opts *tessera.AppendOptions) (*tessera.Appender, tessera.LogReader, error) {
-	if opts.CheckpointInterval < minCheckpointInterval {
-		return nil, nil, fmt.Errorf("requested CheckpointInterval (%v) is less than minimum permitted %v", opts.CheckpointInterval, minCheckpointInterval)
-	}
-
-	c, err := gcs.NewClient(ctx, gcs.WithJSONReads())
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create GCS client: %v", err)
-	}
-
-	seq, err := newSpannerSequencer(ctx, s.cfg.Spanner, uint64(opts.PushbackMaxOutstanding))
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create Spanner sequencer: %v", err)
-	}
-
-	a := &Appender{
-		logStore: &logResourceStore{
-			objStore: &gcsStorage{
-				gcsClient: c,
-				bucket:    s.cfg.Bucket,
-			},
-			entriesPath: opts.EntriesPath,
-		},
-		sequencer: seq,
-		newCP:     opts.NewCP,
-		cpUpdated: make(chan struct{}),
-	}
-	a.queue = storage.NewQueue(ctx, opts.BatchMaxAge, opts.BatchMaxSize, a.sequencer.assignEntries)
-
-	if err := a.init(ctx); err != nil {
-		return nil, nil, fmt.Errorf("failed to initialise log storage: %v", err)
-	}
-
-	go func() {
-		t := time.NewTicker(1 * time.Second)
-		defer t.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-t.C:
-			}
-
-			func() {
-				// Don't quickloop for now, it causes issues updating checkpoint too frequently.
-				cctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-				defer cancel()
-
-				if _, err := a.sequencer.consumeEntries(cctx, DefaultIntegrationSizeLimit, a.appendEntries, false); err != nil {
-					klog.Errorf("integrate: %v", err)
-					return
-				}
-				select {
-				case a.cpUpdated <- struct{}{}:
-				default:
-				}
-			}()
-		}
-	}()
-
-	go func(ctx context.Context, i time.Duration) {
-		t := time.NewTicker(i)
-		defer t.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-a.cpUpdated:
-			case <-t.C:
-			}
-			if err := a.publishCheckpoint(ctx, i); err != nil {
-				klog.Warningf("publishCheckpoint: %v", err)
-			}
-		}
-	}(ctx, opts.CheckpointInterval)
-
-	return &tessera.Appender{
-			Add: a.Add,
-		},
-		&LogReader{
-			lrs: *a.logStore,
-			integratedSize: func(context.Context) (uint64, error) {
-				s, _, err := a.sequencer.currentTree(ctx)
-				return s, err
-			},
-		}, nil
-}
-
-// Add is the entrypoint for adding entries to a sequencing log.
-func (s *Appender) Add(ctx context.Context, e *tessera.Entry) tessera.IndexFuture {
-	return s.queue.Add(ctx, e)
-}
-
 type LogReader struct {
 	lrs            logResourceStore
 	integratedSize func(context.Context) (uint64, error)
@@ -271,20 +153,132 @@ func (lr *LogReader) StreamEntries(ctx context.Context, fromEntry uint64) (next 
 	return streamAdaptor(ctx, lr.integratedSize, lr.lrs.getEntryBundle, fromEntry)
 }
 
+func (s *Storage) Appender(ctx context.Context, opts *tessera.AppendOptions) (*tessera.Appender, tessera.LogReader, error) {
+	if opts.CheckpointInterval < minCheckpointInterval {
+		return nil, nil, fmt.Errorf("requested CheckpointInterval (%v) is less than minimum permitted %v", opts.CheckpointInterval, minCheckpointInterval)
+	}
+
+	c, err := gcs.NewClient(ctx, gcs.WithJSONReads())
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create GCS client: %v", err)
+	}
+
+	seq, err := newSpannerCoordinator(ctx, s.cfg.Spanner, uint64(opts.PushbackMaxOutstanding))
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create Spanner coordinator: %v", err)
+	}
+
+	a := &Appender{
+		logStore: &logResourceStore{
+			objStore: &gcsStorage{
+				gcsClient: c,
+				bucket:    s.cfg.Bucket,
+			},
+			entriesPath: opts.EntriesPath,
+		},
+		sequencer: seq,
+		newCP:     opts.NewCP,
+		cpUpdated: make(chan struct{}),
+	}
+	a.queue = storage.NewQueue(ctx, opts.BatchMaxAge, opts.BatchMaxSize, a.sequencer.assignEntries)
+
+	if err := a.init(ctx); err != nil {
+		return nil, nil, fmt.Errorf("failed to initialise log storage: %v", err)
+	}
+
+	go a.sequencerJob(ctx)
+	go a.publisherJob(ctx, opts.CheckpointInterval)
+
+	return &tessera.Appender{
+			Add: a.Add,
+		},
+		&LogReader{
+			lrs: *a.logStore,
+			integratedSize: func(context.Context) (uint64, error) {
+				s, _, err := a.sequencer.currentTree(ctx)
+				return s, err
+			},
+		}, nil
+}
+
+// Appender is an implementation of the Tessera appender lifecycle contract.
+type Appender struct {
+	newCP func(uint64, []byte) ([]byte, error)
+
+	sequencer sequencer
+	logStore  *logResourceStore
+
+	queue *storage.Queue
+
+	cpUpdated chan struct{}
+}
+
+// Add is the entrypoint for adding entries to a sequencing log.
+func (a *Appender) Add(ctx context.Context, e *tessera.Entry) tessera.IndexFuture {
+	return a.queue.Add(ctx, e)
+}
+
+// sequencerJob is a long-running function which handles the periodic integration of sequenced entries.
+// Blocks until ctx is done.
+func (a *Appender) sequencerJob(ctx context.Context) {
+	t := time.NewTicker(1 * time.Second)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+
+		func() {
+			// Don't quickloop for now, it causes issues updating checkpoint too frequently.
+			cctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+			defer cancel()
+
+			if _, err := a.sequencer.consumeEntries(cctx, DefaultIntegrationSizeLimit, a.appendEntries, false); err != nil {
+				klog.Errorf("integrate: %v", err)
+				return
+			}
+			select {
+			case a.cpUpdated <- struct{}{}:
+			default:
+			}
+		}()
+	}
+}
+
+// publisherJob is a long-running function which handles the periodic publishing of checkpoints.
+// Blocks until ctx is done.
+func (a *Appender) publisherJob(ctx context.Context, i time.Duration) {
+	t := time.NewTicker(i)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-a.cpUpdated:
+		case <-t.C:
+		}
+		if err := a.publishCheckpoint(ctx, i); err != nil {
+			klog.Warningf("publishCheckpoint failed: %v", err)
+		}
+	}
+}
+
 // init ensures that the storage represents a log in a valid state.
-func (s *Appender) init(ctx context.Context) error {
-	if _, err := s.logStore.getCheckpoint(ctx); err != nil {
+func (a *Appender) init(ctx context.Context) error {
+	if _, err := a.logStore.getCheckpoint(ctx); err != nil {
 		if errors.Is(err, gcs.ErrObjectNotExist) {
 			// No checkpoint exists, do a forced (possibly empty) integration to create one in a safe
 			// way (setting the checkpoint directly here would not be safe as it's outside the transactional
 			// framework which prevents the tree from rolling backwards or otherwise forking).
 			cctx, c := context.WithTimeout(ctx, 10*time.Second)
 			defer c()
-			if _, err := s.sequencer.consumeEntries(cctx, DefaultIntegrationSizeLimit, s.appendEntries, true); err != nil {
+			if _, err := a.sequencer.consumeEntries(cctx, DefaultIntegrationSizeLimit, a.appendEntries, true); err != nil {
 				return fmt.Errorf("forced integrate: %v", err)
 			}
 			select {
-			case s.cpUpdated <- struct{}{}:
+			case a.cpUpdated <- struct{}{}:
 			default:
 			}
 			return nil
@@ -295,8 +289,8 @@ func (s *Appender) init(ctx context.Context) error {
 	return nil
 }
 
-func (s *Appender) publishCheckpoint(ctx context.Context, minStaleness time.Duration) error {
-	m, err := s.logStore.checkpointLastModified(ctx)
+func (a *Appender) publishCheckpoint(ctx context.Context, minStaleness time.Duration) error {
+	m, err := a.logStore.checkpointLastModified(ctx)
 	if err != nil && !errors.Is(err, gcs.ErrObjectNotExist) {
 		return fmt.Errorf("lastModified(%q): %v", layout.CheckpointPath, err)
 	}
@@ -304,20 +298,33 @@ func (s *Appender) publishCheckpoint(ctx context.Context, minStaleness time.Dura
 		return nil
 	}
 
-	size, root, err := s.sequencer.currentTree(ctx)
+	size, root, err := a.sequencer.currentTree(ctx)
 	if err != nil {
 		return fmt.Errorf("currentTree: %v", err)
 	}
-	cpRaw, err := s.newCP(size, root)
+	cpRaw, err := a.newCP(size, root)
 	if err != nil {
 		return fmt.Errorf("newCP: %v", err)
 	}
 
-	if err := s.logStore.setCheckpoint(ctx, cpRaw); err != nil {
+	if err := a.logStore.setCheckpoint(ctx, cpRaw); err != nil {
 		return fmt.Errorf("writeCheckpoint: %v", err)
 	}
 	return nil
 
+}
+
+// objStore describes a type which can store and retrieve objects.
+type objStore interface {
+	getObject(ctx context.Context, obj string) ([]byte, int64, error)
+	setObject(ctx context.Context, obj string, data []byte, cond *gcs.Conditions, contType string, cacheCtl string) error
+	lastModified(ctx context.Context, obj string) (time.Time, error)
+}
+
+// logResourceStore knows how to read and write entries which represent a tiles log inside an objStore.
+type logResourceStore struct {
+	objStore    objStore
+	entriesPath func(uint64, uint8) string
 }
 
 func (lrs *logResourceStore) setCheckpoint(ctx context.Context, cpRaw []byte) error {
@@ -543,13 +550,13 @@ func (s *logResourceStore) setEntryBundle(ctx context.Context, bundleIndex uint6
 }
 
 // appendEntries incorporates the provided entries into the log starting at fromSeq.
-func (s *Appender) appendEntries(ctx context.Context, fromSeq uint64, entries []storage.SequencedEntry) ([]byte, error) {
+func (a *Appender) appendEntries(ctx context.Context, fromSeq uint64, entries []storage.SequencedEntry) ([]byte, error) {
 	var newRoot []byte
 
 	errG := errgroup.Group{}
 
 	errG.Go(func() error {
-		if err := s.updateEntryBundles(ctx, fromSeq, entries); err != nil {
+		if err := a.updateEntryBundles(ctx, fromSeq, entries); err != nil {
 			return fmt.Errorf("updateEntryBundles: %v", err)
 		}
 		return nil
@@ -560,7 +567,7 @@ func (s *Appender) appendEntries(ctx context.Context, fromSeq uint64, entries []
 		for i, e := range entries {
 			lh[i] = e.LeafHash
 		}
-		r, err := integrate(ctx, fromSeq, lh, s.logStore)
+		r, err := integrate(ctx, fromSeq, lh, a.logStore)
 		if err != nil {
 			return fmt.Errorf("integrate: %v", err)
 		}
@@ -610,7 +617,7 @@ func integrate(ctx context.Context, fromSeq uint64, lh [][]byte, logStore *logRe
 // updateEntryBundles adds the entries being integrated into the entry bundles.
 //
 // The right-most bundle will be grown, if it's partial, and/or new bundles will be created as required.
-func (s *Appender) updateEntryBundles(ctx context.Context, fromSeq uint64, entries []storage.SequencedEntry) error {
+func (a *Appender) updateEntryBundles(ctx context.Context, fromSeq uint64, entries []storage.SequencedEntry) error {
 	if len(entries) == 0 {
 		return nil
 	}
@@ -620,7 +627,7 @@ func (s *Appender) updateEntryBundles(ctx context.Context, fromSeq uint64, entri
 	bundleWriter := &bytes.Buffer{}
 	if entriesInBundle > 0 {
 		// If the latest bundle is partial, we need to read the data it contains in for our newer, larger, bundle.
-		part, err := s.logStore.getEntryBundle(ctx, uint64(bundleIndex), uint8(entriesInBundle))
+		part, err := a.logStore.getEntryBundle(ctx, uint64(bundleIndex), uint8(entriesInBundle))
 		if err != nil {
 			return err
 		}
@@ -636,7 +643,7 @@ func (s *Appender) updateEntryBundles(ctx context.Context, fromSeq uint64, entri
 	// It's used in the for loop below.
 	goSetEntryBundle := func(ctx context.Context, bundleIndex uint64, p uint8, bundleRaw []byte) {
 		seqErr.Go(func() error {
-			if err := s.logStore.setEntryBundle(ctx, bundleIndex, p, bundleRaw); err != nil {
+			if err := a.logStore.setEntryBundle(ctx, bundleIndex, p, bundleRaw); err != nil {
 				return err
 			}
 			return nil
@@ -672,21 +679,21 @@ func (s *Appender) updateEntryBundles(ctx context.Context, fromSeq uint64, entri
 	return seqErr.Wait()
 }
 
-// spannerSequencer uses Cloud Spanner to provide
+// spannerCoordinator uses Cloud Spanner to provide
 // a durable and thread/multi-process safe sequencer.
-type spannerSequencer struct {
+type spannerCoordinator struct {
 	dbPool         *spanner.Client
 	maxOutstanding uint64
 }
 
-// new SpannerSequencer returns a new spannerSequencer struct which uses the provided
+// newSpannerCoordinator returns a new spannerSequencer struct which uses the provided
 // spanner resource name for its spanner connection.
-func newSpannerSequencer(ctx context.Context, spannerDB string, maxOutstanding uint64) (*spannerSequencer, error) {
+func newSpannerCoordinator(ctx context.Context, spannerDB string, maxOutstanding uint64) (*spannerCoordinator, error) {
 	dbPool, err := spanner.NewClient(ctx, spannerDB)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to Spanner: %v", err)
 	}
-	r := &spannerSequencer{
+	r := &spannerCoordinator{
 		dbPool:         dbPool,
 		maxOutstanding: maxOutstanding,
 	}
@@ -712,7 +719,7 @@ func newSpannerSequencer(ctx context.Context, spannerDB string, maxOutstanding u
 //   - IntCoord
 //     This table coordinates integration of the batches of entries stored in
 //     Seq into the committed tree state.
-func (s *spannerSequencer) initDB(ctx context.Context, spannerDB string) error {
+func (s *spannerCoordinator) initDB(ctx context.Context, spannerDB string) error {
 	return createAndPrepareTables(
 		ctx, spannerDB,
 		[]string{
@@ -731,7 +738,7 @@ func (s *spannerSequencer) initDB(ctx context.Context, spannerDB string) error {
 
 // checkDataCompatibility compares the Tessera library SchemaCompatibilityVersion with the one stored in the
 // database, and returns an error if they are not identical.
-func (s *spannerSequencer) checkDataCompatibility(ctx context.Context) error {
+func (s *spannerCoordinator) checkDataCompatibility(ctx context.Context) error {
 	row, err := s.dbPool.Single().ReadRow(ctx, "Tessera", spanner.Key{0}, []string{"compatibilityVersion"})
 	if err != nil {
 		return fmt.Errorf("failed to read schema compatibilityVersion: %v", err)
@@ -752,7 +759,7 @@ func (s *spannerSequencer) checkDataCompatibility(ctx context.Context) error {
 // Entries are allocated contiguous indices, in the order in which they appear in the entries parameter.
 // This is achieved by storing the passed-in entries in the Seq table in Spanner, keyed by the
 // index assigned to the first entry in the batch.
-func (s *spannerSequencer) assignEntries(ctx context.Context, entries []*tessera.Entry) error {
+func (s *spannerCoordinator) assignEntries(ctx context.Context, entries []*tessera.Entry) error {
 	// First grab the treeSize in a non-locking read-only fashion (we don't want to block/collide with integration).
 	// We'll use this value to determine whether we need to apply back-pressure.
 	var treeSize int64
@@ -830,7 +837,7 @@ func (s *spannerSequencer) assignEntries(ctx context.Context, entries []*tessera
 // removed from the Seq table.
 //
 // Returns true if some entries were consumed as a weak signal that there may be further entries waiting to be consumed.
-func (s *spannerSequencer) consumeEntries(ctx context.Context, limit uint64, f consumeFunc, forceUpdate bool) (bool, error) {
+func (s *spannerCoordinator) consumeEntries(ctx context.Context, limit uint64, f consumeFunc, forceUpdate bool) (bool, error) {
 	didWork := false
 	_, err := s.dbPool.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
 		// Figure out which is the starting index of sequenced entries to start consuming from.
@@ -915,7 +922,7 @@ func (s *spannerSequencer) consumeEntries(ctx context.Context, limit uint64, f c
 }
 
 // currentTree returns the size and root hash of the currently integrated tree.
-func (s *spannerSequencer) currentTree(ctx context.Context) (uint64, []byte, error) {
+func (s *spannerCoordinator) currentTree(ctx context.Context) (uint64, []byte, error) {
 	row, err := s.dbPool.Single().ReadRow(ctx, "IntCoord", spanner.Key{0}, []string{"seq", "rootHash"})
 	if err != nil {
 		return 0, nil, fmt.Errorf("failed to read IntCoord: %v", err)
@@ -1316,7 +1323,7 @@ func (s *Storage) MigrationTarget(ctx context.Context, bundleHasher tessera.Unbu
 		return nil, nil, fmt.Errorf("failed to create GCS client: %v", err)
 	}
 
-	seq, err := newSpannerSequencer(ctx, s.cfg.Spanner, 0)
+	seq, err := newSpannerCoordinator(ctx, s.cfg.Spanner, 0)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create Spanner sequencer: %v", err)
 	}
