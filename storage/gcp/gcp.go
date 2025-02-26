@@ -163,9 +163,9 @@ func (s *Storage) Appender(ctx context.Context, opts *tessera.AppendOptions) (*t
 		return nil, nil, fmt.Errorf("failed to create GCS client: %v", err)
 	}
 
-	seq, err := newSpannerSequencer(ctx, s.cfg.Spanner, uint64(opts.PushbackMaxOutstanding))
+	seq, err := newSpannerCoordinator(ctx, s.cfg.Spanner, uint64(opts.PushbackMaxOutstanding))
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create Spanner sequencer: %v", err)
+		return nil, nil, fmt.Errorf("failed to create Spanner coordinator: %v", err)
 	}
 
 	a := &Appender{
@@ -672,21 +672,21 @@ func (s *Appender) updateEntryBundles(ctx context.Context, fromSeq uint64, entri
 	return seqErr.Wait()
 }
 
-// spannerSequencer uses Cloud Spanner to provide
+// spannerCoordinator uses Cloud Spanner to provide
 // a durable and thread/multi-process safe sequencer.
-type spannerSequencer struct {
+type spannerCoordinator struct {
 	dbPool         *spanner.Client
 	maxOutstanding uint64
 }
 
-// new SpannerSequencer returns a new spannerSequencer struct which uses the provided
+// newSpannerCoordinator returns a new spannerSequencer struct which uses the provided
 // spanner resource name for its spanner connection.
-func newSpannerSequencer(ctx context.Context, spannerDB string, maxOutstanding uint64) (*spannerSequencer, error) {
+func newSpannerCoordinator(ctx context.Context, spannerDB string, maxOutstanding uint64) (*spannerCoordinator, error) {
 	dbPool, err := spanner.NewClient(ctx, spannerDB)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to Spanner: %v", err)
 	}
-	r := &spannerSequencer{
+	r := &spannerCoordinator{
 		dbPool:         dbPool,
 		maxOutstanding: maxOutstanding,
 	}
@@ -712,7 +712,7 @@ func newSpannerSequencer(ctx context.Context, spannerDB string, maxOutstanding u
 //   - IntCoord
 //     This table coordinates integration of the batches of entries stored in
 //     Seq into the committed tree state.
-func (s *spannerSequencer) initDB(ctx context.Context, spannerDB string) error {
+func (s *spannerCoordinator) initDB(ctx context.Context, spannerDB string) error {
 	return createAndPrepareTables(
 		ctx, spannerDB,
 		[]string{
@@ -731,7 +731,7 @@ func (s *spannerSequencer) initDB(ctx context.Context, spannerDB string) error {
 
 // checkDataCompatibility compares the Tessera library SchemaCompatibilityVersion with the one stored in the
 // database, and returns an error if they are not identical.
-func (s *spannerSequencer) checkDataCompatibility(ctx context.Context) error {
+func (s *spannerCoordinator) checkDataCompatibility(ctx context.Context) error {
 	row, err := s.dbPool.Single().ReadRow(ctx, "Tessera", spanner.Key{0}, []string{"compatibilityVersion"})
 	if err != nil {
 		return fmt.Errorf("failed to read schema compatibilityVersion: %v", err)
@@ -752,7 +752,7 @@ func (s *spannerSequencer) checkDataCompatibility(ctx context.Context) error {
 // Entries are allocated contiguous indices, in the order in which they appear in the entries parameter.
 // This is achieved by storing the passed-in entries in the Seq table in Spanner, keyed by the
 // index assigned to the first entry in the batch.
-func (s *spannerSequencer) assignEntries(ctx context.Context, entries []*tessera.Entry) error {
+func (s *spannerCoordinator) assignEntries(ctx context.Context, entries []*tessera.Entry) error {
 	// First grab the treeSize in a non-locking read-only fashion (we don't want to block/collide with integration).
 	// We'll use this value to determine whether we need to apply back-pressure.
 	var treeSize int64
@@ -830,7 +830,7 @@ func (s *spannerSequencer) assignEntries(ctx context.Context, entries []*tessera
 // removed from the Seq table.
 //
 // Returns true if some entries were consumed as a weak signal that there may be further entries waiting to be consumed.
-func (s *spannerSequencer) consumeEntries(ctx context.Context, limit uint64, f consumeFunc, forceUpdate bool) (bool, error) {
+func (s *spannerCoordinator) consumeEntries(ctx context.Context, limit uint64, f consumeFunc, forceUpdate bool) (bool, error) {
 	didWork := false
 	_, err := s.dbPool.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
 		// Figure out which is the starting index of sequenced entries to start consuming from.
@@ -915,7 +915,7 @@ func (s *spannerSequencer) consumeEntries(ctx context.Context, limit uint64, f c
 }
 
 // currentTree returns the size and root hash of the currently integrated tree.
-func (s *spannerSequencer) currentTree(ctx context.Context) (uint64, []byte, error) {
+func (s *spannerCoordinator) currentTree(ctx context.Context) (uint64, []byte, error) {
 	row, err := s.dbPool.Single().ReadRow(ctx, "IntCoord", spanner.Key{0}, []string{"seq", "rootHash"})
 	if err != nil {
 		return 0, nil, fmt.Errorf("failed to read IntCoord: %v", err)
@@ -1316,7 +1316,7 @@ func (s *Storage) MigrationTarget(ctx context.Context, bundleHasher tessera.Unbu
 		return nil, nil, fmt.Errorf("failed to create GCS client: %v", err)
 	}
 
-	seq, err := newSpannerSequencer(ctx, s.cfg.Spanner, 0)
+	seq, err := newSpannerCoordinator(ctx, s.cfg.Spanner, 0)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create Spanner sequencer: %v", err)
 	}

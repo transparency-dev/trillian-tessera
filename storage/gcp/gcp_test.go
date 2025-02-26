@@ -56,9 +56,9 @@ func TestSpannerSequencerAssignEntries(t *testing.T) {
 	close := newSpannerDB(t)
 	defer close()
 
-	seq, err := newSpannerSequencer(ctx, "projects/p/instances/i/databases/d", 1000)
+	seq, err := newSpannerCoordinator(ctx, "projects/p/instances/i/databases/d", 1000)
 	if err != nil {
-		t.Fatalf("newSpannerSequencer: %v", err)
+		t.Fatalf("newSpannerCoordinator: %v", err)
 	}
 
 	want := uint64(0)
@@ -109,9 +109,9 @@ func TestSpannerSequencerPushback(t *testing.T) {
 			close := newSpannerDB(t)
 			defer close()
 
-			seq, err := newSpannerSequencer(ctx, "projects/p/instances/i/databases/d", test.threshold)
+			seq, err := newSpannerCoordinator(ctx, "projects/p/instances/i/databases/d", test.threshold)
 			if err != nil {
-				t.Fatalf("newSpannerSequencer: %v", err)
+				t.Fatalf("newSpannerCoordinator: %v", err)
 			}
 			// Set up the test scenario with the configured number of initial outstanding entries
 			entries := []*tessera.Entry{}
@@ -139,9 +139,9 @@ func TestSpannerSequencerRoundTrip(t *testing.T) {
 	close := newSpannerDB(t)
 	defer close()
 
-	s, err := newSpannerSequencer(ctx, "projects/p/instances/i/databases/d", 1000)
+	s, err := newSpannerCoordinator(ctx, "projects/p/instances/i/databases/d", 1000)
 	if err != nil {
-		t.Fatalf("newSpannerSequencer: %v", err)
+		t.Fatalf("newSpannerCoordinator: %v", err)
 	}
 
 	seq := 0
@@ -191,9 +191,9 @@ func TestCheckDataCompatibility(t *testing.T) {
 	close := newSpannerDB(t)
 	defer close()
 
-	s, err := newSpannerSequencer(ctx, "projects/p/instances/i/databases/d", 1000)
+	s, err := newSpannerCoordinator(ctx, "projects/p/instances/i/databases/d", 1000)
 	if err != nil {
-		t.Fatalf("newSpannerSequencer: %v", err)
+		t.Fatalf("newSpannerCoordinator: %v", err)
 	}
 
 	for _, test := range []struct {
@@ -432,9 +432,9 @@ func TestPublishCheckpoint(t *testing.T) {
 	close := newSpannerDB(t)
 	defer close()
 
-	s, err := newSpannerSequencer(ctx, "projects/p/instances/i/databases/d", 1000)
+	s, err := newSpannerCoordinator(ctx, "projects/p/instances/i/databases/d", 1000)
 	if err != nil {
-		t.Fatalf("newSpannerSequencer: %v", err)
+		t.Fatalf("newSpannerCoordinator: %v", err)
 	}
 
 	for _, test := range []struct {
