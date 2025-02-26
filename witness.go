@@ -120,6 +120,11 @@ type WitnessGroup struct {
 // This will return false if there are insufficient signatures, and also if the
 // checkpoint cannot be read as a valid note. It is up to the caller to ensure
 // that the input value represents a valid note.
+//
+// The implementation of this requires every witness in the group to verify the
+// checkpoint, which is O(N). If this is called every time a witness returns a
+// checkpoint then this algorithm is O(N^2). To support large N, this may require
+// some rewriting in order to maintain performance.
 func (wg WitnessGroup) Satisfied(cp []byte) bool {
 	if wg.N <= 0 {
 		return true
