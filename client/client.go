@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"sync"
 
 	"github.com/transparency-dev/formats/log"
 	"github.com/transparency-dev/merkle/compact"
@@ -291,7 +292,8 @@ type LogStateTracker struct {
 	tileFetcher         TileFetcherFunc
 
 	// The fields under here will all be updated at the same time.
-	// TODO(mhutchinson): add a mutex to make it thread safe
+	// Access to any of these fields is guarded by mu.
+	mu sync.RWMutex
 
 	// latestConsistent is the deserialised form of LatestConsistentRaw
 	latestConsistent log.Checkpoint
@@ -305,13 +307,12 @@ type LogStateTracker struct {
 // NewLogStateTracker creates a newly initialised tracker.
 // If a serialised LogState representation is provided then this is used as the
 // initial tracked state, otherwise a log state is fetched from the target log.
-func NewLogStateTracker(ctx context.Context, cpF CheckpointFetcherFunc, tF TileFetcherFunc, checkpointRaw []byte, nV note.Verifier, origin string, cc ConsensusCheckpointFunc) (LogStateTracker, error) {
-	ret := LogStateTracker{
-		consensusCheckpoint: cc,
-		tileFetcher:         tF,
-		latestConsistent:    log.Checkpoint{},
-		cpSigVerifier:       nV,
+func NewLogStateTracker(ctx context.Context, cpF CheckpointFetcherFunc, tF TileFetcherFunc, checkpointRaw []byte, nV note.Verifier, origin string, cc ConsensusCheckpointFunc) (*LogStateTracker, error) {
+	ret := &LogStateTracker{
 		origin:              origin,
+		consensusCheckpoint: cc,
+		cpSigVerifier:       nV,
+		tileFetcher:         tF,
 	}
 	if len(checkpointRaw) > 0 {
 		ret.latestConsistentRaw = checkpointRaw
@@ -346,6 +347,8 @@ func (lst *LogStateTracker) Update(ctx context.Context) ([]byte, [][]byte, []byt
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to create proof builder: %w", err)
 	}
+	lst.mu.Lock()
+	defer lst.mu.Unlock()
 	var p [][]byte
 	if lst.latestConsistent.Size > 0 {
 		if c.Size <= lst.latestConsistent.Size {
@@ -373,6 +376,8 @@ func (lst *LogStateTracker) Update(ctx context.Context) ([]byte, [][]byte, []byt
 }
 
 func (lst *LogStateTracker) Latest() log.Checkpoint {
+	lst.mu.RLock()
+	defer lst.mu.Unlock()
 	return lst.latestConsistent
 }
 
