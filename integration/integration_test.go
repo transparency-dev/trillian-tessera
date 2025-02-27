@@ -32,7 +32,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/transparency-dev/formats/log"
 	"github.com/transparency-dev/merkle/proof"
 	"github.com/transparency-dev/merkle/rfc6962"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
@@ -108,21 +107,14 @@ func TestMain(m *testing.M) {
 
 func TestLiveLogIntegration(t *testing.T) {
 	ctx := context.Background()
-	checkpoints := make([]log.Checkpoint, *testEntrySize+1)
 	var entryIndexMap sync.Map
 
 	// Step 1 - Get checkpoint initial size for increment validation.
-	var checkpointInitSize uint64
-	checkpoint, _, _, err := client.FetchCheckpoint(ctx, logReadCP, noteVerifier, noteVerifier.Name())
+	lst, err := client.NewLogStateTracker(ctx, logReadCP, logReadTile, nil, noteVerifier, noteVerifier.Name(), client.UnilateralConsensus(logReadCP))
 	if err != nil {
-		t.Errorf("client.FetchCheckpoint: %v", err)
+		t.Fatalf("client.NewLogStateTracker: %v", err)
 	}
-	if checkpoint == nil {
-		t.Fatal("checkpoint not found")
-	}
-	checkpointInitSize = checkpoint.Size
-	t.Logf("checkpoint initial size: %d", checkpointInitSize)
-	checkpoints[0] = *checkpoint
+	checkpointInitSize := lst.Latest().Size
 
 	// Step 2 - Add entries and get new checkpoints. The entry data comes from the int loop ranging from 0 to the test entry size - 1.
 	addEntriesURL, err := url.JoinPath(*writeLogURL, "add")
@@ -132,6 +124,8 @@ func TestLiveLogIntegration(t *testing.T) {
 	entryWriter := entryWriter{
 		addURL: addEntriesURL,
 	}
+	var miMu sync.Mutex
+	var maxIndex uint64
 	errG := errgroup.Group{}
 	for i := range *testEntrySize {
 		errG.Go(func() error {
@@ -140,37 +134,25 @@ func TestLiveLogIntegration(t *testing.T) {
 				return fmt.Errorf("entryWriter.add(%d): %v", i, err)
 			}
 			entryIndexMap.Store(i, index)
-
-			// Wait for the entry to be integrated, or the test to time out.
-			for size := uint64(0); size < index; {
-				time.Sleep(500 * time.Millisecond)
-
-				checkpoint, _, _, err := client.FetchCheckpoint(ctx, logReadCP, noteVerifier, noteVerifier.Name())
-				if err != nil {
-					return fmt.Errorf("client.FetchCheckpoint: %v", err)
-				}
-				if checkpoint == nil {
-					return fmt.Errorf("failed to get checkpoint after writing entry %d (assigned sequence %d)", i, index)
-				}
-				size = checkpoint.Size
+			miMu.Lock()
+			defer miMu.Unlock()
+			if maxIndex < index {
+				maxIndex = index
 			}
-			checkpoints[i+1] = *checkpoint
-			return err
+			return nil
 		})
 	}
 	if err := errG.Wait(); err != nil {
 		t.Fatalf("addEntry: %v", err)
 	}
+	// All entries are queued. Wait for a checkpoint committing to maxIndex.
+	for size := lst.Latest().Size; size >= maxIndex; {
+		if _, _, _, err := lst.Update(ctx); err != nil {
+			t.Errorf("lst.Update: %v", err)
+		}
+	}
 
-	checkpoint, _, _, err = client.FetchCheckpoint(ctx, logReadCP, noteVerifier, noteVerifier.Name())
-	if err != nil {
-		t.Errorf("client.FetchCheckpoint: %v", err)
-	}
-	if checkpoint == nil {
-		t.Fatal("checkpoint not found")
-	}
-	t.Logf("checkpoint final size: %d", checkpoint.Size)
-	gotIncrease := checkpoint.Size - checkpointInitSize
+	gotIncrease := lst.Latest().Size - checkpointInitSize
 	if gotIncrease < uint64(*testEntrySize) {
 		t.Logf("checkpoint size increase (%d) is < %d, entries may have been deduplicated.", gotIncrease, *testEntrySize)
 	}
@@ -181,7 +163,7 @@ func TestLiveLogIntegration(t *testing.T) {
 		index := v.(uint64)
 
 		// Step 4.1 - Get entry bundles to read back what was written, check leaves are correct.
-		entryBundle, err := client.GetEntryBundle(ctx, logReadEntryBundle, index/layout.EntryBundleWidth, checkpoint.Size)
+		entryBundle, err := client.GetEntryBundle(ctx, logReadEntryBundle, index/layout.EntryBundleWidth, lst.Latest().Size)
 		if err != nil {
 			t.Fatalf("client.GetEntryBundle: %v", err)
 		}
@@ -192,7 +174,7 @@ func TestLiveLogIntegration(t *testing.T) {
 		}
 
 		// Step 4.2 - Test inclusion proofs.
-		pb, err := client.NewProofBuilder(ctx, *checkpoint, logReadTile)
+		pb, err := client.NewProofBuilder(ctx, lst.Latest(), logReadTile)
 		if err != nil {
 			t.Errorf("client.NewProofBuilder: %v", err)
 		}
@@ -201,17 +183,12 @@ func TestLiveLogIntegration(t *testing.T) {
 			t.Errorf("pb.InclusionProof: %v", err)
 		}
 		leafHash := rfc6962.DefaultHasher.HashLeaf([]byte(fmt.Sprint(data)))
-		if err := proof.VerifyInclusion(rfc6962.DefaultHasher, index, checkpoint.Size, leafHash, ip, checkpoint.Hash); err != nil {
+		if err := proof.VerifyInclusion(rfc6962.DefaultHasher, index, lst.Latest().Size, leafHash, ip, lst.Latest().Hash); err != nil {
 			t.Errorf("proof.VerifyInclusion: %v", err)
 		}
 
 		return true
 	})
-
-	// Step 4 - Test consistency proofs.
-	if err := client.CheckConsistency(ctx, logReadTile, checkpoints); err != nil {
-		t.Errorf("log consistency checks failed: %v", err)
-	}
 }
 
 type entryWriter struct {

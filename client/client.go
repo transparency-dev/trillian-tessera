@@ -24,7 +24,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"sort"
 	"sync"
 
 	"github.com/transparency-dev/formats/log"
@@ -110,41 +109,6 @@ func FetchCheckpoint(ctx context.Context, f CheckpointFetcherFunc, v note.Verifi
 		return nil, nil, nil, fmt.Errorf("failed to parse Checkpoint: %v", err)
 	}
 	return cp, cpRaw, n, nil
-}
-
-// CheckConsistency is a wapper function which simplifies verifying consistency between two or more checkpoints.
-func CheckConsistency(ctx context.Context, f TileFetcherFunc, cp []log.Checkpoint) error {
-	if l := len(cp); l < 2 {
-		return fmt.Errorf("passed %d checkpoints, need at least 2", l)
-	}
-	sort.Slice(cp, func(i, j int) bool {
-		return cp[i].Size < cp[j].Size
-	})
-	pb, err := NewProofBuilder(ctx, cp[len(cp)-1], f)
-	if err != nil {
-		return fmt.Errorf("failed to create proofbuilder: %v", err)
-	}
-
-	// Go through list of checkpoints pairwise, checking consistency.
-	a, b := cp[0], cp[1]
-	for i := 0; i < len(cp)-1; i, a, b = i+1, cp[i], cp[i+1] {
-		if a.Size == b.Size {
-			if bytes.Equal(a.Hash, b.Hash) {
-				continue
-			}
-			return fmt.Errorf("two checkpoints with same size (%d) but different hashes (%x vs %x)", a.Size, a.Hash, b.Hash)
-		}
-		if a.Size > 0 {
-			cp, err := pb.ConsistencyProof(ctx, a.Size, b.Size)
-			if err != nil {
-				return fmt.Errorf("failed to fetch consistency between sizes %d, %d: %v", a.Size, b.Size, err)
-			}
-			if err := proof.VerifyConsistency(hasher, a.Size, b.Size, cp, a.Hash, b.Hash); err != nil {
-				return fmt.Errorf("invalid consistency proof between sizes %d, %d: %v", a.Size, b.Size, err)
-			}
-		}
-	}
-	return nil
 }
 
 // FetchRangeNodes returns the set of nodes representing the compact range covering
