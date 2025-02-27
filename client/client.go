@@ -285,23 +285,21 @@ func (pb *ProofBuilder) fetchNodes(ctx context.Context, nodes proof.Nodes) ([][]
 // This tracker handles verification that updates to the tracked log state are
 // consistent with previously seen states.
 type LogStateTracker struct {
-	CPFetcher   CheckpointFetcherFunc
-	TileFetcher TileFetcherFunc
-	// Origin is the expected first line of checkpoints from the log.
-	Origin              string
-	ConsensusCheckpoint ConsensusCheckpointFunc
+	origin              string
+	consensusCheckpoint ConsensusCheckpointFunc
+	cpSigVerifier       note.Verifier
+	tileFetcher         TileFetcherFunc
 
-	// LatestConsistentRaw holds the raw bytes of the latest proven-consistent
+	// The fields under here will all be updated at the same time.
+	// TODO(mhutchinson): add a mutex to make it thread safe
+
+	// latestConsistent is the deserialised form of LatestConsistentRaw
+	latestConsistent log.Checkpoint
+	// latestConsistentRaw holds the raw bytes of the latest proven-consistent
 	// LogState seen by this tracker.
-	LatestConsistentRaw []byte
-	// LatestConsistent is the deserialised form of LatestConsistentRaw
-	LatestConsistent log.Checkpoint
-	// The note with signatures and other metadata about the checkpoint
-	CheckpointNote *note.Note
-	// ProofBuilder for building proofs at LatestConsistent checkpoint.
-	ProofBuilder *ProofBuilder
-
-	CpSigVerifier note.Verifier
+	latestConsistentRaw []byte
+	// proofBuilder for building proofs at LatestConsistent checkpoint.
+	proofBuilder *ProofBuilder
 }
 
 // NewLogStateTracker creates a newly initialised tracker.
@@ -309,22 +307,20 @@ type LogStateTracker struct {
 // initial tracked state, otherwise a log state is fetched from the target log.
 func NewLogStateTracker(ctx context.Context, cpF CheckpointFetcherFunc, tF TileFetcherFunc, checkpointRaw []byte, nV note.Verifier, origin string, cc ConsensusCheckpointFunc) (LogStateTracker, error) {
 	ret := LogStateTracker{
-		ConsensusCheckpoint: cc,
-		CPFetcher:           cpF,
-		TileFetcher:         tF,
-		LatestConsistent:    log.Checkpoint{},
-		CheckpointNote:      nil,
-		CpSigVerifier:       nV,
-		Origin:              origin,
+		consensusCheckpoint: cc,
+		tileFetcher:         tF,
+		latestConsistent:    log.Checkpoint{},
+		cpSigVerifier:       nV,
+		origin:              origin,
 	}
 	if len(checkpointRaw) > 0 {
-		ret.LatestConsistentRaw = checkpointRaw
+		ret.latestConsistentRaw = checkpointRaw
 		cp, _, _, err := log.ParseCheckpoint(checkpointRaw, origin, nV)
 		if err != nil {
 			return ret, err
 		}
-		ret.LatestConsistent = *cp
-		ret.ProofBuilder, err = NewProofBuilder(ctx, ret.LatestConsistent, ret.TileFetcher)
+		ret.latestConsistent = *cp
+		ret.proofBuilder, err = NewProofBuilder(ctx, ret.latestConsistent, ret.tileFetcher)
 		if err != nil {
 			return ret, fmt.Errorf("NewProofBuilder: %v", err)
 		}
@@ -342,26 +338,26 @@ func NewLogStateTracker(ctx context.Context, cpF CheckpointFetcherFunc, tF TileF
 // If the LatestConsistent checkpoint is 0 sized, no consistency proof will be returned
 // since it would be meaningless to do so.
 func (lst *LogStateTracker) Update(ctx context.Context) ([]byte, [][]byte, []byte, error) {
-	c, cRaw, cn, err := lst.ConsensusCheckpoint(ctx, lst.CpSigVerifier, lst.Origin)
+	c, cRaw, _, err := lst.consensusCheckpoint(ctx, lst.cpSigVerifier, lst.origin)
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	builder, err := NewProofBuilder(ctx, *c, lst.TileFetcher)
+	builder, err := NewProofBuilder(ctx, *c, lst.tileFetcher)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to create proof builder: %w", err)
 	}
 	var p [][]byte
-	if lst.LatestConsistent.Size > 0 {
-		if c.Size <= lst.LatestConsistent.Size {
-			return lst.LatestConsistentRaw, p, lst.LatestConsistentRaw, nil
+	if lst.latestConsistent.Size > 0 {
+		if c.Size <= lst.latestConsistent.Size {
+			return lst.latestConsistentRaw, p, lst.latestConsistentRaw, nil
 		}
-		p, err = builder.ConsistencyProof(ctx, lst.LatestConsistent.Size, c.Size)
+		p, err = builder.ConsistencyProof(ctx, lst.latestConsistent.Size, c.Size)
 		if err != nil {
 			return nil, nil, nil, err
 		}
-		if err := proof.VerifyConsistency(hasher, lst.LatestConsistent.Size, c.Size, p, lst.LatestConsistent.Hash, c.Hash); err != nil {
+		if err := proof.VerifyConsistency(hasher, lst.latestConsistent.Size, c.Size, p, lst.latestConsistent.Hash, c.Hash); err != nil {
 			return nil, nil, nil, ErrInconsistency{
-				SmallerRaw: lst.LatestConsistentRaw,
+				SmallerRaw: lst.latestConsistentRaw,
 				LargerRaw:  cRaw,
 				Proof:      p,
 				Wrapped:    err,
@@ -370,10 +366,14 @@ func (lst *LogStateTracker) Update(ctx context.Context) ([]byte, [][]byte, []byt
 		// Update is consistent,
 
 	}
-	oldRaw := lst.LatestConsistentRaw
-	lst.LatestConsistentRaw, lst.LatestConsistent, lst.CheckpointNote = cRaw, *c, cn
-	lst.ProofBuilder = builder
-	return oldRaw, p, lst.LatestConsistentRaw, nil
+	oldRaw := lst.latestConsistentRaw
+	lst.latestConsistentRaw, lst.latestConsistent = cRaw, *c
+	lst.proofBuilder = builder
+	return oldRaw, p, lst.latestConsistentRaw, nil
+}
+
+func (lst *LogStateTracker) Latest() log.Checkpoint {
+	return lst.latestConsistent
 }
 
 // tileKey is used as a key in nodeCache's tile map.
