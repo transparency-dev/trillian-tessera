@@ -90,3 +90,12 @@ func (o MigrationOptions) EntriesPath() func(uint64, uint8) string {
 func (o MigrationOptions) Followers() []func(context.Context, LogReader) {
 	return o.followers
 }
+
+func (o *MigrationOptions) WithAntispam(as Antispam) *MigrationOptions {
+	if as != nil {
+		o.followers = append(o.followers, func(ctx context.Context, lr LogReader) {
+			as.Populate(ctx, lr, defaultIDHasher)
+		})
+	}
+	return o
+}
