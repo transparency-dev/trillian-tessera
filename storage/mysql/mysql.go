@@ -23,6 +23,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"iter"
 	"os"
 	"strings"
 	"time"
@@ -47,6 +48,7 @@ const (
 	selectSubtreeByLevelAndIndexSQL  = "SELECT `nodes` FROM `Subtree` WHERE `level` = ? AND `index` = ?"
 	replaceSubtreeSQL                = "REPLACE INTO `Subtree` (`level`, `index`, `nodes`) VALUES (?, ?, ?)"
 	selectTiledLeavesSQL             = "SELECT `size`, `data` FROM `TiledLeaves` WHERE `tile_index` = ?"
+	streamTiledLeavesSQL             = "SELECT `tile_index`, `size`, `data` FROM `TiledLeaves` WHERE `tile_index` >= ? ORDER BY `tile_index` ASC"
 	replaceTiledLeavesSQL            = "REPLACE INTO `TiledLeaves` (`tile_index`, `size`, `data`) VALUES (?, ?, ?)"
 
 	checkpointID = 0
@@ -152,7 +154,7 @@ func (s *Storage) maybeInitTree(ctx context.Context) error {
 		}
 	}()
 
-	treeState, err := s.readTreeState(ctx, tx)
+	treeState, err := s.readTreeStateForUpdate(ctx, tx)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		klog.Errorf("Failed to read tree state: %v", err)
 		return err
@@ -196,9 +198,27 @@ type treeState struct {
 	root []byte
 }
 
-// readTreeState returns the currently stored tree state information.
+// readTreeState returns the currently stored state information.
 // If there is no stored tree state, it returns os.ErrNotExist.
-func (s *Storage) readTreeState(ctx context.Context, tx *sql.Tx) (*treeState, error) {
+func (s *Storage) readTreeState(ctx context.Context) (*treeState, error) {
+	row := s.db.QueryRowContext(ctx, selectTreeStateByIDSQL, treeStateID)
+	if err := row.Err(); err != nil {
+		return nil, err
+	}
+
+	r := &treeState{}
+	if err := row.Scan(&r.size, &r.root); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, os.ErrNotExist
+		}
+		return nil, fmt.Errorf("scan tree state: %v", err)
+	}
+	return r, nil
+}
+
+// readTreeStateForUpdate returns the currently stored tree state information, and locks the row for update using the provided transaction.
+// If there is no stored tree state, it returns os.ErrNotExist.
+func (s *Storage) readTreeStateForUpdate(ctx context.Context, tx *sql.Tx) (*treeState, error) {
 	row := tx.QueryRowContext(ctx, selectTreeStateByIDForUpdateSQL, treeStateID)
 	if err := row.Err(); err != nil {
 		return nil, err
@@ -301,17 +321,154 @@ func (s *Storage) ReadEntryBundle(ctx context.Context, index uint64, p uint8) ([
 	return entryBundle, nil
 }
 
+// IntegratedSize returns the current size of the integrated tree.
+//
+// This is part of the tesserra LogReader contract.
 func (s *Storage) IntegratedSize(ctx context.Context) (uint64, error) {
-	return 0, errors.New("unimplemented")
+	ts, err := s.readTreeState(ctx)
+	return ts.size, err
 }
 
+// StreamEntries() returns functions `next` and `stop` which act like a pull iterator for
+// consecutive entry bundles, starting with the entry bundle which contains the requested entry
+// index.
+//
+// This is part of the tesserra LogReader contract.
 func (s *Storage) StreamEntries(ctx context.Context, fromEntry uint64) (next func() (ri layout.RangeInfo, bundle []byte, err error), cancel func()) {
-	return func() (layout.RangeInfo, []byte, error) {
-		return layout.RangeInfo{}, nil, errors.New("unimplemented")
-	}, func() {}
+	type riBundle struct {
+		ri  layout.RangeInfo
+		b   []byte
+		err error
+	}
+	// c is a channel which carries elements which ultimately will be returned via the next function.
+	c := make(chan riBundle, 10)
+	// done signals that we should stop any background processing when it's closed.
+	// This happens when the returned cancel func is called.
+	done := make(chan struct{})
+
+	// Kick off a background goroutine which fills c.
+	go func() {
+		var rangeInfoNext func() (layout.RangeInfo, bool)
+		var rangeInfoCancel func()
+		var rows *sql.Rows
+		nextEntry := fromEntry
+
+		// reset should be called if we detect that something has gone wrong and we need to re-start our streaming.
+		reset := func() {
+			if rows != nil {
+				_ = rows.Close()
+				rows = nil
+			}
+			if rangeInfoCancel != nil {
+				rangeInfoCancel()
+				rangeInfoCancel = nil
+				rangeInfoNext = nil
+			}
+		}
+
+		sleep := time.Duration(0)
+	tryAgain:
+		for {
+			// We'll keep going until the context is done, but don't want to hammer the DB when we've
+			// streamed all the current entries and are waiting for the tree to grow.
+			select {
+			case <-ctx.Done():
+				return
+			case <-done:
+				close(c)
+				return
+			case <-time.After(sleep):
+				// We avoid pausing unnecessarily the first time we enter the loop by initialising sleep to zero, but
+				// subsequent iterations around the loop _should_ sleep to avoid hammering the DB when we've caught up with
+				// all the entries it contains.
+				sleep = time.Second
+			}
+
+			// Check if we need to (re-) setup the data stream, and do it if so.
+			if rangeInfoNext == nil {
+				// We need to know what the current local tree size is.
+				ts, err := s.readTreeState(ctx)
+				if err != nil {
+					klog.Warningf("failed to read tree state: %v", err)
+					reset()
+					continue
+				}
+				klog.Infof("StreamEntries scanning %d -> %d", fromEntry, ts.size)
+				// And we need the corresponding range info which tell us the "shape" of the entry bundles
+				rangeInfoNext, rangeInfoCancel = iter.Pull(layout.Range(nextEntry, ts.size, ts.size))
+				nextBundle := nextEntry / layout.EntryBundleWidth
+				// Finally, we need the actual raw entry bundles themselves.
+				rows, err = s.db.QueryContext(ctx, streamTiledLeavesSQL, nextBundle)
+				if err != nil {
+					klog.Warningf("failed to read entry bundle @%d: %v", nextBundle, err)
+					reset()
+					continue
+				}
+			}
+
+			// Now we can iterate over the streams we've set up above, and turn the data into the right form
+			// for sending over c, to be returned to the caller via the next func.
+			var idx, size uint64
+			var data []byte
+			for rows.Next() {
+				// Parse a bundle from the DB
+				if err := rows.Scan(&idx, &size, &data); err != nil {
+					reset()
+					c <- riBundle{err: err}
+					continue tryAgain
+				}
+				// And grab the corresponding range info which describes it.
+				ri, ok := rangeInfoNext()
+				if !ok {
+					reset()
+					continue tryAgain
+				}
+				// The bundle data and the range info MUST refer to the same entry bundle index, so assert that they do.
+				if idx != ri.Index {
+					// Something's gone wonky - our rangeinfo and entry bundle streams are no longer lined up.
+					// Bail and set up the streams again.
+					klog.Infof("Out of sync, got entrybundle index %d, but rangeinfo for index %d", idx, ri.Index)
+					reset()
+					continue tryAgain
+				}
+				// All good, so queue up the data to be returned via calls to next.
+				klog.V(1).Infof("Sending %v", ri)
+				c <- riBundle{ri: ri, b: data}
+				nextEntry += uint64(ri.N)
+			}
+			klog.V(1).Infof("StreamEntries: no more entry bundle rows, will retry")
+			// We have no more rows coming from the entrybundle table of the DB, so go around again and re-check
+			// the tree size in case it's grown since we started the query.
+			reset()
+		}
+	}()
+
+	// This is the implementation of the next function we'll return to the caller.
+	// They'll call this repeatedly to consume entries from c.
+	next = func() (layout.RangeInfo, []byte, error) {
+		select {
+		case <-ctx.Done():
+			return layout.RangeInfo{}, nil, ctx.Err()
+		case r, ok := <-c:
+			if !ok {
+				return layout.RangeInfo{}, nil, errors.New("no more entries")
+			}
+			return r.ri, r.b, r.err
+		}
+	}
+
+	return next, func() {
+		close(done)
+	}
 }
 
-func (s *Storage) writeEntryBundle(ctx context.Context, tx *sql.Tx, index uint64, size uint32, entryBundle []byte) error {
+// dbExec describes something which can support the sql ExecContext function.
+// this allows us to use either sql.Tx or sql.DB.
+type dbExecContext interface {
+	ExecContext(context.Context, string, ...any) (sql.Result, error)
+}
+
+func (s *Storage) writeEntryBundle(ctx context.Context, tx dbExecContext, index uint64, size uint32, entryBundle []byte) error {
 	if _, err := tx.ExecContext(ctx, replaceTiledLeavesSQL, index, size, entryBundle); err != nil {
 		klog.Errorf("Failed to execute replaceTiledLeavesSQL: %v", err)
 		return err
@@ -352,7 +509,7 @@ func (a *appender) publishCheckpoint(ctx context.Context, interval time.Duration
 		return nil
 	}
 
-	treeState, err := a.s.readTreeState(ctx, tx)
+	treeState, err := a.s.readTreeStateForUpdate(ctx, tx)
 	if err != nil {
 		return fmt.Errorf("readTreeState: %v", err)
 	}
@@ -496,7 +653,7 @@ func (a *appender) appendEntries(ctx context.Context, tx *sql.Tx, fromSeq uint64
 	for i, e := range sequencedEntries {
 		lh[i] = e.LeafHash
 	}
-	newSize, newRoot, err := a.integrate(ctx, tx, fromSeq, lh)
+	newSize, newRoot, err := integrate(ctx, tx, fromSeq, lh, a.s.writeTile)
 	if err != nil {
 		return fmt.Errorf("integrate: %v", err)
 	}
@@ -561,7 +718,7 @@ func getTiles(ctx context.Context, tx *sql.Tx, tileIDs []storage.TileID, treeSiz
 }
 
 // integrate adds the provided leaf hashes to the merkle tree, starting at the provided location.
-func (a *appender) integrate(ctx context.Context, tx *sql.Tx, fromSeq uint64, lh [][]byte) (uint64, []byte, error) {
+func integrate(ctx context.Context, tx *sql.Tx, fromSeq uint64, lh [][]byte, writeTile func(context.Context, *sql.Tx, uint64, uint64, []byte) error) (uint64, []byte, error) {
 	getTiles := func(ctx context.Context, tileIDs []storage.TileID, treeSize uint64) ([]*api.HashTile, error) {
 		return getTiles(ctx, tx, tileIDs, treeSize)
 	}
@@ -575,10 +732,168 @@ func (a *appender) integrate(ctx context.Context, tx *sql.Tx, fromSeq uint64, lh
 			return 0, nil, err
 		}
 
-		if err := a.s.writeTile(ctx, tx, uint64(k.Level), k.Index, nodes); err != nil {
+		if err := writeTile(ctx, tx, uint64(k.Level), k.Index, nodes); err != nil {
 			return 0, nil, fmt.Errorf("failed to set tile(%v): %w", k, err)
 		}
 	}
 
 	return newSize, newRoot, nil
+}
+
+// MigrationTarget creates a new MySQL storage for the MigrationTarget lifecycle mode.
+//
+// bundleHasher must return Merkle leaf hashes for entry bundles it's passed.
+func (s *Storage) MigrationTarget(ctx context.Context, bundleHasher tessera.UnbundlerFunc, opts *tessera.MigrationOptions) (tessera.MigrationTarget, tessera.LogReader, error) {
+	if err := s.maybeInitTree(ctx); err != nil {
+		return nil, nil, fmt.Errorf("maybeInitTree: %v", err)
+	}
+
+	return &MigrationStorage{
+		s:            s,
+		bundleHasher: bundleHasher,
+	}, s, nil
+}
+
+// MigrationStorgage implements the tessera.MigrationTarget lifecycle contract.
+type MigrationStorage struct {
+	s            *Storage
+	bundleHasher func([]byte) ([][]byte, error)
+}
+
+var _ tessera.MigrationTarget = &MigrationStorage{}
+
+// AwaitIntegration blocks until the local integrated tree has grown to the provided size.
+//
+// This implements part of the tessera MigrationTarget lifecycle contract.
+//
+// As well as waiting for the integration to reach the desired size, this method is where
+// the integration process itself actually happens.
+func (m *MigrationStorage) AwaitIntegration(ctx context.Context, sourceSize uint64) ([]byte, error) {
+	// fromSeq keeps track of where we need to integrate from - i.e. the current local size of the integrated tree.
+	var fromSeq uint64
+	// rows provides a stream of entry bundle rows which will be processed in the loop below.
+	var rows *sql.Rows
+
+	// The outer loop "tryAgain", will (re-) setup the streaming read of entry bundles from the DB.
+	// The inner loop will go around attempting to process each of these rows in turn. If it encounters
+	// a problem it'll break out to the outer loop to sort things out and retry.
+tryAgain:
+	for {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(time.Second):
+		}
+
+		// Release resources if we're going around and resetting the read.
+		if rows != nil {
+			_ = rows.Close()
+		}
+		// Figure out where we should be integration from.
+		from, err := m.IntegratedSize(ctx)
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			klog.Warningf("AwaitIntegration: readTreeState: %v", err)
+			continue
+		}
+		fromSeq = from
+		klog.Infof("AwaitIntegration: Integrate from %d (Target %d)", fromSeq, sourceSize)
+
+		// Set up the streaming read of entry bundles from the DB
+		nextBundle := fromSeq / layout.EntryBundleWidth
+		rows, err = m.s.db.QueryContext(ctx, streamTiledLeavesSQL, nextBundle)
+		if err != nil {
+			klog.Warningf("failed to start streaming entry bundles @%d: %v", nextBundle, err)
+			continue
+		}
+
+		// This is the inner loop which processes each of the entry bundle rows from the DB read in turn.
+		for rows.Next() {
+			// Parse the row.
+			var idx, size uint64
+			var data []byte
+			if err := rows.Scan(&idx, &size, &data); err != nil {
+				klog.Warningf("AwaitIntegration: Scan: %v", err)
+				continue tryAgain
+			}
+			// Check that we're seeing contiguous bundles, and go around if we've encountered a gap.
+			// This isn't necessarily an unrecoverable error, it's probably just that we've either hit the end of all
+			// available entry bundles, or whatever process is copying them over hasn't yet written this one.
+			// We'll continue looping around in the outer loop (where we back off to avoid hammering the DB) until
+			// this entry bundle turns up.
+			if want := fromSeq / uint64(layout.EntryBundleWidth); idx != want {
+				klog.V(1).Infof("AwaitIntegration: encountered gap, want idx %d (fromSeq %d) but found %d", want, fromSeq, idx)
+				continue tryAgain
+			}
+
+			// Turn the entry bundle into leaf hashes.
+			lh, err := m.bundleHasher(data)
+			if err != nil {
+				klog.Warningf("AwaitIntegration: bundleHasher: %v", err)
+				continue tryAgain
+			}
+
+			// Trim the bundle if we've previously integrated some of it (e.g. because it was a [smaller] partial bundle last time
+			// we saw it.
+			f := fromSeq % layout.EntryBundleWidth
+			lh = lh[f:]
+
+			// And finally integrate the bundle into the tree.
+			newSize, newRoot, err := m.integrateBatch(ctx, fromSeq, lh)
+			if err != nil {
+				klog.Warningf("AwaitIntegration: integrateBatch: %v", err)
+				continue tryAgain
+			}
+			fromSeq = newSize
+
+			if newSize == sourceSize {
+				klog.Infof("AwaitIntegration: Integrated to %d with roothash %x", newSize, newRoot)
+				return newRoot, nil
+			}
+		}
+	}
+}
+
+// integrateBatch integrates the provided entries at the specified starting index.
+//
+// Returns the new size of the local tree and its new root hash.
+func (m *MigrationStorage) integrateBatch(ctx context.Context, fromSeq uint64, lh [][]byte) (uint64, []byte, error) {
+	tx, err := m.s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, nil, err
+	}
+	defer func() {
+		if tx != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	newSize, newRoot, err := integrate(ctx, tx, fromSeq, lh, m.s.writeTile)
+	if err != nil {
+		return 0, nil, fmt.Errorf("integrate: %v", err)
+	}
+	if err := m.s.writeTreeState(ctx, tx, newSize, newRoot); err != nil {
+		return 0, nil, fmt.Errorf("writeTreeState: %v", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return 0, nil, fmt.Errorf("commit: %v", err)
+	}
+	tx = nil
+
+	return newSize, newRoot, err
+}
+
+// SetEntryBundle stores the provided serialised entry bundle at the location implied by the provided
+// entry bundle index and partial size.
+//
+// Implements the tessera MigrationTarget lifecycle contract.
+func (m *MigrationStorage) SetEntryBundle(ctx context.Context, index uint64, partial uint8, bundle []byte) error {
+	return m.s.writeEntryBundle(ctx, m.s.db, index, uint32(partial), bundle)
+}
+
+// IntegratedSize returns the current size of the locally integrated log.
+//
+// Implements the tessera MigrationTarget lifecycle contract.
+func (m *MigrationStorage) IntegratedSize(ctx context.Context) (uint64, error) {
+	return m.s.IntegratedSize(ctx)
 }
