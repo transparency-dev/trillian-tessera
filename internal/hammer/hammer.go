@@ -119,7 +119,7 @@ func main() {
 		klog.Exitf("Failed to get initial state of the log: %v", err)
 	}
 
-	ha := loadtest.NewHammerAnalyser(func() uint64 { return tracker.LatestConsistent.Size })
+	ha := loadtest.NewHammerAnalyser(func() uint64 { return tracker.Latest().Size })
 	ha.Run(ctx)
 
 	gen := newLeafGenerator(tracker.LatestConsistent.Size, *leafMinSize, *dupChance)
