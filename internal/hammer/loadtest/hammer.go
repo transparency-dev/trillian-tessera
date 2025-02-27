@@ -108,6 +108,8 @@ func (h *Hammer) updateCheckpointLoop(ctx context.Context) {
 			newSize := h.tracker.LatestConsistent.Size
 			if newSize > size {
 				klog.V(1).Infof("Updated checkpoint from %d to %d", size, newSize)
+			} else {
+				klog.V(2).Infof("Checkpoint size unchanged: %d", newSize)
 			}
 		}
 	}
