@@ -777,7 +777,7 @@ func (s *spannerCoordinator) assignEntries(ctx context.Context, entries []*tesse
 		// First we need to grab the next available sequence number from the SeqCoord table.
 		row, err := txn.ReadRowWithOptions(ctx, "SeqCoord", spanner.Key{0}, []string{"id", "next"}, &spanner.ReadOptions{LockHint: spannerpb.ReadRequest_LOCK_HINT_EXCLUSIVE})
 		if err != nil {
-			return fmt.Errorf("failed to read SeqCoord: %v", err)
+			return fmt.Errorf("failed to read SeqCoord: %w", err)
 		}
 		var id int64
 		if err := row.Columns(&id, &next); err != nil {
