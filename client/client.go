@@ -377,7 +377,7 @@ func (lst *LogStateTracker) Update(ctx context.Context) ([]byte, [][]byte, []byt
 
 func (lst *LogStateTracker) Latest() log.Checkpoint {
 	lst.mu.RLock()
-	defer lst.mu.Unlock()
+	defer lst.mu.RUnlock()
 	return lst.latestConsistent
 }
 
