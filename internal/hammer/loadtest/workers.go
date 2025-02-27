@@ -77,7 +77,7 @@ func (r *LeafReader) Run(ctx context.Context) {
 			return
 		case <-r.throttle:
 		}
-		size := r.tracker.LatestConsistent.Size
+		size := r.tracker.Latest().Size
 		if size == 0 {
 			continue
 		}
