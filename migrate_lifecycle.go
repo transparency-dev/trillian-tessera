@@ -90,3 +90,17 @@ func (o MigrationOptions) EntriesPath() func(uint64, uint8) string {
 func (o MigrationOptions) Followers() []func(context.Context, LogReader) {
 	return o.followers
 }
+
+// WithAntispam configures the migration target to *populate* the provided antispam storage using
+// the data being migrated into the target tree.
+//
+// Note that since the tree is being _migrated_, the resulting target tree must match the structure
+// of the source tree and so no attempt is made to reject/deduplicate entries.
+func (o *MigrationOptions) WithAntispam(as Antispam) *MigrationOptions {
+	if as != nil {
+		o.followers = append(o.followers, func(ctx context.Context, lr LogReader) {
+			as.Populate(ctx, lr, defaultIDHasher)
+		})
+	}
+	return o
+}

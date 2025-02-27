@@ -1218,7 +1218,7 @@ func (d *AntispamStorage) Populate(ctx context.Context, lr tessera.LogReader, bu
 				}
 
 				// TODO(al): Maybe make these configurable.
-				const batchSize = 64
+				const batchSize = 40
 				const pushBackThreshold = batchSize * 16
 				d.pushBack.Store(size-followFrom > pushBackThreshold)
 
