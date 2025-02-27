@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/base64"
 	"flag"
+	"fmt"
 	"net/url"
 	"strconv"
 	"strings"
@@ -35,8 +36,9 @@ var (
 	bucket  = flag.String("bucket", "", "Bucket to use for storing log")
 	spanner = flag.String("spanner", "", "Spanner resource URI ('projects/.../...')")
 
-	sourceURL  = flag.String("source_url", "", "Base URL for the source log.")
-	numWorkers = flag.Int("num_workers", 30, "Number of migration worker goroutines.")
+	sourceURL          = flag.String("source_url", "", "Base URL for the source log.")
+	numWorkers         = flag.Int("num_workers", 30, "Number of migration worker goroutines.")
+	persistentAntispam = flag.Bool("antispam", false, "EXPERIMENTAL: Set to true to enable GCP-based persistent antispam storage")
 )
 
 func main() {
@@ -73,7 +75,19 @@ func main() {
 		klog.Exitf("Failed to create new GCP storage driver: %v", err)
 	}
 
-	m, err := tessera.NewMigrationTarget(ctx, driver, internal.BundleHasher, tessera.NewMigrationOptions())
+	opts := tessera.NewMigrationOptions()
+	// Configure antispam storage, if necessary
+	var antispam tessera.Antispam
+	// Persistent antispam is currently experimental, so there's no terraform or documentation yet!
+	if *persistentAntispam {
+		antispam, err = gcp.NewAntispam(ctx, fmt.Sprintf("%s_dedup", *spanner))
+		if err != nil {
+			klog.Exitf("Failed to create new GCP antispam storage: %v", err)
+		}
+		opts.WithAntispam(antispam)
+	}
+
+	m, err := tessera.NewMigrationTarget(ctx, driver, internal.BundleHasher, opts)
 	if err != nil {
 		klog.Exitf("Failed to create MigrationTarget: %v", err)
 	}
