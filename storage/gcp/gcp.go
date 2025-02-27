@@ -781,7 +781,7 @@ func (s *spannerCoordinator) assignEntries(ctx context.Context, entries []*tesse
 		}
 		var id int64
 		if err := row.Columns(&id, &next); err != nil {
-			return fmt.Errorf("failed to parse id column: %w", err)
+			return fmt.Errorf("failed to parse id column: %v", err)
 		}
 
 		// Check whether there are too many outstanding entries and we should apply
@@ -818,7 +818,7 @@ func (s *spannerCoordinator) assignEntries(ctx context.Context, entries []*tesse
 			spanner.Update("SeqCoord", []string{"id", "next"}, []interface{}{0, int64(next) + int64(num)}),
 		}
 		if err := txn.BufferWrite(m); err != nil {
-			return fmt.Errorf("failed to apply TX: %w", err)
+			return fmt.Errorf("failed to apply TX: %v", err)
 		}
 
 		return nil
@@ -848,7 +848,7 @@ func (s *spannerCoordinator) consumeEntries(ctx context.Context, limit uint64, f
 		var fromSeq int64 // Spanner doesn't support uint64
 		var rootHash []byte
 		if err := row.Columns(&fromSeq, &rootHash); err != nil {
-			return fmt.Errorf("failed to read integration coordination info: %w", err)
+			return fmt.Errorf("failed to read integration coordination info: %v", err)
 		}
 		klog.V(1).Infof("Consuming from %d", fromSeq)
 
@@ -871,7 +871,7 @@ func (s *spannerCoordinator) consumeEntries(ctx context.Context, limit uint64, f
 			var vGob []byte
 			var seq int64 // spanner doesn't have uint64
 			if err := row.Columns(&seq, &vGob); err != nil {
-				return fmt.Errorf("failed to scan seq row: %w", err)
+				return fmt.Errorf("failed to scan seq row: %v", err)
 			}
 
 			if orderCheck != seq {
@@ -1208,7 +1208,7 @@ func (d *AntispamStorage) Populate(ctx context.Context, lr tessera.LogReader, bu
 
 				var f int64 // Spanner doesn't support uint64
 				if err := row.Columns(&f); err != nil {
-					return fmt.Errorf("failed to read follow coordination info: %w", err)
+					return fmt.Errorf("failed to read follow coordination info: %v", err)
 				}
 				followFrom := uint64(f)
 				if followFrom >= size {
@@ -1453,7 +1453,7 @@ func (m *MigrationStorage) buildTree(ctx context.Context, sourceSize uint64) (ui
 		var fromSeq int64 // Spanner doesn't support uint64
 		var rootHash []byte
 		if err := row.Columns(&fromSeq, &rootHash); err != nil {
-			return fmt.Errorf("failed to read integration coordination info: %w", err)
+			return fmt.Errorf("failed to read integration coordination info: %v", err)
 		}
 
 		from := uint64(fromSeq)
