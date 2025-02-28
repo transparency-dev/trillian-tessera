@@ -17,7 +17,7 @@
 //
 // Sample command to start a local MySQL database using Docker:
 // $ docker run --name test-mysql -p 3306:3306 -e MYSQL_ROOT_PASSWORD=root -e MYSQL_DATABASE=test_tessera -d mysql
-package mysql_test
+package mysql
 
 import (
 	"bytes"
@@ -36,7 +36,6 @@ import (
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/api"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
-	"github.com/transparency-dev/trillian-tessera/storage/mysql"
 	"golang.org/x/mod/sumdb/note"
 	"golang.org/x/sync/errgroup"
 	"k8s.io/klog/v2"
@@ -154,7 +153,7 @@ func TestAppend(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			drv, err := mysql.New(ctx, testDB)
+			drv, err := New(ctx, testDB)
 			if err != nil {
 				t.Fatalf("New: %v", err)
 			}
@@ -169,7 +168,7 @@ func TestAppend(t *testing.T) {
 
 func TestGetTile(t *testing.T) {
 	ctx := context.Background()
-	addFn, r := newTestMySQLStorage(t, ctx)
+	addFn, r, _ := newTestMySQLStorage(t, ctx)
 
 	awaiter := tessera.NewIntegrationAwaiter(ctx, r.ReadCheckpoint, 10*time.Millisecond)
 
@@ -259,7 +258,7 @@ func TestGetTile(t *testing.T) {
 
 func TestReadMissingTile(t *testing.T) {
 	ctx := context.Background()
-	_, r := newTestMySQLStorage(t, ctx)
+	_, r, _ := newTestMySQLStorage(t, ctx)
 
 	for _, test := range []struct {
 		name         string
@@ -293,7 +292,7 @@ func TestReadMissingTile(t *testing.T) {
 
 func TestReadMissingEntryBundle(t *testing.T) {
 	ctx := context.Background()
-	_, r := newTestMySQLStorage(t, ctx)
+	_, r, _ := newTestMySQLStorage(t, ctx)
 
 	for _, test := range []struct {
 		name  string
@@ -327,7 +326,7 @@ func TestReadMissingEntryBundle(t *testing.T) {
 func TestParallelAdd(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	addFn, _ := newTestMySQLStorage(t, ctx)
+	addFn, _, _ := newTestMySQLStorage(t, ctx)
 
 	for _, test := range []struct {
 		name  string
@@ -363,7 +362,7 @@ func TestParallelAdd(t *testing.T) {
 
 func TestTileRoundTrip(t *testing.T) {
 	ctx := context.Background()
-	addFn, r := newTestMySQLStorage(t, ctx)
+	addFn, r, _ := newTestMySQLStorage(t, ctx)
 
 	for _, test := range []struct {
 		name  string
@@ -414,7 +413,7 @@ func TestTileRoundTrip(t *testing.T) {
 
 func TestEntryBundleRoundTrip(t *testing.T) {
 	ctx := context.Background()
-	addFn, r := newTestMySQLStorage(t, ctx)
+	addFn, r, _ := newTestMySQLStorage(t, ctx)
 
 	for _, test := range []struct {
 		name  string
@@ -459,11 +458,142 @@ func TestEntryBundleRoundTrip(t *testing.T) {
 	}
 }
 
-func newTestMySQLStorage(t *testing.T, ctx context.Context) (tessera.AddFn, tessera.LogReader) {
+func TestStreamEntries(t *testing.T) {
+	ctx := context.Background()
+	_, _, s := newTestMySQLStorage(t, ctx)
+
+	for _, test := range []struct {
+		name            string
+		treeSize        uint64
+		growTreeSize    uint64
+		growAfterBundle uint64
+		streamFrom      uint64
+	}{
+		{
+			name:       "stream from zero to end of tree",
+			treeSize:   10 * layout.EntryBundleWidth,
+			streamFrom: 0,
+		}, {
+			name:            "stream from zero to end of tree, grow tree while streaming",
+			treeSize:        10 * layout.EntryBundleWidth,
+			growTreeSize:    20 * layout.EntryBundleWidth,
+			growAfterBundle: 5,
+			streamFrom:      0,
+		}, {
+			name:       "stream from middle to end of tree (aligned)",
+			treeSize:   10 * layout.EntryBundleWidth,
+			streamFrom: 5 * layout.EntryBundleWidth,
+		}, {
+			name:            "stream from middle to end of tree (aligned), grow while streaming",
+			treeSize:        10 * layout.EntryBundleWidth,
+			growTreeSize:    20 * layout.EntryBundleWidth,
+			growAfterBundle: 18,
+			streamFrom:      8 * layout.EntryBundleWidth,
+		}, {
+			name:       "stream from middle to end of tree (unaligned)",
+			treeSize:   10 * layout.EntryBundleWidth,
+			streamFrom: 5*layout.EntryBundleWidth + 17,
+		}, {
+			name:            "stream from middle to end of tree (unaligned), grow while streaming",
+			treeSize:        10*layout.EntryBundleWidth + 46,
+			growTreeSize:    20 * layout.EntryBundleWidth,
+			growAfterBundle: 19,
+			streamFrom:      5*layout.EntryBundleWidth + 17,
+		}, {
+			name:            "stream from middle, grow when whole previous log was streamed",
+			treeSize:        10*layout.EntryBundleWidth + 41,
+			growTreeSize:    20 * layout.EntryBundleWidth,
+			growAfterBundle: 21,
+			streamFrom:      5*layout.EntryBundleWidth + 17,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			populateEntries(t, test.treeSize, s)
+			next, cancel := s.StreamEntries(context.Background(), test.streamFrom)
+			wantBundle := uint64(test.streamFrom / layout.EntryBundleWidth)
+			nBundles := test.treeSize / layout.EntryBundleWidth
+			for i := 0; ; i++ {
+				ri, b, err := next()
+				if err != nil {
+					t.Fatalf("expecting bundle %d, next: %v", wantBundle, err)
+				}
+				if ri.Index != wantBundle {
+					t.Fatalf("got bundle %d, want %d", ri.Index, wantBundle)
+				}
+				verifyBundle(t, wantBundle, b)
+
+				if i == int(test.growAfterBundle) && test.growTreeSize > 0 {
+					populateEntries(t, test.growTreeSize, s)
+					nBundles = test.growTreeSize / layout.EntryBundleWidth
+				}
+
+				wantBundle++
+
+				t.Logf("want %d N %d", wantBundle, nBundles)
+				if wantBundle >= nBundles {
+					cancel()
+					break
+				}
+			}
+		})
+	}
+}
+
+func verifyBundle(t *testing.T, bundleIndex uint64, b []byte) {
+	t.Helper()
+	for i, got := range b {
+		if got, want := byte(got), byte(bundleIndex+uint64(i)); got != want {
+			t.Fatalf("bundleIndex %d, entry %d is %d, want %d", bundleIndex, i, got, want)
+		}
+	}
+}
+
+// populateEntries creates entry bundles for a tree of the specified size, and sets the treeState to that size.
+// Note that it DOES NOT currently create any tiles.
+//
+// To help with round-trip testing, bundles are filled with one byte per "entry" according to the size of the
+// bundle implied by the provided tree size. Entry bytes within a bundle start with a value of byte(bundleIndex),
+// and are increased by one for each successive entry.
+func populateEntries(t *testing.T, size uint64, s *Storage) {
+	t.Helper()
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	defer func() {
+		if err := tx.Commit(); err != nil {
+			t.Fatalf("Commit: %v", err)
+		}
+	}()
+
+	for i, rem := 0, size; rem > 0; {
+		bundleIdx := i / layout.EntryBundleWidth
+		bs := rem
+		if bs > layout.EntryBundleWidth {
+			bs = uint64(layout.EntryBundleWidth)
+		}
+		b := make([]byte, bs)
+		for x := range b {
+			b[x] = byte(bundleIdx + x)
+			i++
+			rem--
+		}
+		t.Logf("Write %d.%d", bundleIdx, bs)
+		if err := s.writeEntryBundle(context.Background(), tx, uint64(bundleIdx), uint32(bs), b); err != nil {
+			t.Fatalf("writeEntryBundle(@%d.%d): %v", bundleIdx, bs, err)
+		}
+	}
+	if err := s.writeTreeState(context.Background(), tx, size, []byte("root")); err != nil {
+		t.Fatalf("writeTreeState: %v", err)
+	}
+}
+
+func newTestMySQLStorage(t *testing.T, ctx context.Context) (tessera.AddFn, tessera.LogReader, *Storage) {
 	t.Helper()
 	initDatabaseSchema(ctx)
 
-	s, err := mysql.New(ctx, testDB)
+	s, err := New(ctx, testDB)
 	if err != nil {
 		t.Fatalf("Failed to create mysql.Storage: %v", err)
 	}
@@ -475,5 +605,5 @@ func newTestMySQLStorage(t *testing.T, ctx context.Context) (tessera.AddFn, tess
 	if err != nil {
 		t.Fatal(err)
 	}
-	return a.Add, r
+	return a.Add, r, s
 }
