@@ -116,7 +116,7 @@ func main() {
 		if err != nil {
 			klog.Exitf("failed to sequence %q: %q", entry.name, err)
 		}
-		klog.Infof("%d: %v", seq, entry.name)
+		klog.Infof("%d: %v", seq.Index, entry.name)
 	}
 
 	// All futures have been resolved, which means the log is built and we can allow the process to terminate. Goodbye!
