@@ -22,9 +22,12 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	tessera "github.com/transparency-dev/trillian-tessera"
+	"github.com/transparency-dev/trillian-tessera/api/layout"
 	"github.com/transparency-dev/trillian-tessera/storage/gcp"
 	gcp_as "github.com/transparency-dev/trillian-tessera/storage/gcp/antispam"
 	"golang.org/x/mod/sumdb/note"
@@ -76,7 +79,7 @@ func main() {
 		}
 	}
 
-	appender, shutdown, _, err := tessera.NewAppender(ctx, driver, tessera.NewAppendOptions().
+	appender, shutdown, logReader, err := tessera.NewAppender(ctx, driver, tessera.NewAppendOptions().
 		WithCheckpointSigner(s, a...).
 		WithCheckpointInterval(10*time.Second).
 		WithBatching(1024, time.Second).
@@ -85,6 +88,8 @@ func main() {
 	if err != nil {
 		klog.Exit(err)
 	}
+
+	await := tessera.NewIntegrationAwaiter(ctx, logReader.ReadCheckpoint, time.Second)
 
 	// Expose a HTTP handler for the conformance test writes.
 	// This should accept arbitrary bytes POSTed to /add, and return an ascii
@@ -96,7 +101,8 @@ func main() {
 			return
 		}
 
-		idx, err := appender.Add(r.Context(), tessera.NewEntry(b))()
+		f := appender.Add(r.Context(), tessera.NewEntry(b))
+		idx, err := f()
 		if err != nil {
 			if errors.Is(err, tessera.ErrPushback) {
 				w.Header().Add("Retry-After", "1")
@@ -107,6 +113,37 @@ func main() {
 			_, _ = w.Write([]byte(err.Error()))
 			return
 		}
+
+		// If it's a dup, read the entry out from the bundle to simulate what CT could do in this case.
+		if idx.IsDup {
+			_, cpRaw, err := await.Await(ctx, f)
+			if err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				_, _ = w.Write([]byte(err.Error()))
+				return
+			}
+			bits := strings.Split(string(cpRaw), "\n")
+			if len(bits) < 3 {
+				w.WriteHeader(http.StatusInternalServerError)
+				_, _ = w.Write([]byte("invalid checkpoint"))
+				return
+			}
+			treeSize, err := strconv.ParseUint(bits[1], 10, 64)
+			if err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				_, _ = w.Write([]byte(err.Error()))
+				return
+			}
+
+			bundleIdx := idx.Index / layout.EntryBundleWidth
+			_, err = logReader.ReadEntryBundle(ctx, bundleIdx, layout.PartialTileSize(0, bundleIdx, treeSize))
+			if err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				_, _ = w.Write([]byte(err.Error()))
+				return
+			}
+		}
+
 		// Write out the assigned index
 		_, _ = w.Write([]byte(fmt.Sprintf("%d", idx.Index)))
 	})
