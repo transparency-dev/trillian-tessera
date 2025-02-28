@@ -72,7 +72,7 @@ var (
 			MaxIdleConnsPerHost: 256,
 			DisableKeepAlives:   false,
 		},
-		Timeout: 5 * time.Second,
+		Timeout: 30 * time.Second,
 	}
 )
 
