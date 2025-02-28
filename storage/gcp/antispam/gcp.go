@@ -151,14 +151,14 @@ func (d *AntispamStorage) Decorator() func(f tessera.AddFn) tessera.AddFn {
 				//
 				// We may decide in the future that serving duplicate reads is more important than catching up as quickly
 				// as possible, in which case we'd move this check down below the call to index.
-				return func() (uint64, error) { return 0, tessera.ErrPushback }
+				return func() (tessera.Index, error) { return tessera.Index{}, tessera.ErrPushback }
 			}
 			idx, err := d.index(ctx, e.Identity())
 			if err != nil {
-				return func() (uint64, error) { return 0, err }
+				return func() (tessera.Index, error) { return tessera.Index{}, err }
 			}
 			if idx != nil {
-				return func() (uint64, error) { return *idx, nil }
+				return func() (tessera.Index, error) { return tessera.Index{Index: *idx, IsDup: true}, nil }
 			}
 
 			return delegate(ctx, e)
