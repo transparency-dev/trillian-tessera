@@ -80,12 +80,12 @@ type IntegrationAwaiter struct {
 // This operation can be aborted early by cancelling the context. In this event,
 // or in the event that there is an error getting a valid checkpoint, an error
 // will be returned from this method.
-func (a *IntegrationAwaiter) Await(ctx context.Context, future IndexFuture) (uint64, []byte, error) {
+func (a *IntegrationAwaiter) Await(ctx context.Context, future IndexFuture) (Index, []byte, error) {
 	i, err := future()
 	if err != nil {
-		return 0, nil, err
+		return i, nil, err
 	}
-	cp, err := a.await(ctx, i)
+	cp, err := a.await(ctx, i.Index)
 	return i, cp, err
 }
 

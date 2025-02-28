@@ -59,7 +59,15 @@ type AddFn func(ctx context.Context, entry *Entry) IndexFuture
 //
 // Implementations of this func are likely to be "futures", or a promise to return this data at
 // some point in the future, and as such will block when called if the data isn't yet available.
-type IndexFuture func() (uint64, error)
+type IndexFuture func() (Index, error)
+
+// Index represents a durably assigned index for some entry.
+type Index struct {
+	// Index is the location in the log to which a particular entry has been assigned.
+	Index uint64
+	// IsDup is true if Index represents a previously assignment for the same entry.
+	IsDup bool
+}
 
 // Appender allows personalities access to the lifecycle methods associated with logs
 // in sequencing mode. This only has a single method, but other methods are likely to be added
