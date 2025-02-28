@@ -137,12 +137,12 @@ func (t *terminator) Add(ctx context.Context, entry *Entry) IndexFuture {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 	if t.stopped {
-		return func() (uint64, error) {
-			return 0, errors.New("appender has been shut down")
+		return func() (Index, error) {
+			return Index{}, errors.New("appender has been shut down")
 		}
 	}
 	res := t.delegate(ctx, entry)
-	return func() (uint64, error) {
+	return func() (Index, error) {
 		i, err := res()
 		if err != nil {
 			return i, err
@@ -150,7 +150,7 @@ func (t *terminator) Add(ctx context.Context, entry *Entry) IndexFuture {
 
 		// https://github.com/golang/go/issues/63999 - atomically set largest issued index
 		old := t.largestIssued.Load()
-		for old < i && !t.largestIssued.CompareAndSwap(old, i) {
+		for old < i.Index && !t.largestIssued.CompareAndSwap(old, i.Index) {
 			old = t.largestIssued.Load()
 		}
 
