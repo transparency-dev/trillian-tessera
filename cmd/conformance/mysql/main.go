@@ -89,7 +89,7 @@ func main() {
 			_, _ = w.Write([]byte(err.Error()))
 			return
 		}
-		if _, err = w.Write([]byte(fmt.Sprintf("%d", idx))); err != nil {
+		if _, err = w.Write([]byte(fmt.Sprintf("%d", idx.Index))); err != nil {
 			klog.Errorf("/add: %v", err)
 			return
 		}
