@@ -28,16 +28,19 @@ func TestDedupe(t *testing.T) {
 		desc     string
 		newValue string
 		wantIdx  uint64
+		wantDup  bool
 	}{
 		{
 			desc:     "first element",
 			newValue: "foo",
 			wantIdx:  1,
+			wantDup:  true,
 		},
 		{
 			desc:     "third element",
 			newValue: "baz",
 			wantIdx:  3,
+			wantDup:  true,
 		},
 		{
 			desc:     "new element",
@@ -51,8 +54,8 @@ func TestDedupe(t *testing.T) {
 			delegate := func(ctx context.Context, e *Entry) IndexFuture {
 				thisIdx := idx
 				idx++
-				return func() (uint64, error) {
-					return thisIdx, nil
+				return func() (Index, error) {
+					return Index{Index: thisIdx}, nil
 				}
 			}
 			dedupeAdd := newInMemoryDedupe(256)(delegate)
@@ -64,12 +67,16 @@ func TestDedupe(t *testing.T) {
 				}
 			}
 
-			idx, err := dedupeAdd(ctx, NewEntry([]byte(tC.newValue)))()
+			i, err := dedupeAdd(ctx, NewEntry([]byte(tC.newValue)))()
 			if err != nil {
 				t.Fatalf("dedupeAdd(%q): %v", tC.newValue, err)
 			}
-			if idx != tC.wantIdx {
-				t.Errorf("got != want (%d != %d)", idx, tC.wantIdx)
+			if i.Index != tC.wantIdx {
+				t.Errorf("got Index != want Index (%d != %d)", i.Index, tC.wantIdx)
+			}
+			if i.IsDup != tC.wantDup {
+				t.Errorf("got IsDup != want IsDup(%t != %t)", i.IsDup, tC.wantDup)
+
 			}
 		})
 	}
@@ -83,8 +90,8 @@ func BenchmarkDedupe(b *testing.B) {
 		delegate := func(ctx context.Context, e *Entry) IndexFuture {
 			thisIdx := idx
 			idx++
-			return func() (uint64, error) {
-				return thisIdx, nil
+			return func() (Index, error) {
+				return Index{Index: thisIdx}, nil
 			}
 		}
 		dedupeAdd := newInMemoryDedupe(256)(delegate)

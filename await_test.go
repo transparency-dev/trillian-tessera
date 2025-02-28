@@ -138,9 +138,9 @@ func TestAwait(t *testing.T) {
 			}
 			awaiter := tessera.NewIntegrationAwaiter(ctx, readCheckpoint, 10*time.Millisecond)
 
-			future := func() (uint64, error) {
+			future := func() (tessera.Index, error) {
 				<-time.After(tC.fDelay)
-				return tC.fIndex, tC.fErr
+				return tessera.Index{Index: tC.fIndex}, tC.fErr
 			}
 			i, cp, err := awaiter.Await(ctx, future)
 			if gotErr := err != nil; gotErr != tC.wantErr {
@@ -150,8 +150,8 @@ func TestAwait(t *testing.T) {
 				// Everything after here tests successful Await
 				return
 			}
-			if i != tC.fIndex {
-				t.Errorf("expected index %d but got %d", tC.fIndex, i)
+			if i.Index != tC.fIndex {
+				t.Errorf("expected index %d but got %d", tC.fIndex, i.Index)
 			}
 			if !bytes.Equal(cp, tC.cpBody) {
 				t.Errorf("expected checkpoint %q but got %q", tC.cpBody, cp)
@@ -200,25 +200,25 @@ func TestAwait_multiClient(t *testing.T) {
 	wg := sync.WaitGroup{}
 	for i := range 300 {
 		index := uint64(i)
-		future := func() (uint64, error) {
+		future := func() (tessera.Index, error) {
 			<-time.After(15 * time.Millisecond)
-			return index, nil
+			return tessera.Index{Index: index}, nil
 		}
 		wg.Add(1)
 		go func() {
 			i, cpRaw, err := awaiter.Await(ctx, future)
 			if err != nil {
-				t.Errorf("function for %d failed: %v", i, err)
+				t.Errorf("function for %d failed: %v", i.Index, err)
 			}
-			if i != index {
-				t.Errorf("got %d but expected %d", i, index)
+			if i.Index != index {
+				t.Errorf("got %d but expected %d", i.Index, index)
 			}
 			cp, _, _, err := log.ParseCheckpoint(cpRaw, "example.com/log/testdata", v)
 			if err != nil {
 				t.Error(err)
 			}
-			if cp.Size < i {
-				t.Errorf("got cp size of %d for index %d", cp.Size, i)
+			if cp.Size < i.Index {
+				t.Errorf("got cp size of %d for index %d", cp.Size, i.Index)
 			}
 
 			wg.Done()
