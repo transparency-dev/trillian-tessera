@@ -323,17 +323,17 @@ func (s *Storage) ReadEntryBundle(ctx context.Context, index uint64, p uint8) ([
 
 // IntegratedSize returns the current size of the integrated tree.
 //
-// This is part of the tesserra LogReader contract.
+// This is part of the tessera LogReader contract.
 func (s *Storage) IntegratedSize(ctx context.Context) (uint64, error) {
 	ts, err := s.readTreeState(ctx)
 	return ts.size, err
 }
 
-// StreamEntries() returns functions `next` and `stop` which act like a pull iterator for
+// StreamEntries() returns functions `next` and `cancel` which act like a pull iterator for
 // consecutive entry bundles, starting with the entry bundle which contains the requested entry
 // index.
 //
-// This is part of the tesserra LogReader contract.
+// This is part of the tessera LogReader contract.
 func (s *Storage) StreamEntries(ctx context.Context, fromEntry uint64) (next func() (ri layout.RangeInfo, bundle []byte, err error), cancel func()) {
 	type riBundle struct {
 		ri  layout.RangeInfo
@@ -341,6 +341,7 @@ func (s *Storage) StreamEntries(ctx context.Context, fromEntry uint64) (next fun
 		err error
 	}
 	// c is a channel which carries elements which ultimately will be returned via the next function.
+	// TODO(al): Figure out what a good channel capacity is here.
 	c := make(chan riBundle, 10)
 	// done signals that we should stop any background processing when it's closed.
 	// This happens when the returned cancel func is called.
@@ -353,7 +354,7 @@ func (s *Storage) StreamEntries(ctx context.Context, fromEntry uint64) (next fun
 		var rows *sql.Rows
 		nextEntry := fromEntry
 
-		// reset should be called if we detect that something has gone wrong and we need to re-start our streaming.
+		// reset should be called if we detect that something has gone wrong and/or we need to re-start our streaming.
 		reset := func() {
 			if rows != nil {
 				_ = rows.Close()
@@ -389,18 +390,18 @@ func (s *Storage) StreamEntries(ctx context.Context, fromEntry uint64) (next fun
 				// We need to know what the current local tree size is.
 				ts, err := s.readTreeState(ctx)
 				if err != nil {
-					klog.Warningf("failed to read tree state: %v", err)
+					klog.Warningf("Failed to read tree state: %v", err)
 					reset()
 					continue
 				}
 				klog.Infof("StreamEntries scanning %d -> %d", fromEntry, ts.size)
-				// And we need the corresponding range info which tell us the "shape" of the entry bundles
+				// And we need the corresponding range info which tell us the "shape" of the entry bundles.
 				rangeInfoNext, rangeInfoCancel = iter.Pull(layout.Range(nextEntry, ts.size, ts.size))
 				nextBundle := nextEntry / layout.EntryBundleWidth
 				// Finally, we need the actual raw entry bundles themselves.
 				rows, err = s.db.QueryContext(ctx, streamTiledLeavesSQL, nextBundle)
 				if err != nil {
-					klog.Warningf("failed to read entry bundle @%d: %v", nextBundle, err)
+					klog.Warningf("Failed to read entry bundle @%d: %v", nextBundle, err)
 					reset()
 					continue
 				}
@@ -411,7 +412,7 @@ func (s *Storage) StreamEntries(ctx context.Context, fromEntry uint64) (next fun
 			var idx, size uint64
 			var data []byte
 			for rows.Next() {
-				// Parse a bundle from the DB
+				// Parse a bundle from the DB.
 				if err := rows.Scan(&idx, &size, &data); err != nil {
 					reset()
 					c <- riBundle{err: err}
@@ -462,7 +463,7 @@ func (s *Storage) StreamEntries(ctx context.Context, fromEntry uint64) (next fun
 	}
 }
 
-// dbExec describes something which can support the sql ExecContext function.
+// dbExecContext describes something which can support the sql ExecContext function.
 // this allows us to use either sql.Tx or sql.DB.
 type dbExecContext interface {
 	ExecContext(context.Context, string, ...any) (sql.Result, error)
@@ -798,11 +799,11 @@ tryAgain:
 		fromSeq = from
 		klog.Infof("AwaitIntegration: Integrate from %d (Target %d)", fromSeq, sourceSize)
 
-		// Set up the streaming read of entry bundles from the DB
+		// Set up the streaming read of entry bundles from the DB.
 		nextBundle := fromSeq / layout.EntryBundleWidth
 		rows, err = m.s.db.QueryContext(ctx, streamTiledLeavesSQL, nextBundle)
 		if err != nil {
-			klog.Warningf("failed to start streaming entry bundles @%d: %v", nextBundle, err)
+			klog.Warningf("Failed to start streaming entry bundles @%d: %v", nextBundle, err)
 			continue
 		}
 
@@ -846,7 +847,7 @@ tryAgain:
 			fromSeq = newSize
 
 			if newSize == sourceSize {
-				klog.Infof("AwaitIntegration: Integrated to %d with roothash %x", newSize, newRoot)
+				klog.Infof("AwaitIntegration: Integrated to %d with root hash %x", newSize, newRoot)
 				return newRoot, nil
 			}
 		}
@@ -863,7 +864,9 @@ func (m *MigrationStorage) integrateBatch(ctx context.Context, fromSeq uint64, l
 	}
 	defer func() {
 		if tx != nil {
-			_ = tx.Rollback()
+			if err := tx.Rollback(); err != nil {
+				klog.Warningf("integrateBatch: Rollback: %v", err)
+			}
 		}
 	}()
 

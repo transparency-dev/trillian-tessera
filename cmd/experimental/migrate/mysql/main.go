@@ -60,16 +60,16 @@ func main() {
 	}
 	sourceCP, err := src.ReadCheckpoint(ctx)
 	if err != nil {
-		klog.Exitf("fetch initial source checkpoint: %v", err)
+		klog.Exitf("Failed to read source checkpoint: %v", err)
 	}
 	bits := strings.Split(string(sourceCP), "\n")
 	sourceSize, err := strconv.ParseUint(bits[1], 10, 64)
 	if err != nil {
-		klog.Exitf("invalid CP size %q: %v", bits[1], err)
+		klog.Exitf("Invalid CP size %q: %v", bits[1], err)
 	}
 	sourceRoot, err := base64.StdEncoding.DecodeString(bits[2])
 	if err != nil {
-		klog.Exitf("invalid checkpoint roothash %q: %v", bits[2], err)
+		klog.Exitf("Invalid checkpoint roothash %q: %v", bits[2], err)
 	}
 
 	db := createDatabaseOrDie(ctx)
