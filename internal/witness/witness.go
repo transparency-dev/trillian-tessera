@@ -64,9 +64,9 @@ func NewWitnessGateway(group tessera.WitnessGroup, client *http.Client, fetchPro
 			headers:    httpResp.Header,
 		}, nil
 	}
-	witnesses := make([]witness, 0, len(endpoints))
+	witnesses := make([]*witness, 0, len(endpoints))
 	for u, v := range endpoints {
-		witnesses = append(witnesses, witness{
+		witnesses = append(witnesses, &witness{
 			url:        u,
 			verifier:   v,
 			size:       0,
@@ -83,13 +83,13 @@ func NewWitnessGateway(group tessera.WitnessGroup, client *http.Client, fetchPro
 // WitnessGateway allows a log implementation to send out a checkpoint to witnesses.
 type WitnessGateway struct {
 	group     tessera.WitnessGroup
-	witnesses []witness
+	witnesses []*witness
 }
 
 // Witness sends out a new checkpoint (which must be signed by the log), to all witnesses
 // and returns the checkpoint as soon as the policy the WitnessGateway was constructed with
 // is Satisfied.
-func (wg WitnessGateway) Witness(ctx context.Context, cp []byte) ([]byte, error) {
+func (wg *WitnessGateway) Witness(ctx context.Context, cp []byte) ([]byte, error) {
 	if len(wg.witnesses) == 0 {
 		return cp, nil
 	}
@@ -178,7 +178,7 @@ type witness struct {
 	fetchProof ProofFetchFn
 }
 
-func (w witness) update(ctx context.Context, cp []byte, size uint64) ([]byte, error) {
+func (w *witness) update(ctx context.Context, cp []byte, size uint64) ([]byte, error) {
 	var proof [][]byte
 	if w.size > 0 {
 		proof = w.fetchProof(ctx, w.size, size)
@@ -207,6 +207,7 @@ func (w witness) update(ctx context.Context, cp []byte, size uint64) ([]byte, er
 		if n, err := note.Open(signed, note.VerifierList(w.verifier)); err != nil {
 			return nil, fmt.Errorf("witness at %q replied with invalid signature: %q", w.url, resp.body)
 		} else {
+			w.size = uint64(size)
 			return []byte(fmt.Sprintf("— %s %s\n", n.Sigs[0].Name, n.Sigs[0].Base64)), nil
 		}
 	case http.StatusConflict:
