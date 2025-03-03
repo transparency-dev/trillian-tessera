@@ -183,7 +183,7 @@ func NewProofBuilder(ctx context.Context, cp log.Checkpoint, f TileFetcherFunc) 
 
 	hashes, err := FetchRangeNodes(ctx, cp.Size, f)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch range nodes: %w", err)
+		return nil, fmt.Errorf("failed to fetch range nodes: %v", err)
 	}
 	// Create a compact range which represents the state of the log.
 	r, err := (&compact.RangeFactory{Hash: hasher.HashChildren}).NewRange(0, cp.Size, hashes)
@@ -212,7 +212,7 @@ func NewProofBuilder(ctx context.Context, cp log.Checkpoint, f TileFetcherFunc) 
 func (pb *ProofBuilder) InclusionProof(ctx context.Context, index uint64) ([][]byte, error) {
 	nodes, err := proof.Inclusion(index, pb.cp.Size)
 	if err != nil {
-		return nil, fmt.Errorf("failed to calculate inclusion proof node list: %w", err)
+		return nil, fmt.Errorf("failed to calculate inclusion proof node list: %v", err)
 	}
 	return pb.fetchNodes(ctx, nodes)
 }
@@ -223,7 +223,7 @@ func (pb *ProofBuilder) InclusionProof(ctx context.Context, index uint64) ([][]b
 func (pb *ProofBuilder) ConsistencyProof(ctx context.Context, smaller, larger uint64) ([][]byte, error) {
 	nodes, err := proof.Consistency(smaller, larger)
 	if err != nil {
-		return nil, fmt.Errorf("failed to calculate consistency proof node list: %w", err)
+		return nil, fmt.Errorf("failed to calculate consistency proof node list: %v", err)
 	}
 	return pb.fetchNodes(ctx, nodes)
 }
@@ -235,13 +235,13 @@ func (pb *ProofBuilder) fetchNodes(ctx context.Context, nodes proof.Nodes) ([][]
 	for _, id := range nodes.IDs {
 		h, err := pb.nodeCache.GetNode(ctx, id)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get node (%v): %w", id, err)
+			return nil, fmt.Errorf("failed to get node (%v): %v", id, err)
 		}
 		hashes = append(hashes, h)
 	}
 	var err error
 	if hashes, err = nodes.Rehash(hashes, hasher.HashChildren); err != nil {
-		return nil, fmt.Errorf("failed to rehash proof: %w", err)
+		return nil, fmt.Errorf("failed to rehash proof: %v", err)
 	}
 	return hashes, nil
 }
@@ -309,7 +309,7 @@ func (lst *LogStateTracker) Update(ctx context.Context) ([]byte, [][]byte, []byt
 	}
 	builder, err := NewProofBuilder(ctx, *c, lst.tileFetcher)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to create proof builder: %w", err)
+		return nil, nil, nil, fmt.Errorf("failed to create proof builder: %v", err)
 	}
 	lst.mu.Lock()
 	defer lst.mu.Unlock()
@@ -393,11 +393,11 @@ func (n *nodeCache) GetNode(ctx context.Context, id compact.NodeID) ([]byte, err
 	if !ok {
 		tileRaw, err := n.getTile(ctx, tileLevel, tileIndex, layout.PartialTileSize(tileLevel, tileIndex, n.logSize))
 		if err != nil {
-			return nil, fmt.Errorf("failed to fetch tile: %w", err)
+			return nil, fmt.Errorf("failed to fetch tile: %v", err)
 		}
 		var tile api.HashTile
 		if err := tile.UnmarshalText(tileRaw); err != nil {
-			return nil, fmt.Errorf("failed to parse tile: %w", err)
+			return nil, fmt.Errorf("failed to parse tile: %v", err)
 		}
 		t = tile
 		n.tiles[tKey] = tile
