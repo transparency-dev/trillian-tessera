@@ -368,7 +368,7 @@ func TestWitnessStateEvolution(t *testing.T) {
 			if !bytes.HasPrefix(body, []byte("old 34840403")) {
 				t.Fatalf("expected body to start with old 34840403 but got\n%v", string(body))
 			}
-			// End of test; we don't even both constructing a valid response here
+			// End of test; we don't even bother constructing a valid response here
 		}
 		count++
 	}))
@@ -390,11 +390,16 @@ func TestWitnessStateEvolution(t *testing.T) {
 	}
 
 	g := NewWitnessGateway(group, ts.Client(), fetchProof)
+	// This call will trigger case 0 and then case 1 in the witness handler above.
+	// case 0 will return a response that notifies the log that its view of the witness size is wrong.
+	// This method will then update its size and make a second request with a consistency proof, triggering case 1.
 	_, err = g.Witness(ctx, logSignedCheckpoint)
 	if err != nil {
 		t.Fatal(err)
 	}
 
+	// This triggers case 2 in the witness, which isn't implemented so we don't care about any error,
+	// we just invoke this to cause the validation in that witness body to trigger.
 	_, _ = g.Witness(ctx, logSignedCheckpoint)
 }
 
