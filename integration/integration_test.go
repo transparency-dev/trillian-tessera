@@ -146,10 +146,12 @@ func TestLiveLogIntegration(t *testing.T) {
 		t.Fatalf("addEntry: %v", err)
 	}
 	// All entries are queued. Wait for a checkpoint committing to maxIndex.
-	for size := lst.Latest().Size; size >= maxIndex; {
+	for size := lst.Latest().Size; size <= maxIndex; {
 		if _, _, _, err := lst.Update(ctx); err != nil {
 			t.Errorf("lst.Update: %v", err)
 		}
+		size = lst.Latest().Size
+		time.Sleep(50 * time.Millisecond)
 	}
 
 	gotIncrease := lst.Latest().Size - checkpointInitSize
