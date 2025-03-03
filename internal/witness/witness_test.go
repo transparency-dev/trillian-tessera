@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -322,6 +323,93 @@ func TestWitness_UpdateResponse(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestWitnessStateEvolution(t *testing.T) {
+	logSigner := mustCreateSigner(t, log_skey)
+
+	logSignedCheckpoint, err := note.Sign(&note.Note{Text: cp}, logSigner)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Set up a fake server hosting the witnesses.
+	// The witnesses just sign the checkpoint with whatever key is requested, they don't check the body at all.
+	// An improvement on this would be to make the fake witnesses more realistic, but it's a non-trivial
+	// amount of code to add to this already long test!
+	var wit1 tessera.Witness
+	var count int
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w1u := mustUrl(t, wit1.Url)
+		if got, want := r.URL.String(), w1u.Path; got != want {
+			t.Fatalf("got request to URL %q but expected %q", got, want)
+		}
+
+		switch count {
+		case 0:
+			w.Header().Add("Content-Type", "text/x.tlog.size")
+			w.WriteHeader(409)
+			_, _ = w.Write([]byte("1000"))
+		case 1:
+			body, err := io.ReadAll(r.Body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.HasPrefix(body, []byte("old 1000")) {
+				t.Fatalf("expected body to start with old 1000 but got\n%v", body)
+			}
+
+			_, _ = w.Write(sigForSigner(t, cp, wit1_skey))
+		case 2:
+			body, err := io.ReadAll(r.Body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.HasPrefix(body, []byte("old 34840403")) {
+				t.Fatalf("expected body to start with old 34840403 but got\n%v", string(body))
+			}
+			// End of test; we don't even bother constructing a valid response here
+		}
+		count++
+	}))
+	baseUrl := mustUrl(t, ts.URL)
+	wit1, err = tessera.NewWitness(wit1_vkey, baseUrl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	group := tessera.NewWitnessGroup(1, wit1)
+
+	ctx := context.Background()
+
+	fetchProof := func(ctx context.Context, from, to uint64) [][]byte {
+		if count < 1 || count > 2 {
+			// This shouldn't be called if the witness state is thought to be zero
+			t.Error("expected count to be 1 or 2 when proof was called")
+		}
+		return nil
+	}
+
+	g := NewWitnessGateway(group, ts.Client(), fetchProof)
+	// This call will trigger case 0 and then case 1 in the witness handler above.
+	// case 0 will return a response that notifies the log that its view of the witness size is wrong.
+	// This method will then update its size and make a second request with a consistency proof, triggering case 1.
+	_, err = g.Witness(ctx, logSignedCheckpoint)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// This triggers case 2 in the witness, which isn't implemented so we don't care about any error,
+	// we just invoke this to cause the validation in that witness body to trigger.
+	_, _ = g.Witness(ctx, logSignedCheckpoint)
+}
+
+func mustUrl(t *testing.T, u string) *url.URL {
+	t.Helper()
+	parsed, err := url.Parse(u)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return parsed
 }
 
 func sigForSigner(t *testing.T, cp, skey string) []byte {
