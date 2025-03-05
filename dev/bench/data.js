@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1741034893657,
+  "lastUpdate": 1741190433367,
   "repoUrl": "https://github.com/transparency-dev/trillian-tessera",
   "entries": {
     "Benchmark": [
@@ -10752,6 +10752,150 @@ window.BENCHMARK_DATA = {
             "value": 3035,
             "unit": "allocs/op",
             "extra": "4060 times\n4 procs"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "mhutchinson@gmail.com",
+            "name": "Martin Hutchinson",
+            "username": "mhutchinson"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "318ab44d27c1c4518b026616dc2b0eeb89b7ff57",
+          "message": "[Client] First pass at tidying the tiles client (#506)\n\nThis PR cleans up the client implementation to make it more readable, maintainable, and safer to use.\n\n* Reordered methods\n\nGrouped types, functions, classes, and internal helpers in the more standard order.\n\n* Make LogStateTracker much more private\n\nOnly one of its many public properties was being used outside the class. Made a getter for this property, and made all fields private.\n\n* Make reads and writes to LST thread safe\n\nBefore there was a possibility of a race condition if multiple threads called Update. Such a race had the potential to leave the internal state inconsistent. It could have also allowed clients to see both sides of a split view from the tracker.\n\n* Removed CheckConsistency method\n\nThis method was encouraging people to do the wrong thing and build up a stack of checkpoints before checking them. This is bad; you should only ever have a trusted checkpoint and a potential new candidate for consistency. The method is deleted, and its usages removed and cleaned up. The integration test had a bug before where the array of checkpoints always contained the same checkpoint, so this is also a bug fix.",
+          "timestamp": "2025-03-05T15:59:43Z",
+          "tree_id": "4ab66b290ada139ee91a5ffdaf6b8f9ae916e180",
+          "url": "https://github.com/transparency-dev/trillian-tessera/commit/318ab44d27c1c4518b026616dc2b0eeb89b7ff57"
+        },
+        "date": 1741190432759,
+        "tool": "go",
+        "benches": [
+          {
+            "name": "BenchmarkDedupe",
+            "value": 4409547,
+            "unit": "ns/op\t  700626 B/op\t   19675 allocs/op",
+            "extra": "294 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDedupe - ns/op",
+            "value": 4409547,
+            "unit": "ns/op",
+            "extra": "294 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDedupe - B/op",
+            "value": 700626,
+            "unit": "B/op",
+            "extra": "294 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDedupe - allocs/op",
+            "value": 19675,
+            "unit": "allocs/op",
+            "extra": "294 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWitnessGroupSatisfaction",
+            "value": 228937,
+            "unit": "ns/op\t    3152 B/op\t      36 allocs/op",
+            "extra": "4951 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWitnessGroupSatisfaction - ns/op",
+            "value": 228937,
+            "unit": "ns/op",
+            "extra": "4951 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWitnessGroupSatisfaction - B/op",
+            "value": 3152,
+            "unit": "B/op",
+            "extra": "4951 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWitnessGroupSatisfaction - allocs/op",
+            "value": 36,
+            "unit": "allocs/op",
+            "extra": "4951 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLeafBundle_UnmarshalText",
+            "value": 8243,
+            "unit": "ns/op\t    6528 B/op\t       1 allocs/op",
+            "extra": "160330 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLeafBundle_UnmarshalText - ns/op",
+            "value": 8243,
+            "unit": "ns/op",
+            "extra": "160330 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLeafBundle_UnmarshalText - B/op",
+            "value": 6528,
+            "unit": "B/op",
+            "extra": "160330 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLeafBundle_UnmarshalText - allocs/op",
+            "value": 1,
+            "unit": "allocs/op",
+            "extra": "160330 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkCheckpointUnsafe",
+            "value": 118,
+            "unit": "ns/op\t     112 B/op\t       3 allocs/op",
+            "extra": "10320373 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkCheckpointUnsafe - ns/op",
+            "value": 118,
+            "unit": "ns/op",
+            "extra": "10320373 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkCheckpointUnsafe - B/op",
+            "value": 112,
+            "unit": "B/op",
+            "extra": "10320373 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkCheckpointUnsafe - allocs/op",
+            "value": 3,
+            "unit": "allocs/op",
+            "extra": "10320373 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkIntegrate",
+            "value": 354527,
+            "unit": "ns/op\t  289975 B/op\t    3032 allocs/op",
+            "extra": "3738 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkIntegrate - ns/op",
+            "value": 354527,
+            "unit": "ns/op",
+            "extra": "3738 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkIntegrate - B/op",
+            "value": 289975,
+            "unit": "B/op",
+            "extra": "3738 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkIntegrate - allocs/op",
+            "value": 3032,
+            "unit": "allocs/op",
+            "extra": "3738 times\n4 procs"
           }
         ]
       }
