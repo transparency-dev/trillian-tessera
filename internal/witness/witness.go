@@ -33,7 +33,7 @@ import (
 	"golang.org/x/mod/sumdb/note"
 )
 
-var PolicyNotSatisfiedErr = errors.New("witness policy was not satisfied")
+var ErrPolicyNotSatisfied = errors.New("witness policy was not satisfied")
 
 // ProofFetchFn is the signature of a function that can return the consistency proof
 // for append-only between the two given tree sizes.
@@ -149,7 +149,7 @@ func (wg *WitnessGateway) Witness(ctx context.Context, cp []byte) ([]byte, error
 	}
 
 	// We can only get here if all witnesses have returned and we're still not satisfied.
-	return sigBlock.Bytes(), errors.Join(PolicyNotSatisfiedErr, err)
+	return sigBlock.Bytes(), errors.Join(ErrPolicyNotSatisfied, err)
 }
 
 // postResponse contains the parts of the witness response needed for logic flow in order to
@@ -225,8 +225,12 @@ func (w *witness) update(ctx context.Context, cp []byte, size uint64) ([]byte, e
 			if err != nil {
 				return nil, fmt.Errorf("witness at %q replied with x.tlog.size but body %q could not be parsed as decimal", w.url, bodyStr)
 			}
+			// These cases should not happen unless the witness is misbehaving.
+			// w.size <= newWitSize <= size must always be true.
+			if newWitSize > int64(size) {
+				return nil, fmt.Errorf("witness at %q replied with x.tlog.size %d, larger than log size %d", w.url, newWitSize, size)
+			}
 			if newWitSize < int64(w.size) {
-				// This case should not happen unless the witness is misbehaving
 				return nil, fmt.Errorf("witness at %q replied with x.tlog.size %d, smaller than known size %d", w.url, newWitSize, w.size)
 			}
 			w.size = uint64(newWitSize)
