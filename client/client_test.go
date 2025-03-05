@@ -176,7 +176,7 @@ func TestCheckLogStateTracker(t *testing.T) {
 	} {
 		t.Run(test.desc, func(t *testing.T) {
 			shim := fetchCheckpointShim{Checkpoints: test.cpRaws}
-			lst, err := NewLogStateTracker(ctx, shim.FetchCheckpoint, testLogTileFetcher, testRawCheckpoints[0], testLogVerifier, testOrigin, UnilateralConsensus(shim.FetchCheckpoint))
+			lst, err := NewLogStateTracker(ctx, testLogTileFetcher, testRawCheckpoints[0], testLogVerifier, testOrigin, UnilateralConsensus(shim.FetchCheckpoint))
 			if err != nil {
 				t.Fatalf("NewLogStateTracker: %v", err)
 			}
@@ -191,116 +191,6 @@ func TestCheckLogStateTracker(t *testing.T) {
 				}
 
 				shim.Advance()
-			}
-		})
-	}
-}
-
-func TestCheckConsistency(t *testing.T) {
-	ctx := context.Background()
-
-	for _, test := range []struct {
-		desc    string
-		cp      []log.Checkpoint
-		wantErr bool
-	}{
-		{
-			desc: "2 CP",
-			cp: []log.Checkpoint{
-				testCheckpoints[2],
-				testCheckpoints[5],
-			},
-		}, {
-			desc: "5 CP",
-			cp: []log.Checkpoint{
-				testCheckpoints[0],
-				testCheckpoints[2],
-				testCheckpoints[3],
-				testCheckpoints[5],
-				testCheckpoints[6],
-			},
-		}, {
-			desc: "big CPs",
-			cp: []log.Checkpoint{
-				testCheckpoints[3],
-				testCheckpoints[7],
-				testCheckpoints[8],
-			},
-		}, {
-			desc: "Identical CP",
-			cp: []log.Checkpoint{
-				testCheckpoints[0],
-				testCheckpoints[0],
-				testCheckpoints[0],
-				testCheckpoints[0],
-			},
-		}, {
-			desc: "Identical CP pairs",
-			cp: []log.Checkpoint{
-				testCheckpoints[0],
-				testCheckpoints[0],
-				testCheckpoints[5],
-				testCheckpoints[5],
-			},
-		}, {
-			desc: "Out of order",
-			cp: []log.Checkpoint{
-				testCheckpoints[5],
-				testCheckpoints[2],
-				testCheckpoints[0],
-				testCheckpoints[3],
-			},
-		}, {
-			desc:    "no checkpoints",
-			cp:      []log.Checkpoint{},
-			wantErr: true,
-		}, {
-			desc: "one checkpoint",
-			cp: []log.Checkpoint{
-				testCheckpoints[3],
-			},
-			wantErr: true,
-		}, {
-			desc: "two inconsistent CPs",
-			cp: []log.Checkpoint{
-				{
-					Size: 2,
-					Hash: []byte("This is a banana"),
-				},
-				testCheckpoints[4],
-			},
-			wantErr: true,
-		}, {
-			desc: "Inconsistent",
-			cp: []log.Checkpoint{
-				testCheckpoints[5],
-				testCheckpoints[2],
-				{
-					Size: 4,
-					Hash: []byte("This is a banana"),
-				},
-				testCheckpoints[3],
-			},
-			wantErr: true,
-		}, {
-			desc: "Inconsistent - clashing CPs",
-			cp: []log.Checkpoint{
-				{
-					Size: 2,
-					Hash: []byte("This is a banana"),
-				},
-				{
-					Size: 2,
-					Hash: []byte("This is NOT a banana"),
-				},
-			},
-			wantErr: true,
-		},
-	} {
-		t.Run(test.desc, func(t *testing.T) {
-			err := CheckConsistency(ctx, testLogTileFetcher, test.cp)
-			if gotErr := err != nil; gotErr != test.wantErr {
-				t.Fatalf("wantErr: %t, got %v", test.wantErr, err)
 			}
 		})
 	}

@@ -96,7 +96,7 @@ func (h *Hammer) updateCheckpointLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-tick.C:
-			size := h.tracker.LatestConsistent.Size
+			size := h.tracker.Latest().Size
 			_, _, _, err := h.tracker.Update(ctx)
 			if err != nil {
 				klog.Warning(err)
@@ -105,7 +105,7 @@ func (h *Hammer) updateCheckpointLoop(ctx context.Context) {
 					klog.Fatalf("Last Good Checkpoint:\n%s\n\nFirst Bad Checkpoint:\n%s\n\n%v", string(inconsistentErr.SmallerRaw), string(inconsistentErr.LargerRaw), inconsistentErr)
 				}
 			}
-			newSize := h.tracker.LatestConsistent.Size
+			newSize := h.tracker.Latest().Size
 			if newSize > size {
 				klog.V(1).Infof("Updated checkpoint from %d to %d", size, newSize)
 			} else {

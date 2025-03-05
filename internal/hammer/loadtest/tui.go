@@ -120,7 +120,7 @@ func (c *tuiController) updateStatsLoop(ctx context.Context, interval time.Durat
 	}
 
 	ticker := time.NewTicker(interval)
-	lastSize := c.hammer.tracker.LatestConsistent.Size
+	lastSize := c.hammer.tracker.Latest().Size
 	maSlots := int((30 * time.Second) / interval)
 	growth := movingaverage.New(maSlots)
 	for {
@@ -128,7 +128,7 @@ func (c *tuiController) updateStatsLoop(ctx context.Context, interval time.Durat
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			s := c.hammer.tracker.LatestConsistent.Size
+			s := c.hammer.tracker.Latest().Size
 			growth.Add(float64(s - lastSize))
 			lastSize = s
 			qps := growth.Avg() * float64(time.Second/interval)

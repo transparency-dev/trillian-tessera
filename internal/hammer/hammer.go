@@ -109,7 +109,7 @@ func main() {
 
 	var cpRaw []byte
 	cons := client.UnilateralConsensus(f.ReadCheckpoint)
-	tracker, err := client.NewLogStateTracker(ctx, f.ReadCheckpoint, f.ReadTile, cpRaw, logSigV, logSigV.Name(), cons)
+	tracker, err := client.NewLogStateTracker(ctx, f.ReadTile, cpRaw, logSigV, logSigV.Name(), cons)
 	if err != nil {
 		klog.Exitf("Failed to create LogStateTracker: %v", err)
 	}
@@ -119,10 +119,10 @@ func main() {
 		klog.Exitf("Failed to get initial state of the log: %v", err)
 	}
 
-	ha := loadtest.NewHammerAnalyser(func() uint64 { return tracker.LatestConsistent.Size })
+	ha := loadtest.NewHammerAnalyser(func() uint64 { return tracker.Latest().Size })
 	ha.Run(ctx)
 
-	gen := newLeafGenerator(tracker.LatestConsistent.Size, *leafMinSize, *dupChance)
+	gen := newLeafGenerator(tracker.Latest().Size, *leafMinSize, *dupChance)
 	opts := loadtest.HammerOpts{
 		MaxReadOpsPerSecond:  *maxReadOpsPerSecond,
 		MaxWriteOpsPerSecond: *maxWriteOpsPerSecond,
@@ -130,13 +130,13 @@ func main() {
 		NumReadersFull:       *numReadersFull,
 		NumWriters:           *numWriters,
 	}
-	hammer := loadtest.NewHammer(&tracker, f.ReadEntryBundle, w, gen, ha.SeqLeafChan, ha.ErrChan, opts)
+	hammer := loadtest.NewHammer(tracker, f.ReadEntryBundle, w, gen, ha.SeqLeafChan, ha.ErrChan, opts)
 
 	exitCode := 0
 	if *leafWriteGoal > 0 {
 		go func() {
 			startTime := time.Now()
-			goal := tracker.LatestConsistent.Size + uint64(*leafWriteGoal)
+			goal := tracker.Latest().Size + uint64(*leafWriteGoal)
 			klog.Infof("Will exit once tree size is at least %d", goal)
 			tick := time.NewTicker(1 * time.Second)
 			for {
@@ -144,7 +144,7 @@ func main() {
 				case <-ctx.Done():
 					return
 				case <-tick.C:
-					if tracker.LatestConsistent.Size >= goal {
+					if tracker.Latest().Size >= goal {
 						elapsed := time.Since(startTime)
 						klog.Infof("Reached tree size goal of %d after %s; exiting", goal, elapsed)
 						cancel()
