@@ -109,7 +109,7 @@ func main() {
 
 	var cpRaw []byte
 	cons := client.UnilateralConsensus(f.ReadCheckpoint)
-	tracker, err := client.NewLogStateTracker(ctx, f.ReadCheckpoint, f.ReadTile, cpRaw, logSigV, logSigV.Name(), cons)
+	tracker, err := client.NewLogStateTracker(ctx, f.ReadTile, cpRaw, logSigV, logSigV.Name(), cons)
 	if err != nil {
 		klog.Exitf("Failed to create LogStateTracker: %v", err)
 	}

@@ -106,11 +106,12 @@ func TestMain(m *testing.M) {
 }
 
 func TestLiveLogIntegration(t *testing.T) {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
 	var entryIndexMap sync.Map
 
 	// Step 1 - Get checkpoint initial size for increment validation.
-	lst, err := client.NewLogStateTracker(ctx, logReadCP, logReadTile, nil, noteVerifier, noteVerifier.Name(), client.UnilateralConsensus(logReadCP))
+	lst, err := client.NewLogStateTracker(ctx, logReadTile, nil, noteVerifier, noteVerifier.Name(), client.UnilateralConsensus(logReadCP))
 	if err != nil {
 		t.Fatalf("client.NewLogStateTracker: %v", err)
 	}

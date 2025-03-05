@@ -176,7 +176,7 @@ func TestCheckLogStateTracker(t *testing.T) {
 	} {
 		t.Run(test.desc, func(t *testing.T) {
 			shim := fetchCheckpointShim{Checkpoints: test.cpRaws}
-			lst, err := NewLogStateTracker(ctx, shim.FetchCheckpoint, testLogTileFetcher, testRawCheckpoints[0], testLogVerifier, testOrigin, UnilateralConsensus(shim.FetchCheckpoint))
+			lst, err := NewLogStateTracker(ctx, testLogTileFetcher, testRawCheckpoints[0], testLogVerifier, testOrigin, UnilateralConsensus(shim.FetchCheckpoint))
 			if err != nil {
 				t.Fatalf("NewLogStateTracker: %v", err)
 			}

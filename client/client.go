@@ -271,7 +271,7 @@ type LogStateTracker struct {
 // NewLogStateTracker creates a newly initialised tracker.
 // If a serialised LogState representation is provided then this is used as the
 // initial tracked state, otherwise a log state is fetched from the target log.
-func NewLogStateTracker(ctx context.Context, cpF CheckpointFetcherFunc, tF TileFetcherFunc, checkpointRaw []byte, nV note.Verifier, origin string, cc ConsensusCheckpointFunc) (*LogStateTracker, error) {
+func NewLogStateTracker(ctx context.Context, tF TileFetcherFunc, checkpointRaw []byte, nV note.Verifier, origin string, cc ConsensusCheckpointFunc) (*LogStateTracker, error) {
 	ret := &LogStateTracker{
 		origin:              origin,
 		consensusCheckpoint: cc,
