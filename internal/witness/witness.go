@@ -28,55 +28,34 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/transparency-dev/formats/log"
 	tessera "github.com/transparency-dev/trillian-tessera"
+	"github.com/transparency-dev/trillian-tessera/client"
 	"github.com/transparency-dev/trillian-tessera/internal/parse"
 	"golang.org/x/mod/sumdb/note"
 )
 
 var PolicyNotSatisfiedErr = errors.New("witness policy was not satisfied")
 
-// ProofFetchFn is the signature of a function that can return the consistency proof
-// for append-only between the two given tree sizes.
-type ProofFetchFn func(ctx context.Context, from, to uint64) [][]byte
-
 // NewWitnessGateway returns a WitnessGateway that will send out new checkpoints to witnesses
 // in the group, and will ensure that the policy is satisfied before returning. All outbound
-// requests will be done using the given client.
-func NewWitnessGateway(group tessera.WitnessGroup, client *http.Client, fetchProof ProofFetchFn) WitnessGateway {
+// requests will be done using the given client. The tile fetcher is used for constructing
+// consistency proofs for the witnesses.
+func NewWitnessGateway(group tessera.WitnessGroup, client *http.Client, fetchTiles client.TileFetcherFunc) WitnessGateway {
 	endpoints := group.Endpoints()
-	postFnImpl := func(ctx context.Context, url string, body string) (pr postResponse, err error) {
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader(body))
-		if err != nil {
-			return postResponse{}, err
-		}
-		httpResp, err := client.Do(req)
-		if err != nil {
-			return postResponse{}, err
-		}
-		rb, err := io.ReadAll(httpResp.Body)
-		if err != nil {
-			return postResponse{}, fmt.Errorf("failed to read response body: %v", err)
-		}
-		_ = httpResp.Body.Close()
-		return postResponse{
-			statusCode: httpResp.StatusCode,
-			body:       rb,
-			headers:    httpResp.Header,
-		}, nil
-	}
 	witnesses := make([]*witness, 0, len(endpoints))
 	for u, v := range endpoints {
 		witnesses = append(witnesses, &witness{
-			url:        u,
-			verifier:   v,
-			size:       0,
-			post:       postFnImpl,
-			fetchProof: fetchProof,
+			client:   client,
+			url:      u,
+			verifier: v,
+			size:     0,
 		})
 	}
 	return WitnessGateway{
 		group:     group,
 		witnesses: witnesses,
+		fetchTile: fetchTiles,
 	}
 }
 
@@ -84,6 +63,7 @@ func NewWitnessGateway(group tessera.WitnessGroup, client *http.Client, fetchPro
 type WitnessGateway struct {
 	group     tessera.WitnessGroup
 	witnesses []*witness
+	fetchTile client.TileFetcherFunc
 }
 
 // Witness sends out a new checkpoint (which must be signed by the log), to all witnesses
@@ -97,9 +77,22 @@ func (wg *WitnessGateway) Witness(ctx context.Context, cp []byte) ([]byte, error
 	defer cancel()
 
 	var waitGroup sync.WaitGroup
-	_, size, err := parse.CheckpointUnsafe(cp)
+	origin, size, hash, err := parse.CheckpointUnsafe(cp)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse checkpoint from log: %v", err)
+	}
+	logCP := log.Checkpoint{
+		Origin: origin,
+		Size:   size,
+		Hash:   hash,
+	}
+	pb, err := client.NewProofBuilder(ctx, logCP, wg.fetchTile)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build proof builder: %v", err)
+	}
+	pf := sharedConsistencyProofFetcher{
+		pb:      pb,
+		results: make(map[uint64]consistencyFuture),
 	}
 
 	type sigOrErr struct {
@@ -113,7 +106,7 @@ func (wg *WitnessGateway) Witness(ctx context.Context, cp []byte) ([]byte, error
 		waitGroup.Add(1)
 		go func() {
 			defer waitGroup.Done()
-			sig, err := w.update(ctx, cp, size)
+			sig, err := w.update(ctx, cp, size, pf.ConsistencyProof)
 			results <- sigOrErr{
 				sig: sig,
 				err: err,
@@ -152,16 +145,31 @@ func (wg *WitnessGateway) Witness(ctx context.Context, cp []byte) ([]byte, error
 	return sigBlock.Bytes(), errors.Join(PolicyNotSatisfiedErr, err)
 }
 
-// postResponse contains the parts of the witness response needed for logic flow in order to
-// allow testing.
-type postResponse struct {
-	statusCode int
-	body       []byte
-	headers    map[string][]string
+type consistencyFuture func() ([][]byte, error)
+
+// sharedConsistencyProofFetcher is a thread-safe caching wrapper around a proof builder.
+// This is an optimization for the common case where multiple witnesses are used, and all
+// of the witnesses are of the same size, and thus require the same proof.
+type sharedConsistencyProofFetcher struct {
+	pb      *client.ProofBuilder
+	mu      sync.Mutex
+	results map[uint64]consistencyFuture
 }
 
-// postFn wraps http.Post in order to allow for easier testing.
-type postFn func(ctx context.Context, url, body string) (pr postResponse, err error)
+// ConsistencyProof fetches a consistency proof, reusing any results from parallel requests.
+func (pf *sharedConsistencyProofFetcher) ConsistencyProof(ctx context.Context, smaller, larger uint64) ([][]byte, error) {
+	var f consistencyFuture
+	var ok bool
+	pf.mu.Lock()
+	if f, ok = pf.results[smaller]; !ok {
+		f = sync.OnceValues(func() ([][]byte, error) {
+			return pf.pb.ConsistencyProof(ctx, smaller, larger)
+		})
+		pf.results[smaller] = f
+	}
+	pf.mu.Unlock()
+	return f()
+}
 
 // witness is the log's model of a witness's view of this log.
 // It has a URL which is the address to which updates to this log's state can be posted to the witness,
@@ -171,17 +179,20 @@ type postFn func(ctx context.Context, url, body string) (pr postResponse, err er
 // This is defaulted to zero on startup and calibrated after the first request, which is expected by the spec:
 // `If a client doesn't have information on the latest cosigned checkpoint, it MAY initially make a request with a old size of zero to obtain it`
 type witness struct {
-	url        string
-	verifier   note.Verifier
-	size       uint64
-	post       postFn
-	fetchProof ProofFetchFn
+	client   *http.Client
+	url      string
+	verifier note.Verifier
+	size     uint64
 }
 
-func (w *witness) update(ctx context.Context, cp []byte, size uint64) ([]byte, error) {
+func (w *witness) update(ctx context.Context, cp []byte, size uint64, fetchProof func(ctx context.Context, from, to uint64) ([][]byte, error)) ([]byte, error) {
 	var proof [][]byte
 	if w.size > 0 {
-		proof = w.fetchProof(ctx, w.size, size)
+		var err error
+		proof, err = fetchProof(ctx, w.size, size)
+		if err != nil {
+			return nil, fmt.Errorf("fetchProof: %v", err)
+		}
 	}
 
 	// The request body MUST be a sequence of
@@ -196,16 +207,30 @@ func (w *witness) update(ctx context.Context, cp []byte, size uint64) ([]byte, e
 	body += "\n"
 	body += string(cp)
 
-	resp, err := w.post(ctx, w.url, body)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, w.url, strings.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("failed to post to witness at %q: %v", w.url, err)
 	}
+	httpResp, err := w.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to post to witness at %q: %v", w.url, err)
+	}
+	rb, err := io.ReadAll(httpResp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to post to witness at %q: %v", w.url, err)
+	}
+	_ = httpResp.Body.Close()
 
-	switch resp.statusCode {
+	switch httpResp.StatusCode {
 	case http.StatusOK:
-		signed := append(cp, resp.body...)
+		// Concatenate the signature to the checkpoint passed in and verify it is valid.
+		// append is tempting here but is dangerous because it can modify `cp` and race with other
+		// witnesses, causing signatures to be swapped. cp must not be modified.
+		signed := make([]byte, len(cp)+len(rb))
+		copy(signed, cp)
+		copy(signed[len(cp):], rb)
 		if n, err := note.Open(signed, note.VerifierList(w.verifier)); err != nil {
-			return nil, fmt.Errorf("witness at %q replied with invalid signature: %q", w.url, resp.body)
+			return nil, fmt.Errorf("witness %q at %q replied with invalid signature: %q\nconstructed note: %q\n%v", w.verifier.Name(), w.url, rb, string(signed), err)
 		} else {
 			w.size = uint64(size)
 			return []byte(fmt.Sprintf("— %s %s\n", n.Sigs[0].Name, n.Sigs[0].Base64)), nil
@@ -218,9 +243,9 @@ func (w *witness) update(ctx context.Context, cp []byte, size uint64) ([]byte, e
 		// If it doesn't match, the witness MUST respond with a "409 Conflict" HTTP status code.
 		// The response body MUST consist of the tree size of the latest cosigned checkpoint in decimal,
 		// followed by a newline (U+000A). The response MUST have a Content-Type of text/x.tlog.size
-		ct := resp.headers["Content-Type"]
+		ct := httpResp.Header["Content-Type"]
 		if len(ct) == 1 && ct[0] == "text/x.tlog.size" {
-			bodyStr := string(resp.body)
+			bodyStr := string(rb)
 			newWitSize, err := strconv.ParseInt(bodyStr, 10, 64)
 			if err != nil {
 				return nil, fmt.Errorf("witness at %q replied with x.tlog.size but body %q could not be parsed as decimal", w.url, bodyStr)
@@ -232,26 +257,26 @@ func (w *witness) update(ctx context.Context, cp []byte, size uint64) ([]byte, e
 			w.size = uint64(newWitSize)
 			// Witnesses could cause this recursion to go on for longer than expected if the value they kept returning
 			// this case with slightly larger values. Consider putting a max recursion cap if context timeout isn't enough.
-			return w.update(ctx, cp, size)
+			return w.update(ctx, cp, size, fetchProof)
 		}
 
 		// If the old size matches the checkpoint size, the witness MUST check that the root hashes are also identical.
 		// If they don't match, the witness MUST respond with a "409 Conflict" HTTP status code.
-		return nil, fmt.Errorf("witness at %q says old root hash did not match previous for size %d: %d", w.url, w.size, resp.statusCode)
+		return nil, fmt.Errorf("witness at %q says old root hash did not match previous for size %d: %d", w.url, w.size, httpResp.StatusCode)
 	case http.StatusNotFound:
 		// If the checkpoint origin is unknown, the witness MUST respond with a "404 Not Found" HTTP status code.
-		return nil, fmt.Errorf("witness at %q says checkpoint origin is unknown: %d", w.url, resp.statusCode)
+		return nil, fmt.Errorf("witness at %q says checkpoint origin is unknown: %d", w.url, httpResp.StatusCode)
 	case http.StatusForbidden:
 		// If none of the signatures verify against a trusted public key, the witness MUST respond with a "403 Forbidden" HTTP status code.
-		return nil, fmt.Errorf("witness at %q says no signatures verify against trusted public key: %d", w.url, resp.statusCode)
+		return nil, fmt.Errorf("witness at %q says no signatures verify against trusted public key: %d", w.url, httpResp.StatusCode)
 	case http.StatusBadRequest:
 		// The old size MUST be equal to or lower than the checkpoint size.
 		// Otherwise, the witness MUST respond with a "400 Bad Request" HTTP status code.
-		return nil, fmt.Errorf("witness at %q says old checkpoint size of %d is too large: %d", w.url, w.size, resp.statusCode)
+		return nil, fmt.Errorf("witness at %q says old checkpoint size of %d is too large: %d", w.url, w.size, httpResp.StatusCode)
 	case http.StatusUnprocessableEntity:
 		//  If the Merkle Consistency Proof doesn't verify, the witness MUST respond with a "422 Unprocessable Entity" HTTP status code.
-		return nil, fmt.Errorf("witness at %q says that the consistency proof is bad: %d", w.url, resp.statusCode)
+		return nil, fmt.Errorf("witness at %q says that the consistency proof is bad: %d", w.url, httpResp.StatusCode)
 	default:
-		return nil, fmt.Errorf("got bad status code: %v", resp.statusCode)
+		return nil, fmt.Errorf("got bad status code: %v", httpResp.StatusCode)
 	}
 }

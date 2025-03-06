@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -31,6 +32,7 @@ import (
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/api"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
+	"github.com/transparency-dev/trillian-tessera/internal/witness"
 	storage "github.com/transparency-dev/trillian-tessera/storage/internal"
 	"k8s.io/klog/v2"
 )
@@ -91,15 +93,27 @@ func (s *Storage) Appender(ctx context.Context, opts *tessera.AppendOptions) (*t
 	if opts.CheckpointInterval() < minCheckpointInterval {
 		return nil, nil, fmt.Errorf("requested CheckpointInterval (%v) is less than minimum permitted %v", opts.CheckpointInterval(), minCheckpointInterval)
 	}
+	if opts.NewCP() == nil {
+		return nil, nil, errors.New("tessera.WithCheckpointSigner must be provided in Appender()")
+	}
+
+	logStorage := &logResourceStorage{
+		s:           s,
+		entriesPath: opts.EntriesPath(),
+	}
+	wg := witness.NewWitnessGateway(opts.Witnesses(), http.DefaultClient, logStorage.ReadTile)
 
 	a := &appender{
-		s: s,
-		logStorage: &logResourceStorage{
-			s:           s,
-			entriesPath: opts.EntriesPath(),
+		s:          s,
+		logStorage: logStorage,
+		cpUpdated:  make(chan struct{}),
+		newCP: func(u uint64, b []byte) ([]byte, error) {
+			cp, err := opts.NewCP()(u, b)
+			if err != nil {
+				return cp, err
+			}
+			return wg.Witness(ctx, cp)
 		},
-		newCP:     opts.NewCP(),
-		cpUpdated: make(chan struct{}),
 	}
 	if err := a.initialise(); err != nil {
 		return nil, nil, err
