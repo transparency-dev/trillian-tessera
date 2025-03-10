@@ -22,7 +22,7 @@ import (
 	lru "github.com/hashicorp/golang-lru/v2"
 )
 
-// InMemoryDedupe wraps an Add function to prevent duplicate entries being written to the underlying
+// newInMemoryDedupe wraps an Add function to prevent duplicate entries being written to the underlying
 // storage by keeping an in-memory cache of recently seen entries.
 // Where an existing entry has already been `Add`ed, the previous `IndexFuture` will be returned.
 // When no entry is found in the cache, the delegate method will be called to store the entry, and
@@ -35,7 +35,7 @@ import (
 // When using this with a persistent dedupe, the persistent layer should be the delegate of this
 // InMemoryDedupe. This allows recent duplicates to be deduplicated in memory, reducing the need to
 // make calls to a persistent storage.
-func InMemoryDedupe(size uint) func(AddFn) AddFn {
+func newInMemoryDedupe(size uint) func(AddFn) AddFn {
 	return func(af AddFn) AddFn {
 		c, err := lru.New[string, func() IndexFuture](int(size))
 		if err != nil {

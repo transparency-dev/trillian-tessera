@@ -93,7 +93,7 @@ func NewAppender(ctx context.Context, d Driver, opts *AppendOptions) (*Appender,
 }
 
 func (o *AppendOptions) WithAntispam(inMemEntries uint, as Antispam) *AppendOptions {
-	o.addDecorators = append(o.addDecorators, InMemoryDedupe(inMemEntries))
+	o.addDecorators = append(o.addDecorators, newInMemoryDedupe(inMemEntries))
 	if as != nil {
 		o.addDecorators = append(o.addDecorators, as.Decorator())
 		o.followers = append(o.followers, func(ctx context.Context, lr LogReader) {
