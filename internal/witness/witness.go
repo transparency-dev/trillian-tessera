@@ -92,6 +92,7 @@ func (wg *WitnessGateway) Witness(ctx context.Context, cp []byte) ([]byte, error
 	}
 	pf := sharedConsistencyProofFetcher{
 		pb:      pb,
+		toSize:  size,
 		results: make(map[uint64]consistencyFuture),
 	}
 
@@ -152,12 +153,16 @@ type consistencyFuture func() ([][]byte, error)
 // of the witnesses are of the same size, and thus require the same proof.
 type sharedConsistencyProofFetcher struct {
 	pb      *client.ProofBuilder
+	toSize  uint64
 	mu      sync.Mutex
 	results map[uint64]consistencyFuture
 }
 
-// ConsistencyProof fetches a consistency proof, reusing any results from parallel requests.
+// ConsistencyProof constructs a consistency proof, reusing any results from parallel requests.
 func (pf *sharedConsistencyProofFetcher) ConsistencyProof(ctx context.Context, smaller, larger uint64) ([][]byte, error) {
+	if larger != pf.toSize {
+		return nil, fmt.Errorf("required larger size to be %d but was given %d", pf.toSize, larger)
+	}
 	var f consistencyFuture
 	var ok bool
 	pf.mu.Lock()
@@ -209,7 +214,7 @@ func (w *witness) update(ctx context.Context, cp []byte, size uint64, fetchProof
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, w.url, strings.NewReader(body))
 	if err != nil {
-		return nil, fmt.Errorf("failed to post to witness at %q: %v", w.url, err)
+		return nil, fmt.Errorf("failed to construct request to %q: %v", w.url, err)
 	}
 	httpResp, err := w.client.Do(req)
 	if err != nil {
@@ -217,7 +222,7 @@ func (w *witness) update(ctx context.Context, cp []byte, size uint64, fetchProof
 	}
 	rb, err := io.ReadAll(httpResp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to post to witness at %q: %v", w.url, err)
+		return nil, fmt.Errorf("failed to ready body from witness at %q: %v", w.url, err)
 	}
 	_ = httpResp.Body.Close()
 
@@ -230,7 +235,7 @@ func (w *witness) update(ctx context.Context, cp []byte, size uint64, fetchProof
 		copy(signed, cp)
 		copy(signed[len(cp):], rb)
 		if n, err := note.Open(signed, note.VerifierList(w.verifier)); err != nil {
-			return nil, fmt.Errorf("witness %q at %q replied with invalid signature: %q\nconstructed note: %q\n%v", w.verifier.Name(), w.url, rb, string(signed), err)
+			return nil, fmt.Errorf("witness %q at %q replied with invalid signature: %q\nconstructed note: %q\nerror: %v", w.verifier.Name(), w.url, rb, string(signed), err)
 		} else {
 			w.size = uint64(size)
 			return []byte(fmt.Sprintf("— %s %s\n", n.Sigs[0].Name, n.Sigs[0].Base64)), nil

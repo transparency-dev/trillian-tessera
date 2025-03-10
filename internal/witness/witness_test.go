@@ -35,17 +35,17 @@ import (
 )
 
 const (
-	log_vkey    = "example.com/log/testdata+33d7b496+AeHTu4Q3hEIMHNqc6fASMsq3rKNx280NI+oO5xCFkkSx"
-	wit1_vkey   = "Wit1+55ee4561+AVhZSmQj9+SoL+p/nN0Hh76xXmF7QcHfytUrI1XfSClk"
-	wit1_skey   = "PRIVATE+KEY+Wit1+55ee4561+AeadRiG7XM4XiieCHzD8lxysXMwcViy5nYsoXURWGrlE"
-	wit2_vkey   = "Wit2+85ecc407+AWVbwFJte9wMQIPSnEnj4KibeO6vSIOEDUTDp3o63c2x"
-	wit2_skey   = "PRIVATE+KEY+Wit2+85ecc407+AfPTvxw5eUcqSgivo2vaiC7JPOMUZ/9baHPSDrWqgdGm"
-	witBad_vkey = "WitBad+b82b4b16+AY5FLOcqxs5lD+OpC6cVTrxsyNJktaCGYHNfnE5vKBQX"
-	witBad_skey = "PRIVATE+KEY+WitBad+b82b4b16+AYSil2PKfSN1a0LhdbzmK1uXqDFZbp+P1OyR54k3gdJY"
+	logVkey    = "example.com/log/testdata+33d7b496+AeHTu4Q3hEIMHNqc6fASMsq3rKNx280NI+oO5xCFkkSx"
+	wit1Vkey   = "Wit1+55ee4561+AVhZSmQj9+SoL+p/nN0Hh76xXmF7QcHfytUrI1XfSClk"
+	wit1Skey   = "PRIVATE+KEY+Wit1+55ee4561+AeadRiG7XM4XiieCHzD8lxysXMwcViy5nYsoXURWGrlE"
+	wit2Vkey   = "Wit2+85ecc407+AWVbwFJte9wMQIPSnEnj4KibeO6vSIOEDUTDp3o63c2x"
+	wit2Skey   = "PRIVATE+KEY+Wit2+85ecc407+AfPTvxw5eUcqSgivo2vaiC7JPOMUZ/9baHPSDrWqgdGm"
+	witBadVkey = "WitBad+b82b4b16+AY5FLOcqxs5lD+OpC6cVTrxsyNJktaCGYHNfnE5vKBQX"
+	witBadSkey = "PRIVATE+KEY+WitBad+b82b4b16+AYSil2PKfSN1a0LhdbzmK1uXqDFZbp+P1OyR54k3gdJY"
 )
 
 var (
-	logVerifier = mustCreateVerifier(log_vkey)
+	logVerifier = mustCreateVerifier(logVkey)
 )
 
 func TestWitnessGateway_Update(t *testing.T) {
@@ -74,9 +74,9 @@ func TestWitnessGateway_Update(t *testing.T) {
 
 		switch r.URL.String() {
 		case w1u.Path:
-			_, _ = w.Write(sigForSigner(t, cp, wit1_skey))
+			_, _ = w.Write(sigForSigner(t, cp, wit1Skey))
 		case w2u.Path:
-			_, _ = w.Write(sigForSigner(t, cp, wit2_skey))
+			_, _ = w.Write(sigForSigner(t, cp, wit2Skey))
 		case wbu.Path:
 			_, _ = w.Write([]byte("this is not a signature\n"))
 		default:
@@ -87,15 +87,15 @@ func TestWitnessGateway_Update(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wit1, err = tessera.NewWitness(wit1_vkey, baseUrl)
+	wit1, err = tessera.NewWitness(wit1Vkey, baseUrl)
 	if err != nil {
 		t.Fatal(err)
 	}
-	wit2, err = tessera.NewWitness(wit2_vkey, baseUrl)
+	wit2, err = tessera.NewWitness(wit2Vkey, baseUrl)
 	if err != nil {
 		t.Fatal(err)
 	}
-	witBad, err = tessera.NewWitness(witBad_vkey, baseUrl)
+	witBad, err = tessera.NewWitness(witBadVkey, baseUrl)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -177,7 +177,7 @@ func TestWitness_UpdateRequest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, reader, err := tessera.NewAppender(context.Background(), d, tessera.NewAppendOptions().WithCheckpointSigner(mustCreateSigner(t, wit1_skey)))
+	_, reader, err := tessera.NewAppender(context.Background(), d, tessera.NewAppendOptions().WithCheckpointSigner(mustCreateSigner(t, wit1Skey)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -229,11 +229,11 @@ func TestWitness_UpdateRequest(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				_, _ = w.Write(sigForSigner(t, n.Text, wit1_skey))
+				_, _ = w.Write(sigForSigner(t, n.Text, wit1Skey))
 			}))
 			baseUrl := mustUrl(t, ts.URL)
 			var err error
-			wit1, err := tessera.NewWitness(wit1_vkey, baseUrl)
+			wit1, err := tessera.NewWitness(wit1Vkey, baseUrl)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -257,8 +257,8 @@ func TestWitness_UpdateRequest(t *testing.T) {
 func TestWitness_UpdateResponse(t *testing.T) {
 	logSignedCheckpoint, cp := loadCheckpoint(t, 9)
 
-	sig1 := sigForSigner(t, cp, wit1_skey)
-	sig2 := sigForSigner(t, cp, wit2_skey)
+	sig1 := sigForSigner(t, cp, wit1Skey)
+	sig2 := sigForSigner(t, cp, wit2Skey)
 
 	testCases := []struct {
 		desc       string
@@ -305,7 +305,7 @@ func TestWitness_UpdateResponse(t *testing.T) {
 			}))
 
 			baseUrl := mustUrl(t, ts.URL)
-			wit1, err := tessera.NewWitness(wit1_vkey, baseUrl)
+			wit1, err := tessera.NewWitness(wit1Vkey, baseUrl)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -355,7 +355,7 @@ func TestWitnessStateEvolution(t *testing.T) {
 				t.Fatalf("expected body to start with old 8 but got\n%v", body)
 			}
 
-			_, _ = w.Write(sigForSigner(t, cp, wit1_skey))
+			_, _ = w.Write(sigForSigner(t, cp, wit1Skey))
 		case 2:
 			body, err := io.ReadAll(r.Body)
 			if err != nil {
@@ -370,7 +370,7 @@ func TestWitnessStateEvolution(t *testing.T) {
 	}))
 	baseUrl := mustUrl(t, ts.URL)
 	var err error
-	wit1, err = tessera.NewWitness(wit1_vkey, baseUrl)
+	wit1, err = tessera.NewWitness(wit1Vkey, baseUrl)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -413,20 +413,20 @@ func TestWitnessReusesProofs(t *testing.T) {
 
 		switch r.URL.String() {
 		case w1u.Path:
-			_, _ = w.Write(sigForSigner(t, n.Text, wit1_skey))
+			_, _ = w.Write(sigForSigner(t, n.Text, wit1Skey))
 		case w2u.Path:
-			_, _ = w.Write(sigForSigner(t, n.Text, wit2_skey))
+			_, _ = w.Write(sigForSigner(t, n.Text, wit2Skey))
 		default:
 			t.Fatalf("Unknown case: %s", r.URL.String())
 		}
 	}))
 	baseUrl := mustUrl(t, ts.URL)
 	var err error
-	wit1, err = tessera.NewWitness(wit1_vkey, baseUrl)
+	wit1, err = tessera.NewWitness(wit1Vkey, baseUrl)
 	if err != nil {
 		t.Fatal(err)
 	}
-	wit2, err = tessera.NewWitness(wit2_vkey, baseUrl)
+	wit2, err = tessera.NewWitness(wit2Vkey, baseUrl)
 	if err != nil {
 		t.Fatal(err)
 	}
