@@ -222,7 +222,7 @@ func (w *witness) update(ctx context.Context, cp []byte, size uint64, fetchProof
 	}
 	rb, err := io.ReadAll(httpResp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to ready body from witness at %q: %v", w.url, err)
+		return nil, fmt.Errorf("failed to read body from witness at %q: %v", w.url, err)
 	}
 	_ = httpResp.Body.Close()
 
