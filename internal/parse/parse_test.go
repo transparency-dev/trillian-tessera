@@ -14,6 +14,8 @@
 package parse_test
 
 import (
+	"bytes"
+	"encoding/base64"
 	"testing"
 
 	"github.com/transparency-dev/trillian-tessera/internal/parse"
@@ -25,6 +27,7 @@ func TestCheckpointUnsafe(t *testing.T) {
 		cp         string
 		wantOrigin string
 		wantSize   uint64
+		wantHash   []byte
 		wantErr    bool
 	}{
 		{
@@ -32,6 +35,7 @@ func TestCheckpointUnsafe(t *testing.T) {
 			cp:         "original.example.com\n42\nqINS1GRFhWHwdkUeqLEoP4yEMkTBBzxBkGwGQlVlVcs=\n",
 			wantOrigin: "original.example.com",
 			wantSize:   42,
+			wantHash:   mustDecodeB64(t, "qINS1GRFhWHwdkUeqLEoP4yEMkTBBzxBkGwGQlVlVcs="),
 		},
 		{
 			desc:    "Negative size",
@@ -39,26 +43,26 @@ func TestCheckpointUnsafe(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			desc:       "Bad hash (passes because hashes are not checked)",
-			cp:         "original.example.com\n42\nthisisnotright\n",
-			wantOrigin: "original.example.com",
-			wantSize:   42,
+			desc:    "Bad hash",
+			cp:      "original.example.com\n42\nthisisnotright\n",
+			wantErr: true,
 		},
 		{
 			desc:       "Empty origin",
-			cp:         "\n42\nthisisnotright\n",
+			cp:         "\n42\nqINS1GRFhWHwdkUeqLEoP4yEMkTBBzxBkGwGQlVlVcs=\n",
 			wantOrigin: "",
 			wantSize:   42,
+			wantHash:   mustDecodeB64(t, "qINS1GRFhWHwdkUeqLEoP4yEMkTBBzxBkGwGQlVlVcs="),
 		},
 		{
 			desc:    "No origin",
-			cp:      "42\nthisisnotright\n",
+			cp:      "42\nqINS1GRFhWHwdkUeqLEoP4yEMkTBBzxBkGwGQlVlVcs=\n",
 			wantErr: true,
 		},
 	}
 	for _, tC := range testCases {
 		t.Run(tC.desc, func(t *testing.T) {
-			origin, size, err := parse.CheckpointUnsafe([]byte(tC.cp))
+			origin, size, hash, err := parse.CheckpointUnsafe([]byte(tC.cp))
 			if gotErr := err != nil; gotErr != tC.wantErr {
 				t.Fatalf("gotErr != wantErr (%t != %t): %v", gotErr, tC.wantErr, err)
 			}
@@ -71,14 +75,26 @@ func TestCheckpointUnsafe(t *testing.T) {
 			if tC.wantSize != size {
 				t.Errorf("size : got != want (%v != %v)", size, tC.wantSize)
 			}
+			if !bytes.Equal(tC.wantHash, hash) {
+				t.Errorf("hash : got != want (%v != %v)", hash, tC.wantHash)
+			}
 		})
 	}
+}
+
+func mustDecodeB64(t *testing.T, encoded string) []byte {
+	t.Helper()
+	res, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return res
 }
 
 func BenchmarkCheckpointUnsafe(b *testing.B) {
 	cpRaw := []byte("go.sum database tree\n31700353\nqINS1GRFhWHwdkUeqLEoP4yEMkTBBzxBkGwGQlVlVcs=\n\n— sum.golang.org Az3grnmrIUEDFqHzAElIQCPNoRFRAAdFo47fooyWKMHb89k11GJh5zHIfNCOBmwn/C3YI8oW9/C8DJ87F61QqspBYwM=")
 	for i := 0; i < b.N; i++ {
-		_, _, err := parse.CheckpointUnsafe(cpRaw)
+		_, _, _, err := parse.CheckpointUnsafe(cpRaw)
 		if err != nil {
 			b.Error(err)
 		}

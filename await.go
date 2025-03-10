@@ -117,7 +117,7 @@ func (a *IntegrationAwaiter) pollLoop(ctx context.Context, readCheckpoint func(c
 			a.releaseClientsErr(fmt.Errorf("readCheckpoint: %v", err))
 			continue
 		}
-		_, size, err := parse.CheckpointUnsafe(rawCp)
+		_, size, _, err := parse.CheckpointUnsafe(rawCp)
 		if err != nil {
 			a.releaseClientsErr(err)
 			continue

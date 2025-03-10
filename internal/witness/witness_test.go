@@ -22,34 +22,34 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
+	"sync/atomic"
 	"testing"
 
+	"github.com/transparency-dev/formats/log"
 	tessera "github.com/transparency-dev/trillian-tessera"
+	"github.com/transparency-dev/trillian-tessera/api/layout"
+	"github.com/transparency-dev/trillian-tessera/storage/posix"
 	"golang.org/x/mod/sumdb/note"
 )
 
 const (
-	log_vkey    = "LilLog+b65b2501+Af40T+NgLuQzeKqU1mbUL4pcmQwCVDK67QSmdJ3Q8LTl"
-	log_skey    = "PRIVATE+KEY+LilLog+b65b2501+AbKaNq0e8nx6WOuOH0eYAgPeKPtk8KM3fZBhwr5qzo+p"
-	wit1_vkey   = "Wit1+55ee4561+AVhZSmQj9+SoL+p/nN0Hh76xXmF7QcHfytUrI1XfSClk"
-	wit1_skey   = "PRIVATE+KEY+Wit1+55ee4561+AeadRiG7XM4XiieCHzD8lxysXMwcViy5nYsoXURWGrlE"
-	wit2_vkey   = "Wit2+85ecc407+AWVbwFJte9wMQIPSnEnj4KibeO6vSIOEDUTDp3o63c2x"
-	wit2_skey   = "PRIVATE+KEY+Wit2+85ecc407+AfPTvxw5eUcqSgivo2vaiC7JPOMUZ/9baHPSDrWqgdGm"
-	witBad_vkey = "WitBad+b82b4b16+AY5FLOcqxs5lD+OpC6cVTrxsyNJktaCGYHNfnE5vKBQX"
-	witBad_skey = "PRIVATE+KEY+WitBad+b82b4b16+AYSil2PKfSN1a0LhdbzmK1uXqDFZbp+P1OyR54k3gdJY"
-	cp          = "LilLog\n" +
-		"34840403\n" +
-		"Ux/vc6m0VqNe7o2MbLNrCSwFzFvGBCGNClW2x3up/YI=\n"
+	logVkey    = "example.com/log/testdata+33d7b496+AeHTu4Q3hEIMHNqc6fASMsq3rKNx280NI+oO5xCFkkSx"
+	wit1Vkey   = "Wit1+55ee4561+AVhZSmQj9+SoL+p/nN0Hh76xXmF7QcHfytUrI1XfSClk"
+	wit1Skey   = "PRIVATE+KEY+Wit1+55ee4561+AeadRiG7XM4XiieCHzD8lxysXMwcViy5nYsoXURWGrlE"
+	wit2Vkey   = "Wit2+85ecc407+AWVbwFJte9wMQIPSnEnj4KibeO6vSIOEDUTDp3o63c2x"
+	wit2Skey   = "PRIVATE+KEY+Wit2+85ecc407+AfPTvxw5eUcqSgivo2vaiC7JPOMUZ/9baHPSDrWqgdGm"
+	witBadVkey = "WitBad+b82b4b16+AY5FLOcqxs5lD+OpC6cVTrxsyNJktaCGYHNfnE5vKBQX"
+	witBadSkey = "PRIVATE+KEY+WitBad+b82b4b16+AYSil2PKfSN1a0LhdbzmK1uXqDFZbp+P1OyR54k3gdJY"
+)
+
+var (
+	logVerifier = mustCreateVerifier(logVkey)
 )
 
 func TestWitnessGateway_Update(t *testing.T) {
-	logVerifier := mustCreateVerifier(t, log_vkey)
-	logSigner := mustCreateSigner(t, log_skey)
-
-	logSignedCheckpoint, err := note.Sign(&note.Note{Text: cp}, logSigner)
-	if err != nil {
-		t.Fatal(err)
-	}
+	logSignedCheckpoint, cp := loadCheckpoint(t, 9)
 
 	// Set up a fake server hosting the witnesses.
 	// The witnesses just sign the checkpoint with whatever key is requested, they don't check the body at all.
@@ -74,9 +74,9 @@ func TestWitnessGateway_Update(t *testing.T) {
 
 		switch r.URL.String() {
 		case w1u.Path:
-			_, _ = w.Write(sigForSigner(t, cp, wit1_skey))
+			_, _ = w.Write(sigForSigner(t, cp, wit1Skey))
 		case w2u.Path:
-			_, _ = w.Write(sigForSigner(t, cp, wit2_skey))
+			_, _ = w.Write(sigForSigner(t, cp, wit2Skey))
 		case wbu.Path:
 			_, _ = w.Write([]byte("this is not a signature\n"))
 		default:
@@ -87,15 +87,15 @@ func TestWitnessGateway_Update(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wit1, err = tessera.NewWitness(wit1_vkey, baseUrl)
+	wit1, err = tessera.NewWitness(wit1Vkey, baseUrl)
 	if err != nil {
 		t.Fatal(err)
 	}
-	wit2, err = tessera.NewWitness(wit2_vkey, baseUrl)
+	wit2, err = tessera.NewWitness(wit2Vkey, baseUrl)
 	if err != nil {
 		t.Fatal(err)
 	}
-	witBad, err = tessera.NewWitness(witBad_vkey, baseUrl)
+	witBad, err = tessera.NewWitness(witBadVkey, baseUrl)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -151,10 +151,7 @@ func TestWitnessGateway_Update(t *testing.T) {
 		t.Run(tC.desc, func(t *testing.T) {
 			ctx := context.Background()
 
-			fetchProof := func(ctx context.Context, from, to uint64) [][]byte {
-				return nil
-			}
-			g := NewWitnessGateway(tC.group, ts.Client(), fetchProof)
+			g := NewWitnessGateway(tC.group, ts.Client(), testLogTileFetcher)
 
 			witnessedCP, err := g.Witness(ctx, logSignedCheckpoint)
 			if got, want := err != nil, tC.wantErr; got != want {
@@ -175,15 +172,15 @@ func TestWitnessGateway_Update(t *testing.T) {
 }
 
 func TestWitness_UpdateRequest(t *testing.T) {
-	cpSize := uint64(34840403)
-	s := mustCreateSigner(t, log_skey)
-	wv1 := mustCreateVerifier(t, wit1_vkey)
-
-	logSignedCheckpoint, err := note.Sign(&note.Note{Text: cp}, s)
+	logSignedCheckpoint, _ := loadCheckpoint(t, 9)
+	d, err := posix.New(context.Background(), "../../testdata/log/")
 	if err != nil {
 		t.Fatal(err)
 	}
-	sig1 := sigForSigner(t, cp, wit1_skey)
+	_, reader, err := tessera.NewAppender(context.Background(), d, tessera.NewAppendOptions().WithCheckpointSigner(mustCreateSigner(t, wit1Skey)))
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	testCases := []struct {
 		desc     string
@@ -199,32 +196,50 @@ func TestWitness_UpdateRequest(t *testing.T) {
 		},
 		{
 			desc:     "non zero size requires proof",
-			witSize:  22,
-			proof:    [][]byte{[]byte("hello"), []byte("world")},
-			wantBody: fmt.Sprintf("old 22\naGVsbG8=\nd29ybGQ=\n\n%s", logSignedCheckpoint),
+			witSize:  6,
+			wantBody: fmt.Sprintf("old 6\nycRkkNklus5eMVRUvkD1pK321vMrA+jjOiZKU8aOcY4=\nnk9gCR+floFqznAPtqjjcnnV64dge2jQB95D5t164Hg=\nzY1lN35vrXYAPixXSd59LsU29xUJtuW4o2dNNg5Y2Co=\n91HQqaPzWlbBsUDk3JvSpOTK7Bc4ifZGxXZzfABOmuU=\n\n%s", logSignedCheckpoint),
 		},
 	}
 	for _, tC := range testCases {
 		t.Run(tC.desc, func(t *testing.T) {
 			ctx := context.Background()
 			var gotBody string
-			w := witness{
-				url:      "https://example.com/thislittlelogofmine/add-checkpoint",
-				verifier: wv1,
-				size:     tC.witSize,
-				post: func(ctx context.Context, url string, body string) (postResponse, error) {
-					gotBody = body
-					return postResponse{
-						statusCode: 200,
-						body:       sig1,
-					}, nil
-				},
-				fetchProof: func(ctx context.Context, from uint64, to uint64) [][]byte {
-					return tC.proof
-				},
-			}
+			var initDone bool
+			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if !initDone {
+					w.Header().Add("Content-Type", "text/x.tlog.size")
+					w.WriteHeader(409)
+					_, _ = w.Write([]byte(fmt.Sprintf("%d", tC.witSize)))
+					initDone = true
+					return
+				}
 
-			_, err := w.update(ctx, logSignedCheckpoint, cpSize)
+				body, err := io.ReadAll(r.Body)
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				gotBody = string(body)
+				_, checkpoint, ok := bytes.Cut(body, []byte("\n\n"))
+				if !ok {
+					t.Fatalf("expected two newlines in body, got: %q", body)
+				}
+
+				_, _, n, err := log.ParseCheckpoint(checkpoint, logVerifier.Name(), logVerifier)
+				if err != nil {
+					t.Fatal(err)
+				}
+				_, _ = w.Write(sigForSigner(t, n.Text, wit1Skey))
+			}))
+			baseUrl := mustUrl(t, ts.URL)
+			var err error
+			wit1, err := tessera.NewWitness(wit1Vkey, baseUrl)
+			if err != nil {
+				t.Fatal(err)
+			}
+			group := tessera.NewWitnessGroup(1, wit1)
+			wg := NewWitnessGateway(group, ts.Client(), reader.ReadTile)
+			_, err = wg.Witness(ctx, logSignedCheckpoint)
 			if got, want := err != nil, tC.wantErr; got != want {
 				t.Fatalf("got != want (%t != %t): %v", got, want, err)
 			}
@@ -233,105 +248,86 @@ func TestWitness_UpdateRequest(t *testing.T) {
 			}
 
 			if gotBody != tC.wantBody {
-				t.Errorf("body does not match expected: %q", gotBody)
+				t.Errorf("body does not match expected (want vs got):\n%q\n%q", tC.wantBody, gotBody)
 			}
 		})
 	}
 }
 
 func TestWitness_UpdateResponse(t *testing.T) {
-	wv1 := mustCreateVerifier(t, wit1_vkey)
-	sig1 := sigForSigner(t, cp, wit1_skey)
-	sig2 := sigForSigner(t, cp, wit2_skey)
+	logSignedCheckpoint, cp := loadCheckpoint(t, 9)
 
-	s := mustCreateSigner(t, log_skey)
-	logSignedCheckpoint, err := note.Sign(&note.Note{Text: cp}, s)
-	if err != nil {
-		t.Fatal(err)
-	}
+	sig1 := sigForSigner(t, cp, wit1Skey)
+	sig2 := sigForSigner(t, cp, wit2Skey)
 
 	testCases := []struct {
 		desc       string
-		pr         postResponse
+		statusCode int
+		body       []byte
 		pre        error
 		wantErr    bool
 		wantResult []byte
 	}{
 		{
-			desc: "all good",
-			pr: postResponse{
-				statusCode: 200,
-				body:       sig1,
-			},
+			desc:       "all good",
+			statusCode: 200,
+			body:       sig1,
 			wantResult: sig1,
 		}, {
-			desc: "all good, two sigs",
-			pr: postResponse{
-				statusCode: 200,
-				body:       append(sig1, sig2...),
-			},
+			desc:       "all good, two sigs",
+			statusCode: 200,
+			body:       append(sig1, sig2...),
 			wantResult: sig1,
 		}, {
-			desc: "404 is an error",
-			pr: postResponse{
-				statusCode: 404,
-			},
-			wantErr: true,
+			desc:       "404 is an error",
+			statusCode: 404,
+			wantErr:    true,
 		}, {
-			desc: "403 is an error",
-			pr: postResponse{
-				statusCode: 403,
-			},
-			wantErr: true,
+			desc:       "403 is an error",
+			statusCode: 403,
+			wantErr:    true,
 		}, {
-			desc: "422 is an error",
-			pr: postResponse{
-				statusCode: 422,
-			},
-			wantErr: true,
+			desc:       "422 is an error",
+			statusCode: 422,
+			wantErr:    true,
 		}, {
-			desc: "409 with no headers is error",
-			pr: postResponse{
-				statusCode: 409,
-			},
-			wantErr: true,
+			desc:       "409 with no headers is error",
+			statusCode: 409,
+			wantErr:    true,
 		},
 	}
 	for _, tC := range testCases {
 		t.Run(tC.desc, func(t *testing.T) {
 			ctx := context.Background()
-			w := witness{
-				url:      "https://example.com/thislittlelogofmine/add-checkpoint",
-				verifier: wv1,
-				size:     0,
-				post: func(ctx context.Context, url string, body string) (postResponse, error) {
-					return tC.pr, tC.pre
-				},
-				fetchProof: func(ctx context.Context, from uint64, to uint64) [][]byte {
-					return [][]byte{}
-				},
-			}
+			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(tC.statusCode)
+				_, _ = w.Write(tC.body)
+			}))
 
-			resp, err := w.update(ctx, logSignedCheckpoint, 0)
+			baseUrl := mustUrl(t, ts.URL)
+			wit1, err := tessera.NewWitness(wit1Vkey, baseUrl)
+			if err != nil {
+				t.Fatal(err)
+			}
+			g := NewWitnessGateway(tessera.NewWitnessGroup(1, wit1), ts.Client(), testLogTileFetcher)
+			witnessed, err := g.Witness(ctx, logSignedCheckpoint)
 			if got, want := err != nil, tC.wantErr; got != want {
 				t.Fatalf("got != want (%t != %t): %v", got, want, err)
 			}
-			if err == nil {
-				if !bytes.Equal(resp, tC.wantResult) {
-					t.Errorf("expected result %q but got %q", tC.pr.body, resp)
-				}
+			if tC.wantErr {
+				return
+			}
+
+			sigs := witnessed[len(logSignedCheckpoint):]
+			if !bytes.Equal(sigs, tC.wantResult) {
+				t.Errorf("expected result %q but got %q", tC.body, sigs)
 			}
 		})
 	}
 }
 
 func TestWitnessStateEvolution(t *testing.T) {
-	logSigner := mustCreateSigner(t, log_skey)
-
-	logSignedCheckpoint, err := note.Sign(&note.Note{Text: cp}, logSigner)
-	if err != nil {
-		t.Fatal(err)
-	}
+	logSignedCheckpoint, cp := loadCheckpoint(t, 9)
 
 	// Set up a fake server hosting the witnesses.
 	// The witnesses just sign the checkpoint with whatever key is requested, they don't check the body at all.
@@ -349,31 +345,32 @@ func TestWitnessStateEvolution(t *testing.T) {
 		case 0:
 			w.Header().Add("Content-Type", "text/x.tlog.size")
 			w.WriteHeader(409)
-			_, _ = w.Write([]byte("1000"))
+			_, _ = w.Write([]byte("8"))
 		case 1:
 			body, err := io.ReadAll(r.Body)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !bytes.HasPrefix(body, []byte("old 1000")) {
-				t.Fatalf("expected body to start with old 1000 but got\n%v", body)
+			if !bytes.HasPrefix(body, []byte("old 8")) {
+				t.Fatalf("expected body to start with old 8 but got\n%v", body)
 			}
 
-			_, _ = w.Write(sigForSigner(t, cp, wit1_skey))
+			_, _ = w.Write(sigForSigner(t, cp, wit1Skey))
 		case 2:
 			body, err := io.ReadAll(r.Body)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !bytes.HasPrefix(body, []byte("old 34840403")) {
-				t.Fatalf("expected body to start with old 34840403 but got\n%v", string(body))
+			if !bytes.HasPrefix(body, []byte("old 9")) {
+				t.Fatalf("expected body to start with old 9 but got\n%v", string(body))
 			}
 			// End of test; we don't even bother constructing a valid response here
 		}
 		count++
 	}))
 	baseUrl := mustUrl(t, ts.URL)
-	wit1, err = tessera.NewWitness(wit1_vkey, baseUrl)
+	var err error
+	wit1, err = tessera.NewWitness(wit1Vkey, baseUrl)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -381,15 +378,7 @@ func TestWitnessStateEvolution(t *testing.T) {
 
 	ctx := context.Background()
 
-	fetchProof := func(ctx context.Context, from, to uint64) [][]byte {
-		if count < 1 || count > 2 {
-			// This shouldn't be called if the witness state is thought to be zero
-			t.Error("expected count to be 1 or 2 when proof was called")
-		}
-		return nil
-	}
-
-	g := NewWitnessGateway(group, ts.Client(), fetchProof)
+	g := NewWitnessGateway(group, ts.Client(), testLogTileFetcher)
 	// This call will trigger case 0 and then case 1 in the witness handler above.
 	// case 0 will return a response that notifies the log that its view of the witness size is wrong.
 	// This method will then update its size and make a second request with a consistency proof, triggering case 1.
@@ -401,6 +390,97 @@ func TestWitnessStateEvolution(t *testing.T) {
 	// This triggers case 2 in the witness, which isn't implemented so we don't care about any error,
 	// we just invoke this to cause the validation in that witness body to trigger.
 	_, _ = g.Witness(ctx, logSignedCheckpoint)
+}
+
+func TestWitnessReusesProofs(t *testing.T) {
+	var wit1, wit2 tessera.Witness
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, checkpoint, ok := bytes.Cut(body, []byte("\n\n"))
+		if !ok {
+			t.Fatalf("expected two newlines in body, got: %q", body)
+		}
+
+		_, _, n, err := log.ParseCheckpoint(checkpoint, logVerifier.Name(), logVerifier)
+		if err != nil {
+			t.Fatal(err)
+		}
+		w1u := mustUrl(t, wit1.Url)
+		w2u := mustUrl(t, wit2.Url)
+
+		switch r.URL.String() {
+		case w1u.Path:
+			_, _ = w.Write(sigForSigner(t, n.Text, wit1Skey))
+		case w2u.Path:
+			_, _ = w.Write(sigForSigner(t, n.Text, wit2Skey))
+		default:
+			t.Fatalf("Unknown case: %s", r.URL.String())
+		}
+	}))
+	baseUrl := mustUrl(t, ts.URL)
+	var err error
+	wit1, err = tessera.NewWitness(wit1Vkey, baseUrl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wit2, err = tessera.NewWitness(wit2Vkey, baseUrl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+
+	var tf1 atomic.Int32
+	var tf2 atomic.Int32
+	cf1 := func(ctx context.Context, level, index uint64, p uint8) ([]byte, error) {
+		tf1.Add(1)
+		return testLogTileFetcher(ctx, level, index, p)
+	}
+	cf2 := func(ctx context.Context, level, index uint64, p uint8) ([]byte, error) {
+		tf2.Add(1)
+		return testLogTileFetcher(ctx, level, index, p)
+	}
+	g1 := NewWitnessGateway(tessera.NewWitnessGroup(1, wit1), ts.Client(), cf1)
+	g2 := NewWitnessGateway(tessera.NewWitnessGroup(2, wit1, wit2), ts.Client(), cf2)
+
+	for i := range 10 {
+		logSignedCheckpoint, _ := loadCheckpoint(t, i)
+		_, err = g1.Witness(ctx, logSignedCheckpoint)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = g2.Witness(ctx, logSignedCheckpoint)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if got1, got2 := tf1.Load(), tf2.Load(); got1 != got2 {
+		t.Errorf("expected same number of tiles loaded for 1 witness or 2 witnesses but got (%d != %d)", got1, got2)
+	}
+}
+
+func loadCheckpoint(t *testing.T, size int) (signed []byte, unsigned string) {
+	t.Helper()
+	path := fmt.Sprintf("../../testdata/log/checkpoint.%d", size)
+	cp, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, n, err := log.ParseCheckpoint(cp, logVerifier.Name(), logVerifier)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return cp, n.Text
+}
+
+// testLogTileFetcher is a fetcher which reads tiles from the checked-in golden test log
+// data stored in $REPO_ROOT/testdata/log
+func testLogTileFetcher(ctx context.Context, l, i uint64, p uint8) ([]byte, error) {
+	path := filepath.Join("../../testdata/log", layout.TilePath(l, i, p))
+	return os.ReadFile(path)
 }
 
 func mustUrl(t *testing.T, u string) *url.URL {
@@ -425,11 +505,10 @@ func sigForSigner(t *testing.T, cp, skey string) []byte {
 	return append(bytes.Trim(witSignedCheckpoint[len(cp):], "\n"), '\n')
 }
 
-func mustCreateVerifier(t *testing.T, vkey string) note.Verifier {
-	t.Helper()
+func mustCreateVerifier(vkey string) note.Verifier {
 	verifier, err := note.NewVerifier(vkey)
 	if err != nil {
-		t.Fatal(err)
+		panic(err)
 	}
 	return verifier
 }
