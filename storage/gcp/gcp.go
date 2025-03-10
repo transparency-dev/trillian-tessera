@@ -52,6 +52,7 @@ import (
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/api"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
+	"github.com/transparency-dev/trillian-tessera/internal/witness"
 	storage "github.com/transparency-dev/trillian-tessera/storage/internal"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/api/googleapi"
@@ -157,6 +158,9 @@ func (s *Storage) Appender(ctx context.Context, opts *tessera.AppendOptions) (*t
 	if opts.CheckpointInterval() < minCheckpointInterval {
 		return nil, nil, fmt.Errorf("requested CheckpointInterval (%v) is less than minimum permitted %v", opts.CheckpointInterval(), minCheckpointInterval)
 	}
+	if opts.NewCP() == nil {
+		return nil, nil, errors.New("tessera.WithCheckpointSigner must be provided in Appender()")
+	}
 
 	c, err := gcs.NewClient(ctx, gcs.WithJSONReads())
 	if err != nil {
@@ -177,7 +181,6 @@ func (s *Storage) Appender(ctx context.Context, opts *tessera.AppendOptions) (*t
 			entriesPath: opts.EntriesPath(),
 		},
 		sequencer: seq,
-		newCP:     opts.NewCP(),
 		cpUpdated: make(chan struct{}),
 	}
 	a.queue = storage.NewQueue(ctx, opts.BatchMaxAge(), opts.BatchMaxSize(), a.sequencer.assignEntries)
@@ -189,16 +192,24 @@ func (s *Storage) Appender(ctx context.Context, opts *tessera.AppendOptions) (*t
 	go a.sequencerJob(ctx)
 	go a.publisherJob(ctx, opts.CheckpointInterval())
 
-	return &tessera.Appender{
-			Add: a.Add,
+	reader := &LogReader{
+		lrs: *a.logStore,
+		integratedSize: func(context.Context) (uint64, error) {
+			s, _, err := a.sequencer.currentTree(ctx)
+			return s, err
 		},
-		&LogReader{
-			lrs: *a.logStore,
-			integratedSize: func(context.Context) (uint64, error) {
-				s, _, err := a.sequencer.currentTree(ctx)
-				return s, err
-			},
-		}, nil
+	}
+	wg := witness.NewWitnessGateway(opts.Witnesses(), http.DefaultClient, reader.ReadTile)
+	a.newCP = func(u uint64, b []byte) ([]byte, error) {
+		cp, err := opts.NewCP()(u, b)
+		if err != nil {
+			return cp, err
+		}
+		return wg.Witness(ctx, cp)
+	}
+	return &tessera.Appender{
+		Add: a.Add,
+	}, reader, nil
 }
 
 // Appender is an implementation of the Tessera appender lifecycle contract.

@@ -38,6 +38,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -52,6 +53,7 @@ import (
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/api"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
+	"github.com/transparency-dev/trillian-tessera/internal/witness"
 	storage "github.com/transparency-dev/trillian-tessera/storage/internal"
 	"golang.org/x/sync/errgroup"
 	"k8s.io/klog/v2"
@@ -171,16 +173,24 @@ func (s *Storage) Appender(ctx context.Context, opts *tessera.AppendOptions) (*t
 		return nil, nil, fmt.Errorf("failed to create MySQL sequencer: %v", err)
 	}
 
-	r := &Appender{
-		logStore: &logResourceStore{
-			objStore: &s3Storage{
-				s3Client: s3.NewFromConfig(*s.cfg.SDKConfig, s.cfg.S3Options),
-				bucket:   s.cfg.Bucket,
-			},
-			entriesPath: opts.EntriesPath(),
+	logStore := &logResourceStore{
+		objStore: &s3Storage{
+			s3Client: s3.NewFromConfig(*s.cfg.SDKConfig, s.cfg.S3Options),
+			bucket:   s.cfg.Bucket,
 		},
-		sequencer:   seq,
-		newCP:       opts.NewCP(),
+		entriesPath: opts.EntriesPath(),
+	}
+	wg := witness.NewWitnessGateway(opts.Witnesses(), http.DefaultClient, logStore.ReadTile)
+	r := &Appender{
+		logStore:  logStore,
+		sequencer: seq,
+		newCP: func(u uint64, b []byte) ([]byte, error) {
+			cp, err := opts.NewCP()(u, b)
+			if err != nil {
+				return cp, err
+			}
+			return wg.Witness(ctx, cp)
+		},
 		treeUpdated: make(chan struct{}),
 	}
 	r.queue = storage.NewQueue(ctx, opts.BatchMaxAge(), opts.BatchMaxSize(), r.sequencer.assignEntries)
