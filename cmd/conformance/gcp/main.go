@@ -26,6 +26,7 @@ import (
 
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/storage/gcp"
+	gcp_as "github.com/transparency-dev/trillian-tessera/storage/gcp/antispam"
 	"golang.org/x/mod/sumdb/note"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
@@ -65,7 +66,7 @@ func main() {
 	var antispam tessera.Antispam
 	// Persistent antispam is currently experimental, so there's no terraform or documentation yet!
 	if *persistentAntispam {
-		antispam, err = gcp.NewAntispam(ctx, fmt.Sprintf("%s_dedup", *spanner))
+		antispam, err = gcp_as.NewAntispam(ctx, fmt.Sprintf("%s_dedup", *spanner))
 		if err != nil {
 			klog.Exitf("Failed to create new GCP antispam storage: %v", err)
 		}

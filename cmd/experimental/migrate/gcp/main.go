@@ -29,6 +29,7 @@ import (
 	"github.com/transparency-dev/trillian-tessera/client"
 	"github.com/transparency-dev/trillian-tessera/cmd/experimental/migrate/internal"
 	"github.com/transparency-dev/trillian-tessera/storage/gcp"
+	gcp_as "github.com/transparency-dev/trillian-tessera/storage/gcp/antispam"
 	"k8s.io/klog/v2"
 )
 
@@ -80,7 +81,7 @@ func main() {
 	var antispam tessera.Antispam
 	// Persistent antispam is currently experimental, so there's no terraform or documentation yet!
 	if *persistentAntispam {
-		antispam, err = gcp.NewAntispam(ctx, fmt.Sprintf("%s_dedup", *spanner))
+		antispam, err = gcp_as.NewAntispam(ctx, fmt.Sprintf("%s_dedup", *spanner))
 		if err != nil {
 			klog.Exitf("Failed to create new GCP antispam storage: %v", err)
 		}

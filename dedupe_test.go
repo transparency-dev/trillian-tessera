@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package tessera_test
+package tessera
 
 import (
 	"context"
@@ -20,8 +20,6 @@ import (
 	"fmt"
 	"sync"
 	"testing"
-
-	tessera "github.com/transparency-dev/trillian-tessera"
 )
 
 func TestDedupe(t *testing.T) {
@@ -50,23 +48,23 @@ func TestDedupe(t *testing.T) {
 	for _, tC := range testCases {
 		t.Run(tC.desc, func(t *testing.T) {
 			idx := uint64(1)
-			delegate := func(ctx context.Context, e *tessera.Entry) tessera.IndexFuture {
+			delegate := func(ctx context.Context, e *Entry) IndexFuture {
 				thisIdx := idx
 				idx++
 				return func() (uint64, error) {
 					return thisIdx, nil
 				}
 			}
-			dedupeAdd := tessera.InMemoryDedupe(256)(delegate)
+			dedupeAdd := newInMemoryDedupe(256)(delegate)
 
 			// Add foo, bar, baz to prime the cache to make things interesting
 			for _, s := range []string{"foo", "bar", "baz"} {
-				if _, err := dedupeAdd(ctx, tessera.NewEntry([]byte(s)))(); err != nil {
+				if _, err := dedupeAdd(ctx, NewEntry([]byte(s)))(); err != nil {
 					t.Fatalf("dedupeAdd(%q): %v", s, err)
 				}
 			}
 
-			idx, err := dedupeAdd(ctx, tessera.NewEntry([]byte(tC.newValue)))()
+			idx, err := dedupeAdd(ctx, NewEntry([]byte(tC.newValue)))()
 			if err != nil {
 				t.Fatalf("dedupeAdd(%q): %v", tC.newValue, err)
 			}
@@ -82,20 +80,20 @@ func BenchmarkDedupe(b *testing.B) {
 	// Outer loop is for benchmark calibration, inside here is each individual run of the benchmark
 	for i := 0; i < b.N; i++ {
 		idx := uint64(1)
-		delegate := func(ctx context.Context, e *tessera.Entry) tessera.IndexFuture {
+		delegate := func(ctx context.Context, e *Entry) IndexFuture {
 			thisIdx := idx
 			idx++
 			return func() (uint64, error) {
 				return thisIdx, nil
 			}
 		}
-		dedupeAdd := tessera.InMemoryDedupe(256)(delegate)
+		dedupeAdd := newInMemoryDedupe(256)(delegate)
 		wg := &sync.WaitGroup{}
 		// Loop to create a bunch of leaves in parallel to test lock contention
 		for leafIndex := range 1024 {
 			wg.Add(1)
 			go func(index int) {
-				_, err := dedupeAdd(ctx, tessera.NewEntry([]byte(fmt.Sprintf("leaf with value %d", index%sha256.Size))))()
+				_, err := dedupeAdd(ctx, NewEntry([]byte(fmt.Sprintf("leaf with value %d", index%sha256.Size))))()
 				if err != nil {
 					b.Error(err)
 				}

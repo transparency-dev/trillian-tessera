@@ -194,11 +194,11 @@ Take a look at the functions in the `trillian-tessera` root package named `With*
 The final part of configuring this storage object is to set up the mix-ins that you want to use.
 Mix-ins are optional libraries you can use to provide common log behaviours without writing it yourself.
 The currently supported mix-ins are:
- * Deduplication 
-   * [In-memory](https://pkg.go.dev/github.com/transparency-dev/trillian-tessera#InMemoryDedupe) (cheap, but very limited deduplication behaviour)
-   * Persistent (expensive, but can strongly ensure the log contains no duplicates)
-     * TODO(mhutchinson): link to these implementations when they are written
- * [Synchronous Integration](https://pkg.go.dev/github.com/transparency-dev/trillian-tessera#IntegrationAwaiter)
+* [Antispam](https://pkg.go.dev/github.com/transparency-dev/trillian-tessera#Antispan) (best-effort deduplication) 
+   * [In-memory](https://pkg.go.dev/github.com/transparency-dev/trillian-tessera#InMemoryDedupe) (cheap, but very limited window of history)
+   * Persistent (expensive, but can use entire log contents when looking for duplicate entries)
+     * [GCP](https://pkg.go.dev/github.com/transparency-dev/trillian-tessera/storage/gcp/antispam)
+* [Synchronous Integration](https://pkg.go.dev/github.com/transparency-dev/trillian-tessera#IntegrationAwaiter)
 
 See [Mix-ins](#mix-ins) after reading the rest of this section for more details.
 
@@ -237,15 +237,34 @@ See the example personalities written for MySQL to see how this Go web server sh
 
 ## Mix-ins
 
-### Deduplication
+### Antispam
 
-Deduplicating entries means that the log will only store each unique entry once.
-Deduplication is recommended for logs that take public submissions, such as CT.
-While checking for duplicates is somewhat expensive, it protects the log from a type of DoS attack where users can feed the log back into itself, causing it to grow out of control.
-It also protects against clients that may send the same request for logging multiple times (perhaps as a programming error, or by design for reliability).
+In some scenarios, particularly where logs are publicly writable such as Certificate Transparency, it's possible for logs to be asked,
+whether maliciously or accidentally, to add entries they already contain. Generally, this is undesirable, and so Tessera provides an
+optional mechanism to try to detect and ignore duplicate entries on a best-effort basis.
 
-Logs that do not allow public submissions directly to the log may want to operate without deduplication, instead relying on the personality to never generate duplicates.
-This can allow for significantly cheaper operation and faster write throughput.
+Logs that do not allow public submissions directly to the log may want to operate without deduplication, instead relying on the
+personality to never generate duplicates. This can allow for significantly cheaper operation and faster write throughput.
+
+The antispam mechanism consists of two layers which sit in front of the underlying `Add` implementation of the storage:
+1. The first layer is an `InMemory` cache which keeps track of a configurable number of recently-added entries.
+   If a recently-seen entry is spotted by the same application instance, this layer will short-circuit the addition
+   of the duplicate, and instead return and index previously assigned to this entry. Otherwise the requested entry is
+   passed on to the second layer.
+2. The 2nd layer in a `Persistent` index of a hash of the entry to its assigned position in the log.
+   Similarly to the first layer, this second layer will look for a record in its stored data which matches the incoming
+   entry, and if such a record exist, it will short-ciruit the addition of the duplicate entry and return a previous
+   version's assigned position in the log.
+
+These layes are configured by the `WithAntispam` method of the
+[AppendOptions](https://pkg.go.dev/github.com/transparency-dev/trillian-tessera@main#AppendOptions.WithAntispam) and
+[MigrateOptions](https://pkg.go.dev/github.com/transparency-dev/trillian-tessera@main#AppendOptions.WithAntispam).
+
+Persistent antispam is fairly expensive in terms of storage-compute, so should only be used where it is actually necessary.
+
+Note that Tessera's antispam mechanism is _best effort_; there is no guarantee that all duplicate entries will be suppressed.
+This is a trade-off; fully-atomic "strong" deduplication is _extremely_ expensive in terms of throughput and compute costs, and
+would limit Tessera to only being able to use transactional type storage backends.
 
 ### Synchronous Integration
 
