@@ -10,7 +10,7 @@ include "root" {
 inputs = merge(
   include.root.locals,
   {
-    base_name = get_env("TESSERA_BASE_NAME", "ci-conformance-${substr(uuid(), 0, 4)}")
+    base_name       = get_env("TESSERA_BASE_NAME", "ci-conformance-${substr(uuid(), 0, 4)}")
     enable_antispam = true
   }
 )
