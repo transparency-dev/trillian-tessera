@@ -56,7 +56,7 @@ Beta in Q1 2025, and production ready around mid 2025.
 |  4  | Stable API                                                |   ⚠️   |
 |  5  | Data migration between releases                           |   ⚠️   |
 |  6  | Data migration between drivers                            |   ⚠️   |
-|  7  | Witness support                                           |   ⚠️   |
+|  7  | Witness support                                           |   ✅   |
 |  8  | Production ready                                          |   ❌   |
 |  N  | Fancy features (to be expanded upon later)                |   ❌   |
 
@@ -194,10 +194,11 @@ Take a look at the functions in the `trillian-tessera` root package named `With*
 The final part of configuring this storage object is to set up the mix-ins that you want to use.
 Mix-ins are optional libraries you can use to provide common log behaviours without writing it yourself.
 The currently supported mix-ins are:
-* [Antispam](https://pkg.go.dev/github.com/transparency-dev/trillian-tessera#Antispan) (best-effort deduplication) 
+* [Antispam](https://pkg.go.dev/github.com/transparency-dev/trillian-tessera@main#Antispam) (best-effort deduplication) 
    * [In-memory](https://pkg.go.dev/github.com/transparency-dev/trillian-tessera#InMemoryDedupe) (cheap, but very limited window of history)
    * Persistent (expensive, but can use entire log contents when looking for duplicate entries)
      * [GCP](https://pkg.go.dev/github.com/transparency-dev/trillian-tessera/storage/gcp/antispam)
+* [Witnessing](https://pkg.go.dev/github.com/transparency-dev/trillian-tessera@main#WitnessGroup)
 * [Synchronous Integration](https://pkg.go.dev/github.com/transparency-dev/trillian-tessera#IntegrationAwaiter)
 
 See [Mix-ins](#mix-ins) after reading the rest of this section for more details.
@@ -265,6 +266,25 @@ Persistent antispam is fairly expensive in terms of storage-compute, so should o
 Note that Tessera's antispam mechanism is _best effort_; there is no guarantee that all duplicate entries will be suppressed.
 This is a trade-off; fully-atomic "strong" deduplication is _extremely_ expensive in terms of throughput and compute costs, and
 would limit Tessera to only being able to use transactional type storage backends.
+
+### Witnessing
+
+Logs are required to be append-only data structures.
+This property can be verified by witnesses, and signatures from witnesses can be provided in the published checkpoint to increase confidence for users of the log.
+
+Personalities can configure Tessera with options that specify witnesses compatible with the [C2SP Witness Protocol](https://github.com/C2SP/C2SP/blob/main/tlog-witness.md).
+Configuring the witnesses is done by creating a top-level [`WitnessGroup`](https://pkg.go.dev/github.com/transparency-dev/trillian-tessera@main#WitnessGroup) that contains either sub `WitnessGroup`s or [`Witness`es](https://pkg.go.dev/github.com/transparency-dev/trillian-tessera@main#Witness).
+Each `Witness` is configured with a URL at which the witness can be requested to make witnessing operations via the C2SP Witness Protocol, and a Verifier for the key that it must sign with.
+`WitnessGroup`s are configured with their sub-components, and a number of these components that must be satisfied in order for the group to be satisfied.
+
+These primitives allow arbitrarily complex witness policies to be specified.
+
+Once a top-level `WitnessGroup` is configured, it is passed in to the `Appender` lifecycle options using
+[AppendOptions#WithWitnesses](https://pkg.go.dev/github.com/transparency-dev/trillian-tessera@main#AppendOptions.WithWitnesses).
+If this method is not called then no witnessing will be configured.
+
+Note that if the policy cannot be satisfied then no checkpoint will be published.
+It is up to the log operator to ensure that a satisfiable policy is configured, and that the requested publishing rate is acceptable to the configured witnesses.
 
 ### Synchronous Integration
 
