@@ -67,9 +67,26 @@ resource "google_spanner_database" "log_db" {
   deletion_protection = !var.ephemeral
 }
 
+resource "google_spanner_database" "log_antispam_db" {
+  count    = var.create_antispam ? 1 : 0
+  instance = google_spanner_instance.log_spanner.name
+  name     = "${var.base_name}-db_dedup"
+
+  deletion_protection = !var.ephemeral
+}
+
 resource "google_spanner_database_iam_binding" "database" {
   instance = google_spanner_instance.log_spanner.name
   database = google_spanner_database.log_db.name
+  role     = "roles/spanner.databaseAdmin"
+
+  members = var.log_writer_members
+}
+
+resource "google_spanner_database_iam_binding" "database_antispam" {
+  count    = var.create_antispam ? 1 : 0
+  instance = google_spanner_instance.log_spanner.name
+  database = google_spanner_database.log_antispam_db[count.index].name
   role     = "roles/spanner.databaseAdmin"
 
   members = var.log_writer_members

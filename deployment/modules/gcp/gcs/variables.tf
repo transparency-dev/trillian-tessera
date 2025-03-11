@@ -29,7 +29,12 @@ variable "log_writer_members" {
   type        = list(any)
 }
 
+variable "create_antispam" {
+  description = "Set to true to create the infrastructure required by the GCP antispam implementation"
+  type        = bool
+}
+
 variable "ephemeral" {
   description = "Set to true if this is a throwaway/temporary log instance. Will set attributes on created resources to allow them to be disabled/deleted more easily."
-  type = bool
+  type        = bool
 }
