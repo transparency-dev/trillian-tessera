@@ -347,7 +347,7 @@ func TestParallelAdd(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			eG := errgroup.Group{}
-			for i := 0; i < 1024; i++ {
+			for range 1024 {
 				eG.Go(func() error {
 					_, err := addFn(ctx, tessera.NewEntry(test.entry))()
 					return err

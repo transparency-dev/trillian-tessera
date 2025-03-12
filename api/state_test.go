@@ -44,7 +44,7 @@ func TestHashTile_MarshalTileRoundtrip(t *testing.T) {
 	} {
 		t.Run(fmt.Sprintf("tile size %d", test.size), func(t *testing.T) {
 			tile := api.HashTile{Nodes: make([][]byte, 0, test.size)}
-			for i := 0; i < test.size; i++ {
+			for i := range test.size {
 				// Fill in the leaf index
 				tile.Nodes = append(tile.Nodes, make([]byte, sha256.Size))
 				if _, err := rand.Read(tile.Nodes[i]); err != nil {
@@ -86,7 +86,7 @@ func TestLeafBundle_MarshalTileRoundtrip(t *testing.T) {
 		t.Run(fmt.Sprintf("tile size %d", test.size), func(t *testing.T) {
 			bundleRaw := &bytes.Buffer{}
 			want := make([][]byte, test.size)
-			for i := 0; i < test.size; i++ {
+			for i := range test.size {
 				// Fill in the leaf index
 				want[i] = make([]byte, i*100)
 				if _, err := rand.Read(want[i]); err != nil {
@@ -100,7 +100,7 @@ func TestLeafBundle_MarshalTileRoundtrip(t *testing.T) {
 				t.Fatalf("UnmarshalText() = %v", err)
 			}
 
-			for i := 0; i < test.size; i++ {
+			for i := range test.size {
 				if got, want := tile2.Entries[i], want[i]; !bytes.Equal(got, want) {
 					t.Errorf("%d: want %x, got %x", i, got, want)
 				}

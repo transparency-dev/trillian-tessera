@@ -125,7 +125,7 @@ func Migrate(ctx context.Context, numWorkers int, sourceSize uint64, sourceRoot 
 
 	// Do the copying
 	eg := errgroup.Group{}
-	for i := 0; i < numWorkers; i++ {
+	for range numWorkers {
 		eg.Go(func() error {
 			return m.migrateWorker(ctx)
 		})

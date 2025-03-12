@@ -123,9 +123,9 @@ func TestMySQLSequencerAssignEntries(t *testing.T) {
 	}
 
 	want := uint64(0)
-	for chunks := 0; chunks < 10; chunks++ {
+	for chunks := range 10 {
 		entries := []*tessera.Entry{}
-		for i := 0; i < 10+chunks; i++ {
+		for i := range 10 + chunks {
 			entries = append(entries, tessera.NewEntry([]byte(fmt.Sprintf("item %d/%d", chunks, i))))
 		}
 		if err := seq.assignEntries(ctx, entries); err != nil {
@@ -181,7 +181,7 @@ func TestMySQLSequencerPushback(t *testing.T) {
 			}
 			// Set up the test scenario with the configured number of initial outstanding entries
 			entries := []*tessera.Entry{}
-			for i := 0; i < test.initialEntries; i++ {
+			for i := range test.initialEntries {
 				entries = append(entries, tessera.NewEntry([]byte(fmt.Sprintf("initial item %d", i))))
 			}
 			if err := seq.assignEntries(ctx, entries); err != nil {
@@ -216,9 +216,9 @@ func TestMySQLSequencerRoundTrip(t *testing.T) {
 
 	seq := 0
 	wantEntries := []storage.SequencedEntry{}
-	for chunks := 0; chunks < 10; chunks++ {
+	for chunks := range 10 {
 		entries := []*tessera.Entry{}
-		for i := 0; i < 10+chunks; i++ {
+		for range 10 + chunks {
 			e := tessera.NewEntry([]byte(fmt.Sprintf("item %d", seq)))
 			entries = append(entries, e)
 			wantEntries = append(wantEntries, storage.SequencedEntry{

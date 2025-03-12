@@ -265,7 +265,7 @@ func (d *AntispamStorage) Populate(ctx context.Context, lr tessera.LogReader, bu
 						bs = r
 					}
 					batch := make([][]byte, 0, bs)
-					for i := 0; i < int(bs); i++ {
+					for i := range int(bs) {
 						idx, c, err := entryReader.Next()
 						if err != nil {
 							return fmt.Errorf("entryReader.next: %v", err)
