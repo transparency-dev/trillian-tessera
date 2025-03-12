@@ -108,6 +108,7 @@ func NewAppendOptions() *AppendOptions {
 		batchMaxSize:           DefaultBatchMaxSize,
 		batchMaxAge:            DefaultBatchMaxAge,
 		entriesPath:            layout.EntriesPath,
+		bundleIDHasher:         defaultIDHasher,
 		checkpointInterval:     DefaultCheckpointInterval,
 		addDecorators:          make([]func(AddFn) AddFn, 0),
 		pushbackMaxOutstanding: DefaultPushbackMaxOutstanding,
@@ -126,6 +127,8 @@ type AppendOptions struct {
 
 	// EntriesPath knows how to format entry bundle paths.
 	entriesPath func(n uint64, p uint8) string
+	// bundleIDHasher knows how to create antispam leaf identities for entries in a serialised bundle.
+	bundleIDHasher func([]byte) ([][]byte, error)
 
 	checkpointInterval time.Duration
 	witnesses          WitnessGroup

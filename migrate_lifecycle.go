@@ -49,18 +49,15 @@ type UnbundlerFunc func(entryBundle []byte) ([][]byte, error)
 
 // NewMigrationTarget returns a MigrationTarget, which allows a personality to "import" a C2SP
 // tlog-tiles or static-ct compliant log into a Tessera instance.
-//
-// TODO(al): bundleHasher should be implicit from WithCTLayout being present or not.
-// TODO(al): AppendOptions should be somehow replaced - perhaps MigrationOptions, or some other way of limiting options to those which make sense for this lifecycle mode.
-func NewMigrationTarget(ctx context.Context, d Driver, bundleHasher UnbundlerFunc, opts *MigrationOptions) (MigrationTarget, error) {
+func NewMigrationTarget(ctx context.Context, d Driver, opts *MigrationOptions) (MigrationTarget, error) {
 	type migrateLifecycle interface {
-		MigrationTarget(context.Context, UnbundlerFunc, *MigrationOptions) (MigrationTarget, LogReader, error)
+		MigrationTarget(context.Context, *MigrationOptions) (MigrationTarget, LogReader, error)
 	}
 	lc, ok := d.(migrateLifecycle)
 	if !ok {
 		return nil, fmt.Errorf("driver %T does not implement MigrationTarget lifecycle", d)
 	}
-	m, r, err := lc.MigrationTarget(ctx, bundleHasher, opts)
+	m, r, err := lc.MigrationTarget(ctx, opts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to init MigrationTarget lifecycle: %v", err)
 	}
@@ -72,7 +69,9 @@ func NewMigrationTarget(ctx context.Context, d Driver, bundleHasher UnbundlerFun
 
 func NewMigrationOptions() *MigrationOptions {
 	return &MigrationOptions{
-		entriesPath: layout.EntriesPath,
+		entriesPath:      layout.EntriesPath,
+		bundleIDHasher:   defaultIDHasher,
+		bundleLeafHasher: defaultMerkleLeafHasher,
 	}
 }
 
@@ -80,7 +79,11 @@ func NewMigrationOptions() *MigrationOptions {
 type MigrationOptions struct {
 	// entriesPath knows how to format entry bundle paths.
 	entriesPath func(n uint64, p uint8) string
-	followers   []func(context.Context, LogReader)
+	// bundleIDHasher knows how to create antispam leaf identities for entries in a serialised bundle.
+	bundleIDHasher func([]byte) ([][]byte, error)
+	// bundleLeafHasher knows how to create Merkle leaf hashes for the entries in a serialised bundle.
+	bundleLeafHasher func([]byte) ([][]byte, error)
+	followers        []func(context.Context, LogReader)
 }
 
 func (o MigrationOptions) EntriesPath() func(uint64, uint8) string {
@@ -91,6 +94,10 @@ func (o MigrationOptions) Followers() []func(context.Context, LogReader) {
 	return o.followers
 }
 
+func (o *MigrationOptions) LeafHasher() func([]byte) ([][]byte, error) {
+	return o.bundleLeafHasher
+}
+
 // WithAntispam configures the migration target to *populate* the provided antispam storage using
 // the data being migrated into the target tree.
 //
@@ -99,7 +106,7 @@ func (o MigrationOptions) Followers() []func(context.Context, LogReader) {
 func (o *MigrationOptions) WithAntispam(as Antispam) *MigrationOptions {
 	if as != nil {
 		o.followers = append(o.followers, func(ctx context.Context, lr LogReader) {
-			as.Populate(ctx, lr, defaultIDHasher)
+			as.Populate(ctx, lr, o.bundleIDHasher)
 		})
 	}
 	return o
