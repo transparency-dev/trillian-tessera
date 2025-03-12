@@ -108,6 +108,9 @@ func main() {
 		"export READ_URL=http://localhost%s/ \n", *listen, *listen)
 	// Run the HTTP server with the single handler and block until this is terminated
 	if err := http.ListenAndServe(*listen, http.DefaultServeMux); err != nil {
+		if err := appender.Shutdown(ctx); err != nil {
+			klog.Exit(err)
+		}
 		klog.Exitf("ListenAndServe: %v", err)
 	}
 }
