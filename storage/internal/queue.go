@@ -39,6 +39,11 @@ import (
 type Queue struct {
 	buf   *buffer.Buffer
 	flush FlushFunc
+
+	// This queue should be closed when there is no more work to be processed by this queue.
+	work chan []*queueItem
+	// This context is cancelled when all data from this queue has been processed.
+	ctx context.Context
 }
 
 // FlushFunc is the signature of a function which will receive the slice of queued entries.
@@ -54,8 +59,11 @@ type FlushFunc func(ctx context.Context, entries []*tessera.Entry) error
 // the same order as they were added, when either the oldest entry in the queue has been there
 // for maxAge, or the size of the queue reaches maxSize.
 func NewQueue(ctx context.Context, maxAge time.Duration, maxSize uint, f FlushFunc) *Queue {
+	ctx, cancel := context.WithCancel(ctx)
 	q := &Queue{
 		flush: f,
+		work:  make(chan []*queueItem, 1),
+		ctx:   ctx,
 	}
 
 	// The underlying queue implementation blocks additions during a flush.
@@ -63,14 +71,12 @@ func NewQueue(ctx context.Context, maxAge time.Duration, maxSize uint, f FlushFu
 	// decouple the queue flush and storage write by handling the latter in
 	// a worker goroutine.
 	// This same worker thread will also handle the callbacks to f.
-	work := make(chan []*queueItem, 1)
 	toWork := func(items []interface{}) {
 		entries := make([]*queueItem, len(items))
 		for i, t := range items {
 			entries[i] = t.(*queueItem)
 		}
-		work <- entries
-
+		q.work <- entries
 	}
 
 	q.buf = buffer.New(
@@ -81,11 +87,16 @@ func NewQueue(ctx context.Context, maxAge time.Duration, maxSize uint, f FlushFu
 
 	// Spin off a worker thread to write the queue flushes to storage.
 	go func(ctx context.Context) {
+		// When this function exits, then signal that the queue is done.
+		defer cancel()
 		for {
 			select {
 			case <-ctx.Done():
 				return
-			case entries := <-work:
+			case entries, ok := <-q.work:
+				if !ok {
+					return
+				}
 				q.doFlush(ctx, entries)
 			}
 		}
@@ -101,6 +112,18 @@ func (q *Queue) Add(ctx context.Context, e *tessera.Entry) tessera.IndexFuture {
 		qi.notify(err)
 	}
 	return qi.f
+}
+
+func (q *Queue) Close(ctx context.Context) error {
+	if err := q.buf.Flush(); err != nil {
+		return err
+	}
+	if err := q.buf.Close(); err != nil {
+		return err
+	}
+	close(q.work)
+	<-q.ctx.Done()
+	return nil
 }
 
 // doFlush handles the queue flush, and sending notifications of assigned log indices.

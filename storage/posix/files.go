@@ -59,18 +59,6 @@ type Storage struct {
 	path string
 }
 
-// appender implements the Tessera append lifecycle.
-type appender struct {
-	s          *Storage
-	logStorage *logResourceStorage
-	queue      *storage.Queue
-
-	curSize uint64
-	newCP   func(uint64, []byte) ([]byte, error) // May be nil for mirrored logs.
-
-	cpUpdated chan struct{}
-}
-
 // logResourceStorage knows how to read and write tiled log resources via a
 // POSIX storage instance
 type logResourceStorage struct {
@@ -168,6 +156,25 @@ func (s *Storage) lockFile(p string) (func() error, error) {
 	}
 }
 
+// appender implements the Tessera append lifecycle.
+type appender struct {
+	s          *Storage
+	logStorage *logResourceStorage
+	queue      *storage.Queue
+
+	curSize uint64
+	newCP   func(uint64, []byte) ([]byte, error) // May be nil for mirrored logs.
+
+	cpUpdated chan struct{}
+
+	// This mutex guards the stopped state. We use this instead of an atomic.Boolean
+	// to get the property that no readers of this state can have the lock when the
+	// write gets it. This means that no in-flight Add operations will be occurring on
+	// Shutdown.
+	mu      sync.RWMutex
+	stopped bool
+}
+
 // Add takes an entry and queues it for inclusion in the log.
 // Upon placing the entry in an in-memory queue to be sequenced, it returns a future that will
 // evaluate to either the sequence number assigned to this entry, or an error.
@@ -185,7 +192,26 @@ func (s *Storage) lockFile(p string) (func() error, error) {
 // mean that some of the entries added are not committed to by a checkpoint, and thus are
 // not considered to be in the log.
 func (a *appender) Add(ctx context.Context, e *tessera.Entry) tessera.IndexFuture {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	if a.stopped {
+		return func() (uint64, error) {
+			return 0, errors.New("appender has been Shutdown")
+		}
+	}
 	return a.queue.Add(ctx, e)
+}
+
+func (a *appender) Shutdown(ctx context.Context) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.stopped = true
+	err := a.queue.Close(ctx)
+	// block until other background tasks are complete:
+	// - sequencing: done
+	// - integration: done
+	// - checkpoint publish: TODO
+	return err
 }
 
 func (l *logResourceStorage) ReadCheckpoint(_ context.Context) ([]byte, error) {

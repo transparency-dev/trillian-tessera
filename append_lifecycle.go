@@ -60,9 +60,8 @@ type IndexFuture func() (uint64, error)
 // in sequencing mode. This only has a single method, but other methods are likely to be added
 // such as a Shutdown method for #341.
 type Appender struct {
-	Add AddFn
-	// TODO(#341): add this method and implement it in all drivers
-	// Shutdown func(ctx context.Context)
+	Add      AddFn
+	Shutdown func(ctx context.Context) error
 }
 
 // NewAppender returns an Appender, which allows a personality to incrementally append new

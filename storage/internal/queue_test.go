@@ -95,3 +95,43 @@ func TestQueue(t *testing.T) {
 		})
 	}
 }
+
+func TestAwaitShutdown(t *testing.T) {
+	numItems := 77
+	ctx := context.Background()
+	assignMu := sync.Mutex{}
+	assignedItems := make([]*tessera.Entry, numItems)
+	assignedIndex := uint64(0)
+
+	// flushFunc mimics sequencing storage - it takes entries, assigns them to
+	// positions in assignedItems.
+	flushFunc := func(_ context.Context, entries []*tessera.Entry) error {
+		assignMu.Lock()
+		defer assignMu.Unlock()
+
+		for _, e := range entries {
+			_ = e.MarshalBundleData(assignedIndex)
+			assignedItems[assignedIndex] = e
+			assignedIndex++
+		}
+		return nil
+	}
+
+	q := storage.NewQueue(ctx, time.Second, 20, flushFunc)
+
+	adds := make([]tessera.IndexFuture, numItems)
+	wantEntries := make([]*tessera.Entry, numItems)
+	for i := uint64(0); i < uint64(numItems); i++ {
+		d := []byte(fmt.Sprintf("item %d", i))
+		wantEntries[i] = tessera.NewEntry(d)
+		adds[i] = q.Add(ctx, wantEntries[i])
+	}
+	if err := q.Close(ctx); err != nil {
+		t.Fatal(err)
+	}
+	for i, r := range assignedItems {
+		if r == nil {
+			t.Fatalf("found nil index at %d", i)
+		}
+	}
+}
