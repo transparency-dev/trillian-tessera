@@ -60,7 +60,12 @@ type IndexFuture func() (uint64, error)
 // in sequencing mode. This only has a single method, but other methods are likely to be added
 // such as a Shutdown method for #341.
 type Appender struct {
-	Add      AddFn
+	Add AddFn
+	// Shutdown ensures that all calls to Add that have returned a value will be resolved. Any
+	// futures returned by _this appender_ which resolve to an index will be integrated and have
+	// a checkpoint that commits to them published if this returns successfully.
+	//
+	// After this returns, any calls to Add will fail.
 	Shutdown func(ctx context.Context) error
 }
 

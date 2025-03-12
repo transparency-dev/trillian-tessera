@@ -126,6 +126,8 @@ func (q *Queue) Add(ctx context.Context, e *tessera.Entry) tessera.IndexFuture {
 	return qi.f
 }
 
+// Close ensures that all work in the queue is flushed and processed. After this is done,
+// the Queue will be locked for any more calls to Add.
 func (q *Queue) Close(ctx context.Context) error {
 	q.mu.Lock()
 	defer q.mu.Unlock()

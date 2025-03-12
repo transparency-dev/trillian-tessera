@@ -25,6 +25,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -108,9 +109,9 @@ func (s *Storage) Appender(ctx context.Context, opts *tessera.AppendOptions) (*t
 	}
 	a.queue = storage.NewQueue(ctx, opts.BatchMaxAge(), opts.BatchMaxSize(), a.sequenceBatch)
 
+	ctx, cancel := context.WithCancel(ctx)
+	a.done = ctx.Done()
 	go func(ctx context.Context, i time.Duration) {
-		ctx, cancel := context.WithCancel(ctx)
-		a.ctx = ctx
 		defer cancel()
 		for {
 			select {
@@ -130,7 +131,8 @@ func (s *Storage) Appender(ctx context.Context, opts *tessera.AppendOptions) (*t
 	}(ctx, opts.CheckpointInterval())
 
 	return &tessera.Appender{
-		Add: a.Add,
+		Add:      a.Add,
+		Shutdown: a.Shutdown,
 	}, a.logStorage, nil
 }
 
@@ -181,8 +183,11 @@ type appender struct {
 	mu      sync.RWMutex
 	stopped bool
 
-	// This context is cancelled when this appender has finished all outstanding work.
-	ctx context.Context
+	// This channel will behave as per Context.Done() to signify that this appender is finished.
+	done <-chan struct{}
+
+	// largestIssued tracks the largest index allocated by this appender.
+	largestIssued atomic.Uint64
 }
 
 // Add takes an entry and queues it for inclusion in the log.
@@ -206,24 +211,65 @@ func (a *appender) Add(ctx context.Context, e *tessera.Entry) tessera.IndexFutur
 	defer a.mu.RUnlock()
 	if a.stopped {
 		return func() (uint64, error) {
-			return 0, errors.New("appender has been Shutdown")
+			return 0, errors.New("appender has been shut down")
 		}
 	}
-	return a.queue.Add(ctx, e)
+	res := a.queue.Add(ctx, e)
+	return func() (uint64, error) {
+		i, err := res()
+		if err != nil {
+			return i, err
+		}
+
+		// https://github.com/golang/go/issues/63999 - atomically set largest issued index
+		old := a.largestIssued.Load()
+		for old < i && !a.largestIssued.CompareAndSwap(old, i) {
+			old = a.largestIssued.Load()
+		}
+
+		return i, err
+	}
 }
 
+// Shutdown ensures that all calls to Add that have returned a value will be resolved. Any
+// futures returned by _this appender_ which resolve to an index will be integrated and have
+// a checkpoint that commits to them published if this returns successfully.
+//
+// After this returns, any calls to Add will fail.
 func (a *appender) Shutdown(ctx context.Context) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.stopped = true
-	err := a.queue.Close(ctx)
-	close(a.cpUpdated)
-	<-a.ctx.Done()
-	// block until other background tasks are complete:
-	// - sequencing: done
-	// - integration: done
-	// - checkpoint publish: done
-	return err
+	if err := a.queue.Close(ctx); err != nil {
+		return err
+	}
+	// At this point sequencing and integration is done, now to make sure a large
+	// enough checkpoint has been issued.
+	maxIndex := a.largestIssued.Load()
+	if maxIndex == 0 {
+		// special case no work done
+		close(a.cpUpdated)
+		<-a.done
+		return nil
+	}
+	for {
+		size, _, err := a.s.readTreeState()
+		if err != nil {
+			return err
+		}
+		klog.V(1).Infof("Shutting down, waiting for checkpoint committing to size %d (current checkpoint is %d)", maxIndex, size)
+		if size > maxIndex {
+			close(a.cpUpdated)
+			<-a.done
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+			time.Sleep(100 * time.Millisecond)
+		}
+	}
 }
 
 func (l *logResourceStorage) ReadCheckpoint(_ context.Context) ([]byte, error) {
@@ -584,7 +630,7 @@ func (s *Storage) readTreeState() (uint64, []byte, error) {
 }
 
 // publishCheckpoint checks whether the currently published checkpoint (if any) is more than
-// minStaleness old, and, if so, creates and published a fresh checkpoint from the current
+// minStaleness old, and, if so, creates and publishes a fresh checkpoint from the current
 // stored tree state.
 func (a *appender) publishCheckpoint(minStaleness time.Duration) error {
 	// Lock the destination "published" checkpoint location:

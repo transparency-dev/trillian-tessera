@@ -91,7 +91,6 @@ func main() {
 	if err != nil {
 		klog.Exit(err)
 	}
-	addFn := appender.Add
 
 	// We don't want to exit until our entries have been integrated into the tree, so we'll use Tessera's
 	// IntegrationAwaiter to help with that.
@@ -106,7 +105,7 @@ func main() {
 			klog.Exitf("Failed to read entry file %q: %q", fp, err)
 		}
 
-		f := addFn(ctx, tessera.NewEntry(b))
+		f := appender.Add(ctx, tessera.NewEntry(b))
 		indexFutures = append(indexFutures, entryInfo{name: fp, f: f})
 	}
 
@@ -119,7 +118,10 @@ func main() {
 		klog.Infof("%d: %v", seq, entry.name)
 	}
 
-	// All futures have been resolved, which means the log is built and we can allow the process to terminate. Goodbye!
+	// Shut down the appender to guarantee that we have a checkpoint committing to all new leaves.
+	if err := appender.Shutdown(ctx); err != nil {
+		klog.Exitf("Failed to shut down successfully: %v", err)
+	}
 }
 
 // Read log private key from file or environment variable
