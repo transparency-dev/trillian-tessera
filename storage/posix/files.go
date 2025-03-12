@@ -109,11 +109,18 @@ func (s *Storage) Appender(ctx context.Context, opts *tessera.AppendOptions) (*t
 	a.queue = storage.NewQueue(ctx, opts.BatchMaxAge(), opts.BatchMaxSize(), a.sequenceBatch)
 
 	go func(ctx context.Context, i time.Duration) {
+		ctx, cancel := context.WithCancel(ctx)
+		a.ctx = ctx
+		defer cancel()
 		for {
 			select {
 			case <-ctx.Done():
 				return
-			case <-a.cpUpdated:
+			case _, ok := <-a.cpUpdated:
+				if !ok {
+					// The channel was closed, which means we're shutting down.
+					return
+				}
 			case <-time.After(i):
 			}
 			if err := a.publishCheckpoint(i); err != nil {
@@ -173,6 +180,9 @@ type appender struct {
 	// Shutdown.
 	mu      sync.RWMutex
 	stopped bool
+
+	// This context is cancelled when this appender has finished all outstanding work.
+	ctx context.Context
 }
 
 // Add takes an entry and queues it for inclusion in the log.
@@ -207,10 +217,12 @@ func (a *appender) Shutdown(ctx context.Context) error {
 	defer a.mu.Unlock()
 	a.stopped = true
 	err := a.queue.Close(ctx)
+	close(a.cpUpdated)
+	<-a.ctx.Done()
 	// block until other background tasks are complete:
 	// - sequencing: done
 	// - integration: done
-	// - checkpoint publish: TODO
+	// - checkpoint publish: done
 	return err
 }
 
