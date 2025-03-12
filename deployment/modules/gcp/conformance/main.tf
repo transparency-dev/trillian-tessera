@@ -36,6 +36,7 @@ module "gcs" {
   project_id         = var.project_id
   bucket_readers     = local.readers
   log_writer_members = ["serviceAccount:${local.cloudrun_service_account}"]
+  create_antispam    = var.enable_antispam
   ephemeral          = true
 }
 
@@ -82,6 +83,7 @@ resource "google_cloud_run_v2_service" "default" {
         "--spanner=${local.spanner_db_full}",
         "--listen=:8080",
         "--signer=${var.signer}",
+        "--antispam=${var.enable_antispam}",
       ]
       ports {
         name           = "h2c"

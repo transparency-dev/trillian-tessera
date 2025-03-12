@@ -42,3 +42,8 @@ variable "conformance_readers" {
   description = "The list of users allowed to read the conformance t-log resources from GCS. If unset, only the project default service account will be able to read the t-log contents."
   type        = list(any)
 }
+
+variable "enable_antispam" {
+  description = "Set to true to enable persistent antispam feature on conformance instance."
+  type        = bool
+}
