@@ -30,7 +30,7 @@ variable "log_writer_members" {
 }
 
 variable "create_antispam" {
-  description = "Set to true to create the infrastructure required by the GCP antispam implementation"
+  description = "Set to true to create the infrastructure required by the GCP antispam implementation."
   type        = bool
 }
 

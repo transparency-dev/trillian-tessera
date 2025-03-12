@@ -62,7 +62,7 @@ resource "google_spanner_instance" "log_spanner" {
 
 resource "google_spanner_database" "log_db" {
   instance = google_spanner_instance.log_spanner.name
-  name     = "${var.base_name}-db"
+  name     = "${var.base_name}"
 
   deletion_protection = !var.ephemeral
 }
@@ -70,7 +70,7 @@ resource "google_spanner_database" "log_db" {
 resource "google_spanner_database" "log_antispam_db" {
   count    = var.create_antispam ? 1 : 0
   instance = google_spanner_instance.log_spanner.name
-  name     = "${var.base_name}-db_dedup"
+  name     = "${var.base_name}-antispam"
 
   deletion_protection = !var.ephemeral
 }
