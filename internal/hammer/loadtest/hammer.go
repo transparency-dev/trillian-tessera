@@ -73,13 +73,13 @@ type Hammer struct {
 
 func (h *Hammer) Run(ctx context.Context) {
 	// Kick off readers & writers
-	for i := 0; i < h.opts.NumReadersRandom; i++ {
+	for range h.opts.NumReadersRandom {
 		h.randomReaders.Grow(ctx)
 	}
-	for i := 0; i < h.opts.NumReadersFull; i++ {
+	for range h.opts.NumReadersFull {
 		h.fullReaders.Grow(ctx)
 	}
-	for i := 0; i < h.opts.NumWriters; i++ {
+	for range h.opts.NumWriters {
 		h.writers.Grow(ctx)
 	}
 

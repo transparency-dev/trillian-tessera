@@ -80,7 +80,7 @@ func (t *Throttle) supplyTokens(ctx context.Context) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	tokenCount := t.opsPerSecond
-	for i := 0; i < t.opsPerSecond; i++ {
+	for range t.opsPerSecond {
 		select {
 		case t.TokenChan <- true:
 			tokenCount--

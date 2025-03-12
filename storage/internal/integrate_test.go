@@ -128,7 +128,7 @@ func TestIntegrate(t *testing.T) {
 	chunkSize := 200
 	numChunks := 1000
 	seq := uint64(0)
-	for chunk := 0; chunk < numChunks; chunk++ {
+	for chunk := range numChunks {
 		oldSeq := seq
 		c := make([][]byte, chunkSize)
 		for i := range c {

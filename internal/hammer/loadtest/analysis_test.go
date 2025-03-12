@@ -33,7 +33,7 @@ func TestHammerAnalyser_Stats(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 
 	baseTime := time.Now().Add(-1 * time.Minute)
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		ha.SeqLeafChan <- LeafTime{
 			Index:      uint64(i),
 			QueuedAt:   baseTime,

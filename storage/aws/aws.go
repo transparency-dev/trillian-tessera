@@ -902,7 +902,7 @@ func (s *mySQLSequencer) currentTree(ctx context.Context) (uint64, []byte, error
 
 func placeholder(n int) string {
 	places := make([]string, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		places[i] = "?"
 	}
 	return strings.Join(places, ",")
