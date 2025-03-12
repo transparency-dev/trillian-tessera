@@ -27,6 +27,8 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	_ "github.com/go-sql-driver/mysql"
@@ -34,6 +36,7 @@ import (
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/api"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
+	"github.com/transparency-dev/trillian-tessera/internal/parse"
 	"github.com/transparency-dev/trillian-tessera/internal/witness"
 	storage "github.com/transparency-dev/trillian-tessera/storage/internal"
 	"k8s.io/klog/v2"
@@ -109,14 +112,21 @@ func (s *Storage) Appender(ctx context.Context, opts *tessera.AppendOptions) (*t
 	}
 	a.cpUpdated <- struct{}{}
 
+	ctx, cancel := context.WithCancel(ctx)
+	a.done = ctx.Done()
 	go func(ctx context.Context, i time.Duration) {
+		defer cancel()
 		t := time.NewTicker(i)
 		defer t.Stop()
 		for {
 			select {
 			case <-ctx.Done():
 				return
-			case <-a.cpUpdated:
+			case _, ok := <-a.cpUpdated:
+				if !ok {
+					// The channel was closed, which means we're shutting down.
+					return
+				}
 			case <-t.C:
 			}
 			if err := a.publishCheckpoint(ctx, i); err != nil {
@@ -494,6 +504,19 @@ type appender struct {
 	queue         *storage.Queue
 	newCheckpoint func(uint64, []byte) ([]byte, error)
 	cpUpdated     chan struct{}
+
+	// This mutex guards the stopped state. We use this instead of an atomic.Boolean
+	// to get the property that no readers of this state can have the lock when the
+	// write gets it. This means that no in-flight Add operations will be occurring on
+	// Shutdown.
+	mu      sync.RWMutex
+	stopped bool
+
+	// This channel will behave as per Context.Done() to signify that this appender is finished.
+	done <-chan struct{}
+
+	// largestIssued tracks the largest index allocated by this appender.
+	largestIssued atomic.Uint64
 }
 
 // publishCheckpoint creates a new checkpoint for the given size and root hash, and stores it in the
@@ -539,7 +562,75 @@ func (a *appender) publishCheckpoint(ctx context.Context, interval time.Duration
 
 // Add is the entrypoint for adding entries to a sequencing log.
 func (a *appender) Add(ctx context.Context, entry *tessera.Entry) tessera.IndexFuture {
-	return a.queue.Add(ctx, entry)
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	if a.stopped {
+		return func() (uint64, error) {
+			return 0, errors.New("appender has been shut down")
+		}
+	}
+	res := a.queue.Add(ctx, entry)
+	return func() (uint64, error) {
+		i, err := res()
+		if err != nil {
+			return i, err
+		}
+
+		// https://github.com/golang/go/issues/63999 - atomically set largest issued index
+		old := a.largestIssued.Load()
+		for old < i && !a.largestIssued.CompareAndSwap(old, i) {
+			old = a.largestIssued.Load()
+		}
+
+		return i, err
+	}
+}
+
+// Shutdown ensures that all calls to Add that have returned a value will be resolved. Any
+// futures returned by _this appender_ which resolve to an index will be integrated and have
+// a checkpoint that commits to them published if this returns successfully.
+//
+// After this returns, any calls to Add will fail.
+func (a *appender) Shutdown(ctx context.Context) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.stopped = true
+	if err := a.queue.Close(ctx); err != nil {
+		return err
+	}
+	// At this point sequencing and integration is done, now to make sure a large
+	// enough checkpoint has been issued.
+	maxIndex := a.largestIssued.Load()
+	if maxIndex == 0 {
+		// special case no work done
+		close(a.cpUpdated)
+		<-a.done
+		return nil
+	}
+	for {
+		cp, err := a.s.ReadCheckpoint(ctx)
+		if err != nil && err != os.ErrNotExist {
+			return err
+		}
+		if err == nil {
+			_, size, _, err := parse.CheckpointUnsafe(cp)
+			if err != nil {
+				return err
+			}
+			klog.V(1).Infof("Shutting down, waiting for checkpoint committing to size %d (current checkpoint is %d)", maxIndex, size)
+			if size > maxIndex {
+				close(a.cpUpdated)
+				<-a.done
+				return nil
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+			time.Sleep(100 * time.Millisecond)
+		}
+	}
 }
 
 // sequenceBatch writes the entries from the provided batch into the entry bundle files of the log.

@@ -101,6 +101,9 @@ func main() {
 		"export READ_URL=http://localhost%s/ \n", *listen, *listen)
 	// Serve HTTP requests until the process is terminated
 	if err := http.ListenAndServe(*listen, http.DefaultServeMux); err != nil {
+		if err := appender.Shutdown(ctx); err != nil {
+			klog.Exit(err)
+		}
 		klog.Exitf("ListenAndServe: %v", err)
 	}
 }
