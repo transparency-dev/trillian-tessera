@@ -42,8 +42,12 @@ type Queue struct {
 
 	// This queue should be closed when there is no more work to be processed by this queue.
 	work chan []*queueItem
-	// This context is cancelled when all data from this queue has been processed.
-	ctx context.Context
+	// This channel will behave as per Context.Done() to signify that this Queue is finished.
+	done <-chan struct{}
+
+	// The mutex guards only the closed state, which indicates whether this queue is open for Adds.
+	mu     sync.RWMutex
+	closed bool
 }
 
 // FlushFunc is the signature of a function which will receive the slice of queued entries.
@@ -63,7 +67,7 @@ func NewQueue(ctx context.Context, maxAge time.Duration, maxSize uint, f FlushFu
 	q := &Queue{
 		flush: f,
 		work:  make(chan []*queueItem, 1),
-		ctx:   ctx,
+		done:  ctx.Done(),
 	}
 
 	// The underlying queue implementation blocks additions during a flush.
@@ -106,6 +110,14 @@ func NewQueue(ctx context.Context, maxAge time.Duration, maxSize uint, f FlushFu
 
 // Add places e into the queue, and returns a func which may be called to retrieve the assigned index.
 func (q *Queue) Add(ctx context.Context, e *tessera.Entry) tessera.IndexFuture {
+	q.mu.RLock()
+	defer q.mu.RUnlock()
+	if q.closed {
+		return func() (uint64, error) {
+			return 0, errors.New("add called on closed queue")
+		}
+	}
+
 	qi := newEntry(e)
 
 	if err := q.buf.Push(qi); err != nil {
@@ -115,14 +127,24 @@ func (q *Queue) Add(ctx context.Context, e *tessera.Entry) tessera.IndexFuture {
 }
 
 func (q *Queue) Close(ctx context.Context) error {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.closed = true
+
+	// Flush and close the buffer, which will trigger workers
+	// to process the entries.
 	if err := q.buf.Flush(); err != nil {
 		return err
 	}
 	if err := q.buf.Close(); err != nil {
 		return err
 	}
+	// Close this channel to indicate that no more work will be
+	// taking place.
 	close(q.work)
-	<-q.ctx.Done()
+	// Now await the queue being done, which means that all entries
+	// have been processed.
+	<-q.done
 	return nil
 }
 
