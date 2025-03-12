@@ -116,6 +116,9 @@ func main() {
 	}
 
 	if err := h1s.ListenAndServe(); err != nil {
+		if err := appender.Shutdown(ctx); err != nil {
+			klog.Exit(err)
+		}
 		klog.Exitf("ListenAndServe: %v", err)
 	}
 }

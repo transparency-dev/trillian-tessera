@@ -41,6 +41,8 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -53,6 +55,7 @@ import (
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/api"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
+	"github.com/transparency-dev/trillian-tessera/internal/parse"
 	"github.com/transparency-dev/trillian-tessera/internal/witness"
 	storage "github.com/transparency-dev/trillian-tessera/storage/internal"
 	"golang.org/x/sync/errgroup"
@@ -203,10 +206,13 @@ func (s *Storage) Appender(ctx context.Context, opts *tessera.AppendOptions) (*t
 	go r.consumeEntriesTask(ctx)
 
 	// Kick off go-routine which handles the publication of checkpoints.
-	go r.publishCheckpointTask(ctx, opts.CheckpointInterval())
+	ctx, cancel := context.WithCancel(ctx)
+	r.done = ctx.Done()
+	go r.publishCheckpointTask(ctx, cancel, opts.CheckpointInterval())
 
 	return &tessera.Appender{
-		Add: r.Add,
+		Add:      r.Add,
+		Shutdown: r.Shutdown,
 	}, r.logStore, nil
 }
 
@@ -220,6 +226,19 @@ type Appender struct {
 	queue *storage.Queue
 
 	treeUpdated chan struct{}
+
+	// This mutex guards the stopped state. We use this instead of an atomic.Boolean
+	// to get the property that no readers of this state can have the lock when the
+	// write gets it. This means that no in-flight Add operations will be occurring on
+	// Shutdown.
+	mu      sync.RWMutex
+	stopped bool
+
+	// This channel will behave as per Context.Done() to signify that this appender is finished.
+	done <-chan struct{}
+
+	// largestIssued tracks the largest index allocated by this appender.
+	largestIssued atomic.Uint64
 }
 
 // sequenceEntriesTask periodically integrates newly sequenced entries.
@@ -256,14 +275,19 @@ func (a *Appender) consumeEntriesTask(ctx context.Context) {
 // of the tree, once per interval.
 //
 // This function does not return until the passed in context is done.
-func (a *Appender) publishCheckpointTask(ctx context.Context, interval time.Duration) {
+func (a *Appender) publishCheckpointTask(ctx context.Context, cancel func(), interval time.Duration) {
+	defer cancel()
 	t := time.NewTicker(interval)
 	defer t.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-a.treeUpdated:
+		case _, ok := <-a.treeUpdated:
+			if !ok {
+				// The channel was closed, which means we're shutting down.
+				return
+			}
 		case <-t.C:
 		}
 		if err := a.publishCheckpoint(ctx, interval); err != nil {
@@ -274,7 +298,76 @@ func (a *Appender) publishCheckpointTask(ctx context.Context, interval time.Dura
 
 // Add is the entrypoint for adding entries to a sequencing log.
 func (a *Appender) Add(ctx context.Context, e *tessera.Entry) tessera.IndexFuture {
-	return a.queue.Add(ctx, e)
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	if a.stopped {
+		return func() (uint64, error) {
+			return 0, errors.New("appender has been shut down")
+		}
+	}
+	res := a.queue.Add(ctx, e)
+	return func() (uint64, error) {
+		i, err := res()
+		if err != nil {
+			return i, err
+		}
+
+		// https://github.com/golang/go/issues/63999 - atomically set largest issued index
+		old := a.largestIssued.Load()
+		for old < i && !a.largestIssued.CompareAndSwap(old, i) {
+			old = a.largestIssued.Load()
+		}
+
+		return i, err
+	}
+}
+
+// Shutdown ensures that all calls to Add that have returned a value will be resolved. Any
+// futures returned by _this appender_ which resolve to an index will be integrated and have
+// a checkpoint that commits to them published if this returns successfully.
+//
+// After this returns, any calls to Add will fail.
+func (a *Appender) Shutdown(ctx context.Context) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.stopped = true
+	if err := a.queue.Close(ctx); err != nil {
+		return err
+	}
+	// At this point sequencing and integration is done, now to make sure a large
+	// enough checkpoint has been issued.
+	maxIndex := a.largestIssued.Load()
+	if maxIndex == 0 {
+		// special case no work done
+		close(a.treeUpdated)
+		<-a.done
+		return nil
+	}
+	for {
+		cp, err := a.logStore.ReadCheckpoint(ctx)
+		var nske *types.NoSuchKey
+		if err != nil && !errors.As(err, &nske) {
+			return err
+		}
+		if err == nil {
+			_, size, _, err := parse.CheckpointUnsafe(cp)
+			if err != nil {
+				return err
+			}
+			klog.V(1).Infof("Shutting down, waiting for checkpoint committing to size %d (current checkpoint is %d)", maxIndex, size)
+			if size > maxIndex {
+				close(a.treeUpdated)
+				<-a.done
+				return nil
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+			time.Sleep(100 * time.Millisecond)
+		}
+	}
 }
 
 // init ensures that the storage represents a log in a valid state.
