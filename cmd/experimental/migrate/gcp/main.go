@@ -88,7 +88,7 @@ func main() {
 		opts.WithAntispam(antispam)
 	}
 
-	m, err := tessera.NewMigrationTarget(ctx, driver, internal.BundleHasher, opts)
+	m, err := tessera.NewMigrationTarget(ctx, driver, opts)
 	if err != nil {
 		klog.Exitf("Failed to create MigrationTarget: %v", err)
 	}

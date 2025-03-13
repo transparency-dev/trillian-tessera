@@ -15,8 +15,12 @@
 package tessera
 
 import (
+	"bytes"
+	"crypto/sha256"
 	"fmt"
 	"testing"
+
+	"github.com/transparency-dev/trillian-tessera/ctonly"
 )
 
 func TestCTEntriesPath(t *testing.T) {
@@ -54,6 +58,163 @@ func TestCTEntriesPath(t *testing.T) {
 			if gotPath != test.wantPath {
 				t.Errorf("got file %q want %q", gotPath, test.wantPath)
 			}
+		})
+	}
+}
+
+var (
+	testCert              = []byte("I am a Certificate")
+	testPrecert           = []byte("I am a Precertificate")
+	testPrecertTBS        = []byte("I am a Precertificate TBS")
+	testIssuerKeyHash     = sha256.Sum256([]byte("I'm an IssuerKey"))
+	testFingerprintsChain = [][32]byte{
+		sha256.Sum256([]byte("one")),
+		sha256.Sum256([]byte("two")),
+	}
+)
+
+func TestCTIdentityHasher(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		entries []ctonly.Entry
+	}{
+		{
+			name: "Single Certificate",
+			entries: []ctonly.Entry{
+				{
+					Timestamp:         1234,
+					IsPrecert:         false,
+					Certificate:       testCert,
+					FingerprintsChain: testFingerprintsChain,
+				},
+			},
+		},
+		{
+			name: "Single Preertificate",
+			entries: []ctonly.Entry{
+				{
+					Timestamp:         1234,
+					IsPrecert:         true,
+					Certificate:       testPrecertTBS,
+					Precertificate:    testPrecert,
+					IssuerKeyHash:     testIssuerKeyHash[:],
+					FingerprintsChain: testFingerprintsChain,
+				},
+			},
+		},
+		{
+			name: "Mixed bag",
+			entries: []ctonly.Entry{
+				{
+					Timestamp:         1234,
+					IsPrecert:         true,
+					Certificate:       testPrecertTBS,
+					Precertificate:    testPrecert,
+					IssuerKeyHash:     testIssuerKeyHash[:],
+					FingerprintsChain: testFingerprintsChain,
+				}, {
+					Timestamp:         1234,
+					IsPrecert:         false,
+					Certificate:       testCert,
+					FingerprintsChain: testFingerprintsChain,
+				},
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			bundle := []byte{}
+			wantIDs := [][]byte{}
+			for _, e := range test.entries {
+				bundle = append(bundle, e.LeafData(123)...)
+				wantIDs = append(wantIDs, e.Identity())
+			}
+
+			gotIDs, gotErr := ctBundleIDHasher(bundle)
+			if gotErr != nil {
+				t.Fatalf("ctBundleIDHasher: %v", gotErr)
+			}
+			if lg, lw := len(gotIDs), len(wantIDs); lg != lw {
+				t.Fatalf("got %d hashes, want %d", lg, lw)
+			}
+			for i := range gotIDs {
+				if !bytes.Equal(gotIDs[i], wantIDs[i]) {
+					t.Fatalf("%d: got ID hash %x, want %x", i, gotIDs[i], wantIDs[i])
+				}
+			}
+
+		})
+	}
+}
+
+func TestCTMerkleLeafHasher(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		entries []ctonly.Entry
+	}{
+		{
+			name: "Single Certificate",
+			entries: []ctonly.Entry{
+				{
+					Timestamp:         1234,
+					IsPrecert:         false,
+					Certificate:       testCert,
+					FingerprintsChain: testFingerprintsChain,
+				},
+			},
+		},
+		{
+			name: "Single Preertificate",
+			entries: []ctonly.Entry{
+				{
+					Timestamp:         1234,
+					IsPrecert:         true,
+					Certificate:       testPrecertTBS,
+					Precertificate:    testPrecert,
+					IssuerKeyHash:     testIssuerKeyHash[:],
+					FingerprintsChain: testFingerprintsChain,
+				},
+			},
+		},
+		{
+			name: "Mixed bag",
+			entries: []ctonly.Entry{
+				{
+					Timestamp:         1234,
+					IsPrecert:         true,
+					Certificate:       testPrecertTBS,
+					Precertificate:    testPrecert,
+					IssuerKeyHash:     testIssuerKeyHash[:],
+					FingerprintsChain: testFingerprintsChain,
+				}, {
+					Timestamp:         1234,
+					IsPrecert:         false,
+					Certificate:       testCert,
+					FingerprintsChain: testFingerprintsChain,
+				},
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			bundle := []byte{}
+			wantIDs := [][]byte{}
+			for _, e := range test.entries {
+				bundle = append(bundle, e.LeafData(123)...)
+				wantIDs = append(wantIDs, e.MerkleLeafHash(123))
+			}
+
+			gotIDs, gotErr := ctMerkleLeafHasher(bundle)
+			if gotErr != nil {
+				t.Fatalf("ctMerkleLeafHasher: %v", gotErr)
+			}
+			if lg, lw := len(gotIDs), len(wantIDs); lg != lw {
+				t.Fatalf("got %d hashes, want %d", lg, lw)
+			}
+			for i := range gotIDs {
+				if !bytes.Equal(gotIDs[i], wantIDs[i]) {
+					t.Fatalf("%d: got ID hash %x, want %x", i, gotIDs[i], wantIDs[i])
+				}
+			}
+
 		})
 	}
 }

@@ -82,7 +82,7 @@ func main() {
 
 	opts := tessera.NewMigrationOptions()
 
-	m, err := tessera.NewMigrationTarget(ctx, driver, internal.BundleHasher, opts)
+	m, err := tessera.NewMigrationTarget(ctx, driver, opts)
 	if err != nil {
 		klog.Exitf("Failed to create MigrationTarget: %v", err)
 	}

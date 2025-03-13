@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/transparency-dev/merkle/rfc6962"
 	"github.com/transparency-dev/trillian-tessera/api"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
 )
@@ -110,6 +111,20 @@ func defaultIDHasher(bundle []byte) ([][]byte, error) {
 	r := make([][]byte, 0, len(eb.Entries))
 	for _, e := range eb.Entries {
 		h := sha256.Sum256(e)
+		r = append(r, h[:])
+	}
+	return r, nil
+}
+
+// defaultMerkleLeafHasher parses a C2SP tlog-tile bundle and returns the Merkle leaf hashes of each entry it contains.
+func defaultMerkleLeafHasher(bundle []byte) ([][]byte, error) {
+	eb := &api.EntryBundle{}
+	if err := eb.UnmarshalText(bundle); err != nil {
+		return nil, fmt.Errorf("unmarshal: %v", err)
+	}
+	r := make([][]byte, 0, len(eb.Entries))
+	for _, e := range eb.Entries {
+		h := rfc6962.DefaultHasher.HashLeaf(e)
 		r = append(r, h[:])
 	}
 	return r, nil

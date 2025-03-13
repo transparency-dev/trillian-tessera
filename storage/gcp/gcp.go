@@ -1023,7 +1023,7 @@ func (s *gcsStorage) lastModified(ctx context.Context, obj string) (time.Time, e
 }
 
 // MigrationTarget creates a new GCP storage for the MigrationTarget lifecycle mode.
-func (s *Storage) MigrationTarget(ctx context.Context, bundleHasher tessera.UnbundlerFunc, opts *tessera.MigrationOptions) (tessera.MigrationTarget, tessera.LogReader, error) {
+func (s *Storage) MigrationTarget(ctx context.Context, opts *tessera.MigrationOptions) (tessera.MigrationTarget, tessera.LogReader, error) {
 	c, err := gcs.NewClient(ctx, gcs.WithJSONReads())
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create GCS client: %v", err)
@@ -1036,7 +1036,7 @@ func (s *Storage) MigrationTarget(ctx context.Context, bundleHasher tessera.Unbu
 	m := &MigrationStorage{
 		s:            s,
 		dbPool:       seq.dbPool,
-		bundleHasher: bundleHasher,
+		bundleHasher: opts.LeafHasher(),
 		sequencer:    seq,
 		logStore: &logResourceStore{
 			objStore: &gcsStorage{
