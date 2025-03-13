@@ -63,11 +63,11 @@ type FlushFunc func(ctx context.Context, entries []*tessera.Entry) error
 // the same order as they were added, when either the oldest entry in the queue has been there
 // for maxAge, or the size of the queue reaches maxSize.
 func NewQueue(ctx context.Context, maxAge time.Duration, maxSize uint, f FlushFunc) *Queue {
-	ctx, cancel := context.WithCancel(ctx)
+	cctx, cancel := context.WithCancel(ctx)
 	q := &Queue{
 		flush: f,
 		work:  make(chan []*queueItem, 1),
-		done:  ctx.Done(),
+		done:  cctx.Done(),
 	}
 
 	// The underlying queue implementation blocks additions during a flush.
