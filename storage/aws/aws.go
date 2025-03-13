@@ -334,8 +334,8 @@ func (a *Appender) Shutdown(ctx context.Context) error {
 	if err := a.queue.Close(ctx); err != nil {
 		return err
 	}
-	// At this point sequencing and integration is done, now to make sure a large
-	// enough checkpoint has been issued.
+	// At this point sequencing is done, now to block until a large enough tree
+	// is constructed and a checkpoint has been issued.
 	maxIndex := a.largestIssued.Load()
 	if maxIndex == 0 {
 		// special case no work done
@@ -343,29 +343,33 @@ func (a *Appender) Shutdown(ctx context.Context) error {
 		<-a.done
 		return nil
 	}
+	sleepTime := 0 * time.Millisecond
 	for {
-		cp, err := a.logStore.ReadCheckpoint(ctx)
-		var nske *types.NoSuchKey
-		if err != nil && !errors.As(err, &nske) {
-			return err
-		}
-		if err == nil {
-			_, size, _, err := parse.CheckpointUnsafe(cp)
-			if err != nil {
-				return err
-			}
-			klog.V(1).Infof("Shutting down, waiting for checkpoint committing to size %d (current checkpoint is %d)", maxIndex, size)
-			if size > maxIndex {
-				close(a.treeUpdated)
-				<-a.done
-				return nil
-			}
-		}
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
-			time.Sleep(100 * time.Millisecond)
+			time.Sleep(sleepTime)
+		}
+		sleepTime = 100 * time.Millisecond // after the first time, ensure we sleep in any other loops
+
+		cp, err := a.logStore.ReadCheckpoint(ctx)
+		if err != nil {
+			var nske *types.NoSuchKey
+			if !errors.As(err, &nske) {
+				return err
+			}
+			continue
+		}
+		_, size, _, err := parse.CheckpointUnsafe(cp)
+		if err != nil {
+			return err
+		}
+		klog.V(1).Infof("Shutting down, waiting for checkpoint committing to size %d (current checkpoint is %d)", maxIndex, size)
+		if size > maxIndex {
+			close(a.treeUpdated)
+			<-a.done
+			return nil
 		}
 	}
 }
