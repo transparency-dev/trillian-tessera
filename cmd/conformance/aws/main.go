@@ -73,7 +73,7 @@ func main() {
 	if err != nil {
 		klog.Exitf("Failed to create new AWS storage: %v", err)
 	}
-	appender, _, err := tessera.NewAppender(ctx, driver, tessera.NewAppendOptions().
+	appender, shutdown, _, err := tessera.NewAppender(ctx, driver, tessera.NewAppendOptions().
 		WithCheckpointSigner(s, a...).
 		WithCheckpointInterval(*publishInterval).
 		WithBatching(1024, time.Second).
@@ -116,6 +116,9 @@ func main() {
 	}
 
 	if err := h1s.ListenAndServe(); err != nil {
+		if err := shutdown(ctx); err != nil {
+			klog.Exit(err)
+		}
 		klog.Exitf("ListenAndServe: %v", err)
 	}
 }

@@ -434,7 +434,14 @@ type logResourceStore struct {
 }
 
 func (lr *logResourceStore) ReadCheckpoint(ctx context.Context) ([]byte, error) {
-	return lr.get(ctx, layout.CheckpointPath)
+	r, err := lr.get(ctx, layout.CheckpointPath)
+	if err != nil {
+		var nske *types.NoSuchKey
+		if errors.As(err, &nske) {
+			return r, os.ErrNotExist
+		}
+	}
+	return r, err
 }
 
 func (lr *logResourceStore) ReadTile(ctx context.Context, l, i uint64, p uint8) ([]byte, error) {

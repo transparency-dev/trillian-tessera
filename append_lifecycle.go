@@ -17,11 +17,16 @@ package tessera
 import (
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
+	"os"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	f_log "github.com/transparency-dev/formats/log"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
+	"github.com/transparency-dev/trillian-tessera/internal/parse"
 	"golang.org/x/mod/sumdb/note"
 	"k8s.io/klog/v2"
 )
@@ -61,27 +66,35 @@ type IndexFuture func() (uint64, error)
 // such as a Shutdown method for #341.
 type Appender struct {
 	Add AddFn
-	// TODO(#341): add this method and implement it in all drivers
-	// Shutdown func(ctx context.Context)
 }
 
 // NewAppender returns an Appender, which allows a personality to incrementally append new
 // leaves to the log and to read from it.
 //
-// decorators provides a list of optional constructor functions that will return decorators
-// that wrap the base appender. This can be used to provide deduplication. Decorators will be
-// called in-order, and the last in the chain will be the base appender.
-func NewAppender(ctx context.Context, d Driver, opts *AppendOptions) (*Appender, LogReader, error) {
+// The return values are the Appender for adding new entries, a shutdown function, a log reader,
+// and an error if any of the objects couldn't be constructed.
+//
+// Shutdown ensures that all calls to Add that have returned a value will be resolved. Any
+// futures returned by _this appender_ which resolve to an index will be integrated and have
+// a checkpoint that commits to them published if this returns successfully. After this returns,
+// any calls to Add will fail.
+//
+// The context passed into this function will be referenced by any background tasks that are started
+// in the Appender. The correct process for shutting down an Appender cleanly is to first call the
+// shutdown function that is returned, and then cancel the context. Cancelling the context without calling
+// shutdown first may mean that some entries added by this appender aren't in the log when the process
+// exits.
+func NewAppender(ctx context.Context, d Driver, opts *AppendOptions) (*Appender, func(ctx context.Context) error, LogReader, error) {
 	type appendLifecycle interface {
 		Appender(context.Context, *AppendOptions) (*Appender, LogReader, error)
 	}
 	lc, ok := d.(appendLifecycle)
 	if !ok {
-		return nil, nil, fmt.Errorf("driver %T does not implement Appender lifecycle", d)
+		return nil, nil, nil, fmt.Errorf("driver %T does not implement Appender lifecycle", d)
 	}
 	a, r, err := lc.Appender(ctx, opts)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to init appender lifecycle: %v", err)
+		return nil, nil, nil, fmt.Errorf("failed to init appender lifecycle: %v", err)
 	}
 	for i := len(opts.addDecorators) - 1; i >= 0; i-- {
 		a.Add = opts.addDecorators[i](a.Add)
@@ -89,7 +102,94 @@ func NewAppender(ctx context.Context, d Driver, opts *AppendOptions) (*Appender,
 	for _, f := range opts.followers {
 		go f(ctx, r)
 	}
-	return a, r, nil
+	t := terminator{
+		delegate:       a.Add,
+		readCheckpoint: r.ReadCheckpoint,
+	}
+	// TODO(mhutchinson): move this into the decorators
+	a.Add = t.Add
+	return a, t.Shutdown, r, nil
+}
+
+type terminator struct {
+	delegate       AddFn
+	readCheckpoint func(ctx context.Context) ([]byte, error)
+	// This mutex guards the stopped state. We use this instead of an atomic.Boolean
+	// to get the property that no readers of this state can have the lock when the
+	// write gets it. This means that no in-flight Add operations will be occurring on
+	// Shutdown.
+	mu      sync.RWMutex
+	stopped bool
+
+	// largestIssued tracks the largest index allocated by this appender.
+	largestIssued atomic.Uint64
+}
+
+func (t *terminator) Add(ctx context.Context, entry *Entry) IndexFuture {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	if t.stopped {
+		return func() (uint64, error) {
+			return 0, errors.New("appender has been shut down")
+		}
+	}
+	res := t.delegate(ctx, entry)
+	return func() (uint64, error) {
+		i, err := res()
+		if err != nil {
+			return i, err
+		}
+
+		// https://github.com/golang/go/issues/63999 - atomically set largest issued index
+		old := t.largestIssued.Load()
+		for old < i && !t.largestIssued.CompareAndSwap(old, i) {
+			old = t.largestIssued.Load()
+		}
+
+		return i, err
+	}
+}
+
+// Shutdown ensures that all calls to Add that have returned a value will be resolved. Any
+// futures returned by _this appender_ which resolve to an index will be integrated and have
+// a checkpoint that commits to them published if this returns successfully.
+//
+// After this returns, any calls to Add will fail.
+func (t *terminator) Shutdown(ctx context.Context) error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.stopped = true
+	maxIndex := t.largestIssued.Load()
+	if maxIndex == 0 {
+		// special case no work done
+		return nil
+	}
+	sleepTime := 0 * time.Millisecond
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+			time.Sleep(sleepTime)
+		}
+		sleepTime = 100 * time.Millisecond // after the first time, ensure we sleep in any other loops
+
+		cp, err := t.readCheckpoint(ctx)
+		if err != nil {
+			if !errors.Is(err, os.ErrNotExist) {
+				return err
+			}
+			continue
+		}
+		_, size, _, err := parse.CheckpointUnsafe(cp)
+		if err != nil {
+			return err
+		}
+		klog.V(1).Infof("Shutting down, waiting for checkpoint committing to size %d (current checkpoint is %d)", maxIndex, size)
+		if size > maxIndex {
+			return nil
+		}
+	}
 }
 
 func (o *AppendOptions) WithAntispam(inMemEntries uint, as Antispam) *AppendOptions {

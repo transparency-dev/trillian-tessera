@@ -84,7 +84,7 @@ func main() {
 		batchSize = 1
 	}
 
-	appender, r, err := tessera.NewAppender(ctx, driver, tessera.NewAppendOptions().
+	appender, shutdown, r, err := tessera.NewAppender(ctx, driver, tessera.NewAppendOptions().
 		WithCheckpointSigner(s).
 		WithCheckpointInterval(checkpointInterval).
 		WithBatching(batchSize, time.Second))
@@ -110,7 +110,8 @@ func main() {
 		indexFutures = append(indexFutures, entryInfo{name: fp, f: f})
 	}
 
-	// Check each of the futures to ensure that the leaves are sequenced.
+	// Two options to ensure all work is done:
+	// 1) Check each of the futures to ensure that the leaves are sequenced.
 	for _, entry := range indexFutures {
 		seq, _, err := await.Await(ctx, entry.f)
 		if err != nil {
@@ -119,7 +120,8 @@ func main() {
 		klog.Infof("%d: %v", seq, entry.name)
 	}
 
-	// All futures have been resolved, which means the log is built and we can allow the process to terminate. Goodbye!
+	// 2) shutdown the appender
+	shutdown(ctx)
 }
 
 // Read log private key from file or environment variable

@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -189,7 +190,11 @@ func (a *appender) Add(ctx context.Context, e *tessera.Entry) tessera.IndexFutur
 }
 
 func (l *logResourceStorage) ReadCheckpoint(_ context.Context) ([]byte, error) {
-	return os.ReadFile(filepath.Join(l.s.path, layout.CheckpointPath))
+	r, err := os.ReadFile(filepath.Join(l.s.path, layout.CheckpointPath))
+	if errors.Is(err, fs.ErrNotExist) {
+		return r, os.ErrNotExist
+	}
+	return r, err
 }
 
 // ReadEntryBundle retrieves the Nth entries bundle for a log of the given size.

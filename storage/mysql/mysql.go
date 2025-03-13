@@ -678,7 +678,7 @@ func (a *appender) appendEntries(ctx context.Context, tx *sql.Tx, fromSeq uint64
 	return nil
 }
 
-func getTiles(ctx context.Context, tx *sql.Tx, tileIDs []storage.TileID, treeSize uint64) ([]*api.HashTile, error) {
+func getTiles(ctx context.Context, tx *sql.Tx, tileIDs []storage.TileID, _ uint64) ([]*api.HashTile, error) {
 	hashTiles := make([]*api.HashTile, len(tileIDs))
 	if len(tileIDs) == 0 {
 		return hashTiles, nil

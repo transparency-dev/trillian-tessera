@@ -67,7 +67,7 @@ func main() {
 		klog.Exitf("Failed to create new MySQL storage: %v", err)
 	}
 
-	appender, reader, err := tessera.NewAppender(ctx, driver, tessera.NewAppendOptions().
+	appender, shutdown, reader, err := tessera.NewAppender(ctx, driver, tessera.NewAppendOptions().
 		WithCheckpointSigner(noteSigner, additionalSigners...).
 		WithCheckpointInterval(*publishInterval).
 		WithAntispam(256, nil))
@@ -101,6 +101,9 @@ func main() {
 		"export READ_URL=http://localhost%s/ \n", *listen, *listen)
 	// Serve HTTP requests until the process is terminated
 	if err := http.ListenAndServe(*listen, http.DefaultServeMux); err != nil {
+		if err := shutdown(ctx); err != nil {
+			klog.Exit(err)
+		}
 		klog.Exitf("ListenAndServe: %v", err)
 	}
 }

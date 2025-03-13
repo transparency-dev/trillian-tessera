@@ -178,7 +178,7 @@ func TestWitness_UpdateRequest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, reader, err := tessera.NewAppender(context.Background(), d, tessera.NewAppendOptions().WithCheckpointSigner(mustCreateSigner(t, wit1Skey)))
+	_, _, reader, err := tessera.NewAppender(context.Background(), d, tessera.NewAppendOptions().WithCheckpointSigner(mustCreateSigner(t, wit1Skey)))
 	if err != nil {
 		t.Fatal(err)
 	}

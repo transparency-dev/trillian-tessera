@@ -31,6 +31,7 @@ var ErrNoMoreEntries = errors.New("no more entries")
 // LogReader provides read-only access to the log.
 type LogReader interface {
 	// ReadCheckpoint returns the latest checkpoint available.
+	// If no checkpoint is available then os.ErrNotExist should be returned.
 	ReadCheckpoint(ctx context.Context) ([]byte, error)
 
 	// ReadTile returns the raw marshalled tile at the given coordinates, if it exists.
