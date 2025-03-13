@@ -21,6 +21,8 @@ import (
 	"net/url"
 	"strings"
 
+	"maps"
+
 	"golang.org/x/mod/sumdb/note"
 )
 
@@ -144,9 +146,7 @@ func (wg WitnessGroup) Satisfied(cp []byte) bool {
 func (wg WitnessGroup) Endpoints() map[string]note.Verifier {
 	endpoints := make(map[string]note.Verifier)
 	for _, c := range wg.Components {
-		for u, v := range c.Endpoints() {
-			endpoints[u] = v
-		}
+		maps.Copy(endpoints, c.Endpoints())
 	}
 	return endpoints
 }
