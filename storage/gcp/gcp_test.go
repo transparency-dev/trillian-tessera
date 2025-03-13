@@ -368,7 +368,7 @@ func TestStreamEntries(t *testing.T) {
 	// Populate entry bundles:
 	// first to logSize1 (so we're sure we've got the partial bundle)
 	for r, idx := logSize1, uint64(0); r > 0; idx++ {
-		sz := min(layout.EntryBundleWidth, r)
+		sz := min(r, layout.EntryBundleWidth)
 		b := makeBundle(t, idx, sz)
 		if err := s.lrs.setEntryBundle(ctx, idx, uint8(sz), b); err != nil {
 			t.Fatalf("setEntryBundle(%d): %v", idx, err)
