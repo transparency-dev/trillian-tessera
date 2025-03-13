@@ -172,10 +172,14 @@ func (m *copier) migrateWorker(ctx context.Context) error {
 		err := retry.Do(func() error {
 			d, err := m.getEntries(ctx, b.Index, uint8(b.Partial))
 			if err != nil {
-				return fmt.Errorf("failed to fetch entrybundle %d (p=%d): %v", b.Index, b.Partial, err)
+				wErr := fmt.Errorf("failed to fetch entrybundle %d (p=%d): %v", b.Index, b.Partial, err)
+				klog.Infof("%v", wErr)
+				return wErr
 			}
 			if err := m.storage.SetEntryBundle(ctx, b.Index, b.Partial, d); err != nil {
-				return fmt.Errorf("failed to store entrybundle %d (p=%d): %v", b.Index, b.Partial, err)
+				wErr := fmt.Errorf("failed to store entrybundle %d (p=%d): %v", b.Index, b.Partial, err)
+				klog.Infof("%v", wErr)
+				return wErr
 			}
 			m.bundlesMigrated.Add(1)
 			return nil
@@ -184,6 +188,7 @@ func (m *copier) migrateWorker(ctx context.Context) error {
 			retry.DelayType(retry.BackOffDelay))
 		if err != nil {
 			return err
+			klog.Infof("retry: %v", err)
 		}
 	}
 	return nil
