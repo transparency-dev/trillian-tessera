@@ -287,28 +287,32 @@ func (a *Appender) Shutdown(ctx context.Context) error {
 		<-a.done
 		return nil
 	}
+	sleepTime := 0 * time.Millisecond
 	for {
-		cp, err := a.logStore.getCheckpoint(ctx)
-		if err != nil && !errors.Is(err, gcs.ErrObjectNotExist) {
-			return err
-		}
-		if err == nil {
-			_, size, _, err := parse.CheckpointUnsafe(cp)
-			if err != nil {
-				return err
-			}
-			klog.V(1).Infof("Shutting down, waiting for checkpoint committing to size %d (current checkpoint is %d)", maxIndex, size)
-			if size > maxIndex {
-				close(a.cpUpdated)
-				<-a.done
-				return nil
-			}
-		}
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
-			time.Sleep(100 * time.Millisecond)
+			time.Sleep(sleepTime)
+		}
+		sleepTime = 100 * time.Millisecond // after the first time, ensure we sleep in any other loops
+
+		cp, err := a.logStore.getCheckpoint(ctx)
+		if err != nil {
+			if !errors.Is(err, gcs.ErrObjectNotExist) {
+				return err
+			}
+			continue
+		}
+		_, size, _, err := parse.CheckpointUnsafe(cp)
+		if err != nil {
+			return err
+		}
+		klog.V(1).Infof("Shutting down, waiting for checkpoint committing to size %d (current checkpoint is %d)", maxIndex, size)
+		if size > maxIndex {
+			close(a.cpUpdated)
+			<-a.done
+			return nil
 		}
 	}
 }
