@@ -132,7 +132,13 @@ type LogReader struct {
 }
 
 func (lr *LogReader) ReadCheckpoint(ctx context.Context) ([]byte, error) {
-	return lr.lrs.getCheckpoint(ctx)
+	r, err := lr.lrs.getCheckpoint(ctx)
+	if err != nil {
+		if errors.Is(err, gcs.ErrObjectNotExist) {
+			return r, os.ErrNotExist
+		}
+	}
+	return r, err
 }
 
 func (lr *LogReader) ReadTile(ctx context.Context, l, i uint64, p uint8) ([]byte, error) {

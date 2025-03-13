@@ -72,7 +72,7 @@ func main() {
 		}
 	}
 
-	appender, _, err := tessera.NewAppender(ctx, driver, tessera.NewAppendOptions().
+	appender, shutdown, _, err := tessera.NewAppender(ctx, driver, tessera.NewAppendOptions().
 		WithCheckpointSigner(s, a...).
 		WithCheckpointInterval(10*time.Second).
 		WithBatching(1024, time.Second).
@@ -115,6 +115,9 @@ func main() {
 	}
 
 	if err := h1s.ListenAndServe(); err != nil {
+		if err := shutdown(ctx); err != nil {
+			klog.Exit(err)
+		}
 		klog.Exitf("ListenAndServe: %v", err)
 	}
 }

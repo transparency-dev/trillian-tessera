@@ -157,7 +157,7 @@ func TestAppend(t *testing.T) {
 			if err != nil {
 				t.Fatalf("New: %v", err)
 			}
-			_, _, err = tessera.NewAppender(ctx, drv, test.opts)
+			_, _, _, err = tessera.NewAppender(ctx, drv, test.opts)
 			gotErr := err != nil
 			if gotErr != test.wantErr {
 				t.Errorf("got err: %v", err)
@@ -598,7 +598,7 @@ func newTestMySQLStorage(t *testing.T, ctx context.Context) (tessera.AddFn, tess
 		t.Fatalf("Failed to create mysql.Storage: %v", err)
 	}
 
-	a, r, err := tessera.NewAppender(ctx, s, tessera.NewAppendOptions().
+	a, _, r, err := tessera.NewAppender(ctx, s, tessera.NewAppendOptions().
 		WithCheckpointSigner(noteSigner).
 		WithCheckpointInterval(time.Second).
 		WithBatching(128, 100*time.Millisecond))

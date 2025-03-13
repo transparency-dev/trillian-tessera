@@ -68,7 +68,7 @@ func main() {
 	if err != nil {
 		klog.Exitf("Failed to construct storage: %v", err)
 	}
-	appender, _, err := tessera.NewAppender(ctx, driver, tessera.NewAppendOptions().
+	appender, shutdown, _, err := tessera.NewAppender(ctx, driver, tessera.NewAppendOptions().
 		WithCheckpointSigner(s, a...).
 		WithBatching(256, time.Second).
 		WithAntispam(256, nil))
@@ -108,6 +108,9 @@ func main() {
 		"export READ_URL=http://localhost%s/ \n", *listen, *listen)
 	// Run the HTTP server with the single handler and block until this is terminated
 	if err := http.ListenAndServe(*listen, http.DefaultServeMux); err != nil {
+		if err := shutdown(ctx); err != nil {
+			klog.Exit(err)
+		}
 		klog.Exitf("ListenAndServe: %v", err)
 	}
 }
