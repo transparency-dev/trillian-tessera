@@ -82,7 +82,6 @@ func main() {
 	if err != nil {
 		klog.Exit(err)
 	}
-	addFn := appender.Add
 
 	// Expose a HTTP handler for the conformance test writes.
 	// This should accept arbitrary bytes POSTed to /add, and return an ascii
@@ -94,7 +93,7 @@ func main() {
 			return
 		}
 
-		idx, err := addFn(r.Context(), tessera.NewEntry(b))()
+		idx, err := appender.Add(r.Context(), tessera.NewEntry(b))()
 		if err != nil {
 			if errors.Is(err, tessera.ErrPushback) {
 				w.Header().Add("Retry-After", "1")

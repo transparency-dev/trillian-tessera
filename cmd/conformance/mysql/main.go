@@ -71,7 +71,6 @@ func main() {
 		WithCheckpointSigner(noteSigner, additionalSigners...).
 		WithCheckpointInterval(*publishInterval).
 		WithAntispam(256, nil))
-	addFn := appender.Add
 	if err != nil {
 		klog.Exit(err)
 	}
@@ -83,7 +82,7 @@ func main() {
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
-		idx, err := addFn(r.Context(), tessera.NewEntry(b))()
+		idx, err := appender.Add(r.Context(), tessera.NewEntry(b))()
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			_, _ = w.Write([]byte(err.Error()))
