@@ -187,8 +187,8 @@ func (m *copier) migrateWorker(ctx context.Context) error {
 			retry.Attempts(10),
 			retry.DelayType(retry.BackOffDelay))
 		if err != nil {
-			return err
 			klog.Infof("retry: %v", err)
+			return err
 		}
 	}
 	return nil
