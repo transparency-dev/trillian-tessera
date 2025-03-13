@@ -185,15 +185,14 @@ func main() {
     driver, err := mysql.New(ctx, db)
     driver, err := posix.New(ctx, dir, doCreate)
 
-	appender, shutdown, reader, err := tessera.NewAppender(ctx, driver, tessera.NewAppendOptions().
-		WithCheckpointSigner(s, a...))
+    appender, shutdown, reader, err := tessera.NewAppender(ctx, driver, tessera.NewAppendOptions().WithCheckpointSigner(s))
 }
 ```
 
 See the documentation for each storage implementation to understand the parameters that each takes.
 Each of these `New` calls are variadic functions, which is to say they take any number of trailing arguments.
 The optional arguments that can be passed in allow Tessera behaviour to be tuned.
-Take a look at the functions in the `trillian-tessera` root package named `With*`, e.g. [`WithBatching`](https://pkg.go.dev/github.com/transparency-dev/trillian-tessera#WithBatching) to see the available options are how they should be used.
+Take a look at the methods named `With*` on the `AppendOptions` struct in the root package, e.g. [`WithBatching`](https://pkg.go.dev/github.com/transparency-dev/trillian-tessera@main#AppendOptions.WithBatching) to see the available options are how they should be used.
 
 The final part of configuring this storage object is to set up the addition features that you want to use.
 These optional libraries can be used to provide common log behaviours.
@@ -206,7 +205,7 @@ Now the fun part - writing to the log!
 
 ```go
 func main() {
-	appender, shutdown, reader, err := tessera.NewAppender(...)
+    appender, shutdown, reader, err := tessera.NewAppender(...)
     if err != nil {
       // exit
     }
@@ -297,13 +296,11 @@ This allows personality calls to `Add` to block until the new leaf is integrated
 This is the most common lifecycle mode. Appender allows the personality to add leaves, which will be sequenced
 contiguously with any prefix that the log has already committed to.
 
-This can be configured via [`tessera.NewAppender`](https://pkg.go.dev/github.com/transparency-dev/trillian-tessera@main#NewAppender).
+This mode can be configured via [`tessera.NewAppender`](https://pkg.go.dev/github.com/transparency-dev/trillian-tessera@main#NewAppender).
 
 ### Migration Target
 
-This mode is used when either:
- - the log is being operated as a mirror of another log
- - the log is being migrated from one location to another
+This mode is used when the log is being migrated from one location to another.
 
 This can be configured via [`tessera.NewMigrationTarget`](https://pkg.go.dev/github.com/transparency-dev/trillian-tessera@main#NewMigrationTarget).
 
