@@ -688,21 +688,22 @@ func createEx(p string, d []byte) error {
 	}
 	tmpF = nil
 	if err := os.Link(tmpName, p); err != nil {
-		return fmt.Errorf("failed to link temporary file to target %q: %v", p, err)
+		// Wrap the error here becasue we need to know if it's os.ErrExists at higher levels.
+		return fmt.Errorf("failed to link temporary file to target %q: %w", p, err)
 	}
 
 	return nil
 }
 
 // MigrationTarget creates a new POSIX storage for the MigrationTarget lifecycle mode.
-func (s *Storage) MigrationTarget(ctx context.Context, bundleHasher tessera.UnbundlerFunc, opts *tessera.MigrationOptions) (tessera.MigrationTarget, tessera.LogReader, error) {
+func (s *Storage) MigrationTarget(ctx context.Context, opts *tessera.MigrationOptions) (tessera.MigrationTarget, tessera.LogReader, error) {
 	r := &MigrationStorage{
 		s: s,
 		logStorage: &logResourceStorage{
 			entriesPath: opts.EntriesPath(),
 			s:           s,
 		},
-		bundleHasher: bundleHasher,
+		bundleHasher: opts.LeafHasher(),
 	}
 	if err := r.initialise(); err != nil {
 		return nil, nil, err
