@@ -281,9 +281,7 @@ func (a *Appender) Add(ctx context.Context, e *tessera.Entry) tessera.IndexFutur
 func (a *Appender) init(ctx context.Context) error {
 	_, err := a.logStore.ReadCheckpoint(ctx)
 	if err != nil {
-		// Do not use errors.Is. Keep errors.As to compare by type and not by value.
-		var nske *types.NoSuchKey
-		if errors.As(err, &nske) {
+		if errors.Is(err, os.ErrNotExist) {
 			// No checkpoint exists, do a forced (possibly empty) integration to create one in a safe
 			// way (calling updateCP directly here would not be safe as it's outside the transactional
 			// framework which prevents the tree from rolling backwards or otherwise forking).
