@@ -136,7 +136,8 @@ func (s *Storage) Appender(ctx context.Context, opts *tessera.AppendOptions) (*t
 	}(ctx, opts.CheckpointInterval())
 
 	return &tessera.Appender{
-		Add: a.Add,
+		Add:      a.Add,
+		Shutdown: a.Shutdown,
 	}, s, nil
 }
 

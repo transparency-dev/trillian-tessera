@@ -211,7 +211,8 @@ func (s *Storage) Appender(ctx context.Context, opts *tessera.AppendOptions) (*t
 		return wg.Witness(ctx, cp)
 	}
 	return &tessera.Appender{
-		Add: a.Add,
+		Add:      a.Add,
+		Shutdown: a.Shutdown,
 	}, reader, nil
 }
 
