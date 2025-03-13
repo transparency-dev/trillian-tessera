@@ -754,14 +754,14 @@ func integrate(ctx context.Context, tx *sql.Tx, fromSeq uint64, lh [][]byte, wri
 // MigrationTarget creates a new MySQL storage for the MigrationTarget lifecycle mode.
 //
 // bundleHasher must return Merkle leaf hashes for entry bundles it's passed.
-func (s *Storage) MigrationTarget(ctx context.Context, bundleHasher tessera.UnbundlerFunc, opts *tessera.MigrationOptions) (tessera.MigrationTarget, tessera.LogReader, error) {
+func (s *Storage) MigrationTarget(ctx context.Context, opts *tessera.MigrationOptions) (tessera.MigrationTarget, tessera.LogReader, error) {
 	if err := s.maybeInitTree(ctx); err != nil {
 		return nil, nil, fmt.Errorf("maybeInitTree: %v", err)
 	}
 
 	return &MigrationStorage{
 		s:            s,
-		bundleHasher: bundleHasher,
+		bundleHasher: opts.LeafHasher(),
 	}, s, nil
 }
 
