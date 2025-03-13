@@ -191,8 +191,8 @@ func (s *Storage) Appender(ctx context.Context, opts *tessera.AppendOptions) (*t
 	}
 
 	go a.sequencerJob(ctx)
-	ctx, cancel := context.WithCancel(ctx)
-	a.done = ctx.Done()
+	cctx, cancel := context.WithCancel(ctx)
+	a.done = cctx.Done()
 	go a.publisherJob(ctx, cancel, opts.CheckpointInterval())
 
 	reader := &LogReader{
@@ -278,8 +278,8 @@ func (a *Appender) Shutdown(ctx context.Context) error {
 	if err := a.queue.Close(ctx); err != nil {
 		return err
 	}
-	// At this point sequencing and integration is done, now to make sure a large
-	// enough checkpoint has been issued.
+	// At this point sequencing is done, now to block until a large enough tree
+	// is constructed and a checkpoint has been issued.
 	maxIndex := a.largestIssued.Load()
 	if maxIndex == 0 {
 		// special case no work done
