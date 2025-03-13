@@ -40,10 +40,7 @@ func (t *Throttle) Increase() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	tokenCount := t.opsPerSecond
-	delta := float64(tokenCount) * 0.1
-	if delta < 1 {
-		delta = 1
-	}
+	delta := max(float64(tokenCount)*0.1, 1)
 	t.opsPerSecond = tokenCount + int(delta)
 }
 
@@ -54,10 +51,7 @@ func (t *Throttle) Decrease() {
 	if tokenCount <= 1 {
 		return
 	}
-	delta := float64(tokenCount) * 0.1
-	if delta < 1 {
-		delta = 1
-	}
+	delta := max(float64(tokenCount)*0.1, 1)
 	t.opsPerSecond = tokenCount - int(delta)
 }
 
