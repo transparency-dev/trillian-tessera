@@ -115,13 +115,15 @@ func main() {
 	for _, entry := range indexFutures {
 		seq, _, err := await.Await(ctx, entry.f)
 		if err != nil {
-			klog.Exitf("failed to sequence %q: %q", entry.name, err)
+			klog.Exitf("Failed to sequence %q: %q", entry.name, err)
 		}
 		klog.Infof("%d: %v", seq, entry.name)
 	}
 
 	// 2) shutdown the appender
-	shutdown(ctx)
+	if err := shutdown(ctx); err != nil {
+		klog.Exitf("Failed to shut down cleanly: %v", err)
+	}
 }
 
 // Read log private key from file or environment variable
