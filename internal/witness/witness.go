@@ -251,15 +251,15 @@ func (w *witness) update(ctx context.Context, cp []byte, size uint64, fetchProof
 		ct := httpResp.Header["Content-Type"]
 		if len(ct) == 1 && ct[0] == "text/x.tlog.size" {
 			bodyStr := string(rb)
-			newWitSize, err := strconv.ParseInt(bodyStr, 10, 64)
+			newWitSize, err := strconv.ParseUint(bodyStr, 10, 64)
 			if err != nil {
 				return nil, fmt.Errorf("witness at %q replied with x.tlog.size but body %q could not be parsed as decimal", w.url, bodyStr)
 			}
-			if newWitSize < int64(w.size) {
+			if newWitSize < w.size {
 				// This case should not happen unless the witness is misbehaving
 				return nil, fmt.Errorf("witness at %q replied with x.tlog.size %d, smaller than known size %d", w.url, newWitSize, w.size)
 			}
-			w.size = uint64(newWitSize)
+			w.size = newWitSize
 			// Witnesses could cause this recursion to go on for longer than expected if the value they kept returning
 			// this case with slightly larger values. Consider putting a max recursion cap if context timeout isn't enough.
 			return w.update(ctx, cp, size, fetchProof)
