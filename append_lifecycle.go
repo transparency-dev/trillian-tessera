@@ -97,7 +97,7 @@ func (o *AppendOptions) WithAntispam(inMemEntries uint, as Antispam) *AppendOpti
 	if as != nil {
 		o.addDecorators = append(o.addDecorators, as.Decorator())
 		o.followers = append(o.followers, func(ctx context.Context, lr LogReader) {
-			as.Populate(ctx, lr, defaultIDHasher)
+			as.Populate(ctx, lr, o.bundleIDHasher)
 		})
 	}
 	return o
