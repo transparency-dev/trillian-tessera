@@ -151,6 +151,9 @@ If you aren't using a cloud provider, then your options are MySQL and POSIX:
 To get a sense of the rough performance you can expect from the different backends, take a look at
 [docs/performance.md](/docs/performance.md).
 
+By far the most common way to operate logs is in an append-only manner, and the rest of this guide will discuss
+this mode. For lifecycle states other than Appender mode, take a look at [Lifecycles](#lifecycles) below.
+
 #### Setup
 
 Once you've picked a storage driver, you can start writing your personality!
@@ -182,7 +185,8 @@ func main() {
     driver, err := mysql.New(ctx, db)
     driver, err := posix.New(ctx, dir, doCreate)
 
-    addFn, reader, err := storage.NewAppender(driver)
+	appender, shutdown, reader, err := tessera.NewAppender(ctx, driver, tessera.NewAppendOptions().
+		WithCheckpointSigner(s, a...))
 }
 ```
 
@@ -191,27 +195,22 @@ Each of these `New` calls are variadic functions, which is to say they take any 
 The optional arguments that can be passed in allow Tessera behaviour to be tuned.
 Take a look at the functions in the `trillian-tessera` root package named `With*`, e.g. [`WithBatching`](https://pkg.go.dev/github.com/transparency-dev/trillian-tessera#WithBatching) to see the available options are how they should be used.
 
-The final part of configuring this storage object is to set up the mix-ins that you want to use.
-Mix-ins are optional libraries you can use to provide common log behaviours without writing it yourself.
-The currently supported mix-ins are:
-* [Antispam](https://pkg.go.dev/github.com/transparency-dev/trillian-tessera@main#Antispam) (best-effort deduplication) 
-   * [In-memory](https://pkg.go.dev/github.com/transparency-dev/trillian-tessera#InMemoryDedupe) (cheap, but very limited window of history)
-   * Persistent (expensive, but can use entire log contents when looking for duplicate entries)
-     * [GCP](https://pkg.go.dev/github.com/transparency-dev/trillian-tessera/storage/gcp/antispam)
-* [Witnessing](https://pkg.go.dev/github.com/transparency-dev/trillian-tessera@main#WitnessGroup)
-* [Synchronous Integration](https://pkg.go.dev/github.com/transparency-dev/trillian-tessera#IntegrationAwaiter)
-
-See [Mix-ins](#mix-ins) after reading the rest of this section for more details.
+The final part of configuring this storage object is to set up the addition features that you want to use.
+These optional libraries can be used to provide common log behaviours.
+See [Features](#features) after reading the rest of this section for more details.
 
 #### Writing to the Log
 
-Now you should have a storage object configured for your environment, and the correct mix-ins set up.
+Now you should have a storage object configured for your environment, and the correct features set up.
 Now the fun part - writing to the log!
 
 ```go
 func main() {
-    storage, err := ...
-    idx, err := storage.Add(ctx, tessera.NewEntry(data))()
+	appender, shutdown, reader, err := tessera.NewAppender(...)
+    if err != nil {
+      // exit
+    }
+    idx, err := appender.Add(ctx, tessera.NewEntry(data))()
 ```
 
 Whichever storage option you use, writing to the log follows the same pattern: simply call `Add` with a new entry created with the data to be added as a leaf in the log.
@@ -236,7 +235,7 @@ POSIX writes out the files exactly as per the API spec, so the log operator can 
 MySQL is the odd implementation in that it requires personality code to handle read traffic.
 See the example personalities written for MySQL to see how this Go web server should be configured.
 
-## Mix-ins
+## Features
 
 ### Antispam
 
@@ -290,6 +289,23 @@ It is up to the log operator to ensure that a satisfiable policy is configured, 
 
 Synchronous Integration is provided by [`tessera.IntegrationAwaiter`](https://pkg.go.dev/github.com/transparency-dev/trillian-tessera#IntegrationAwaiter).
 This allows personality calls to `Add` to block until the new leaf is integrated into the tree.
+
+## Lifecyles
+
+### Appender
+
+This is the most common lifecycle mode. Appender allows the personality to add leaves, which will be sequenced
+contiguously with any prefix that the log has already committed to.
+
+This can be configured via [`tessera.NewAppender`](https://pkg.go.dev/github.com/transparency-dev/trillian-tessera@main#NewAppender).
+
+### Migration Target
+
+This mode is used when either:
+ - the log is being operated as a mirror of another log
+ - the log is being migrated from one location to another
+
+This can be configured via [`tessera.NewMigrationTarget`](https://pkg.go.dev/github.com/transparency-dev/trillian-tessera@main#NewMigrationTarget).
 
 ## Contributing
 

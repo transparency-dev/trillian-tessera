@@ -91,7 +91,6 @@ func main() {
 	if err != nil {
 		klog.Exit(err)
 	}
-	addFn := appender.Add
 
 	// We don't want to exit until our entries have been integrated into the tree, so we'll use Tessera's
 	// IntegrationAwaiter to help with that.
@@ -106,7 +105,7 @@ func main() {
 			klog.Exitf("Failed to read entry file %q: %q", fp, err)
 		}
 
-		f := addFn(ctx, tessera.NewEntry(b))
+		f := appender.Add(ctx, tessera.NewEntry(b))
 		indexFutures = append(indexFutures, entryInfo{name: fp, f: f})
 	}
 
