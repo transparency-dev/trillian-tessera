@@ -135,9 +135,6 @@ func (q *Queue) Close(ctx context.Context) error {
 
 	// Flush and close the buffer, which will trigger workers
 	// to process the entries.
-	if err := q.buf.Flush(); err != nil {
-		return err
-	}
 	if err := q.buf.Close(); err != nil {
 		return err
 	}
