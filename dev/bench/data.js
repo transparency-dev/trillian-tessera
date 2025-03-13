@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1741873074892,
+  "lastUpdate": 1741877440914,
   "repoUrl": "https://github.com/transparency-dev/trillian-tessera",
   "entries": {
     "Benchmark": [
@@ -12192,6 +12192,150 @@ window.BENCHMARK_DATA = {
             "value": 3039,
             "unit": "allocs/op",
             "extra": "3896 times\n4 procs"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "mhutchinson@gmail.com",
+            "name": "Martin Hutchinson",
+            "username": "mhutchinson"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "3fc38900820bba64add66fc78c3f4c1cd28e5ba0",
+          "message": "[Shutdown] Implement Shutdown in a single location (#525)\n\nThis is a revised attempt at Shutdown that is intended to replace #524.\nThis implementation doesn't have the granular integration with the\nchannels in each implementation. Instead, it is implemented at the top\nlevel of the appender lifecycle, and each driver doesn't need to have\nvery similar duplicated code for handling this.\n\nThe previous attempt was also trying to make it so that Shutdown would\nclose out channels and kill goroutines etc. This approach makes it clear\nthat the way to do this is to cancel the original context passed into\nthe appender.\n\nFixes #341.",
+          "timestamp": "2025-03-13T14:49:55Z",
+          "tree_id": "54719511c464a3785f82833a46c155d77f352bda",
+          "url": "https://github.com/transparency-dev/trillian-tessera/commit/3fc38900820bba64add66fc78c3f4c1cd28e5ba0"
+        },
+        "date": 1741877440469,
+        "tool": "go",
+        "benches": [
+          {
+            "name": "BenchmarkDedupe",
+            "value": 1286986,
+            "unit": "ns/op\t  690921 B/op\t   19575 allocs/op",
+            "extra": "1002 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDedupe - ns/op",
+            "value": 1286986,
+            "unit": "ns/op",
+            "extra": "1002 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDedupe - B/op",
+            "value": 690921,
+            "unit": "B/op",
+            "extra": "1002 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDedupe - allocs/op",
+            "value": 19575,
+            "unit": "allocs/op",
+            "extra": "1002 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWitnessGroupSatisfaction",
+            "value": 136424,
+            "unit": "ns/op\t    3152 B/op\t      36 allocs/op",
+            "extra": "8733 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWitnessGroupSatisfaction - ns/op",
+            "value": 136424,
+            "unit": "ns/op",
+            "extra": "8733 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWitnessGroupSatisfaction - B/op",
+            "value": 3152,
+            "unit": "B/op",
+            "extra": "8733 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWitnessGroupSatisfaction - allocs/op",
+            "value": 36,
+            "unit": "allocs/op",
+            "extra": "8733 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLeafBundle_UnmarshalText",
+            "value": 1860,
+            "unit": "ns/op\t    6528 B/op\t       1 allocs/op",
+            "extra": "642296 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLeafBundle_UnmarshalText - ns/op",
+            "value": 1860,
+            "unit": "ns/op",
+            "extra": "642296 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLeafBundle_UnmarshalText - B/op",
+            "value": 6528,
+            "unit": "B/op",
+            "extra": "642296 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLeafBundle_UnmarshalText - allocs/op",
+            "value": 1,
+            "unit": "allocs/op",
+            "extra": "642296 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkCheckpointUnsafe",
+            "value": 238.2,
+            "unit": "ns/op\t     224 B/op\t       5 allocs/op",
+            "extra": "5104987 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkCheckpointUnsafe - ns/op",
+            "value": 238.2,
+            "unit": "ns/op",
+            "extra": "5104987 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkCheckpointUnsafe - B/op",
+            "value": 224,
+            "unit": "B/op",
+            "extra": "5104987 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkCheckpointUnsafe - allocs/op",
+            "value": 5,
+            "unit": "allocs/op",
+            "extra": "5104987 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkIntegrate",
+            "value": 365641,
+            "unit": "ns/op\t  290027 B/op\t    3032 allocs/op",
+            "extra": "3717 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkIntegrate - ns/op",
+            "value": 365641,
+            "unit": "ns/op",
+            "extra": "3717 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkIntegrate - B/op",
+            "value": 290027,
+            "unit": "B/op",
+            "extra": "3717 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkIntegrate - allocs/op",
+            "value": 3032,
+            "unit": "allocs/op",
+            "extra": "3717 times\n4 procs"
           }
         ]
       }
