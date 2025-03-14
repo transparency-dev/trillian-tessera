@@ -67,7 +67,9 @@ multiple organisations in multiple ecosystems, and is likely to remain so for th
 
 New ecosystems, or existing ecosystems looking to evolve, should strongly consider planning a
 migration to Tessera and adopting the patterns it encourages.
-Note that to achieve the full benefits of Tessera, logs must use the [tlog-tiles API][].
+
+> [!Tip]
+> To achieve the full benefits of Tessera, logs must use the [tlog-tiles API][].
 
 ## Concepts
 
@@ -166,27 +168,25 @@ go get github.com/transparency-dev/trillian-tessera@main
 
 #### Constructing the Storage Object
 
+Import the main `tessera` package, and the driver for the storage backend you want to use:
+```go file=README_test.go region=common_imports
+	tessera "github.com/transparency-dev/trillian-tessera"
+	// Choose one!
+
+	"github.com/transparency-dev/trillian-tessera/storage/posix"
+	// "github.com/transparency-dev/trillian-tessera/storage/aws"
+	// "github.com/transparency-dev/trillian-tessera/storage/gcp"
+	// "github.com/transparency-dev/trillian-tessera/storage/mysql"
+
+```
+
 Now you'll need to instantiate the storage object for the native driver you are using:
-```go
-import (
-    "context"
+```go file=README_test.go region=construct_example
+	// Choose one!
+	driver, err := posix.New(ctx, "/tmp/mylog")
+	signer := createSigner()
 
-    tessera "github.com/transparency-dev/trillian-tessera"
-    "github.com/transparency-dev/trillian-tessera/storage/aws"
-    "github.com/transparency-dev/trillian-tessera/storage/gcp"
-    "github.com/transparency-dev/trillian-tessera/storage/mysql"
-    "github.com/transparency-dev/trillian-tessera/storage/posix"
-)
-
-func main() {
-    // Choose one!
-    driver, err := aws.New(ctx, awsConfig)
-    driver, err := gcp.New(ctx, gcpConfig)
-    driver, err := mysql.New(ctx, db)
-    driver, err := posix.New(ctx, dir, doCreate)
-
-    appender, shutdown, reader, err := tessera.NewAppender(ctx, driver, tessera.NewAppendOptions().WithCheckpointSigner(s))
-}
+	appender, shutdown, reader, err := tessera.NewAppender(ctx, driver, tessera.NewAppendOptions().WithCheckpointSigner(signer))
 ```
 
 See the documentation for each storage implementation to understand the parameters that each takes.
@@ -203,18 +203,18 @@ See [Features](#features) after reading the rest of this section for more detail
 Now you should have a storage object configured for your environment, and the correct features set up.
 Now the fun part - writing to the log!
 
-```go
-func main() {
-    appender, shutdown, reader, err := tessera.NewAppender(...)
-    if err != nil {
-      // exit
-    }
-    idx, err := appender.Add(ctx, tessera.NewEntry(data))()
+```go file=README_test.go region=use_appender_example
+	appender, shutdown, reader, err := tessera.NewAppender(ctx, driver, tessera.NewAppendOptions().WithCheckpointSigner(signer))
+	if err != nil {
+		// exit
+	}
+
+	future, err := appender.Add(ctx, tessera.NewEntry(data))()
 ```
 
 Whichever storage option you use, writing to the log follows the same pattern: simply call `Add` with a new entry created with the data to be added as a leaf in the log.
 This method returns a _future_ of the form `func() (idx uint64, err error)`.
-When called, this future function will block until the data passed into `Add` has been sequenced and an index number is assigned (or until failure, in which case an error is returned).
+When called, this future function will block until the data passed into `Add` has been sequenced and an index number is _durably_ assigned (or until failure, in which case an error is returned).
 Once this index has been returned, the new data is sequenced, but not necessarily integrated into the log.
 
 As discussed above in [Integration](#integration), sequenced entries will be _asynchronously_ integrated into the log and be made available via the read API.
@@ -259,11 +259,13 @@ These layes are configured by the `WithAntispam` method of the
 [AppendOptions](https://pkg.go.dev/github.com/transparency-dev/trillian-tessera@main#AppendOptions.WithAntispam) and
 [MigrateOptions](https://pkg.go.dev/github.com/transparency-dev/trillian-tessera@main#AppendOptions.WithAntispam).
 
-Persistent antispam is fairly expensive in terms of storage-compute, so should only be used where it is actually necessary.
+> [!Tip]
+> Persistent antispam is fairly expensive in terms of storage-compute, so should only be used where it is actually necessary.
 
-Note that Tessera's antispam mechanism is _best effort_; there is no guarantee that all duplicate entries will be suppressed.
-This is a trade-off; fully-atomic "strong" deduplication is _extremely_ expensive in terms of throughput and compute costs, and
-would limit Tessera to only being able to use transactional type storage backends.
+> [!Note]
+> Tessera's antispam mechanism is _best effort_; there is no guarantee that all duplicate entries will be suppressed.
+> This is a trade-off; fully-atomic "strong" deduplication is _extremely_ expensive in terms of throughput and compute costs, and
+> would limit Tessera to only being able to use transactional type storage backends.
 
 ### Witnessing
 
@@ -281,28 +283,42 @@ Once a top-level `WitnessGroup` is configured, it is passed in to the `Appender`
 [AppendOptions#WithWitnesses](https://pkg.go.dev/github.com/transparency-dev/trillian-tessera@main#AppendOptions.WithWitnesses).
 If this method is not called then no witnessing will be configured.
 
-Note that if the policy cannot be satisfied then no checkpoint will be published.
-It is up to the log operator to ensure that a satisfiable policy is configured, and that the requested publishing rate is acceptable to the configured witnesses.
+> [!Note]
+> If the policy cannot be satisfied then no checkpoint will be published.
+> It is up to the log operator to ensure that a satisfiable policy is configured, and that the requested publishing rate is acceptable to the configured witnesses.
 
 ### Synchronous Integration
 
 Synchronous Integration is provided by [`tessera.IntegrationAwaiter`](https://pkg.go.dev/github.com/transparency-dev/trillian-tessera#IntegrationAwaiter).
-This allows personality calls to `Add` to block until the new leaf is integrated into the tree.
+This allows applications built with Tessera to block until one or more leaves passed via calls to `Add()` are fully integrated into the tree.
+
+> [!Tip]
+> This is useful if e.g. your application needs to return an inclusion proof in response to a request to add an entry to the log.
 
 ## Lifecyles
 
 ### Appender
 
-This is the most common lifecycle mode. Appender allows the personality to add leaves, which will be sequenced
-contiguously with any prefix that the log has already committed to.
+This is the most common lifecycle mode. Appender allows the application to add leaves, which will be assigned positions in the log
+contiguous to any entries the log has already committed to.
 
-This mode can be configured via [`tessera.NewAppender`](https://pkg.go.dev/github.com/transparency-dev/trillian-tessera@main#NewAppender).
+This mode is instantiated via [`tessera.NewAppender`](https://pkg.go.dev/github.com/transparency-dev/trillian-tessera@main#NewAppender), and
+configured using the [`tessera.NewAppendOptions`](https://pkg.go.dev/github.com/transparency-dev/trillian-tessera@main#NewAppendOptions) struct.
 
 ### Migration Target
 
-This mode is used when the log is being migrated from one location to another.
+This mode is used to migrate a log from one location to another.
 
-This can be configured via [`tessera.NewMigrationTarget`](https://pkg.go.dev/github.com/transparency-dev/trillian-tessera@main#NewMigrationTarget).
+This is instantiated via [`tessera.NewMigrationTarget`](https://pkg.go.dev/github.com/transparency-dev/trillian-tessera@main#NewMigrationTarget),
+and configured using the [`tessera.NewMigratonOptions`](https://pkg.go.dev/github.com/transparency-dev/trillian-tessera@main#NewMigrationOptions) struct.
+
+> [!Tip]
+> This mode enables the migration of logs between different Tessera storage backends, e.g. you may wish to switch
+> serving infrastructure because:
+>    * You're migrating between/to/from cloud providers for some reason.
+>    * You're "freezing" your log, and want to move it to a cheap read-only location.
+>
+> You can also use this mode to migrate a [tlog-tiles][] compliant log _into_ Tessera.
 
 ## Contributing
 
@@ -310,7 +326,7 @@ See [CONTRIBUTING.md](/CONTRIBUTING.md) for details.
 
 ## License
 
-This repo is licensed under the Apache 2.0 license, see [LICENSE](/LICENSE) for details
+This repo is licensed under the Apache 2.0 license, see [LICENSE](/LICENSE) for details.
 
 ## Contact
 
