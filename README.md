@@ -168,27 +168,25 @@ go get github.com/transparency-dev/trillian-tessera@main
 
 #### Constructing the Storage Object
 
+Import the main `tessera` package, and the driver for the storage backend you want to use:
+```go file=README_test.go region=common_imports
+	tessera "github.com/transparency-dev/trillian-tessera"
+	// Choose one!
+
+	"github.com/transparency-dev/trillian-tessera/storage/posix"
+	// "github.com/transparency-dev/trillian-tessera/storage/aws"
+	// "github.com/transparency-dev/trillian-tessera/storage/gcp"
+	// "github.com/transparency-dev/trillian-tessera/storage/mysql"
+
+```
+
 Now you'll need to instantiate the storage object for the native driver you are using:
-```go
-import (
-    "context"
+```go file=README_test.go region=construct_example
+	// Choose one!
+	driver, err := posix.New(ctx, "/tmp/mylog")
+	signer := createSigner()
 
-    tessera "github.com/transparency-dev/trillian-tessera"
-    "github.com/transparency-dev/trillian-tessera/storage/aws"
-    "github.com/transparency-dev/trillian-tessera/storage/gcp"
-    "github.com/transparency-dev/trillian-tessera/storage/mysql"
-    "github.com/transparency-dev/trillian-tessera/storage/posix"
-)
-
-func main() {
-    // Choose one!
-    driver, err := aws.New(ctx, awsConfig)
-    driver, err := gcp.New(ctx, gcpConfig)
-    driver, err := mysql.New(ctx, db)
-    driver, err := posix.New(ctx, dir, doCreate)
-
-    appender, shutdown, reader, err := tessera.NewAppender(ctx, driver, tessera.NewAppendOptions().WithCheckpointSigner(s))
-}
+	appender, shutdown, reader, err := tessera.NewAppender(ctx, driver, tessera.NewAppendOptions().WithCheckpointSigner(signer))
 ```
 
 See the documentation for each storage implementation to understand the parameters that each takes.
@@ -205,13 +203,13 @@ See [Features](#features) after reading the rest of this section for more detail
 Now you should have a storage object configured for your environment, and the correct features set up.
 Now the fun part - writing to the log!
 
-```go
-func main() {
-    appender, shutdown, reader, err := tessera.NewAppender(...)
-    if err != nil {
-      // exit
-    }
-    idx, err := appender.Add(ctx, tessera.NewEntry(data))()
+```go file=README_test.go region=use_appender_example
+	appender, shutdown, reader, err := tessera.NewAppender(ctx, driver, tessera.NewAppendOptions().WithCheckpointSigner(signer))
+	if err != nil {
+		// exit
+	}
+
+	future, err := appender.Add(ctx, tessera.NewEntry(data))()
 ```
 
 Whichever storage option you use, writing to the log follows the same pattern: simply call `Add` with a new entry created with the data to be added as a leaf in the log.
