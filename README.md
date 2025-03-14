@@ -290,7 +290,7 @@ If this method is not called then no witnessing will be configured.
 ### Synchronous Integration
 
 Synchronous Integration is provided by [`tessera.IntegrationAwaiter`](https://pkg.go.dev/github.com/transparency-dev/trillian-tessera#IntegrationAwaiter).
-This allows applications built with Tesserea to block until one or more leaves passed via calls to `Add()` are fully integrated into the tree.
+This allows applications built with Tessera to block until one or more leaves passed via calls to `Add()` are fully integrated into the tree.
 
 > [!Tip]
 > This is useful if e.g. your application needs to return an inclusion proof in response to a request to add an entry to the log.
@@ -303,20 +303,20 @@ This is the most common lifecycle mode. Appender allows the application to add l
 contiguous to any entries the log has already committed to.
 
 This mode is instantiated via [`tessera.NewAppender`](https://pkg.go.dev/github.com/transparency-dev/trillian-tessera@main#NewAppender), and
-configured using the [`tesserea.NewAppendOptions`](https://pkg.go.dev/github.com/transparency-dev/trillian-tessera@main#NewAppendOptions) struct.
+configured using the [`tessera.NewAppendOptions`](https://pkg.go.dev/github.com/transparency-dev/trillian-tessera@main#NewAppendOptions) struct.
 
 ### Migration Target
 
 This mode is used to migrate a log from one location to another.
 
 This is instantiated via [`tessera.NewMigrationTarget`](https://pkg.go.dev/github.com/transparency-dev/trillian-tessera@main#NewMigrationTarget),
-and configured using the [`tesserea.NewMigratonOptions`](https://pkg.go.dev/github.com/transparency-dev/trillian-tessera@main#NewMigrationOptions) struct.
+and configured using the [`tessera.NewMigratonOptions`](https://pkg.go.dev/github.com/transparency-dev/trillian-tessera@main#NewMigrationOptions) struct.
 
 > [!Tip]
 > This mode enables the migration of logs between different Tessera storage backends, e.g. you may wish to switch
 > serving infrastructure because:
->    * You're migrating between/to/from cloud providers for some reason
->    * You're "freezing" your log, and want to move it to a cheap read-only location
+>    * You're migrating between/to/from cloud providers for some reason.
+>    * You're "freezing" your log, and want to move it to a cheap read-only location.
 >
 > You can also use this mode to migrate a [tlog-tiles][] compliant log _into_ Tessera.
 

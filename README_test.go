@@ -15,7 +15,7 @@
 // This file contains code snippets used in the README.md file in this
 // directory.
 //
-// Having this code here, in a go test file, helps ensure that our exmaples
+// Having this code here, in a go test file, helps ensure that our examples
 // and snippets actually work with the current state of Tessera.
 //
 // To update the markdown files with changes from in here, run:
