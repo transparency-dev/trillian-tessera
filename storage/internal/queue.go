@@ -134,7 +134,7 @@ func newEntry(data *tessera.Entry) *queueItem {
 		entry: data,
 		c:     make(chan tessera.IndexFuture, 1),
 	}
-	e.f = sync.OnceValues(func() (uint64, error) {
+	e.f = sync.OnceValues(func() (tessera.Index, error) {
 		return (<-e.c)()
 	})
 	return e
@@ -145,14 +145,14 @@ func newEntry(data *tessera.Entry) *queueItem {
 // This func must only be called once, and will cause any current or future callers of index()
 // to be given the values provided here.
 func (e *queueItem) notify(err error) {
-	e.c <- func() (uint64, error) {
+	e.c <- func() (tessera.Index, error) {
 		if err != nil {
-			return 0, err
+			return tessera.Index{}, err
 		}
 		if e.entry.Index() == nil {
 			panic(errors.New("Logic error: flush complete, but entry was not assigned an index - did storage fail to call entry.MarshalBundleData?"))
 		}
-		return *e.entry.Index(), nil
+		return tessera.Index{Index: *e.entry.Index()}, nil
 	}
 	close(e.c)
 }
