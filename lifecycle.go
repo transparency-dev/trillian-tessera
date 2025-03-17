@@ -102,6 +102,12 @@ type Antispam interface {
 	Populate(context.Context, LogReader, func(entryBundle []byte) ([][]byte, error))
 }
 
+// identityHash calculates the antispam identity hash for the provided (single) leaf entry data.
+func identityHash(data []byte) []byte {
+	h := sha256.Sum256(data)
+	return h[:]
+}
+
 // defaultIDHasher returns a list of identity hashes corresponding to entries in the provided bundle.
 // Currently, these are simply SHA256 hashes of the raw byte of each entry.
 func defaultIDHasher(bundle []byte) ([][]byte, error) {
@@ -111,7 +117,7 @@ func defaultIDHasher(bundle []byte) ([][]byte, error) {
 	}
 	r := make([][]byte, 0, len(eb.Entries))
 	for _, e := range eb.Entries {
-		h := sha256.Sum256(e)
+		h := identityHash(e)
 		r = append(r, h[:])
 	}
 	return r, nil

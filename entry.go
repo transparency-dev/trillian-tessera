@@ -16,7 +16,6 @@
 package tessera
 
 import (
-	"crypto/sha256"
 	"encoding/binary"
 
 	"github.com/transparency-dev/merkle/rfc6962"
@@ -66,7 +65,7 @@ func (e *Entry) MarshalBundleData(index uint64) []byte {
 func NewEntry(data []byte) *Entry {
 	e := &Entry{}
 	e.internal.Data = data
-	h := sha256.Sum256(e.internal.Data)
+	h := identityHash(e.internal.Data)
 	e.internal.Identity = h[:]
 	e.internal.LeafHash = rfc6962.DefaultHasher.HashLeaf(e.internal.Data)
 	// By default we will marshal ourselves into a bundle using the mechanism described

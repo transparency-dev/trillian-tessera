@@ -16,7 +16,6 @@ package tessera
 
 import (
 	"context"
-	"crypto/sha256"
 	"errors"
 	"fmt"
 	"os"
@@ -25,6 +24,7 @@ import (
 	"time"
 
 	f_log "github.com/transparency-dev/formats/log"
+	"github.com/transparency-dev/merkle/rfc6962"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
 	"github.com/transparency-dev/trillian-tessera/internal/parse"
 	"golang.org/x/mod/sumdb/note"
@@ -293,7 +293,7 @@ func (o *AppendOptions) WithCheckpointSigner(s note.Signer, additionalSigners ..
 		// If we're signing a zero-sized tree, the tlog-checkpoint spec says (via RFC6962) that
 		// the root must be SHA256 of the empty string, so we'll enforce that here:
 		if size == 0 {
-			emptyRoot := sha256.Sum256([]byte{})
+			emptyRoot := rfc6962.DefaultHasher.EmptyRoot()
 			hash = emptyRoot[:]
 		}
 		cpRaw := f_log.Checkpoint{
