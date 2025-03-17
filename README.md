@@ -185,9 +185,9 @@ Now you'll need to instantiate the storage object for the native driver you are 
 ```
 
 See the documentation for each storage implementation to understand the parameters that each takes.
-Each of these `New` calls are variadic functions, which is to say they take any number of trailing arguments.
-The optional arguments that can be passed in allow Tessera behaviour to be tuned.
-Take a look at the methods named `With*` on the `AppendOptions` struct in the root package, e.g. [`WithBatching`](https://pkg.go.dev/github.com/transparency-dev/trillian-tessera@main#AppendOptions.WithBatching) to see the available options are how they should be used.
+
+This driver can be used when constructing the lifecycle object.
+The Appender lifecycle is covered in the next section.
 
 The final part of configuring this storage object is to set up the addition features that you want to use.
 These optional libraries can be used to provide common log behaviours.
@@ -206,6 +206,9 @@ Now the fun part - writing to the log!
 
 	future, err := appender.Add(ctx, tessera.NewEntry(data))()
 ```
+
+The `AppendOptions` that can be passed in allow Tessera behaviour to be tuned.
+Take a look at the methods named `With*` on the `AppendOptions` struct in the root package, e.g. [`WithBatching`](https://pkg.go.dev/github.com/transparency-dev/trillian-tessera@main#AppendOptions.WithBatching) to see the available options are how they should be used.
 
 Whichever storage option you use, writing to the log follows the same pattern: simply call `Add` with a new entry created with the data to be added as a leaf in the log.
 This method returns a _future_ of the form `func() (idx uint64, err error)`.
@@ -245,9 +248,9 @@ The antispam mechanism consists of two layers which sit in front of the underlyi
    If a recently-seen entry is spotted by the same application instance, this layer will short-circuit the addition
    of the duplicate, and instead return and index previously assigned to this entry. Otherwise the requested entry is
    passed on to the second layer.
-2. The 2nd layer in a `Persistent` index of a hash of the entry to its assigned position in the log.
+2. The second layer is a `Persistent` index of a hash of the entry to its assigned position in the log.
    Similarly to the first layer, this second layer will look for a record in its stored data which matches the incoming
-   entry, and if such a record exist, it will short-ciruit the addition of the duplicate entry and return a previous
+   entry, and if such a record exists, it will short-circuit the addition of the duplicate entry and return a previous
    version's assigned position in the log.
 
 These layes are configured by the `WithAntispam` method of the
