@@ -41,12 +41,12 @@ into any other API, this strategy will lose a lot of the read scaling that Tesse
 
 ## Status
 
-Tessera is under active development, with an [alpha release](https://github.com/transparency-dev/trillian-tessera/releases/tag/v0.1.0) available now. 
+Tessera is under active development, with an [alpha 2 release](https://github.com/transparency-dev/trillian-tessera/releases/tag/v0.1.1) available now.
 Users of GCP, AWS, MySQL, and POSIX are welcome to try the relevant [Getting Started](#getting-started) guide.
 
 ## Roadmap
 
-Beta in Q1 2025, and production ready around mid 2025.
+Beta in Q2 2025, and production ready around mid 2025.
 
 |  #  | Step                                                      | Status |
 | :-: | --------------------------------------------------------- | :----: |
@@ -57,7 +57,7 @@ Beta in Q1 2025, and production ready around mid 2025.
 |  5  | Data migration between releases                           |   ⚠️   |
 |  6  | Data migration between drivers                            |   ⚠️   |
 |  7  | Witness support                                           |   ✅   |
-|  8  | Production ready                                          |   ❌   |
+|  8  | Production ready                                          |   ⚠️   |
 |  N  | Fancy features (to be expanded upon later)                |   ❌   |
 
 ### What’s happening to Trillian v1?
@@ -98,11 +98,6 @@ Once this process has been completed, a new entry will:
  - Be available via the read API at the index that was returned from sequencing
  - Have Merkle tree hashes that commit to this data being included in the tree
  - Be committed to by the latest Checkpoint (and any Checkpoints issued after this point)
-
-> [!IMPORTANT]
-> There is currently no easy way to determine that integration has completed.
-> This isn't an issue if the personality process is continually running.
-> For personalities that require periods of downtime, [#341](https://github.com/transparency-dev/trillian-tessera/issues/341) tracks adding an API to allow for clean shutdown.
 
 ## Usage
 
