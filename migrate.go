@@ -22,8 +22,6 @@ import (
 	"time"
 
 	"github.com/avast/retry-go/v4"
-	"github.com/transparency-dev/merkle/rfc6962"
-	"github.com/transparency-dev/trillian-tessera/api"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
 	"github.com/transparency-dev/trillian-tessera/client"
 	"golang.org/x/sync/errgroup"
@@ -192,18 +190,4 @@ func (m *copier) migrateWorker(ctx context.Context) error {
 		}
 	}
 	return nil
-}
-
-// BundleHasher parses a C2SP tlog-tile bundle and returns the leaf hashes of each entry it contains.
-func BundleHasher(bundle []byte) ([][]byte, error) {
-	eb := &api.EntryBundle{}
-	if err := eb.UnmarshalText(bundle); err != nil {
-		return nil, fmt.Errorf("unmarshal: %v", err)
-	}
-	r := make([][]byte, 0, len(eb.Entries))
-	for _, e := range eb.Entries {
-		h := rfc6962.DefaultHasher.HashLeaf(e)
-		r = append(r, h[:])
-	}
-	return r, nil
 }

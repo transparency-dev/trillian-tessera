@@ -265,14 +265,6 @@ func (o AppendOptions) Witnesses() WitnessGroup {
 	return o.witnesses
 }
 
-func (o AppendOptions) AddDecorators() []func(AddFn) AddFn {
-	return o.addDecorators
-}
-
-func (o AppendOptions) Followers() []func(context.Context, LogReader) {
-	return o.followers
-}
-
 // WithCheckpointSigner is an option for setting the note signer and verifier to use when creating and parsing checkpoints.
 // This option is mandatory for creating logs where the checkpoint is signed locally, e.g. in
 // the Appender mode. This does not need to be provided where the storage will be used to mirror

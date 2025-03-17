@@ -84,7 +84,10 @@ func (w Witness) Satisfied(cp []byte) bool {
 	return len(n.Sigs) == 1
 }
 
-// Endpoints implements policyComponent.Endpoints.
+// Endpoints returns the details required for updating a witness and checking the
+// response. The returned result is a map from the URL that should be used to update
+// the witness with a new checkpoint, to the value which is the verifier to check
+// the response is well formed.
 func (w Witness) Endpoints() map[string]note.Verifier {
 	return map[string]note.Verifier{w.Url: w.Key}
 }
@@ -142,7 +145,10 @@ func (wg WitnessGroup) Satisfied(cp []byte) bool {
 	return false
 }
 
-// Endpoints implements policyComponent.Endpoints.
+// Endpoints returns the details required for updating a witness and checking the
+// response. The returned result is a map from the URL that should be used to update
+// the witness with a new checkpoint, to the value which is the verifier to check
+// the response is well formed.
 func (wg WitnessGroup) Endpoints() map[string]note.Verifier {
 	endpoints := make(map[string]note.Verifier)
 	for _, c := range wg.Components {
