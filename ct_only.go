@@ -25,14 +25,6 @@ import (
 	"golang.org/x/crypto/cryptobyte"
 )
 
-// Storage described the expected functions from Tessera storage implementations.
-type Storage interface {
-	// Add should duably assign an index to the provided Entry, returning a future to access that value.
-	//
-	// Implementations MUST call MarshalBundleData method on the entry before persisting/integrating it.
-	Add(context.Context, *Entry) IndexFuture
-}
-
 // NewCertificateTransparencyAppender returns a function which knows how to add a CT-specific entry type to the log.
 //
 // This entry point MUST ONLY be used for CT logs participating in the CT ecosystem.
