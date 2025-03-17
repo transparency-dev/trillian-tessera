@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1741963073166,
+  "lastUpdate": 1742214256140,
   "repoUrl": "https://github.com/transparency-dev/trillian-tessera",
   "entries": {
     "Benchmark": [
@@ -13488,6 +13488,150 @@ window.BENCHMARK_DATA = {
             "value": 3036,
             "unit": "allocs/op",
             "extra": "4026 times\n4 procs"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "rogerng@google.com",
+            "name": "Roger Ng",
+            "username": "roger2hk"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "a64a2b73859aa28c1691c3260d78733a54d5f8eb",
+          "message": "Create security policy (#255)",
+          "timestamp": "2025-03-17T12:23:32Z",
+          "tree_id": "58c30d7dbaf78ccea314f4fe6dd9c74448a6430f",
+          "url": "https://github.com/transparency-dev/trillian-tessera/commit/a64a2b73859aa28c1691c3260d78733a54d5f8eb"
+        },
+        "date": 1742214255458,
+        "tool": "go",
+        "benches": [
+          {
+            "name": "BenchmarkDedupe",
+            "value": 1255068,
+            "unit": "ns/op\t  690439 B/op\t   19570 allocs/op",
+            "extra": "1024 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDedupe - ns/op",
+            "value": 1255068,
+            "unit": "ns/op",
+            "extra": "1024 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDedupe - B/op",
+            "value": 690439,
+            "unit": "B/op",
+            "extra": "1024 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDedupe - allocs/op",
+            "value": 19570,
+            "unit": "allocs/op",
+            "extra": "1024 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWitnessGroupSatisfaction",
+            "value": 139507,
+            "unit": "ns/op\t    3152 B/op\t      36 allocs/op",
+            "extra": "8628 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWitnessGroupSatisfaction - ns/op",
+            "value": 139507,
+            "unit": "ns/op",
+            "extra": "8628 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWitnessGroupSatisfaction - B/op",
+            "value": 3152,
+            "unit": "B/op",
+            "extra": "8628 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWitnessGroupSatisfaction - allocs/op",
+            "value": 36,
+            "unit": "allocs/op",
+            "extra": "8628 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLeafBundle_UnmarshalText",
+            "value": 1595,
+            "unit": "ns/op\t    6528 B/op\t       1 allocs/op",
+            "extra": "728458 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLeafBundle_UnmarshalText - ns/op",
+            "value": 1595,
+            "unit": "ns/op",
+            "extra": "728458 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLeafBundle_UnmarshalText - B/op",
+            "value": 6528,
+            "unit": "B/op",
+            "extra": "728458 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLeafBundle_UnmarshalText - allocs/op",
+            "value": 1,
+            "unit": "allocs/op",
+            "extra": "728458 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkCheckpointUnsafe",
+            "value": 232.7,
+            "unit": "ns/op\t     224 B/op\t       5 allocs/op",
+            "extra": "5139465 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkCheckpointUnsafe - ns/op",
+            "value": 232.7,
+            "unit": "ns/op",
+            "extra": "5139465 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkCheckpointUnsafe - B/op",
+            "value": 224,
+            "unit": "B/op",
+            "extra": "5139465 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkCheckpointUnsafe - allocs/op",
+            "value": 5,
+            "unit": "allocs/op",
+            "extra": "5139465 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkIntegrate",
+            "value": 357909,
+            "unit": "ns/op\t  290407 B/op\t    3036 allocs/op",
+            "extra": "4141 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkIntegrate - ns/op",
+            "value": 357909,
+            "unit": "ns/op",
+            "extra": "4141 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkIntegrate - B/op",
+            "value": 290407,
+            "unit": "B/op",
+            "extra": "4141 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkIntegrate - allocs/op",
+            "value": 3036,
+            "unit": "allocs/op",
+            "extra": "4141 times\n4 procs"
           }
         ]
       }
