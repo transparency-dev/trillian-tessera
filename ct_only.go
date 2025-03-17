@@ -98,8 +98,7 @@ func ctBundleIDHasher(bundle []byte) ([][]byte, error) {
 			}
 
 			// For x509 entries we hash (just) the x509 certificate for identity.
-			h := sha256.Sum256(cert)
-			r = append(r, h[:])
+			r = append(r, identityHash(cert))
 
 			// Must continue below to consume all the remaining bytes in the entry.
 
@@ -128,8 +127,7 @@ func ctBundleIDHasher(bundle []byte) ([][]byte, error) {
 				return nil, fmt.Errorf("failed to read precert at entry index %d of bundle", i)
 			}
 			// For Precert entries we hash (just) the full precertificate for identity.
-			h := sha256.Sum256(precert)
-			r = append(r, h[:])
+			r = append(r, identityHash(precert))
 
 		}
 		if !b.ReadUint16LengthPrefixed(&ignore) {
