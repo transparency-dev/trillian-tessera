@@ -207,7 +207,7 @@ Now the fun part - writing to the log!
 	future, err := appender.Add(ctx, tessera.NewEntry(data))()
 ```
 
-The `AppendOptions` that can be passed in allow Tessera behaviour to be tuned.
+The `AppendOptions` allow Tessera behaviour to be tuned.
 Take a look at the methods named `With*` on the `AppendOptions` struct in the root package, e.g. [`WithBatching`](https://pkg.go.dev/github.com/transparency-dev/trillian-tessera@main#AppendOptions.WithBatching) to see the available options are how they should be used.
 
 Whichever storage option you use, writing to the log follows the same pattern: simply call `Add` with a new entry created with the data to be added as a leaf in the log.
