@@ -33,7 +33,7 @@ import (
 var (
 	storageDir = flag.String("storage_dir", "", "Root directory to store log data.")
 	sourceURL  = flag.String("source_url", "", "Base URL for the source log.")
-	numWorkers = flag.Int("num_workers", 30, "Number of migration worker goroutines.")
+	numWorkers = flag.Uint("num_workers", 30, "Number of migration worker goroutines.")
 )
 
 func main() {
@@ -68,12 +68,12 @@ func main() {
 		klog.Exitf("Failed to create new POSIX storage driver: %v", err)
 	}
 	// Create our Tessera migration target instance
-	st, err := tessera.NewMigrationTarget(ctx, driver, tessera.NewMigrationOptions())
+	m, err := tessera.NewMigrationTarget(ctx, driver, tessera.NewMigrationOptions())
 	if err != nil {
 		klog.Exitf("Failed to create new POSIX storage: %v", err)
 	}
 
-	if err := tessera.Migrate(context.Background(), *numWorkers, sourceSize, sourceRoot, src.ReadEntryBundle, st); err != nil {
+	if err := m.Migrate(context.Background(), *numWorkers, sourceSize, sourceRoot, src.ReadEntryBundle); err != nil {
 		klog.Exitf("Migrate failed: %v", err)
 	}
 }

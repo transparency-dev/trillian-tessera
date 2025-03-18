@@ -41,7 +41,7 @@ var (
 	initSchemaPath    = flag.String("init_schema_path", "", "Location of the schema file if database initialization is needed")
 
 	sourceURL  = flag.String("source_url", "", "Base URL for the source log.")
-	numWorkers = flag.Int("num_workers", 30, "Number of migration worker goroutines.")
+	numWorkers = flag.Uint("num_workers", 30, "Number of migration worker goroutines.")
 )
 
 func main() {
@@ -86,7 +86,7 @@ func main() {
 		klog.Exitf("Failed to create MigrationTarget: %v", err)
 	}
 
-	if err := tessera.Migrate(context.Background(), *numWorkers, sourceSize, sourceRoot, src.ReadEntryBundle, m); err != nil {
+	if err := m.Migrate(context.Background(), *numWorkers, sourceSize, sourceRoot, src.ReadEntryBundle); err != nil {
 		klog.Exitf("Migrate failed: %v", err)
 	}
 
