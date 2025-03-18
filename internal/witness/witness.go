@@ -35,7 +35,7 @@ import (
 	"golang.org/x/mod/sumdb/note"
 )
 
-var PolicyNotSatisfiedErr = errors.New("witness policy was not satisfied")
+var ErrPolicyNotSatisfied = errors.New("witness policy was not satisfied")
 
 // NewWitnessGateway returns a WitnessGateway that will send out new checkpoints to witnesses
 // in the group, and will ensure that the policy is satisfied before returning. All outbound
@@ -143,7 +143,7 @@ func (wg *WitnessGateway) Witness(ctx context.Context, cp []byte) ([]byte, error
 	}
 
 	// We can only get here if all witnesses have returned and we're still not satisfied.
-	return sigBlock.Bytes(), errors.Join(PolicyNotSatisfiedErr, err)
+	return sigBlock.Bytes(), errors.Join(ErrPolicyNotSatisfied, err)
 }
 
 type consistencyFuture func() ([][]byte, error)
@@ -255,8 +255,12 @@ func (w *witness) update(ctx context.Context, cp []byte, size uint64, fetchProof
 			if err != nil {
 				return nil, fmt.Errorf("witness at %q replied with x.tlog.size but body %q could not be parsed as decimal", w.url, bodyStr)
 			}
+			// These cases should not happen unless the witness is misbehaving.
+			// w.size <= newWitSize <= size must always be true.
+			if newWitSize > size {
+				return nil, fmt.Errorf("witness at %q replied with x.tlog.size %d, larger than log size %d", w.url, newWitSize, size)
+			}
 			if newWitSize < w.size {
-				// This case should not happen unless the witness is misbehaving
 				return nil, fmt.Errorf("witness at %q replied with x.tlog.size %d, smaller than known size %d", w.url, newWitSize, w.size)
 			}
 			w.size = newWitSize
