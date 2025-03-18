@@ -26,14 +26,6 @@ import (
 	"k8s.io/klog/v2"
 )
 
-// MigrationTarget describes the contract of the Migration lifecycle.
-//
-// This lifecycle mode is used to migrate C2SP tlog-tiles and static-ct
-// compliant logs into Tessera.
-type MigrationTarget interface {
-	Migrate(ctx context.Context, numWorkers uint, sourceSize uint64, sourceRoot []byte, getEntries client.EntryBundleFetcherFunc) error
-}
-
 type MigrationWriter interface {
 	// SetEntryBundle stores the provided serialised entry bundle at the location implied by the provided
 	// entry bundle index and partial size.
@@ -58,7 +50,7 @@ type UnbundlerFunc func(entryBundle []byte) ([][]byte, error)
 
 // NewMigrationTarget returns a MigrationTarget, which allows a personality to "import" a C2SP
 // tlog-tiles or static-ct compliant log into a Tessera instance.
-func NewMigrationTarget(ctx context.Context, d Driver, opts *MigrationOptions) (MigrationTarget, error) {
+func NewMigrationTarget(ctx context.Context, d Driver, opts *MigrationOptions) (*MigrationTarget, error) {
 	type migrateLifecycle interface {
 		MigrationTarget(context.Context, *MigrationOptions) (MigrationWriter, LogReader, error)
 	}
@@ -73,7 +65,7 @@ func NewMigrationTarget(ctx context.Context, d Driver, opts *MigrationOptions) (
 	for _, f := range opts.followers {
 		go f(ctx, r)
 	}
-	return &migrationTarget{
+	return &MigrationTarget{
 		writer: mw,
 	}, nil
 }
@@ -123,15 +115,21 @@ func (o *MigrationOptions) WithAntispam(as Antispam) *MigrationOptions {
 	return o
 }
 
-// migrationTarget implements the MigrationTarget interface, and handles the
-// actual copying of data from the source log to the target.
-type migrationTarget struct {
+// MigrationTarget handles the process of migrating/importing a source log into a Tessera instance.
+type MigrationTarget struct {
 	writer MigrationWriter
 }
 
-var _ MigrationTarget = &migrationTarget{}
-
-func (mt *migrationTarget) Migrate(ctx context.Context, numWorkers uint, sourceSize uint64, sourceRoot []byte, getEntries client.EntryBundleFetcherFunc) error {
+// Migrate performs the work of importing a source log into the local Tessera instance.
+//
+// Any entry bundles implied by the provided source log size which are not already present in the local log
+// will be fetched using the provided getEntries function, and stored by the underlying driver.
+// A background process will continuously attempt to integrate these bundles into the local tree.
+//
+// An error will be returned if there is an unrecoverable problem encountered during the migration
+// process, or if, once all entries have been copied and integrated into the local tree, the local
+// root hash does not match the provided sourceRoot.
+func (mt *MigrationTarget) Migrate(ctx context.Context, numWorkers uint, sourceSize uint64, sourceRoot []byte, getEntries client.EntryBundleFetcherFunc) error {
 	cctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
