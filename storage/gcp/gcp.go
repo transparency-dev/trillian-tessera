@@ -1177,6 +1177,8 @@ func (m *MigrationStorage) buildTree(ctx context.Context, sourceSize uint64) (ui
 
 		if len(lh) == 0 {
 			klog.Infof("Integrate: nothing to do, nothing done")
+			// Set these to the current state of the tree so we reflect that in buildTree's return values.
+			newSize, newRoot = from, rootHash
 			return nil
 		}
 
