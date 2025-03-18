@@ -15,11 +15,15 @@
 package tessera
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/transparency-dev/trillian-tessera/api/layout"
 	"github.com/transparency-dev/trillian-tessera/client"
+	"golang.org/x/sync/errgroup"
+	"k8s.io/klog/v2"
 )
 
 // MigrationTarget describes the contract of the Migration lifecycle.
@@ -128,6 +132,63 @@ type migrationTarget struct {
 var _ MigrationTarget = &migrationTarget{}
 
 func (mt *migrationTarget) Migrate(ctx context.Context, numWorkers uint, sourceSize uint64, sourceRoot []byte, getEntries client.EntryBundleFetcherFunc) error {
-	c := newCopier(numWorkers, mt.writer, getEntries)
-	return c.Copy(ctx, sourceSize, sourceRoot)
+	cctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	c := newCopier(numWorkers, mt.writer.SetEntryBundle, getEntries)
+
+	fromSize, err := mt.writer.IntegratedSize(ctx)
+	if err != nil {
+		return fmt.Errorf("fetching integrated size failed: %v", err)
+	}
+
+	// Print stats
+	go func() {
+		bundlesToCopy := (sourceSize / layout.EntryBundleWidth)
+		if bundlesToCopy == 0 {
+			return
+		}
+		for {
+			select {
+			case <-cctx.Done():
+				return
+			case <-time.After(time.Second):
+			}
+			bn := c.BundlesCopied()
+			bnp := float64(bn*100) / float64(bundlesToCopy)
+			s, err := mt.writer.IntegratedSize(ctx)
+			if err != nil {
+				klog.Warningf("Size: %v", err)
+			}
+			intp := float64(s*100) / float64(sourceSize)
+			klog.Infof("integration: %d (%.2f%%)  bundles: %d (%.2f%%)", s, intp, bn, bnp)
+		}
+	}()
+
+	// go integrate
+	errG := errgroup.Group{}
+	errG.Go(func() error {
+		return c.Copy(cctx, fromSize, sourceSize)
+	})
+
+	var calculatedRoot []byte
+	errG.Go(func() error {
+		r, err := mt.writer.AwaitIntegration(cctx, sourceSize)
+		if err != nil {
+			return fmt.Errorf("awaiting integration failed: %v", err)
+		}
+		calculatedRoot = r
+		return nil
+	})
+
+	if err := errG.Wait(); err != nil {
+		return fmt.Errorf("migrate failed: %v", err)
+	}
+
+	if !bytes.Equal(calculatedRoot, sourceRoot) {
+		return fmt.Errorf("migration completed, but local root hash %x != source root hash %x", calculatedRoot, sourceRoot)
+	}
+
+	klog.Infof("Migration successful.")
+	return nil
 }
