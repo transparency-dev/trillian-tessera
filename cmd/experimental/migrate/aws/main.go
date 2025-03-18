@@ -1,4 +1,4 @@
-// Copyright 2024 The Tessera authors. All Rights Reserved.
+// Copyright 2025 The Tessera authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,26 +12,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// aws is a simple personality allowing to run conformance/compliance/performance tests and showing how to use the Tessera AWS storage implmentation.
+// aws-migrate is a command-line tool for migrating data from a tlog-tiles
+// compliant log, into a Tessera log instance hosted on AWS.
 package main
 
 import (
 	"context"
-	"errors"
+	"encoding/base64"
 	"flag"
 	"fmt"
-	"io"
-	"net/http"
-	"time"
+	"net/url"
+	"strconv"
+	"strings"
 
 	aaws "github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	tessera "github.com/transparency-dev/trillian-tessera"
+	"github.com/transparency-dev/trillian-tessera/client"
 	"github.com/transparency-dev/trillian-tessera/storage/aws"
-	"golang.org/x/mod/sumdb/note"
-	"golang.org/x/net/http2"
-	"golang.org/x/net/http2/h2c"
 	"k8s.io/klog/v2"
 )
 
@@ -48,25 +47,39 @@ var (
 	s3AccessKeyID     = flag.String("s3_access_key", "", "Access key ID for custom non-AWS S3 service")
 	s3SecretAccessKey = flag.String("s3_secret", "", "Secret access key for custom non-AWS S3 service")
 
-	listen            = flag.String("listen", ":2024", "Address:port to listen on")
-	signer            = flag.String("signer", "", "Note signer to use to sign checkpoints")
-	publishInterval   = flag.Duration("publish_interval", 3*time.Second, "How frequently to publish updated checkpoints")
-	additionalSigners = []string{}
+	sourceURL  = flag.String("source_url", "", "Base URL for the source log.")
+	numWorkers = flag.Uint("num_workers", 30, "Number of migration worker goroutines.")
 )
-
-func init() {
-	flag.Func("additional_signer", "Additional note signer for checkpoints, may be specified multiple times", func(s string) error {
-		additionalSigners = append(additionalSigners, s)
-		return nil
-	})
-}
 
 func main() {
 	klog.InitFlags(nil)
 	flag.Parse()
 	ctx := context.Background()
 
-	s, a := signerFromFlags()
+	if len(*sourceURL) == 0 {
+		klog.Exit("Missing parameter: --source_url")
+	}
+	srcURL, err := url.Parse(*sourceURL)
+	if err != nil {
+		klog.Exitf("Invalid --source_url %q: %v", *sourceURL, err)
+	}
+	src, err := client.NewHTTPFetcher(srcURL, nil)
+	if err != nil {
+		klog.Exitf("Failed to create HTTP fetcher: %v", err)
+	}
+	sourceCP, err := src.ReadCheckpoint(ctx)
+	if err != nil {
+		klog.Exitf("fetch initial source checkpoint: %v", err)
+	}
+	bits := strings.Split(string(sourceCP), "\n")
+	sourceSize, err := strconv.ParseUint(bits[1], 10, 64)
+	if err != nil {
+		klog.Exitf("invalid CP size %q: %v", bits[1], err)
+	}
+	sourceRoot, err := base64.StdEncoding.DecodeString(bits[2])
+	if err != nil {
+		klog.Exitf("invalid checkpoint roothash %q: %v", bits[2], err)
+	}
 
 	// Create our Tessera storage backend:
 	awsCfg := storageConfigFromFlags()
@@ -74,53 +87,20 @@ func main() {
 	if err != nil {
 		klog.Exitf("Failed to create new AWS storage: %v", err)
 	}
-	appender, shutdown, _, err := tessera.NewAppender(ctx, driver, tessera.NewAppendOptions().
-		WithCheckpointSigner(s, a...).
-		WithCheckpointInterval(*publishInterval).
-		WithBatching(1024, time.Second).
-		WithPushback(10*4096).
-		WithAntispam(256, nil))
+	opts := tessera.NewMigrationOptions()
+
+	m, err := tessera.NewMigrationTarget(ctx, driver, opts)
 	if err != nil {
-		klog.Exit(err)
+		klog.Exitf("Failed to create MigrationTarget: %v", err)
 	}
 
-	// Expose a HTTP handler for the conformance test writes.
-	// This should accept arbitrary bytes POSTed to /add, and return an ascii
-	// decimal representation of the index assigned to the entry.
-	http.HandleFunc("POST /add", func(w http.ResponseWriter, r *http.Request) {
-		b, err := io.ReadAll(r.Body)
-		if err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
-			return
-		}
-
-		idx, err := appender.Add(r.Context(), tessera.NewEntry(b))()
-		if err != nil {
-			if errors.Is(err, tessera.ErrPushback) {
-				w.Header().Add("Retry-After", "1")
-				w.WriteHeader(http.StatusServiceUnavailable)
-				return
-			}
-			w.WriteHeader(http.StatusInternalServerError)
-			_, _ = w.Write([]byte(err.Error()))
-			return
-		}
-		// Write out the assigned index
-		_, _ = w.Write([]byte(fmt.Sprintf("%d", idx)))
-	})
-
-	h2s := &http2.Server{}
-	h1s := &http.Server{
-		Addr:    *listen,
-		Handler: h2c.NewHandler(http.DefaultServeMux, h2s),
+	klog.Infof("Starting Migrate() with workers=%d, sourceSize=%d, migrating from %q", *numWorkers, sourceSize, *sourceURL)
+	if err := m.Migrate(context.Background(), *numWorkers, sourceSize, sourceRoot, src.ReadEntryBundle); err != nil {
+		klog.Exitf("Migrate failed: %v", err)
 	}
 
-	if err := h1s.ListenAndServe(); err != nil {
-		if err := shutdown(ctx); err != nil {
-			klog.Exit(err)
-		}
-		klog.Exitf("ListenAndServe: %v", err)
-	}
+	// TODO(#341): wait for antispam follower to complete
+	<-make(chan bool)
 }
 
 // storageConfigFromFlags returns an aws.Config struct populated with values
@@ -176,22 +156,4 @@ func storageConfigFromFlags() aws.Config {
 		MaxOpenConns: *dbMaxConns,
 		MaxIdleConns: *dbMaxIdle,
 	}
-}
-
-func signerFromFlags() (note.Signer, []note.Signer) {
-	s, err := note.NewSigner(*signer)
-	if err != nil {
-		klog.Exitf("Failed to create new signer: %v", err)
-	}
-
-	var a []note.Signer
-	for _, as := range additionalSigners {
-		s, err := note.NewSigner(as)
-		if err != nil {
-			klog.Exitf("Failed to create additional signer: %v", err)
-		}
-		a = append(a, s)
-	}
-
-	return s, a
 }
