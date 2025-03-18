@@ -19,6 +19,7 @@ import (
 	"fmt"
 
 	"github.com/transparency-dev/trillian-tessera/api/layout"
+	"github.com/transparency-dev/trillian-tessera/client"
 )
 
 // MigrationTarget describes the contract of the Migration lifecycle.
@@ -26,6 +27,10 @@ import (
 // This lifecycle mode is used to migrate C2SP tlog-tiles and static-ct
 // compliant logs into Tessera.
 type MigrationTarget interface {
+	Migrate(ctx context.Context, numWorkers uint, sourceSize uint64, sourceRoot []byte, getEntries client.EntryBundleFetcherFunc) error
+}
+
+type MigrationWriter interface {
 	// SetEntryBundle stores the provided serialised entry bundle at the location implied by the provided
 	// entry bundle index and partial size.
 	//
@@ -51,20 +56,22 @@ type UnbundlerFunc func(entryBundle []byte) ([][]byte, error)
 // tlog-tiles or static-ct compliant log into a Tessera instance.
 func NewMigrationTarget(ctx context.Context, d Driver, opts *MigrationOptions) (MigrationTarget, error) {
 	type migrateLifecycle interface {
-		MigrationTarget(context.Context, *MigrationOptions) (MigrationTarget, LogReader, error)
+		MigrationTarget(context.Context, *MigrationOptions) (MigrationWriter, LogReader, error)
 	}
 	lc, ok := d.(migrateLifecycle)
 	if !ok {
 		return nil, fmt.Errorf("driver %T does not implement MigrationTarget lifecycle", d)
 	}
-	m, r, err := lc.MigrationTarget(ctx, opts)
+	mw, r, err := lc.MigrationTarget(ctx, opts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to init MigrationTarget lifecycle: %v", err)
 	}
 	for _, f := range opts.followers {
 		go f(ctx, r)
 	}
-	return m, nil
+	return &migrationTarget{
+		writer: mw,
+	}, nil
 }
 
 func NewMigrationOptions() *MigrationOptions {
@@ -110,4 +117,17 @@ func (o *MigrationOptions) WithAntispam(as Antispam) *MigrationOptions {
 		})
 	}
 	return o
+}
+
+// migrationTarget implements the MigrationTarget interface, and handles the
+// actual copying of data from the source log to the target.
+type migrationTarget struct {
+	writer MigrationWriter
+}
+
+var _ MigrationTarget = &migrationTarget{}
+
+func (mt *migrationTarget) Migrate(ctx context.Context, numWorkers uint, sourceSize uint64, sourceRoot []byte, getEntries client.EntryBundleFetcherFunc) error {
+	c := newCopier(numWorkers, mt.writer, getEntries)
+	return c.Copy(ctx, sourceSize, sourceRoot)
 }
