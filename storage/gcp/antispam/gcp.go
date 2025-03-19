@@ -95,6 +95,7 @@ func NewAntispam(ctx context.Context, spannerDB string, opts AntispamOpts) (*Ant
 	}
 
 	r := &AntispamStorage{
+		opts:   opts,
 		dbPool: db,
 	}
 

@@ -81,6 +81,20 @@ type LogReader interface {
 	StreamEntries(ctx context.Context, fromEntryIdx uint64) (next func() (layout.RangeInfo, []byte, error), cancel func())
 }
 
+// Follower describes the contract of something which is required to track the contents of the local log.
+type Follower interface {
+	// Follow should be implemented so as to visit entries in the log in order, using the provided
+	// LogReader to access the entry bundles which contain them.
+	//
+	// Implementations should keep track of their progress such that they can pick-up where they left off
+	// if e.g. the binary is restarted.
+	Follow(context.Context, LogReader)
+
+	// Position reports the progress of the follower, and should return the largest index which has been
+	// successfully seen/processed.
+	Position(context.Context) (uint64, error)
+}
+
 // Antispam describes the contract that an antispam implementation must meet in order to be used via the
 // WithAntispam option below.
 type Antispam interface {
@@ -88,18 +102,9 @@ type Antispam interface {
 	// to return an index previously assigned to an entry with the same identity hash, if one exists, or
 	// delegate to the next Add function in the chain otherwise.
 	Decorator() func(AddFn) AddFn
-	// Populate should be a long-running function which uses the provided log reader to build the
-	// antispam index used by the dectorator above.
-	//
-	// Typically, implementations of this function will tail the contents of the log using the provided
-	// log reader to stream entry bundles from the log, and, for each entry bundle, use the
-	// provided bundle function to convert the bundle into a slice of identity hashes which
-	// corresponds to the entries the bundle contains. These hashes should then be used to populate
-	// some form of an identity hash -> index mapping.
-	//
-	// This function will be called automatically by Tessera, and is expected to block until the context
-	// is done.
-	Populate(context.Context, LogReader, func(entryBundle []byte) ([][]byte, error))
+	// Follower should return a structure which will populate the anti-spam index by tailing the contents
+	// of the log, using the provided function to turn entry bundles into identity hashes.
+	Follower(func(entryBundle []byte) ([][]byte, error)) Follower
 }
 
 // identityHash calculates the antispam identity hash for the provided (single) leaf entry data.

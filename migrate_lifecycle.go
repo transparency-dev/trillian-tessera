@@ -63,7 +63,7 @@ func NewMigrationTarget(ctx context.Context, d Driver, opts *MigrationOptions) (
 		return nil, fmt.Errorf("failed to init MigrationTarget lifecycle: %v", err)
 	}
 	for _, f := range opts.followers {
-		go f(ctx, r)
+		go f.Follow(ctx, r)
 	}
 	return &MigrationTarget{
 		writer: mw,
@@ -86,14 +86,14 @@ type MigrationOptions struct {
 	bundleIDHasher func([]byte) ([][]byte, error)
 	// bundleLeafHasher knows how to create Merkle leaf hashes for the entries in a serialised bundle.
 	bundleLeafHasher func([]byte) ([][]byte, error)
-	followers        []func(context.Context, LogReader)
+	followers        []Follower
 }
 
 func (o MigrationOptions) EntriesPath() func(uint64, uint8) string {
 	return o.entriesPath
 }
 
-func (o MigrationOptions) Followers() []func(context.Context, LogReader) {
+func (o MigrationOptions) Followers() []Follower {
 	return o.followers
 }
 
@@ -108,9 +108,7 @@ func (o *MigrationOptions) LeafHasher() func([]byte) ([][]byte, error) {
 // of the source tree and so no attempt is made to reject/deduplicate entries.
 func (o *MigrationOptions) WithAntispam(as Antispam) *MigrationOptions {
 	if as != nil {
-		o.followers = append(o.followers, func(ctx context.Context, lr LogReader) {
-			as.Populate(ctx, lr, o.bundleIDHasher)
-		})
+		o.followers = append(o.followers, as.Follower(o.bundleIDHasher))
 	}
 	return o
 }

@@ -100,7 +100,7 @@ func NewAppender(ctx context.Context, d Driver, opts *AppendOptions) (*Appender,
 		a.Add = opts.addDecorators[i](a.Add)
 	}
 	for _, f := range opts.followers {
-		go f(ctx, r)
+		go f.Follow(ctx, r)
 	}
 	t := terminator{
 		delegate:       a.Add,
@@ -196,9 +196,7 @@ func (o *AppendOptions) WithAntispam(inMemEntries uint, as Antispam) *AppendOpti
 	o.addDecorators = append(o.addDecorators, newInMemoryDedupe(inMemEntries))
 	if as != nil {
 		o.addDecorators = append(o.addDecorators, as.Decorator())
-		o.followers = append(o.followers, func(ctx context.Context, lr LogReader) {
-			as.Populate(ctx, lr, o.bundleIDHasher)
-		})
+		o.followers = append(o.followers, as.Follower(o.bundleIDHasher))
 	}
 	return o
 }
@@ -234,7 +232,7 @@ type AppendOptions struct {
 	witnesses          WitnessGroup
 
 	addDecorators []func(AddFn) AddFn
-	followers     []func(context.Context, LogReader)
+	followers     []Follower
 }
 
 func (o AppendOptions) NewCP() func(uint64, []byte) ([]byte, error) {
