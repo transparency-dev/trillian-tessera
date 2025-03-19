@@ -695,8 +695,8 @@ func createEx(p string, d []byte) error {
 	return nil
 }
 
-// MigrationTarget creates a new POSIX storage for the MigrationTarget lifecycle mode.
-func (s *Storage) MigrationTarget(ctx context.Context, opts *tessera.MigrationOptions) (tessera.MigrationWriter, tessera.LogReader, error) {
+// MigrationWriter creates a new POSIX storage for the MigrationTarget lifecycle mode.
+func (s *Storage) MigrationWriter(ctx context.Context, opts *tessera.MigrationOptions) (tessera.MigrationWriter, tessera.LogReader, error) {
 	r := &MigrationStorage{
 		s: s,
 		logStorage: &logResourceStorage{
