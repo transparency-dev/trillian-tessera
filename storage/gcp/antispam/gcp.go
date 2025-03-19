@@ -178,6 +178,16 @@ func (d *AntispamStorage) Decorator() func(f tessera.AddFn) tessera.AddFn {
 	}
 }
 
+// Follower returns a follower which knows how to populate the antispam index.
+//
+// This implements tessera.Antispam.
+func (d *AntispamStorage) Follower(b func([]byte) ([][]byte, error)) tessera.Follower {
+	return &follower{
+		as:           d,
+		bundleHasher: b,
+	}
+}
+
 // entryStreamReader converts a stream of {RangeInfo, EntryBundle} into a stream of individually processed entries.
 //
 // TODO(al): Factor this out for re-use elsewhere when it's ready.
@@ -230,10 +240,15 @@ func (e *entryStreamReader[T]) Next() (uint64, T, error) {
 	return rIdx, t, nil
 }
 
-// Populate uses entry data from the log to populate the antispam storage.
-//
-// TODO(al):  add details
-func (d *AntispamStorage) Populate(ctx context.Context, lr tessera.LogReader, bundleFn func([]byte) ([][]byte, error)) {
+// follower is a struct which knows how to populate the antispam storage with identity hashes
+// for entries in a log.
+type follower struct {
+	as           *AntispamStorage
+	bundleHasher func([]byte) ([][]byte, error)
+}
+
+// Follow uses entry data from the log to populate the antispam storage.
+func (f *follower) Follow(ctx context.Context, lr tessera.LogReader) {
 	errOutOfSync := errors.New("out-of-sync")
 
 	t := time.NewTicker(time.Second)
@@ -258,32 +273,32 @@ func (d *AntispamStorage) Populate(ctx context.Context, lr tessera.LogReader, bu
 
 		// Busy loop while there's work to be done
 		for workDone := true; workDone; {
-			_, err = d.dbPool.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
+			_, err = f.as.dbPool.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
 				// Figure out the last entry we used to populate our antispam storage.
 				row, err := txn.ReadRowWithOptions(ctx, "FollowCoord", spanner.Key{0}, []string{"nextIdx"}, &spanner.ReadOptions{LockHint: spannerpb.ReadRequest_LOCK_HINT_EXCLUSIVE})
 				if err != nil {
 					return err
 				}
 
-				var f int64 // Spanner doesn't support uint64
-				if err := row.Columns(&f); err != nil {
+				var nextIdx int64 // Spanner doesn't support uint64
+				if err := row.Columns(&nextIdx); err != nil {
 					return fmt.Errorf("failed to read follow coordination info: %v", err)
 				}
-				followFrom := uint64(f)
+				followFrom := uint64(nextIdx)
 				if followFrom >= size {
 					// Our view of the log is out of date, exit the busy loop and refresh it.
 					workDone = false
 					return nil
 				}
 
-				d.pushBack.Store(size-followFrom > uint64(d.opts.PushbackThreshold))
+				f.as.pushBack.Store(size-followFrom > uint64(f.as.opts.PushbackThreshold))
 
 				// If this is the first time around the loop we need to start the stream of entries now that we know where we want to
 				// start reading from:
 				if entryReader == nil {
 					next, st := lr.StreamEntries(ctx, followFrom)
 					stop = st
-					entryReader = newEntryStreamReader(next, bundleFn)
+					entryReader = newEntryStreamReader(next, f.bundleHasher)
 				}
 
 				if curIndex == followFrom && curEntries != nil {
@@ -292,7 +307,7 @@ func (d *AntispamStorage) Populate(ctx context.Context, lr tessera.LogReader, bu
 					// If the above condition holds, then we're in a retry situation and we must use the same data again rather
 					// than continue reading entries which will take us out of sync.
 				} else {
-					bs := uint64(d.opts.MaxBatchSize)
+					bs := uint64(f.as.opts.MaxBatchSize)
 					if r := size - followFrom; r < bs {
 						bs = r
 					}
@@ -337,7 +352,7 @@ func (d *AntispamStorage) Populate(ctx context.Context, lr tessera.LogReader, bu
 						})
 					}
 
-					i := d.dbPool.BatchWrite(ctx, m)
+					i := f.as.dbPool.BatchWrite(ctx, m)
 					err := i.Do(func(r *spannerpb.BatchWriteResponse) error {
 						s := r.GetStatus()
 						if c := codes.Code(s.Code); c != codes.OK && c != codes.AlreadyExists {
@@ -351,7 +366,7 @@ func (d *AntispamStorage) Populate(ctx context.Context, lr tessera.LogReader, bu
 				}
 
 				numAdded := uint64(len(curEntries))
-				d.numWrites.Add(numAdded)
+				f.as.numWrites.Add(numAdded)
 
 				// Insertion of dupe entries was successful, so update our follow coordination row:
 				m := make([]*spanner.Mutation, 0)
@@ -370,6 +385,20 @@ func (d *AntispamStorage) Populate(ctx context.Context, lr tessera.LogReader, bu
 			curEntries = nil
 		}
 	}
+}
+
+// Position returns the index of the entry furthest from the start of the log which has been processed.
+func (f *follower) Position(ctx context.Context) (uint64, error) {
+	row, err := f.as.dbPool.Single().ReadRow(ctx, "FollowCoord", spanner.Key{0}, []string{"nextIdx"})
+	if err != nil {
+		return 0, err
+	}
+
+	var nextIdx int64 // Spanner doesn't support uint64
+	if err := row.Columns(&nextIdx); err != nil {
+		return 0, fmt.Errorf("failed to read follow coordination info: %v", err)
+	}
+	return uint64(nextIdx), nil
 }
 
 // createAndPrepareTables applies the passed in list of DDL statements and groups of mutations.
