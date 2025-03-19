@@ -99,18 +99,6 @@ func NewAntispam(ctx context.Context, spannerDB string, opts AntispamOpts) (*Ant
 		dbPool: db,
 	}
 
-	go func(ctx context.Context) {
-		t := time.NewTicker(time.Second)
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-t.C:
-				klog.V(1).Infof("ANTISPAM: # Writes %d, # Lookups %d, # DB hits %v", r.numWrites.Load(), r.numLookups.Load(), r.numHits.Load())
-			}
-		}
-	}(ctx)
-
 	return r, nil
 }
 
