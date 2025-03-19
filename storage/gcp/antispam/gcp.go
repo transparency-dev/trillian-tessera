@@ -247,6 +247,10 @@ type follower struct {
 	bundleHasher func([]byte) ([][]byte, error)
 }
 
+func (f *follower) Name() string {
+	return "GCP antispam"
+}
+
 // Follow uses entry data from the log to populate the antispam storage.
 func (f *follower) Follow(ctx context.Context, lr tessera.LogReader) {
 	errOutOfSync := errors.New("out-of-sync")

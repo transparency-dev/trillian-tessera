@@ -83,6 +83,9 @@ type LogReader interface {
 
 // Follower describes the contract of something which is required to track the contents of the local log.
 type Follower interface {
+	// Name returns a human readable name for this follower.
+	Name() string
+
 	// Follow should be implemented so as to visit entries in the log in order, using the provided
 	// LogReader to access the entry bundles which contain them.
 	//
