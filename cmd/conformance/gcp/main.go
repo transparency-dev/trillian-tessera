@@ -66,7 +66,11 @@ func main() {
 	var antispam tessera.Antispam
 	// Persistent antispam is currently experimental, so there's no terraform or documentation yet!
 	if *persistentAntispam {
-		antispam, err = gcp_as.NewAntispam(ctx, fmt.Sprintf("%s-antispam", *spanner))
+		asOpts := gcp_as.AntispamOpts{
+			MaxBatchSize:      64,
+			PushbackThreshold: 1024,
+		}
+		antispam, err = gcp_as.NewAntispam(ctx, fmt.Sprintf("%s-antispam", *spanner), asOpts)
 		if err != nil {
 			klog.Exitf("Failed to create new GCP antispam storage: %v", err)
 		}
