@@ -751,10 +751,8 @@ func integrate(ctx context.Context, tx *sql.Tx, fromSeq uint64, lh [][]byte, wri
 	return newSize, newRoot, nil
 }
 
-// MigrationTarget creates a new MySQL storage for the MigrationTarget lifecycle mode.
-//
-// bundleHasher must return Merkle leaf hashes for entry bundles it's passed.
-func (s *Storage) MigrationTarget(ctx context.Context, opts *tessera.MigrationOptions) (tessera.MigrationTarget, tessera.LogReader, error) {
+// MigrationWriter creates a new MySQL storage for the MigrationTarget lifecycle mode.
+func (s *Storage) MigrationWriter(ctx context.Context, opts *tessera.MigrationOptions) (tessera.MigrationWriter, tessera.LogReader, error) {
 	if err := s.maybeInitTree(ctx); err != nil {
 		return nil, nil, fmt.Errorf("maybeInitTree: %v", err)
 	}
@@ -771,7 +769,7 @@ type MigrationStorage struct {
 	bundleHasher func([]byte) ([][]byte, error)
 }
 
-var _ tessera.MigrationTarget = &MigrationStorage{}
+var _ tessera.MigrationWriter = &MigrationStorage{}
 
 // AwaitIntegration blocks until the local integrated tree has grown to the provided size.
 //

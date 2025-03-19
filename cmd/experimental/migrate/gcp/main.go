@@ -37,7 +37,7 @@ var (
 	spanner = flag.String("spanner", "", "Spanner resource URI ('projects/.../...')")
 
 	sourceURL          = flag.String("source_url", "", "Base URL for the source log.")
-	numWorkers         = flag.Int("num_workers", 30, "Number of migration worker goroutines.")
+	numWorkers         = flag.Uint("num_workers", 30, "Number of migration worker goroutines.")
 	persistentAntispam = flag.Bool("antispam", false, "EXPERIMENTAL: Set to true to enable GCP-based persistent antispam storage")
 )
 
@@ -92,7 +92,7 @@ func main() {
 		klog.Exitf("Failed to create MigrationTarget: %v", err)
 	}
 
-	if err := tessera.Migrate(context.Background(), *numWorkers, sourceSize, sourceRoot, src.ReadEntryBundle, m); err != nil {
+	if err := m.Migrate(context.Background(), *numWorkers, sourceSize, sourceRoot, src.ReadEntryBundle); err != nil {
 		klog.Exitf("Migrate failed: %v", err)
 	}
 
