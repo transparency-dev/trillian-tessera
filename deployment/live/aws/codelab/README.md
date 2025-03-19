@@ -90,12 +90,12 @@ VM.
 
  1. From the root of the trillian-tessera repo, initialize terragrunt:
     ```
-    terragrunt init --terragrunt-working-dir=deployment/live/aws/codelab/
+    terragrunt init --working-dir=deployment/live/aws/codelab/
     ```
 
  1. Deploy the infrastructure:
     ```
-    terragrunt apply --terragrunt-working-dir=deployment/live/aws/codelab/
+    terragrunt apply --working-dir=deployment/live/aws/codelab/
     ```
     This brings up the Terraform infrastructure (S3 bucket + DynamoDB table for
     terraform state locking only) and the Trillian Tessera infrastructure: an
@@ -104,9 +104,9 @@ VM.
 
  1. Save the RDS instance URI and S3 bucket name for later:
     ```
-    export LOG_RDS_DB=$(terragrunt output --terragrunt-working-dir=deployment/live/aws/codelab/ --raw log_rds_db)
-    export LOG_BUCKET=$(terragrunt output --terragrunt-working-dir=deployment/live/aws/codelab/ --raw log_bucket_id)
-    export LOG_NAME=$(terragrunt output --terragrunt-working-dir=deployment/live/aws/codelab/ --raw log_name)
+    export LOG_RDS_DB=$(terragrunt output --working-dir=deployment/live/aws/codelab/ --raw log_rds_db)
+    export LOG_BUCKET=$(terragrunt output --working-dir=deployment/live/aws/codelab/ --raw log_bucket_id)
+    export LOG_NAME=$(terragrunt output --working-dir=deployment/live/aws/codelab/ --raw log_name)
     ```
  
 1. Connect the VM and Aurora database following [these instructions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/tutorial-ec2-rds-option1.html#option1-task3-connect-ec2-instance-to-rds-database),
