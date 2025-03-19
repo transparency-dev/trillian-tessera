@@ -129,9 +129,9 @@ type Config struct {
 	Bucket string
 	// DSN is the DSN of the MySQL instance to use.
 	DSN string
-	// Maximum connections to the MysSQL database
+	// Maximum connections to the MySQL database.
 	MaxOpenConns int
-	// Maximum idle database connections in the connection pool
+	// Maximum idle database connections in the connection pool.
 	MaxIdleConns int
 }
 
