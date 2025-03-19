@@ -36,6 +36,32 @@ import (
 	"k8s.io/klog/v2"
 )
 
+const (
+	DefaultMaxBatchSize      = 64
+	DefaultPushbackThreshold = 1024
+)
+
+// AntispamOpts allows configuration of some tunable options.
+type AntispamOpts struct {
+	// MaxBatchSize is the largest number of mutations permitted in a single BatchWrite operation when
+	// updating the antispam index.
+	//
+	// Larger batches can enable (up to a point) higher throughput, but care should be taken not to
+	// overload the Spanner instance.
+	//
+	// During testing, we've found that 1500 appears to offer maximum throughput when using Spanner instances
+	// with 300 or more PU. Smaller deployments (e.g. 100 PU) will likely perform better with smaller batch
+	// sizes of around 64.
+	MaxBatchSize uint
+
+	// PushbackThreshold allows configuration of when to start responding to Add requests with pushback due to
+	// the antispam follower falling too far behind.
+	//
+	// When the antispam follower is at least this many entries behind the size of the locally integrated tree,
+	// the antispam decorator will return tessera.ErrPushback for every Add request.
+	PushbackThreshold uint
+}
+
 // NewAntispam returns an antispam driver which uses Spanner to maintain a mapping of
 // previously seen entries and their assigned indices.
 //
@@ -43,7 +69,13 @@ import (
 // maintaining the Merkle tree.
 //
 // This functionality is experimental!
-func NewAntispam(ctx context.Context, spannerDB string) (*AntispamStorage, error) {
+func NewAntispam(ctx context.Context, spannerDB string, opts AntispamOpts) (*AntispamStorage, error) {
+	if opts.MaxBatchSize == 0 {
+		opts.MaxBatchSize = DefaultMaxBatchSize
+	}
+	if opts.PushbackThreshold == 0 {
+		opts.PushbackThreshold = DefaultPushbackThreshold
+	}
 	if err := createAndPrepareTables(
 		ctx, spannerDB,
 		[]string{
@@ -82,6 +114,8 @@ func NewAntispam(ctx context.Context, spannerDB string) (*AntispamStorage, error
 }
 
 type AntispamStorage struct {
+	opts AntispamOpts
+
 	dbPool *spanner.Client
 
 	// pushBack is used to prevent the follower from getting too far underwater.
@@ -241,10 +275,7 @@ func (d *AntispamStorage) Populate(ctx context.Context, lr tessera.LogReader, bu
 					return nil
 				}
 
-				// TODO(al): Maybe make these configurable.
-				const batchSize = 40
-				const pushBackThreshold = batchSize * 16
-				d.pushBack.Store(size-followFrom > pushBackThreshold)
+				d.pushBack.Store(size-followFrom > uint64(d.opts.PushbackThreshold))
 
 				// If this is the first time around the loop we need to start the stream of entries now that we know where we want to
 				// start reading from:
@@ -260,7 +291,7 @@ func (d *AntispamStorage) Populate(ctx context.Context, lr tessera.LogReader, bu
 					// If the above condition holds, then we're in a retry situation and we must use the same data again rather
 					// than continue reading entries which will take us out of sync.
 				} else {
-					bs := uint64(batchSize)
+					bs := uint64(d.opts.MaxBatchSize)
 					if r := size - followFrom; r < bs {
 						bs = r
 					}
