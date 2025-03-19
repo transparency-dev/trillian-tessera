@@ -52,13 +52,13 @@ type UnbundlerFunc func(entryBundle []byte) ([][]byte, error)
 // tlog-tiles or static-ct compliant log into a Tessera instance.
 func NewMigrationTarget(ctx context.Context, d Driver, opts *MigrationOptions) (*MigrationTarget, error) {
 	type migrateLifecycle interface {
-		MigrationTarget(context.Context, *MigrationOptions) (MigrationWriter, LogReader, error)
+		MigrationWriter(context.Context, *MigrationOptions) (MigrationWriter, LogReader, error)
 	}
 	lc, ok := d.(migrateLifecycle)
 	if !ok {
 		return nil, fmt.Errorf("driver %T does not implement MigrationTarget lifecycle", d)
 	}
-	mw, r, err := lc.MigrationTarget(ctx, opts)
+	mw, r, err := lc.MigrationWriter(ctx, opts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to init MigrationTarget lifecycle: %v", err)
 	}
