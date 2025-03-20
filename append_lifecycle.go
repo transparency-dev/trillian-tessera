@@ -65,7 +65,7 @@ type IndexFuture func() (Index, error)
 type Index struct {
 	// Index is the location in the log to which a particular entry has been assigned.
 	Index uint64
-	// IsDup is true if Index represents a previously assignment for the same entry.
+	// IsDup is true if Index represents a previously assigned index for an identical entry.
 	IsDup bool
 }
 
