@@ -41,6 +41,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -423,6 +424,176 @@ func (a *Appender) updateEntryBundles(ctx context.Context, fromSeq uint64, entri
 		goSetEntryBundle(ctx, bundleIndex, uint8(entriesInBundle), bundleWriter.Bytes())
 	}
 	return seqErr.Wait()
+}
+
+// MigrationWriter creates a new AWS storage for the MigrationWriter lifecycle mode.
+func (s *Storage) MigrationWriter(ctx context.Context, opts *tessera.MigrationOptions) (tessera.MigrationWriter, tessera.LogReader, error) {
+	logStore := &logResourceStore{
+		objStore: &s3Storage{
+			s3Client: s3.NewFromConfig(*s.cfg.SDKConfig, s.cfg.S3Options),
+			bucket:   s.cfg.Bucket,
+		},
+		entriesPath: opts.EntriesPath(),
+	}
+	seq, err := newMySQLSequencer(ctx, s.cfg.DSN, DefaultPushbackMaxOutstanding, s.cfg.MaxOpenConns, s.cfg.MaxIdleConns)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create MySQL sequencer: %v", err)
+	}
+	m := &MigrationStorage{
+		s:            s,
+		dbPool:       seq.dbPool,
+		bundleHasher: opts.LeafHasher(),
+		sequencer:    seq,
+		logStore:     logStore,
+	}
+
+	return m, logStore, nil
+}
+
+// MigrationStorage implements the tessera.MigrationStorage lifecycle contract.
+type MigrationStorage struct {
+	s            *Storage
+	dbPool       *sql.DB
+	bundleHasher func([]byte) ([][]byte, error)
+	sequencer    sequencer
+	logStore     *logResourceStore
+}
+
+var _ tessera.MigrationWriter = &MigrationStorage{}
+
+func (m *MigrationStorage) AwaitIntegration(ctx context.Context, sourceSize uint64) ([]byte, error) {
+	t := time.NewTicker(time.Second)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-t.C:
+			from, _, err := m.sequencer.currentTree(ctx)
+			if err != nil && !errors.Is(err, os.ErrNotExist) {
+				klog.Warningf("readTreeState: %v", err)
+				continue
+			}
+			klog.Infof("Integrate from %d (Target %d)", from, sourceSize)
+			newSize, newRoot, err := m.buildTree(ctx, sourceSize)
+			if err != nil {
+				klog.Warningf("integrate: %v", err)
+			}
+			if newSize == sourceSize {
+				klog.Infof("Integrated to %d with roothash %x", newSize, newRoot)
+				return newRoot, nil
+			}
+		}
+	}
+}
+
+func (m *MigrationStorage) SetEntryBundle(ctx context.Context, index uint64, partial uint8, bundle []byte) error {
+	return m.logStore.setEntryBundle(ctx, index, partial, bundle)
+}
+
+func (m *MigrationStorage) IntegratedSize(ctx context.Context) (uint64, error) {
+	sz, _, err := m.sequencer.currentTree(ctx)
+	return sz, err
+}
+
+func (m *MigrationStorage) fetchLeafHashes(ctx context.Context, from, to, sourceSize uint64) ([][]byte, error) {
+	// TODO(al): Make this configurable.
+	const maxBundles = 300
+
+	toBeAdded := sync.Map{}
+	eg := errgroup.Group{}
+	n := 0
+	for ri := range layout.Range(from, to, sourceSize) {
+		eg.Go(func() error {
+			b, err := m.logStore.getEntryBundle(ctx, ri.Index, ri.Partial)
+			if err != nil {
+				return fmt.Errorf("getEntryBundle(%d.%d): %v", ri.Index, ri.Partial, err)
+			}
+
+			bh, err := m.bundleHasher(b)
+			if err != nil {
+				return fmt.Errorf("bundleHasherFunc for bundle index %d: %v", ri.Index, err)
+			}
+			toBeAdded.Store(ri.Index, bh[ri.First:ri.First+ri.N])
+			return nil
+		})
+		n++
+		if n >= maxBundles {
+			break
+		}
+	}
+	if err := eg.Wait(); err != nil {
+		return nil, err
+	}
+
+	lh := make([][]byte, 0, maxBundles)
+	for i := from / layout.EntryBundleWidth; ; i++ {
+		v, ok := toBeAdded.LoadAndDelete(i)
+		if !ok {
+			break
+		}
+		bh := v.([][]byte)
+		lh = append(lh, bh...)
+	}
+
+	return lh, nil
+}
+
+func (m *MigrationStorage) buildTree(ctx context.Context, sourceSize uint64) (uint64, []byte, error) {
+	var newSize uint64
+	var newRoot []byte
+
+	tx, err := m.dbPool.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, nil, fmt.Errorf("failed to begin Tx: %v", err)
+	}
+	defer func() {
+		if tx != nil {
+			if err := tx.Rollback(); err != nil && err != sql.ErrTxDone {
+				klog.Errorf("failed to rollback Tx: %v", err)
+			}
+		}
+	}()
+
+	// Figure out which is the starting index of sequenced entries to start consuming from.
+	row := tx.QueryRowContext(ctx, "SELECT seq, rootHash FROM IntCoord WHERE id = ? FOR UPDATE", 0)
+	var from uint64
+	var rootHash []byte
+	if err := row.Scan(&from, &rootHash); err != nil {
+		return 0, nil, fmt.Errorf("failed to read IntCoord: %v", err)
+	}
+
+	klog.V(1).Infof("Integrating from %d", from)
+
+	lh, err := m.fetchLeafHashes(ctx, from, sourceSize, sourceSize)
+	if err != nil {
+		return 0, nil, fmt.Errorf("fetchLeafHashes(%d, %d, %d): %v", from, sourceSize, sourceSize, err)
+	}
+
+	if len(lh) == 0 {
+		klog.Infof("Integrate: nothing to do, nothing done")
+		return from, rootHash, nil
+	}
+
+	added := uint64(len(lh))
+	klog.Infof("Integrate: adding %d entries to existing tree size %d", len(lh), from)
+	newRoot, err = integrate(ctx, from, lh, m.logStore)
+	if err != nil {
+		klog.Warningf("integrate failed: %v", err)
+		return 0, nil, fmt.Errorf("integrate failed: %v", err)
+	}
+	newSize = from + added
+	klog.Infof("Integrate: added %d entries", added)
+
+	if _, err := tx.ExecContext(ctx, "UPDATE IntCoord SET seq=?, rootHash=? WHERE id=?", newSize, newRoot, 0); err != nil {
+		return 0, nil, fmt.Errorf("update intcoord: %v", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return 0, nil, fmt.Errorf("failed to commit Tx: %v", err)
+	}
+	tx = nil
+	return newSize, newRoot, nil
 }
 
 // logResourceStore knows how to read and write entries which represent a tiles log inside an objStore.
