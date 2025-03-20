@@ -23,7 +23,7 @@ import (
 	"time"
 
 	tessera "github.com/transparency-dev/trillian-tessera"
-	"github.com/transparency-dev/trillian-tessera/storage/internal"
+	storage "github.com/transparency-dev/trillian-tessera/storage/internal"
 )
 
 func TestQueue(t *testing.T) {
@@ -88,8 +88,8 @@ func TestQueue(t *testing.T) {
 					t.Errorf("Add: %v", err)
 					return
 				}
-				if got, want := assignedItems[N].Data(), wantEntries[i].Data(); !reflect.DeepEqual(got, want) {
-					t.Errorf("Got item@%d %v, want %v", N, got, want)
+				if got, want := assignedItems[N.Index].Data(), wantEntries[i].Data(); !reflect.DeepEqual(got, want) {
+					t.Errorf("Got item@%d %v, want %v", N.Index, got, want)
 				}
 			}
 		})

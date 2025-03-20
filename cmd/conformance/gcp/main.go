@@ -96,7 +96,8 @@ func main() {
 			return
 		}
 
-		idx, err := appender.Add(r.Context(), tessera.NewEntry(b))()
+		f := appender.Add(r.Context(), tessera.NewEntry(b))
+		idx, err := f()
 		if err != nil {
 			if errors.Is(err, tessera.ErrPushback) {
 				w.Header().Add("Retry-After", "1")
@@ -107,8 +108,9 @@ func main() {
 			_, _ = w.Write([]byte(err.Error()))
 			return
 		}
+
 		// Write out the assigned index
-		_, _ = w.Write([]byte(fmt.Sprintf("%d", idx)))
+		_, _ = w.Write([]byte(fmt.Sprintf("%d", idx.Index)))
 	})
 
 	h2s := &http2.Server{}

@@ -387,7 +387,7 @@ func TestTileRoundTrip(t *testing.T) {
 				t.Errorf("Add got err: %v", err)
 			}
 
-			tileLevel, tileIndex, _, nodeIndex := layout.NodeCoordsToTileAddress(0, entryIndex)
+			tileLevel, tileIndex, _, nodeIndex := layout.NodeCoordsToTileAddress(0, entryIndex.Index)
 			tileRaw, err := r.ReadTile(ctx, tileLevel, tileIndex, uint8(nodeIndex+1))
 			if err != nil {
 				t.Errorf("ReadTile got err: %v", err)
@@ -395,7 +395,7 @@ func TestTileRoundTrip(t *testing.T) {
 
 			tile := api.HashTile{}
 			if err := tile.UnmarshalText(tileRaw); err != nil {
-				t.Errorf("failed to parse tile at index %d: %v", entryIndex, err)
+				t.Errorf("failed to parse tile at index %d: %v", entryIndex.Index, err)
 			}
 			nodes := tile.Nodes
 			if len(nodes) == 0 {
@@ -437,20 +437,21 @@ func TestEntryBundleRoundTrip(t *testing.T) {
 			if err != nil {
 				t.Errorf("Add got err: %v", err)
 			}
-			entryBundleRaw, err := r.ReadEntryBundle(ctx, entryIndex/layout.EntryBundleWidth, layout.PartialTileSize(0, entryIndex, entryIndex+1))
+			idx := entryIndex.Index
+			entryBundleRaw, err := r.ReadEntryBundle(ctx, idx/layout.EntryBundleWidth, layout.PartialTileSize(0, idx, idx+1))
 			if err != nil {
 				t.Fatalf("ReadEntryBundle got err: %v", err)
 			}
 
 			bundle := api.EntryBundle{}
 			if err := bundle.UnmarshalText(entryBundleRaw); err != nil {
-				t.Errorf("failed to parse EntryBundle at index %d: %v", entryIndex, err)
+				t.Errorf("failed to parse EntryBundle at index %d: %v", entryIndex.Index, err)
 			}
 			gotEntries := bundle.Entries
 			if len(gotEntries) == 0 {
 				t.Error("no entry found")
 			} else {
-				if !bytes.Equal(bundle.Entries[entryIndex%layout.EntryBundleWidth], test.entry) {
+				if !bytes.Equal(bundle.Entries[idx%layout.EntryBundleWidth], test.entry) {
 					t.Errorf("got entry %v want %v", bundle.Entries[0], test.entry)
 				}
 			}

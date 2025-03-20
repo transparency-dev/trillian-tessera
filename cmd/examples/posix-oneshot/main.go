@@ -116,7 +116,7 @@ func main() {
 		if err != nil {
 			klog.Exitf("Failed to sequence %q: %q", entry.name, err)
 		}
-		klog.Infof("%d: %v", seq, entry.name)
+		klog.Infof("%d: %v", seq.Index, entry.name)
 	}
 
 	// 2) shutdown the appender

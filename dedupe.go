@@ -68,7 +68,13 @@ func (d *inMemoryDedupe) add(ctx context.Context, e *Entry) IndexFuture {
 	// if we've seen this entry before, discard our f and replace
 	// with the one we created last time, otherwise store f against id.
 	if prev, ok, _ := d.cache.PeekOrAdd(id, f); ok {
-		f = prev
+		f = func() IndexFuture {
+			return func() (Index, error) {
+				i, err := prev()()
+				i.IsDup = true
+				return i, err
+			}
+		}
 	}
 
 	return f()
