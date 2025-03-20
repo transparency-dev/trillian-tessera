@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1742395912317,
+  "lastUpdate": 1742481224976,
   "repoUrl": "https://github.com/transparency-dev/trillian-tessera",
   "entries": {
     "Benchmark": [
@@ -15216,6 +15216,150 @@ window.BENCHMARK_DATA = {
             "value": 3037,
             "unit": "allocs/op",
             "extra": "3882 times\n4 procs"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "mhutchinson@gmail.com",
+            "name": "Martin Hutchinson",
+            "username": "mhutchinson"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "e18c9465361dd19c3e72d902d19284506f825bbf",
+          "message": "AWS migration target support (#541)\n\nThis is based on the GCP migration target implementation.\n\nThe conformance cmd was updated to move the listen flag in order to keep\nall common AWS configuration flags together, and the flags for the\napplication logic built on top (e.g. web serving) in another block.\n\nTested in AWS and it migrated a POSIX log with 189k entries in 7s.\n\nFixes #473.",
+          "timestamp": "2025-03-20T14:32:58Z",
+          "tree_id": "cc944a17e8cbba40cd8a371dae9f5f62e9b2eaa6",
+          "url": "https://github.com/transparency-dev/trillian-tessera/commit/e18c9465361dd19c3e72d902d19284506f825bbf"
+        },
+        "date": 1742481224494,
+        "tool": "go",
+        "benches": [
+          {
+            "name": "BenchmarkDedupe",
+            "value": 4317806,
+            "unit": "ns/op\t  703894 B/op\t   19707 allocs/op",
+            "extra": "279 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDedupe - ns/op",
+            "value": 4317806,
+            "unit": "ns/op",
+            "extra": "279 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDedupe - B/op",
+            "value": 703894,
+            "unit": "B/op",
+            "extra": "279 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDedupe - allocs/op",
+            "value": 19707,
+            "unit": "allocs/op",
+            "extra": "279 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWitnessGroupSatisfaction",
+            "value": 230325,
+            "unit": "ns/op\t    3152 B/op\t      36 allocs/op",
+            "extra": "5694 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWitnessGroupSatisfaction - ns/op",
+            "value": 230325,
+            "unit": "ns/op",
+            "extra": "5694 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWitnessGroupSatisfaction - B/op",
+            "value": 3152,
+            "unit": "B/op",
+            "extra": "5694 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWitnessGroupSatisfaction - allocs/op",
+            "value": 36,
+            "unit": "allocs/op",
+            "extra": "5694 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLeafBundle_UnmarshalText",
+            "value": 7547,
+            "unit": "ns/op\t    6528 B/op\t       1 allocs/op",
+            "extra": "168069 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLeafBundle_UnmarshalText - ns/op",
+            "value": 7547,
+            "unit": "ns/op",
+            "extra": "168069 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLeafBundle_UnmarshalText - B/op",
+            "value": 6528,
+            "unit": "B/op",
+            "extra": "168069 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLeafBundle_UnmarshalText - allocs/op",
+            "value": 1,
+            "unit": "allocs/op",
+            "extra": "168069 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkCheckpointUnsafe",
+            "value": 232.2,
+            "unit": "ns/op\t     224 B/op\t       5 allocs/op",
+            "extra": "5151348 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkCheckpointUnsafe - ns/op",
+            "value": 232.2,
+            "unit": "ns/op",
+            "extra": "5151348 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkCheckpointUnsafe - B/op",
+            "value": 224,
+            "unit": "B/op",
+            "extra": "5151348 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkCheckpointUnsafe - allocs/op",
+            "value": 5,
+            "unit": "allocs/op",
+            "extra": "5151348 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkIntegrate",
+            "value": 345645,
+            "unit": "ns/op\t  289965 B/op\t    3032 allocs/op",
+            "extra": "3772 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkIntegrate - ns/op",
+            "value": 345645,
+            "unit": "ns/op",
+            "extra": "3772 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkIntegrate - B/op",
+            "value": 289965,
+            "unit": "B/op",
+            "extra": "3772 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkIntegrate - allocs/op",
+            "value": 3032,
+            "unit": "allocs/op",
+            "extra": "3772 times\n4 procs"
           }
         ]
       }
