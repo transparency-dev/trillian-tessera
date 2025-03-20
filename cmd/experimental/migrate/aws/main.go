@@ -18,12 +18,9 @@ package main
 
 import (
 	"context"
-	"encoding/base64"
 	"flag"
 	"fmt"
 	"net/url"
-	"strconv"
-	"strings"
 
 	aaws "github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/credentials"
@@ -31,6 +28,7 @@ import (
 	"github.com/go-sql-driver/mysql"
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/client"
+	"github.com/transparency-dev/trillian-tessera/internal/parse"
 	"github.com/transparency-dev/trillian-tessera/storage/aws"
 	"k8s.io/klog/v2"
 )
@@ -57,7 +55,7 @@ func main() {
 	flag.Parse()
 	ctx := context.Background()
 
-	if len(*sourceURL) == 0 {
+	if *sourceURL == "" {
 		klog.Exit("Missing parameter: --source_url")
 	}
 	srcURL, err := url.Parse(*sourceURL)
@@ -72,14 +70,10 @@ func main() {
 	if err != nil {
 		klog.Exitf("fetch initial source checkpoint: %v", err)
 	}
-	bits := strings.Split(string(sourceCP), "\n")
-	sourceSize, err := strconv.ParseUint(bits[1], 10, 64)
+	// TODO(mhutchinson): parse this safely.
+	_, sourceSize, sourceRoot, err := parse.CheckpointUnsafe(sourceCP)
 	if err != nil {
-		klog.Exitf("invalid CP size %q: %v", bits[1], err)
-	}
-	sourceRoot, err := base64.StdEncoding.DecodeString(bits[2])
-	if err != nil {
-		klog.Exitf("invalid checkpoint roothash %q: %v", bits[2], err)
+		klog.Exitf("Failed to parse checkpoint: %v", err)
 	}
 
 	// Create our Tessera storage backend:

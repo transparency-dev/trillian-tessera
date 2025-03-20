@@ -426,7 +426,7 @@ func (a *Appender) updateEntryBundles(ctx context.Context, fromSeq uint64, entri
 	return seqErr.Wait()
 }
 
-// MigrationWriter creates a new GCP storage for the MigrationWriter lifecycle mode.
+// MigrationWriter creates a new AWS storage for the MigrationWriter lifecycle mode.
 func (s *Storage) MigrationWriter(ctx context.Context, opts *tessera.MigrationOptions) (tessera.MigrationWriter, tessera.LogReader, error) {
 	logStore := &logResourceStore{
 		objStore: &s3Storage{
@@ -559,9 +559,7 @@ func (m *MigrationStorage) buildTree(ctx context.Context, sourceSize uint64) (ui
 	row := tx.QueryRowContext(ctx, "SELECT seq, rootHash FROM IntCoord WHERE id = ? FOR UPDATE", 0)
 	var from uint64
 	var rootHash []byte
-	if err := row.Scan(&from, &rootHash); err == sql.ErrNoRows {
-		return 0, nil, nil
-	} else if err != nil {
+	if err := row.Scan(&from, &rootHash); err != nil {
 		return 0, nil, fmt.Errorf("failed to read IntCoord: %v", err)
 	}
 
@@ -582,13 +580,11 @@ func (m *MigrationStorage) buildTree(ctx context.Context, sourceSize uint64) (ui
 	newRoot, err = integrate(ctx, from, lh, m.logStore)
 	if err != nil {
 		klog.Warningf("integrate failed: %v", err)
-		return 0, nil, fmt.Errorf("Integrate failed: %v", err)
+		return 0, nil, fmt.Errorf("integrate failed: %v", err)
 	}
 	newSize = from + added
 	klog.Infof("Integrate: added %d entries", added)
 
-	// consumeFunc was successful, so we can update our coordination row, and delete the row(s) for
-	// the then consumed entries.
 	if _, err := tx.ExecContext(ctx, "UPDATE IntCoord SET seq=?, rootHash=? WHERE id=?", newSize, newRoot, 0); err != nil {
 		return 0, nil, fmt.Errorf("update intcoord: %v", err)
 	}
