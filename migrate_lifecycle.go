@@ -83,8 +83,10 @@ type MigrationOptions struct {
 	// entriesPath knows how to format entry bundle paths.
 	entriesPath func(n uint64, p uint8) string
 	// bundleIDHasher knows how to create antispam leaf identities for entries in a serialised bundle.
+	// This field's value must not be updated once configured or weird and probably unwanted antispam behaviour is likely to occur.
 	bundleIDHasher func([]byte) ([][]byte, error)
 	// bundleLeafHasher knows how to create Merkle leaf hashes for the entries in a serialised bundle.
+	// This field's value must not be updated once configured or weird and probably unwanted integration behaviour is likely to occur.
 	bundleLeafHasher func([]byte) ([][]byte, error)
 	followers        []Follower
 }
