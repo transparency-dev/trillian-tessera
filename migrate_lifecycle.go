@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/transparency-dev/trillian-tessera/api/layout"
@@ -62,11 +63,10 @@ func NewMigrationTarget(ctx context.Context, d Driver, opts *MigrationOptions) (
 	if err != nil {
 		return nil, fmt.Errorf("failed to init MigrationTarget lifecycle: %v", err)
 	}
-	for _, f := range opts.followers {
-		go f(ctx, r)
-	}
 	return &MigrationTarget{
-		writer: mw,
+		writer:    mw,
+		reader:    r,
+		followers: opts.followers,
 	}, nil
 }
 
@@ -83,18 +83,16 @@ type MigrationOptions struct {
 	// entriesPath knows how to format entry bundle paths.
 	entriesPath func(n uint64, p uint8) string
 	// bundleIDHasher knows how to create antispam leaf identities for entries in a serialised bundle.
+	// This field's value must not be updated once configured or weird and probably unwanted antispam behaviour is likely to occur.
 	bundleIDHasher func([]byte) ([][]byte, error)
 	// bundleLeafHasher knows how to create Merkle leaf hashes for the entries in a serialised bundle.
+	// This field's value must not be updated once configured or weird and probably unwanted integration behaviour is likely to occur.
 	bundleLeafHasher func([]byte) ([][]byte, error)
-	followers        []func(context.Context, LogReader)
+	followers        []Follower
 }
 
 func (o MigrationOptions) EntriesPath() func(uint64, uint8) string {
 	return o.entriesPath
-}
-
-func (o MigrationOptions) Followers() []func(context.Context, LogReader) {
-	return o.followers
 }
 
 func (o *MigrationOptions) LeafHasher() func([]byte) ([][]byte, error) {
@@ -108,16 +106,16 @@ func (o *MigrationOptions) LeafHasher() func([]byte) ([][]byte, error) {
 // of the source tree and so no attempt is made to reject/deduplicate entries.
 func (o *MigrationOptions) WithAntispam(as Antispam) *MigrationOptions {
 	if as != nil {
-		o.followers = append(o.followers, func(ctx context.Context, lr LogReader) {
-			as.Populate(ctx, lr, o.bundleIDHasher)
-		})
+		o.followers = append(o.followers, as.Follower(o.bundleIDHasher))
 	}
 	return o
 }
 
 // MigrationTarget handles the process of migrating/importing a source log into a Tessera instance.
 type MigrationTarget struct {
-	writer MigrationWriter
+	writer    MigrationWriter
+	reader    LogReader
+	followers []Follower
 }
 
 // Migrate performs the work of importing a source log into the local Tessera instance.
@@ -139,6 +137,7 @@ func (mt *MigrationTarget) Migrate(ctx context.Context, numWorkers uint, sourceS
 	if err != nil {
 		return fmt.Errorf("fetching integrated size failed: %v", err)
 	}
+	c.bundlesCopied.Store(fromSize / layout.EntryBundleWidth)
 
 	// Print stats
 	go func() {
@@ -152,14 +151,25 @@ func (mt *MigrationTarget) Migrate(ctx context.Context, numWorkers uint, sourceS
 				return
 			case <-time.After(time.Second):
 			}
-			bn := c.BundlesCopied()
-			bnp := float64(bn*100) / float64(bundlesToCopy)
 			s, err := mt.writer.IntegratedSize(ctx)
 			if err != nil {
 				klog.Warningf("Size: %v", err)
 			}
-			intp := float64(s*100) / float64(sourceSize)
-			klog.Infof("integration: %d (%.2f%%)  bundles: %d (%.2f%%)", s, intp, bn, bnp)
+
+			info := []string{}
+			bn := c.BundlesCopied()
+			info = append(info, progress("copy", bn, bundlesToCopy))
+			info = append(info, progress("integration", s, sourceSize))
+			for _, f := range mt.followers {
+				p, err := f.Position(ctx)
+				if err != nil {
+					klog.Infof("%s Position(): %v", f.Name(), err)
+					continue
+				}
+				info = append(info, progress(f.Name(), p, sourceSize))
+			}
+			klog.Infof("Progress: %s", strings.Join(info, ", "))
+
 		}
 	}()
 
@@ -179,6 +189,12 @@ func (mt *MigrationTarget) Migrate(ctx context.Context, numWorkers uint, sourceS
 		return nil
 	})
 
+	for _, f := range mt.followers {
+		klog.Infof("Starting %s follower", f.Name())
+		go f.Follow(cctx, mt.reader)
+		errG.Go(awaitFollower(cctx, f, sourceSize))
+	}
+
 	if err := errG.Wait(); err != nil {
 		return fmt.Errorf("migrate failed: %v", err)
 	}
@@ -189,4 +205,32 @@ func (mt *MigrationTarget) Migrate(ctx context.Context, numWorkers uint, sourceS
 
 	klog.Infof("Migration successful.")
 	return nil
+}
+
+// awaitFollower returns a function which will block until the provided follower has processed
+// at least as far as the provided index.
+func awaitFollower(ctx context.Context, f Follower, i uint64) func() error {
+	return func() error {
+		for {
+			select {
+			case <-ctx.Done():
+				return nil
+			case <-time.After(time.Second):
+			}
+
+			pos, err := f.Position(ctx)
+			if err != nil {
+				klog.Infof("%s Position(): %v", f.Name(), err)
+				continue
+			}
+			if pos >= i {
+				klog.Infof("%s follower complete", f.Name())
+				return nil
+			}
+		}
+	}
+}
+
+func progress(n string, p, total uint64) string {
+	return fmt.Sprintf("%s: %d (%.2f%%)", n, p, (float64(p*100) / float64(total)))
 }

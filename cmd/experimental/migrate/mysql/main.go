@@ -89,9 +89,6 @@ func main() {
 	if err := m.Migrate(context.Background(), *numWorkers, sourceSize, sourceRoot, src.ReadEntryBundle); err != nil {
 		klog.Exitf("Migrate failed: %v", err)
 	}
-
-	// TODO(#341): wait for any followers or other internal processes to complete
-	<-make(chan bool)
 }
 
 func initDatabaseSchema(ctx context.Context) {
