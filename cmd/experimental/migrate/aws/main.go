@@ -93,9 +93,6 @@ func main() {
 	if err := m.Migrate(context.Background(), *numWorkers, sourceSize, sourceRoot, src.ReadEntryBundle); err != nil {
 		klog.Exitf("Migrate failed: %v", err)
 	}
-
-	// TODO(#341): wait for antispam follower to complete
-	<-make(chan bool)
 }
 
 // storageConfigFromFlags returns an aws.Config struct populated with values
