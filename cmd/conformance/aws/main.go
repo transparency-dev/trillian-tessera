@@ -27,6 +27,7 @@ import (
 	aaws "github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/go-sql-driver/mysql"
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/storage/aws"
 	"golang.org/x/mod/sumdb/note"
@@ -146,10 +147,15 @@ func storageConfigFromFlags() aws.Config {
 		klog.Exit("--db_password must be set")
 	}
 
-	dbEndpoint := fmt.Sprintf("%s:%d", *dbHost, *dbPort)
-	dsn := fmt.Sprintf("%s:%s@tcp(%s)/%s?allowCleartextPasswords=true",
-		*dbUser, *dbPassword, dbEndpoint, *dbName,
-	)
+	c := mysql.Config{
+		User:                    *dbUser,
+		Passwd:                  *dbPassword,
+		Net:                     "tcp",
+		Addr:                    fmt.Sprintf("%s:%d", *dbHost, *dbPort),
+		DBName:                  *dbName,
+		AllowCleartextPasswords: true,
+		AllowNativePasswords:    true,
+	}
 
 	// Configure to use MinIO Server
 	var awsConfig *aaws.Config
@@ -172,7 +178,7 @@ func storageConfigFromFlags() aws.Config {
 		Bucket:       *bucket,
 		SDKConfig:    awsConfig,
 		S3Options:    s3Opts,
-		DSN:          dsn,
+		DSN:          c.FormatDSN(),
 		MaxOpenConns: *dbMaxConns,
 		MaxIdleConns: *dbMaxIdle,
 	}
