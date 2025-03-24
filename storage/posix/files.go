@@ -688,7 +688,7 @@ func createEx(p string, d []byte) error {
 	}
 	tmpF = nil
 	if err := os.Link(tmpName, p); err != nil {
-		// Wrap the error here becasue we need to know if it's os.ErrExists at higher levels.
+		// Wrap the error here because we need to know if it's os.ErrExists at higher levels.
 		return fmt.Errorf("failed to link temporary file to target %q: %w", p, err)
 	}
 
