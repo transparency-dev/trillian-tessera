@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1742831744440,
+  "lastUpdate": 1742851374778,
   "repoUrl": "https://github.com/transparency-dev/trillian-tessera",
   "entries": {
     "Benchmark": [
@@ -16080,6 +16080,150 @@ window.BENCHMARK_DATA = {
             "value": 3037,
             "unit": "allocs/op",
             "extra": "4168 times\n4 procs"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "49699333+dependabot[bot]@users.noreply.github.com",
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "f59541bc3aaee13327d80ff4c4ee162dec56acc8",
+          "message": "Bump the all-go-deps group with 4 updates (#551)\n\nBumps the all-go-deps group with 4 updates: [github.com/aws/aws-sdk-go-v2/config](https://github.com/aws/aws-sdk-go-v2), [github.com/aws/aws-sdk-go-v2/credentials](https://github.com/aws/aws-sdk-go-v2), [google.golang.org/api](https://github.com/googleapis/google-api-go-client) and [github.com/go-sql-driver/mysql](https://github.com/go-sql-driver/mysql).\n\n\nUpdates `github.com/aws/aws-sdk-go-v2/config` from 1.29.9 to 1.29.10\n- [Release notes](https://github.com/aws/aws-sdk-go-v2/releases)\n- [Changelog](https://github.com/aws/aws-sdk-go-v2/blob/main/changelog-template.json)\n- [Commits](https://github.com/aws/aws-sdk-go-v2/compare/config/v1.29.9...config/v1.29.10)\n\nUpdates `github.com/aws/aws-sdk-go-v2/credentials` from 1.17.62 to 1.17.63\n- [Release notes](https://github.com/aws/aws-sdk-go-v2/releases)\n- [Changelog](https://github.com/aws/aws-sdk-go-v2/blob/main/changelog-template.json)\n- [Commits](https://github.com/aws/aws-sdk-go-v2/compare/credentials/v1.17.62...credentials/v1.17.63)\n\nUpdates `google.golang.org/api` from 0.226.0 to 0.227.0\n- [Release notes](https://github.com/googleapis/google-api-go-client/releases)\n- [Changelog](https://github.com/googleapis/google-api-go-client/blob/main/CHANGES.md)\n- [Commits](https://github.com/googleapis/google-api-go-client/compare/v0.226.0...v0.227.0)\n\nUpdates `github.com/go-sql-driver/mysql` from 1.9.0 to 1.9.1\n- [Release notes](https://github.com/go-sql-driver/mysql/releases)\n- [Changelog](https://github.com/go-sql-driver/mysql/blob/master/CHANGELOG.md)\n- [Commits](https://github.com/go-sql-driver/mysql/compare/v1.9.0...v1.9.1)\n\n---\nupdated-dependencies:\n- dependency-name: github.com/aws/aws-sdk-go-v2/config\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: all-go-deps\n- dependency-name: github.com/aws/aws-sdk-go-v2/credentials\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: all-go-deps\n- dependency-name: google.golang.org/api\n  dependency-type: direct:production\n  update-type: version-update:semver-minor\n  dependency-group: all-go-deps\n- dependency-name: github.com/go-sql-driver/mysql\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: all-go-deps\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
+          "timestamp": "2025-03-24T21:21:27Z",
+          "tree_id": "9131df2a85e205ba24e3e16edc7e9c6610821451",
+          "url": "https://github.com/transparency-dev/trillian-tessera/commit/f59541bc3aaee13327d80ff4c4ee162dec56acc8"
+        },
+        "date": 1742851374167,
+        "tool": "go",
+        "benches": [
+          {
+            "name": "BenchmarkDedupe",
+            "value": 4884667,
+            "unit": "ns/op\t  732928 B/op\t   21664 allocs/op",
+            "extra": "254 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDedupe - ns/op",
+            "value": 4884667,
+            "unit": "ns/op",
+            "extra": "254 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDedupe - B/op",
+            "value": 732928,
+            "unit": "B/op",
+            "extra": "254 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDedupe - allocs/op",
+            "value": 21664,
+            "unit": "allocs/op",
+            "extra": "254 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWitnessGroupSatisfaction",
+            "value": 228748,
+            "unit": "ns/op\t    3152 B/op\t      36 allocs/op",
+            "extra": "5368 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWitnessGroupSatisfaction - ns/op",
+            "value": 228748,
+            "unit": "ns/op",
+            "extra": "5368 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWitnessGroupSatisfaction - B/op",
+            "value": 3152,
+            "unit": "B/op",
+            "extra": "5368 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWitnessGroupSatisfaction - allocs/op",
+            "value": 36,
+            "unit": "allocs/op",
+            "extra": "5368 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLeafBundle_UnmarshalText",
+            "value": 1603,
+            "unit": "ns/op\t    6528 B/op\t       1 allocs/op",
+            "extra": "753711 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLeafBundle_UnmarshalText - ns/op",
+            "value": 1603,
+            "unit": "ns/op",
+            "extra": "753711 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLeafBundle_UnmarshalText - B/op",
+            "value": 6528,
+            "unit": "B/op",
+            "extra": "753711 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLeafBundle_UnmarshalText - allocs/op",
+            "value": 1,
+            "unit": "allocs/op",
+            "extra": "753711 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkCheckpointUnsafe",
+            "value": 234.8,
+            "unit": "ns/op\t     224 B/op\t       5 allocs/op",
+            "extra": "5120066 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkCheckpointUnsafe - ns/op",
+            "value": 234.8,
+            "unit": "ns/op",
+            "extra": "5120066 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkCheckpointUnsafe - B/op",
+            "value": 224,
+            "unit": "B/op",
+            "extra": "5120066 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkCheckpointUnsafe - allocs/op",
+            "value": 5,
+            "unit": "allocs/op",
+            "extra": "5120066 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkIntegrate",
+            "value": 344723,
+            "unit": "ns/op\t  289989 B/op\t    3032 allocs/op",
+            "extra": "3733 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkIntegrate - ns/op",
+            "value": 344723,
+            "unit": "ns/op",
+            "extra": "3733 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkIntegrate - B/op",
+            "value": 289989,
+            "unit": "B/op",
+            "extra": "3733 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkIntegrate - allocs/op",
+            "value": 3032,
+            "unit": "allocs/op",
+            "extra": "3733 times\n4 procs"
           }
         ]
       }
