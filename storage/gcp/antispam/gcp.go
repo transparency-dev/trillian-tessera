@@ -80,7 +80,7 @@ func NewAntispam(ctx context.Context, spannerDB string, opts AntispamOpts) (*Ant
 		ctx, spannerDB,
 		[]string{
 			"CREATE TABLE IF NOT EXISTS FollowCoord (id INT64 NOT NULL, nextIdx INT64 NOT NULL) PRIMARY KEY (id)",
-			"CREATE TABLE IF NOT EXISTS IDSeq (id INT64 NOT NULL, h BYTES(32) NOT NULL, idx INT64 NOT NULL) PRIMARY KEY (id, h)",
+			"CREATE TABLE IF NOT EXISTS IDSeq (h BYTES(32) NOT NULL, idx INT64 NOT NULL) PRIMARY KEY (h)",
 		},
 		[][]*spanner.Mutation{
 			{spanner.Insert("FollowCoord", []string{"id", "nextIdx"}, []interface{}{0, 0})},
@@ -122,7 +122,7 @@ type AntispamStorage struct {
 func (d *AntispamStorage) index(ctx context.Context, h []byte) (*uint64, error) {
 	d.numLookups.Add(1)
 	var idx int64
-	if row, err := d.dbPool.Single().ReadRow(ctx, "IDSeq", spanner.Key{0, h}, []string{"idx"}); err != nil {
+	if row, err := d.dbPool.Single().ReadRow(ctx, "IDSeq", spanner.Key{h}, []string{"idx"}); err != nil {
 		if c := spanner.ErrCode(err); c == codes.NotFound {
 			return nil, nil
 		}
@@ -340,7 +340,7 @@ func (f *follower) Follow(ctx context.Context, lr tessera.LogReader) {
 					m := make([]*spanner.MutationGroup, 0, len(curEntries))
 					for i, e := range curEntries {
 						m = append(m, &spanner.MutationGroup{
-							Mutations: []*spanner.Mutation{spanner.Insert("IDSeq", []string{"id", "h", "idx"}, []interface{}{0, e, int64(curIndex + uint64(i))})},
+							Mutations: []*spanner.Mutation{spanner.Insert("IDSeq", []string{"h", "idx"}, []interface{}{e, int64(curIndex + uint64(i))})},
 						})
 					}
 
