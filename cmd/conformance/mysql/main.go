@@ -88,7 +88,7 @@ func main() {
 			_, _ = w.Write([]byte(err.Error()))
 			return
 		}
-		if _, err = w.Write([]byte(fmt.Sprintf("%d", idx.Index))); err != nil {
+		if _, err := fmt.Fprintf(w, "%d", idx.Index); err != nil {
 			klog.Errorf("/add: %v", err)
 			return
 		}
@@ -172,7 +172,7 @@ func configureTilesReadAPI(mux *http.ServeMux, reader tessera.LogReader) {
 		level, index, p, err := layout.ParseTileLevelIndexPartial(r.PathValue("level"), r.PathValue("index"))
 		if err != nil {
 			w.WriteHeader(http.StatusBadRequest)
-			if _, werr := w.Write([]byte(fmt.Sprintf("Malformed URL: %s", err.Error()))); werr != nil {
+			if _, werr := fmt.Fprintf(w, "Malformed URL: %s", err.Error()); werr != nil {
 				klog.Errorf("/tile/{level}/{index...}: %v", werr)
 			}
 			return
@@ -200,7 +200,7 @@ func configureTilesReadAPI(mux *http.ServeMux, reader tessera.LogReader) {
 		index, p, err := layout.ParseTileIndexPartial(r.PathValue("index"))
 		if err != nil {
 			w.WriteHeader(http.StatusBadRequest)
-			if _, werr := w.Write([]byte(fmt.Sprintf("Malformed URL: %s", err.Error()))); werr != nil {
+			if _, werr := fmt.Fprintf(w, "Malformed URL: %s", err.Error()); werr != nil {
 				klog.Errorf("/tile/entries/{index...}: %v", werr)
 			}
 			return

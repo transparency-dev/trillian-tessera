@@ -210,7 +210,7 @@ func TestWitness_UpdateRequest(t *testing.T) {
 				if !initDone {
 					w.Header().Add("Content-Type", "text/x.tlog.size")
 					w.WriteHeader(409)
-					_, _ = w.Write([]byte(fmt.Sprintf("%d", tC.witSize)))
+					_, _ = fmt.Fprintf(w, "%d", tC.witSize)
 					initDone = true
 					return
 				}

@@ -110,7 +110,7 @@ func main() {
 		}
 
 		// Write out the assigned index
-		_, _ = w.Write([]byte(fmt.Sprintf("%d", idx.Index)))
+		_, _ = fmt.Fprintf(w, "%d", idx.Index)
 	})
 
 	h2s := &http2.Server{}

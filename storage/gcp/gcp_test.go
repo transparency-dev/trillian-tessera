@@ -43,9 +43,8 @@ func newSpannerDB(t *testing.T) func() {
 	if err != nil {
 		t.Fatalf("Failed to set up test spanner: %v", err)
 	}
-	os.Setenv("SPANNER_EMULATOR_HOST", srv.Addr)
-	if err != nil {
-		t.Fatalf("Invalid DDL: %v", err)
+	if err := os.Setenv("SPANNER_EMULATOR_HOST", srv.Addr); err != nil {
+		t.Fatalf("Setenv: %v", err)
 	}
 	return srv.Close
 
