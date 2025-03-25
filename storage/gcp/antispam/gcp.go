@@ -403,7 +403,11 @@ func createAndPrepareTables(ctx context.Context, spannerDB string, ddl []string,
 	if err != nil {
 		return err
 	}
-	defer adminClient.Close()
+	defer func() {
+		if err := adminClient.Close(); err != nil {
+			klog.Warningf("adminClient.Close(): %v", err)
+		}
+	}()
 
 	op, err := adminClient.UpdateDatabaseDdl(ctx, &adminpb.UpdateDatabaseDdlRequest{
 		Database:   spannerDB,
@@ -415,7 +419,6 @@ func createAndPrepareTables(ctx context.Context, spannerDB string, ddl []string,
 	if err := op.Wait(ctx); err != nil {
 		return err
 	}
-	adminClient.Close()
 
 	dbPool, err := spanner.NewClient(ctx, spannerDB)
 	if err != nil {

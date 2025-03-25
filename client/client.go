@@ -413,7 +413,7 @@ func (n *nodeCache) GetNode(ctx context.Context, id compact.NodeID) ([]byte, err
 	r := rf.NewEmptyRange(0)
 	for _, l := range t.Nodes[firstLeaf:lastLeaf] {
 		if err := r.Append(l, nil); err != nil {
-			return nil, fmt.Errorf("Append: %v", err)
+			return nil, fmt.Errorf("failed to Append: %v", err)
 		}
 	}
 	return r.GetRootHash(nil)

@@ -150,7 +150,7 @@ func (e *queueItem) notify(err error) {
 			return tessera.Index{}, err
 		}
 		if e.entry.Index() == nil {
-			panic(errors.New("Logic error: flush complete, but entry was not assigned an index - did storage fail to call entry.MarshalBundleData?"))
+			panic(errors.New("logic error: flush complete, but entry was not assigned an index - did storage fail to call entry.MarshalBundleData?"))
 		}
 		return tessera.Index{Index: *e.entry.Index()}, nil
 	}

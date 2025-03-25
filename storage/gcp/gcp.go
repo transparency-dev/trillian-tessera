@@ -471,10 +471,11 @@ func streamAdaptor(ctx context.Context, getSize getSizeFn, getBundle getBundleFn
 
 			// For each bundle, pop a future into the bundles channel and kick off an async request
 			// to resolve it.
+		rangeLoop:
 			for ri := range layout.Range(fromEntry, treeSize, treeSize) {
 				select {
 				case <-exit:
-					break
+					break rangeLoop
 				case <-tokens:
 					// We'll return a token below, once the bundle is fetched _and_ is being yielded.
 				}
@@ -609,7 +610,7 @@ func integrate(ctx context.Context, fromSeq uint64, lh [][]byte, logStore *logRe
 
 	newSize, newRoot, tiles, err := storage.Integrate(ctx, getTiles, fromSeq, lh)
 	if err != nil {
-		return nil, fmt.Errorf("Integrate: %v", err)
+		return nil, fmt.Errorf("storage.Integrate: %v", err)
 	}
 	for k, v := range tiles {
 		func(ctx context.Context, k storage.TileID, v *api.HashTile) {
@@ -669,7 +670,7 @@ func (a *Appender) updateEntryBundles(ctx context.Context, fromSeq uint64, entri
 	// Add new entries to the bundle
 	for _, e := range entries {
 		if _, err := bundleWriter.Write(e.BundleData); err != nil {
-			return fmt.Errorf("Write: %v", err)
+			return fmt.Errorf("bundleWriter.Write: %v", err)
 		}
 		entriesInBundle++
 		fromSeq++
@@ -991,8 +992,8 @@ func (s *gcsStorage) setObject(ctx context.Context, objName string, data []byte,
 	} else {
 		w = obj.If(*cond).NewWriter(ctx)
 	}
-	w.ObjectAttrs.ContentType = contType
-	w.ObjectAttrs.CacheControl = cacheCtl
+	w.ContentType = contType
+	w.CacheControl = cacheCtl
 	if _, err := w.Write(data); err != nil {
 		return fmt.Errorf("failed to write object %q to bucket %q: %w", objName, s.bucket, err)
 	}
@@ -1187,7 +1188,7 @@ func (m *MigrationStorage) buildTree(ctx context.Context, sourceSize uint64) (ui
 		newRoot, err = integrate(ctx, from, lh, m.logStore)
 		if err != nil {
 			klog.Warningf("integrate failed: %v", err)
-			return fmt.Errorf("Integrate failed: %v", err)
+			return fmt.Errorf("integrate failed: %v", err)
 		}
 		newSize = from + added
 		klog.Infof("Integrate: added %d entries", added)
@@ -1214,7 +1215,11 @@ func createAndPrepareTables(ctx context.Context, spannerDB string, ddl []string,
 	if err != nil {
 		return err
 	}
-	defer adminClient.Close()
+	defer func() {
+		if err := adminClient.Close(); err != nil {
+			klog.Warningf("adminClient.Close(): %v", err)
+		}
+	}()
 
 	op, err := adminClient.UpdateDatabaseDdl(ctx, &adminpb.UpdateDatabaseDdlRequest{
 		Database:   spannerDB,
@@ -1226,7 +1231,6 @@ func createAndPrepareTables(ctx context.Context, spannerDB string, ddl []string,
 	if err := op.Wait(ctx); err != nil {
 		return err
 	}
-	adminClient.Close()
 
 	dbPool, err := spanner.NewClient(ctx, spannerDB)
 	if err != nil {

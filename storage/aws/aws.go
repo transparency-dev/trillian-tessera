@@ -400,7 +400,7 @@ func (a *Appender) updateEntryBundles(ctx context.Context, fromSeq uint64, entri
 	// Add new entries to the bundle
 	for _, e := range entries {
 		if _, err := bundleWriter.Write(e.BundleData); err != nil {
-			return fmt.Errorf("Write: %v", err)
+			return fmt.Errorf("bundlewriter.Write: %v", err)
 		}
 		entriesInBundle++
 		fromSeq++
@@ -744,7 +744,7 @@ func integrate(ctx context.Context, fromSeq uint64, lh [][]byte, lrs *logResourc
 
 	newSize, newRoot, tiles, err := storage.Integrate(ctx, getTiles, fromSeq, lh)
 	if err != nil {
-		return nil, fmt.Errorf("Integrate: %v", err)
+		return nil, fmt.Errorf("storage.Integrate: %v", err)
 	}
 	errG := errgroup.Group{}
 	for k, v := range tiles {
@@ -1004,7 +1004,11 @@ func (s *mySQLSequencer) consumeEntries(ctx context.Context, limit uint64, f con
 	if err != nil {
 		return false, fmt.Errorf("failed to read Seq: %v", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			klog.Warningf("rows.Close: %v", err)
+		}
+	}()
 
 	// This needs to be of type `any`, to be passed to ExecContext. Only uint64s will be stored.
 	seqsConsumed := []any{}
