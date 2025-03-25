@@ -72,7 +72,7 @@ This state requires [`Migration`](#Migration) or [`Appender`](#Appender) first.
 
 No calls which can modify state should be made while in this mode.
 
-The only valid transitions are to [`Sequencing`](#Sequencing) (e.g. when a log migration is complete and the log should
+The only valid transitions are to [`Appending`](#Appending) (e.g. when a log migration is complete and the log should
 become operational in its new location), or [`Deleted`](#Deleted).
 
 ### `Deleted`
