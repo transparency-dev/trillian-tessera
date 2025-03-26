@@ -326,6 +326,9 @@ func (a *Appender) publishCheckpoint(ctx context.Context, minStaleness time.Dura
 	if err := a.logStore.setCheckpoint(ctx, cpRaw); err != nil {
 		return fmt.Errorf("writeCheckpoint: %v", err)
 	}
+
+	klog.V(2).Infof("Published latest checkpoint: %d, %x", size, root)
+
 	return nil
 }
 

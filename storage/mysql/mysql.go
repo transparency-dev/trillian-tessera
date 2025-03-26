@@ -534,6 +534,8 @@ func (a *appender) publishCheckpoint(ctx context.Context, interval time.Duration
 		return err
 	}
 
+	klog.V(2).Infof("Published latest checkpoint: %d, %x", treeState.size, treeState.root)
+
 	return tx.Commit()
 }
 
