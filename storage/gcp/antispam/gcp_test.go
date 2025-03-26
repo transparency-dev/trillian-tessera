@@ -23,6 +23,7 @@ import (
 	"testing"
 	"time"
 
+	"cloud.google.com/go/spanner"
 	"cloud.google.com/go/spanner/spannertest"
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/api"
@@ -57,6 +58,15 @@ func TestAntispamStorage(t *testing.T) {
 				{
 					entryHash: testIDHash([]byte("one")),
 					wantIndex: 0,
+				}, {
+					entryHash: testIDHash([]byte("two")),
+					wantIndex: 1,
+				}, {
+					entryHash: testIDHash([]byte("three")),
+					wantIndex: 2,
+				}, {
+					entryHash:    testIDHash([]byte("nowhere to be found")),
+					wantNotFound: true,
 				},
 			},
 		},
@@ -70,6 +80,9 @@ func TestAntispamStorage(t *testing.T) {
 			fr := newFakeLogReader(test.logEntries)
 
 			f := as.Follower(testBundleHasher)
+			// Hack in a workaround for spannertest not supporting BatchWrites
+			f.(*follower).updateIndex = updateIndexTx
+
 			go f.Follow(t.Context(), fr)
 
 			for {
@@ -91,7 +104,9 @@ func TestAntispamStorage(t *testing.T) {
 					t.Errorf("error looking up hash %x: %v", e.entryHash, err)
 				}
 				if gotIndex == nil {
-					t.Errorf("no index for hash %x", e.entryHash)
+					if !e.wantNotFound {
+						t.Errorf("no index for hash %x, but expected index %d", e.entryHash, e.wantIndex)
+					}
 					continue
 				}
 				if *gotIndex != e.wantIndex {
@@ -122,7 +137,21 @@ func testIDHash(d []byte) []byte {
 func testBundleHasher(b []byte) ([][]byte, error) {
 	bun := &api.EntryBundle{}
 	err := bun.UnmarshalText(b)
-	return bun.Entries, err
+	if err != nil {
+		return nil, err
+	}
+	r := make([][]byte, len(bun.Entries))
+	for i, e := range bun.Entries {
+		r[i] = testIDHash(e)
+	}
+	return r, err
+}
+
+// updateIndexTx is a workaround for spannertest not supporting BatchWrites.
+// We use this func as a replacement for follower's updateIndex hook, and simply commit the index
+// updates inline with the larger transaction.
+func updateIndexTx(_ context.Context, txn *spanner.ReadWriteTransaction, ms []*spanner.Mutation) error {
+	return txn.BufferWrite(ms)
 }
 
 type fakeLogReader struct {
