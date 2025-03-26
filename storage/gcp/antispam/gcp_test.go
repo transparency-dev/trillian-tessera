@@ -38,6 +38,7 @@ type testLookup struct {
 }
 
 func TestAntispamStorage(t *testing.T) {
+	ctx := context.Background()
 	closeDB := newSpannerDB(t)
 	defer closeDB()
 
@@ -72,7 +73,7 @@ func TestAntispamStorage(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			as, err := NewAntispam(t.Context(), "projects/p/instances/i/databases/d", test.opts)
+			as, err := NewAntispam(ctx, "projects/p/instances/i/databases/d", test.opts)
 			if err != nil {
 				t.Fatalf("NewAntispam: %v", err)
 			}
@@ -83,11 +84,11 @@ func TestAntispamStorage(t *testing.T) {
 			// Hack in a workaround for spannertest not supporting BatchWrites
 			f.(*follower).updateIndex = updateIndexTx
 
-			go f.Follow(t.Context(), fr)
+			go f.Follow(ctx, fr)
 
 			for {
 				time.Sleep(time.Second)
-				pos, err := f.Position(t.Context())
+				pos, err := f.Position(ctx)
 				if err != nil {
 					t.Logf("Position: %v", err)
 					continue
@@ -99,7 +100,7 @@ func TestAntispamStorage(t *testing.T) {
 			}
 
 			for _, e := range test.lookupEntries {
-				gotIndex, err := as.index(t.Context(), e.entryHash)
+				gotIndex, err := as.index(ctx, e.entryHash)
 				if err != nil {
 					t.Errorf("error looking up hash %x: %v", e.entryHash, err)
 				}
