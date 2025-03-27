@@ -170,10 +170,16 @@ func (d *AntispamStorage) Decorator() func(f tessera.AddFn) tessera.AddFn {
 //
 // This implements tessera.Antispam.
 func (d *AntispamStorage) Follower(b func([]byte) ([][]byte, error)) tessera.Follower {
-	return &follower{
+	f := &follower{
 		as:           d,
 		bundleHasher: b,
 	}
+	// Use the "normal" BatchWrite mechanism to update the antispam index.
+	// This will be overriden by the test to use an "inline" mechanism since spannertest
+	// does not support BatchWrite :(
+	f.updateIndex = f.batchUpdateIndex
+
+	return f
 }
 
 // entryStreamReader converts a stream of {RangeInfo, EntryBundle} into a stream of individually processed entries.
@@ -231,7 +237,18 @@ func (e *entryStreamReader[T]) Next() (uint64, T, error) {
 // follower is a struct which knows how to populate the antispam storage with identity hashes
 // for entries in a log.
 type follower struct {
-	as           *AntispamStorage
+	as *AntispamStorage
+
+	// updateIndex knows how to apply the provided slice of mutations to the underlying Spanner DB.
+	//
+	// In normal operation this simply points to the batchUpdateIndex func below, but spannertest
+	// does not support either:
+	//   - BatchWrite operations, or
+	//   - nested transactions
+	// so we use this member as a hook to fallback to
+	// a regular transaction for tests.
+	updateIndex func(context.Context, *spanner.ReadWriteTransaction, []*spanner.Mutation) error
+
 	bundleHasher func([]byte) ([][]byte, error)
 }
 
@@ -319,40 +336,13 @@ func (f *follower) Follow(ctx context.Context, lr tessera.LogReader) {
 					curIndex = followFrom
 				}
 
-				// Store antispam entries.
-				//
-				// Note that we're writing the antispam entries outside of the transaction here. The reason is because we absolutely do not want
-				// the transaction to fail if there's already an entry for the same hash in the IDSeq table.
-				//
-				// It looks unusual, but is ok because:
-				//  - individual antispam entries fails because there's already an entry for that hash is perfectly ok
-				//  - we'll only continue on to update FollowCoord if no errors (other than AlreadyExists) occur while inserting entries
-				//  - similarly, if we manage to insert antispam entries here, but then fail to update FollowCoord, we'll end up
-				//    retrying over the same set of log entries, and then ignoring the AlreadyExists which will occur.
-				//
-				// Alternative approaches are:
-				//  - Use InsertOrUpdate, but that will keep updating the index associated with the ID hash, and we'd rather keep serving
-				//    the earliest index known for that entry.
-				//  - Perform reads for each of the hashes we're about to write, and use that to filter writes.
-				//    This would work, but would also incur an extra round-trip of data which isn't really necessary but would
-				//    slow the process down considerably and add extra load to Spanner for no benefit.
+				// Now update the index.
 				{
-					m := make([]*spanner.MutationGroup, 0, len(curEntries))
+					ms := make([]*spanner.Mutation, 0, len(curEntries))
 					for i, e := range curEntries {
-						m = append(m, &spanner.MutationGroup{
-							Mutations: []*spanner.Mutation{spanner.Insert("IDSeq", []string{"h", "idx"}, []interface{}{e, int64(curIndex + uint64(i))})},
-						})
+						ms = append(ms, spanner.Insert("IDSeq", []string{"h", "idx"}, []interface{}{e, int64(curIndex + uint64(i))}))
 					}
-
-					i := f.as.dbPool.BatchWrite(ctx, m)
-					err := i.Do(func(r *spannerpb.BatchWriteResponse) error {
-						s := r.GetStatus()
-						if c := codes.Code(s.Code); c != codes.OK && c != codes.AlreadyExists {
-							return fmt.Errorf("failed to write antispam record: %v (%v)", s.GetMessage(), c)
-						}
-						return nil
-					})
-					if err != nil {
+					if err := f.updateIndex(ctx, txn, ms); err != nil {
 						return err
 					}
 				}
@@ -377,6 +367,43 @@ func (f *follower) Follow(ctx context.Context, lr tessera.LogReader) {
 			curEntries = nil
 		}
 	}
+}
+
+// batchUpdateIndex applies the provided mutations using Spanner's BatchWrite support.
+//
+// Note that we _do not_ use the passed in txn here -  we're writing the antispam entries outside of the transaction.
+// The reason is because we absolutely do not want the larger transaction to fail if there's already an entry for the
+// same hash in the IDSeq table - this would cause us to get stuck retrying forever, so we use BatchWrite and ignore
+// any AlreadyExists errors we encounter.
+//
+// It looks unusual, but is ok because:
+//   - individual antispam entries failing to insert because there's already an entry for that hash is perfectly ok,
+//   - we'll only continue on to update FollowCoord if no errors (other than AlreadyExists) occur while inserting entries,
+//   - similarly, if we manage to insert antispam entries here, but then fail to update FollowCoord, we'll end up
+//     retrying over the same set of log entries, and then ignoring the AlreadyExists which will occur.
+//
+// Alternative approaches are:
+//   - Use InsertOrUpdate, but that will keep updating the index associated with the ID hash, and we'd rather keep serving
+//     the earliest index known for that entry.
+//   - Perform reads for each of the hashes we're about to write, and use that to filter writes.
+//     This would work, but would also incur an extra round-trip of data which isn't really necessary but would
+//     slow the process down considerably and add extra load to Spanner for no benefit.
+func (f *follower) batchUpdateIndex(ctx context.Context, _ *spanner.ReadWriteTransaction, ms []*spanner.Mutation) error {
+	mgs := make([]*spanner.MutationGroup, 0, len(ms))
+	for _, m := range ms {
+		mgs = append(mgs, &spanner.MutationGroup{
+			Mutations: []*spanner.Mutation{m},
+		})
+	}
+
+	i := f.as.dbPool.BatchWrite(ctx, mgs)
+	return i.Do(func(r *spannerpb.BatchWriteResponse) error {
+		s := r.GetStatus()
+		if c := codes.Code(s.Code); c != codes.OK && c != codes.AlreadyExists {
+			return fmt.Errorf("failed to write antispam record: %v (%v)", s.GetMessage(), c)
+		}
+		return nil
+	})
 }
 
 // Position returns the index of the entry furthest from the start of the log which has been processed.
