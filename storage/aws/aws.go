@@ -180,6 +180,10 @@ func (s *Storage) Appender(ctx context.Context, opts *tessera.AppendOptions) (*t
 			bucket:   s.cfg.Bucket,
 		},
 		entriesPath: opts.EntriesPath(),
+		integratedSize: func(context.Context) (uint64, error) {
+			s, _, err := seq.currentTree(ctx)
+			return s, err
+		},
 	}
 	wg := witness.NewWitnessGateway(opts.Witnesses(), http.DefaultClient, logStore.ReadTile)
 	r := &Appender{
@@ -601,8 +605,9 @@ func (m *MigrationStorage) buildTree(ctx context.Context, sourceSize uint64) (ui
 
 // logResourceStore knows how to read and write entries which represent a tiles log inside an objStore.
 type logResourceStore struct {
-	objStore    objStore
-	entriesPath func(uint64, uint8) string
+	objStore       objStore
+	entriesPath    func(uint64, uint8) string
+	integratedSize func(context.Context) (uint64, error)
 }
 
 func (lr *logResourceStore) ReadCheckpoint(ctx context.Context) ([]byte, error) {
@@ -625,13 +630,17 @@ func (lr *logResourceStore) ReadEntryBundle(ctx context.Context, i uint64, p uin
 }
 
 func (lr *logResourceStore) IntegratedSize(ctx context.Context) (uint64, error) {
-	return 0, errors.New("unimplemented")
+	return lr.integratedSize(ctx)
 }
 
 func (lr *logResourceStore) StreamEntries(ctx context.Context, fromEntry uint64) (next func() (ri layout.RangeInfo, bundle []byte, err error), cancel func()) {
-	return func() (layout.RangeInfo, []byte, error) {
-		return layout.RangeInfo{}, nil, errors.New("unimplemented")
-	}, func() {}
+	klog.Infof("StreamEntries from %d", fromEntry)
+
+	// TODO(al): Consider making this configurable.
+	// Reads to S3 should be able to go highly concurrent without issue, but some performance testing should probably be undertaken.
+	// 10 works well for GCP, so start with that as a default.
+	numWorkers := 10
+	return storage.StreamAdaptor(ctx, numWorkers, lr.IntegratedSize, lr.ReadEntryBundle, fromEntry)
 }
 
 // get returns the requested object.
