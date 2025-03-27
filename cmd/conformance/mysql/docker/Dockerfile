@@ -1,4 +1,4 @@
-FROM golang:1.23.4-bookworm@sha256:2e838582004fab0931693a3a84743ceccfbfeeafa8187e87291a1afea457ff7a AS build
+FROM golang:1.24.1-alpine3.21@sha256:43c094ad24b6ac0546c62193baeb3e6e49ce14d3250845d166c77c25f64b0386 AS builder
 
 WORKDIR /build
 
@@ -11,6 +11,6 @@ RUN CGO_ENABLED=0 go build -v -o ./conformance-mysql ./cmd/conformance/mysql
 
 FROM alpine:3.20@sha256:0a4eaa0eecf5f8c050e5bba433f58c052be7587ee8af3e8b3910ef9ab5fbe9f5
 
-COPY --from=build /build/conformance-mysql /build/cmd/conformance/mysql/docker/testdata/key /build/cmd/conformance/mysql/docker/testdata/key.pub /build/storage/mysql/schema.sql /
+COPY --from=builder /build/conformance-mysql /build/cmd/conformance/mysql/docker/testdata/key /build/cmd/conformance/mysql/docker/testdata/key.pub /build/storage/mysql/schema.sql /
 
 ENTRYPOINT ["/conformance-mysql"]
