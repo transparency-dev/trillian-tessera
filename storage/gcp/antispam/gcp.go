@@ -338,7 +338,7 @@ func (f *follower) Follow(ctx context.Context, lr tessera.LogReader) {
 
 				// Now update the index.
 				{
-					ms := make([]*spanner.Mutation, 0)
+					ms := make([]*spanner.Mutation, 0, len(curEntries))
 					for i, e := range curEntries {
 						ms = append(ms, spanner.Insert("IDSeq", []string{"h", "idx"}, []interface{}{e, int64(curIndex + uint64(i))}))
 					}
