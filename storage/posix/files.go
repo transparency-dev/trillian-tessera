@@ -212,9 +212,12 @@ func (l *logResourceStorage) IntegratedSize(_ context.Context) (uint64, error) {
 }
 
 func (l *logResourceStorage) StreamEntries(ctx context.Context, fromEntry uint64) (next func() (ri layout.RangeInfo, bundle []byte, err error), cancel func()) {
-	return func() (layout.RangeInfo, []byte, error) {
-		return layout.RangeInfo{}, nil, errors.New("unimplemented")
-	}, func() {}
+	// TODO(al): Consider making this configurable.
+	// The performance of different levels of concurrency here will depend very much on the nature of the underlying storage infra,
+	// e.g. NVME will likely respond well to some concurrency, HDD less so.
+	// For now, we'll just stick to a safe default.
+	numWorkers := 1
+	return storage.StreamAdaptor(ctx, numWorkers, l.IntegratedSize, l.ReadEntryBundle, fromEntry)
 }
 
 // sequenceBatch writes the entries from the provided batch into the entry bundle files of the log.
