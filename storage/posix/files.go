@@ -343,7 +343,7 @@ func doIntegrate(ctx context.Context, fromSeq uint64, leafHashes [][]byte, ls *l
 		}
 	}
 
-	klog.Infof("New tree state: %d, %x", newSize, newRoot)
+	klog.Infof("New tree: %d, %x", newSize, newRoot)
 
 	return newSize, newRoot, nil
 }
@@ -591,7 +591,8 @@ func (a *appender) publishCheckpoint(minStaleness time.Duration) error {
 	if err := a.s.overwrite(layout.CheckpointPath, cpRaw); err != nil {
 		return fmt.Errorf("overwrite(%s): %v", layout.CheckpointPath, err)
 	}
-	klog.Infof("Published latest checkpoint")
+
+	klog.V(2).Infof("Published latest checkpoint: %d, %x", size, root)
 
 	return nil
 }
