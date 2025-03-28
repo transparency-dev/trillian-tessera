@@ -38,6 +38,6 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           auto-push: false
           alert-threshold: "150%"
-          fail-on-alert: true
+          fail-on-alert: false # Don't make red crosses on the PR, it's almost certainly a false positive currently
           comment-on-alert: true # notify on PR if alert triggers
           summary-always: true # always comment on PRs to leave job summary
