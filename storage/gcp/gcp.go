@@ -156,7 +156,10 @@ func (lr *LogReader) IntegratedSize(ctx context.Context) (uint64, error) {
 func (lr *LogReader) StreamEntries(ctx context.Context, fromEntry uint64) (next func() (ri layout.RangeInfo, bundle []byte, err error), cancel func()) {
 	klog.Infof("StreamEntries from %d", fromEntry)
 
-	return streamAdaptor(ctx, lr.integratedSize, lr.lrs.getEntryBundle, fromEntry)
+	// TODO(al): Consider making this configurable.
+	// Requests to GCS can go super parallel without too much issue, but even just 10 concurrent requests seems to provide pretty good throughput.
+	numWorkers := uint(10)
+	return storage.StreamAdaptor(ctx, numWorkers, lr.integratedSize, lr.lrs.getEntryBundle, fromEntry)
 }
 
 func (s *Storage) Appender(ctx context.Context, opts *tessera.AppendOptions) (*tessera.Appender, tessera.LogReader, error) {
@@ -409,132 +412,6 @@ func (s *logResourceStore) getTiles(ctx context.Context, tileIDs []storage.TileI
 		return nil, err
 	}
 	return r, nil
-}
-
-// getbundleFn is a function which knows how to fetch a single entry bundle from the specified address.
-type getBundleFn func(ctx context.Context, bundleIdx uint64, partial uint8) ([]byte, error)
-
-// getSizeFn is a function which knows how to return a tree size.
-type getSizeFn func(ctx context.Context) (uint64, error)
-
-// streamAdaptor uses the provided function to produce a stream of entry bundles accesible via the returned functions.
-//
-// Entry bundles are retuned strictly in order via consecutive calls to the returned next func.
-// If the adaptor encounters an error while reading an entry bundle, the encountered error will be returned by the corresponding call to next,
-// and the stream will be stopped - further calls to next will continue to return errors.
-//
-// When the caller has finished consuming entry bundles (either because of an error being returned via next, or having consumed all the bundles it needs),
-// it MUST call the returned cancel function to release resources.
-//
-// This adaptor is optimised for the case where calling getBundle has some appreciable latency, and works
-// around that by maintaining a read-ahead cache of subsequent bundles.
-//
-// TODO(al): consider whether this should be factored out as a storage mix-in.
-func streamAdaptor(ctx context.Context, getSize getSizeFn, getBundle getBundleFn, fromEntry uint64) (next func() (ri layout.RangeInfo, bundle []byte, err error), cancel func()) {
-	// bundleOrErr represents a fetched entry bundle and its params, or an error if we couldn't fetch it for
-	// some reason.
-	type bundleOrErr struct {
-		ri  layout.RangeInfo
-		b   []byte
-		err error
-	}
-	// TODO(al): this should probably be configurable - it's primarily intended to act as a means to balance throughput against
-	//           consumption of resources, but such balancing needs to be mindful of the nature of the source infrastructure, and
-	//           how concurrent requests affect performance (e.g. GCS buckets vs. files on a single disk).
-	nWorkers := 10
-
-	// bundles will be filled with futures for in-order entry bundles by the worker
-	// go routines below.
-	// This channel will be drained by the loop at the bottom of this func which
-	// yields the bundles to the caller.
-	bundles := make(chan func() bundleOrErr, nWorkers)
-	exit := make(chan struct{})
-
-	// Fetch entry bundle resources in parallel.
-	// We use a limited number of tokens here to prevent this from
-	// consuming an unbounded amount of resources.
-	go func() {
-		defer close(bundles)
-
-		// We'll limit ourselves to nWorkers worth of on-going work using these tokens:
-		tokens := make(chan struct{}, nWorkers)
-		for range nWorkers {
-			tokens <- struct{}{}
-		}
-
-		// We'll keep looping around until told to exit.
-		for {
-			// Check afresh what size the tree is so we can keep streaming entries as the tree grows.
-			treeSize, err := getSize(ctx)
-			if err != nil {
-				klog.Warningf("streamAdaptor: failed to get current tree size: %v", err)
-				continue
-			}
-			klog.Infof("tick from %d to %d", fromEntry, treeSize)
-
-			// For each bundle, pop a future into the bundles channel and kick off an async request
-			// to resolve it.
-		rangeLoop:
-			for ri := range layout.Range(fromEntry, treeSize, treeSize) {
-				select {
-				case <-exit:
-					break rangeLoop
-				case <-tokens:
-					// We'll return a token below, once the bundle is fetched _and_ is being yielded.
-				}
-
-				c := make(chan bundleOrErr, 1)
-				go func(ri layout.RangeInfo) {
-					b, err := getBundle(ctx, ri.Index, ri.Partial)
-					c <- bundleOrErr{ri: ri, b: b, err: err}
-				}(ri)
-
-				f := func() bundleOrErr {
-					b := <-c
-					// We're about to yield a value, so we can now return the token and unblock another fetch.
-					tokens <- struct{}{}
-					return b
-				}
-
-				bundles <- f
-			}
-
-			// Next loop, carry on from where we got to.
-			fromEntry = treeSize
-
-			select {
-			case <-exit:
-				klog.Infof("streamAdaptor exiting")
-				return
-			case <-time.After(time.Second):
-				// We've caught up with and hit the end of the tree, so wait a bit before looping to avoid busy waiting.
-				// TODO(al): could consider a shallow channel of sizes here.
-			}
-		}
-	}()
-
-	cancel = func() {
-		close(exit)
-	}
-
-	var streamErr error
-	next = func() (layout.RangeInfo, []byte, error) {
-		if streamErr != nil {
-			return layout.RangeInfo{}, nil, streamErr
-		}
-
-		f, ok := <-bundles
-		if !ok {
-			streamErr = tessera.ErrNoMoreEntries
-			return layout.RangeInfo{}, nil, streamErr
-		}
-		b := f()
-		if b.err != nil {
-			streamErr = b.err
-		}
-		return b.ri, b.b, b.err
-	}
-	return next, cancel
 }
 
 // getEntryBundle returns the serialised entry bundle at the location described by the given index and partial size.

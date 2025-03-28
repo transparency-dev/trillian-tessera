@@ -32,6 +32,7 @@ import (
 	"os"
 	"reflect"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -309,12 +310,15 @@ func TestTileRoundtrip(t *testing.T) {
 	}
 }
 
-func makeBundle(t *testing.T, size uint64) []byte {
+func makeBundle(t *testing.T, idx uint64, size int) []byte {
 	t.Helper()
 	r := &bytes.Buffer{}
-	for i := uint64(0); i < size; i++ {
-		e := tessera.NewEntry([]byte(fmt.Sprintf("%d", i)))
-		if _, err := r.Write(e.MarshalBundleData(i)); err != nil {
+	if size == 0 {
+		size = layout.EntryBundleWidth
+	}
+	for i := range size {
+		e := tessera.NewEntry([]byte(fmt.Sprintf("%d:%d", idx, i)))
+		if _, err := r.Write(e.MarshalBundleData(uint64(i))); err != nil {
 			t.Fatalf("MarshalBundleEntry: %v", err)
 		}
 	}
@@ -333,7 +337,7 @@ func TestBundleRoundtrip(t *testing.T) {
 		name       string
 		index      uint64
 		p          uint8
-		bundleSize uint64
+		bundleSize int
 	}{
 		{
 			name:       "ok",
@@ -343,7 +347,7 @@ func TestBundleRoundtrip(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			wantBundle := makeBundle(t, test.bundleSize)
+			wantBundle := makeBundle(t, 0, test.bundleSize)
 			if err := s.setEntryBundle(ctx, test.index, test.p, wantBundle); err != nil {
 				t.Fatalf("setEntryBundle: %v", err)
 			}
@@ -434,7 +438,79 @@ func TestPublishCheckpoint(t *testing.T) {
 			}
 		})
 	}
+}
 
+func TestStreamEntries(t *testing.T) {
+	ctx := context.Background()
+	m := newMemObjStore()
+
+	logSize1 := 12345
+	logSize2 := 100045
+
+	var logSize atomic.Uint64
+	logSize.Store(uint64(logSize1))
+
+	s := logResourceStore{
+		objStore:    m,
+		entriesPath: layout.EntriesPath,
+		integratedSize: func(ctx context.Context) (uint64, error) {
+			return uint64(logSize2), nil
+		},
+	}
+
+	// Populate entry bundles:
+	// first to logSize1 (so we're sure we've got the partial bundle)
+	for r, idx := logSize1, uint64(0); r > 0; idx++ {
+		sz := min(r, layout.EntryBundleWidth)
+		b := makeBundle(t, idx, sz)
+		if err := s.setEntryBundle(ctx, idx, uint8(sz), b); err != nil {
+			t.Fatalf("setEntryBundle(%d): %v", idx, err)
+		}
+		r -= sz
+	}
+	// Then on to logSize2
+	for r, idx := logSize2, uint64(0); r > 0; idx++ {
+		sz := min(r, layout.EntryBundleWidth)
+		b := makeBundle(t, idx, sz)
+		if err := s.setEntryBundle(ctx, idx, uint8(sz), b); err != nil {
+			t.Fatalf("setEntryBundle(%d): %v", idx, err)
+		}
+		r -= sz
+	}
+
+	// Finally, try to stream all the bundles back.
+	// We'll first try to stream up to logSize1, then when we reach it we'll
+	// make the tree appear to grow to logSize2 to test resuming.
+	seenEntries := uint64(0)
+	next, stop := s.StreamEntries(ctx, 0)
+
+	for {
+		gotRI, _, gotErr := next()
+		if gotErr != nil {
+			if errors.Is(gotErr, tessera.ErrNoMoreEntries) {
+				break
+			}
+			t.Fatalf("gotErr after %d: %v", seenEntries, gotErr)
+		}
+		if e := gotRI.Index*layout.EntryBundleWidth + uint64(gotRI.First); e != seenEntries {
+			t.Fatalf("got idx %d, want %d", e, seenEntries)
+		}
+		seenEntries += uint64(gotRI.N)
+		t.Logf("got RI %d / %d", gotRI.Index, seenEntries)
+
+		switch seenEntries {
+		case uint64(logSize1):
+			// We've fetched all the entries from the original tree size, now we'll make
+			// the tree appear to have grown to the final size.
+			// The stream should start returning bundles again until we've consumed them all.
+			t.Log("Reached logSize, growing tree")
+			logSize.Store(uint64(logSize2))
+			time.Sleep(time.Second)
+		case uint64(logSize2):
+			// We've seen all the entries we created, stop the iterator
+			stop()
+		}
+	}
 }
 
 type memObjStore struct {
