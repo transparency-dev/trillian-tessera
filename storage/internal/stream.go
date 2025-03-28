@@ -77,10 +77,10 @@ func StreamAdaptor(ctx context.Context, numWorkers int, getSize GetSizeFn, getBu
 			// Check afresh what size the tree is so we can keep streaming entries as the tree grows.
 			treeSize, err := getSize(ctx)
 			if err != nil {
-				klog.Warningf("streamAdaptor: failed to get current tree size: %v", err)
+				klog.Warningf("StreamAdaptor: failed to get current tree size: %v", err)
 				continue
 			}
-			klog.Infof("tick from %d to %d", fromEntry, treeSize)
+			klog.V(1).Infof("StreamAdaptor: streaming from %d to %d", fromEntry, treeSize)
 
 			// For each bundle, pop a future into the bundles channel and kick off an async request
 			// to resolve it.
@@ -114,7 +114,7 @@ func StreamAdaptor(ctx context.Context, numWorkers int, getSize GetSizeFn, getBu
 
 			select {
 			case <-exit:
-				klog.Infof("streamAdaptor exiting")
+				klog.Infof("StreamAdaptor: exiting")
 				return
 			case <-time.After(time.Second):
 				// We've caught up with and hit the end of the tree, so wait a bit before looping to avoid busy waiting.
