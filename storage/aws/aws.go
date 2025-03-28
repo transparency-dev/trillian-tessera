@@ -639,7 +639,7 @@ func (lr *logResourceStore) StreamEntries(ctx context.Context, fromEntry uint64)
 	// TODO(al): Consider making this configurable.
 	// Reads to S3 should be able to go highly concurrent without issue, but some performance testing should probably be undertaken.
 	// 10 works well for GCP, so start with that as a default.
-	numWorkers := 10
+	numWorkers := uint(10)
 	return storage.StreamAdaptor(ctx, numWorkers, lr.IntegratedSize, lr.ReadEntryBundle, fromEntry)
 }
 

@@ -1,4 +1,4 @@
-// Copyright 2024 Google LLC. All Rights Reserved.
+// Copyright 2025 The Tessera Authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -23,11 +23,11 @@ import (
 	"k8s.io/klog/v2"
 )
 
-// GetbundleFn is a function which knows how to fetch a single entry bundle from the specified address.
+// GetBundleFn is a function which knows how to fetch a single entry bundle from the specified address.
 type GetBundleFn func(ctx context.Context, bundleIdx uint64, partial uint8) ([]byte, error)
 
-// GetSizeFn is a function which knows how to return a tree size.
-type GetSizeFn func(ctx context.Context) (uint64, error)
+// GetTreeSizeFn is a function which knows how to return a tree size.
+type GetTreeSizeFn func(ctx context.Context) (uint64, error)
 
 // StreamAdaptor uses the provided function to produce a stream of entry bundles accesible via the returned functions.
 //
@@ -43,7 +43,7 @@ type GetSizeFn func(ctx context.Context) (uint64, error)
 // requests to getBundle. The request parallelism is set by the value of the numWorkers paramemter, which can be tuned
 // to balance throughput against consumption of resources, but such balancing needs to be mindful of the nature of the
 // source infrastructure, and how concurrent requests affect performance (e.g. GCS buckets vs. files on a single disk).
-func StreamAdaptor(ctx context.Context, numWorkers int, getSize GetSizeFn, getBundle GetBundleFn, fromEntry uint64) (next func() (ri layout.RangeInfo, bundle []byte, err error), cancel func()) {
+func StreamAdaptor(ctx context.Context, numWorkers uint, getSize GetTreeSizeFn, getBundle GetBundleFn, fromEntry uint64) (next func() (ri layout.RangeInfo, bundle []byte, err error), cancel func()) {
 	// bundleOrErr represents a fetched entry bundle and its params, or an error if we couldn't fetch it for
 	// some reason.
 	type bundleOrErr struct {
@@ -51,13 +51,12 @@ func StreamAdaptor(ctx context.Context, numWorkers int, getSize GetSizeFn, getBu
 		b   []byte
 		err error
 	}
-	nWorkers := 10
 
 	// bundles will be filled with futures for in-order entry bundles by the worker
 	// go routines below.
 	// This channel will be drained by the loop at the bottom of this func which
 	// yields the bundles to the caller.
-	bundles := make(chan func() bundleOrErr, nWorkers)
+	bundles := make(chan func() bundleOrErr, numWorkers)
 	exit := make(chan struct{})
 
 	// Fetch entry bundle resources in parallel.
@@ -66,9 +65,9 @@ func StreamAdaptor(ctx context.Context, numWorkers int, getSize GetSizeFn, getBu
 	go func() {
 		defer close(bundles)
 
-		// We'll limit ourselves to nWorkers worth of on-going work using these tokens:
-		tokens := make(chan struct{}, nWorkers)
-		for range nWorkers {
+		// We'll limit ourselves to numWorkers worth of on-going work using these tokens:
+		tokens := make(chan struct{}, numWorkers)
+		for range numWorkers {
 			tokens <- struct{}{}
 		}
 

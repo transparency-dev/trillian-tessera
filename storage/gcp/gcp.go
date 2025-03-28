@@ -158,7 +158,7 @@ func (lr *LogReader) StreamEntries(ctx context.Context, fromEntry uint64) (next 
 
 	// TODO(al): Consider making this configurable.
 	// Requests to GCS can go super parallel without too much issue, but even just 10 concurrent requests seems to provide pretty good throughput.
-	numWorkers := 10
+	numWorkers := uint(10)
 	return storage.StreamAdaptor(ctx, numWorkers, lr.integratedSize, lr.lrs.getEntryBundle, fromEntry)
 }
 

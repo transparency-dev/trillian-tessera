@@ -216,7 +216,7 @@ func (l *logResourceStorage) StreamEntries(ctx context.Context, fromEntry uint64
 	// The performance of different levels of concurrency here will depend very much on the nature of the underlying storage infra,
 	// e.g. NVME will likely respond well to some concurrency, HDD less so.
 	// For now, we'll just stick to a safe default.
-	numWorkers := 1
+	numWorkers := uint(1)
 	return storage.StreamAdaptor(ctx, numWorkers, l.IntegratedSize, l.ReadEntryBundle, fromEntry)
 }
 
