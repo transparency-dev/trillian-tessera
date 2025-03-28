@@ -17,8 +17,6 @@ package gcp
 import (
 	"context"
 	"crypto/sha256"
-	"errors"
-	"fmt"
 	"os"
 	"testing"
 	"time"
@@ -27,13 +25,12 @@ import (
 	"cloud.google.com/go/spanner/spannertest"
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/api"
-	"github.com/transparency-dev/trillian-tessera/api/layout"
+	"github.com/transparency-dev/trillian-tessera/testonly"
 	"k8s.io/klog/v2"
 )
 
 type testLookup struct {
 	entryHash    []byte
-	wantIndex    uint64
 	wantNotFound bool
 }
 
@@ -58,13 +55,10 @@ func TestAntispamStorage(t *testing.T) {
 			lookupEntries: []testLookup{
 				{
 					entryHash: testIDHash([]byte("one")),
-					wantIndex: 0,
 				}, {
 					entryHash: testIDHash([]byte("two")),
-					wantIndex: 1,
 				}, {
 					entryHash: testIDHash([]byte("three")),
-					wantIndex: 2,
 				}, {
 					entryHash:    testIDHash([]byte("nowhere to be found")),
 					wantNotFound: true,
@@ -78,13 +72,27 @@ func TestAntispamStorage(t *testing.T) {
 				t.Fatalf("NewAntispam: %v", err)
 			}
 
-			fr := newFakeLogReader(test.logEntries)
+			fl, shutdown := testonly.NewTestLog(t, tessera.NewAppendOptions())
+			defer func() {
+				if err := shutdown(t.Context()); err != nil {
+					t.Logf("shutdown: %v", err)
+				}
+			}()
 
 			f := as.Follower(testBundleHasher)
 			// Hack in a workaround for spannertest not supporting BatchWrites
 			f.(*follower).updateIndex = updateIndexTx
 
-			go f.Follow(ctx, fr)
+			entryIndex := make(map[string]uint64)
+			for i, e := range test.logEntries {
+				idx, err := fl.Appender.Add(t.Context(), tessera.NewEntry(e))()
+				if err != nil {
+					t.Fatalf("Add(%d): %v", i, err)
+				}
+				entryIndex[string(testIDHash(e))] = idx.Index
+			}
+
+			go f.Follow(ctx, fl.LogReader)
 
 			for {
 				time.Sleep(time.Second)
@@ -93,8 +101,13 @@ func TestAntispamStorage(t *testing.T) {
 					t.Logf("Position: %v", err)
 					continue
 				}
-				klog.Infof("Wait for follower (%d) to catch up with tree (%d)", pos, fr.size)
-				if pos >= fr.size {
+				sz, err := fl.LogReader.IntegratedSize(t.Context())
+				if err != nil {
+					t.Logf("IntegratedSize: %v", err)
+					continue
+				}
+				klog.Infof("Wait for follower (%d) to catch up with tree (%d)", pos, sz)
+				if pos >= sz {
 					break
 				}
 			}
@@ -104,14 +117,15 @@ func TestAntispamStorage(t *testing.T) {
 				if err != nil {
 					t.Errorf("error looking up hash %x: %v", e.entryHash, err)
 				}
+				wantIndex := entryIndex[string(e.entryHash)]
 				if gotIndex == nil {
 					if !e.wantNotFound {
-						t.Errorf("no index for hash %x, but expected index %d", e.entryHash, e.wantIndex)
+						t.Errorf("no index for hash %x, but expected index %d", e.entryHash, wantIndex)
 					}
 					continue
 				}
-				if *gotIndex != e.wantIndex {
-					t.Errorf("got index %d, want %d from looking up hash %x", gotIndex, e.wantIndex, e.entryHash)
+				if *gotIndex != wantIndex {
+					t.Errorf("got index %d, want %d from looking up hash %x", gotIndex, wantIndex, e.entryHash)
 				}
 			}
 		})
@@ -153,81 +167,4 @@ func testBundleHasher(b []byte) ([][]byte, error) {
 // updates inline with the larger transaction.
 func updateIndexTx(_ context.Context, txn *spanner.ReadWriteTransaction, ms []*spanner.Mutation) error {
 	return txn.BufferWrite(ms)
-}
-
-type fakeLogReader struct {
-	bundles [][]byte
-	size    uint64
-}
-
-func newFakeLogReader(data [][]byte) *fakeLogReader {
-	r := &fakeLogReader{}
-	c := [][]byte{}
-	for _, d := range data {
-		c = append(c, d)
-		if len(c) == layout.EntryBundleWidth {
-			b := []byte{}
-			for i := range c {
-				e := tessera.NewEntry(c[i])
-				b = append(b, e.MarshalBundleData(r.size)...)
-				r.size++
-			}
-			r.bundles = append(r.bundles, b)
-			c = [][]byte{}
-		}
-	}
-	if len(c) > 0 {
-		b := []byte{}
-		for i := range c {
-			e := tessera.NewEntry(c[i])
-			b = append(b, e.MarshalBundleData(r.size)...)
-			r.size++
-		}
-		r.bundles = append(r.bundles, b)
-	}
-	return r
-}
-
-func (f fakeLogReader) ReadCheckpoint(_ context.Context) ([]byte, error) {
-	return nil, errors.New("unimplemented")
-}
-
-func (f fakeLogReader) ReadTile(_ context.Context, _, _ uint64, _ uint8) ([]byte, error) {
-	return nil, errors.New("unimplemented")
-}
-
-func (f fakeLogReader) ReadEntryBundle(_ context.Context, index uint64, _ uint8) ([]byte, error) {
-	if index >= uint64(len(f.bundles)) {
-		return nil, fmt.Errorf("no bundle at index %d: %v", index, os.ErrNotExist)
-	}
-	return f.bundles[index], nil
-}
-
-func (f fakeLogReader) IntegratedSize(_ context.Context) (uint64, error) {
-	return f.size, nil
-}
-
-func (f fakeLogReader) StreamEntries(_ context.Context, fromEntry uint64) (func() (layout.RangeInfo, []byte, error), func()) {
-	next := func() (layout.RangeInfo, []byte, error) {
-		if fromEntry >= f.size {
-			return layout.RangeInfo{}, nil, os.ErrNotExist
-		}
-
-		bi, offset := fromEntry/layout.EntryBundleWidth, fromEntry%layout.EntryBundleWidth
-		n := layout.EntryBundleWidth - offset
-		if fromEntry+n > f.size {
-			n = f.size - fromEntry
-		}
-
-		ri := layout.RangeInfo{
-			Index: bi,
-			First: uint(offset),
-			N:     uint(n),
-		}
-		fromEntry += n
-		klog.Infof("YIELD: %v, %v", ri, f.bundles[bi])
-		return ri, f.bundles[bi], nil
-	}
-	cancel := func() {}
-	return next, cancel
 }
