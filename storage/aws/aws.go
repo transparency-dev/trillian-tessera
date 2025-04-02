@@ -65,6 +65,8 @@ import (
 const (
 	logContType           = "application/octet-stream"
 	ckptContType          = "text/plain; charset=utf-8"
+	logCacheControl       = "max-age=604800,immutable"
+	ckptCacheControl      = "no-cache"
 	minCheckpointInterval = time.Second
 
 	DefaultPushbackMaxOutstanding = 4096
@@ -88,8 +90,8 @@ type Storage struct {
 // objStore describes a type which can store and retrieve objects.
 type objStore interface {
 	getObject(ctx context.Context, obj string) ([]byte, error)
-	setObject(ctx context.Context, obj string, data []byte, contType string) error
-	setObjectIfNoneMatch(ctx context.Context, obj string, data []byte, contType string) error
+	setObject(ctx context.Context, obj string, data []byte, contType string, cacheControl string) error
+	setObjectIfNoneMatch(ctx context.Context, obj string, data []byte, contType string, cacheControl string) error
 	lastModified(ctx context.Context, obj string) (time.Time, error)
 }
 
@@ -652,7 +654,7 @@ func (s *logResourceStore) get(ctx context.Context, path string) ([]byte, error)
 }
 
 func (lrs *logResourceStore) setCheckpoint(ctx context.Context, cpRaw []byte) error {
-	return lrs.objStore.setObject(ctx, layout.CheckpointPath, cpRaw, ckptContType)
+	return lrs.objStore.setObject(ctx, layout.CheckpointPath, cpRaw, ckptContType, ckptCacheControl)
 }
 
 func (lrs *logResourceStore) checkpointLastModified(ctx context.Context) (time.Time, error) {
@@ -671,7 +673,7 @@ func (lrs *logResourceStore) setTile(ctx context.Context, level, index, logSize 
 	tPath := layout.TilePath(level, index, layout.PartialTileSize(level, index, logSize))
 	klog.V(2).Infof("StoreTile: %s (%d entries)", tPath, len(tile.Nodes))
 
-	return lrs.objStore.setObjectIfNoneMatch(ctx, tPath, data, logContType)
+	return lrs.objStore.setObjectIfNoneMatch(ctx, tPath, data, logContType, logCacheControl)
 }
 
 // getTiles returns the tiles with the given tile-coords for the specified log size.
@@ -737,7 +739,7 @@ func (lrs *logResourceStore) setEntryBundle(ctx context.Context, bundleIndex uin
 	// Note that setObject does an idempotent interpretation of IfNoneMatch - it only
 	// returns an error if the named object exists _and_ contains different data to what's
 	// passed in here.
-	if err := lrs.objStore.setObjectIfNoneMatch(ctx, objName, bundleRaw, logContType); err != nil {
+	if err := lrs.objStore.setObjectIfNoneMatch(ctx, objName, bundleRaw, logContType, logCacheControl); err != nil {
 		return fmt.Errorf("setObjectIfNoneMatch(%q): %v", objName, err)
 
 	}
@@ -1124,12 +1126,13 @@ func (s *s3Storage) getObject(ctx context.Context, obj string) ([]byte, error) {
 }
 
 // setObject stores the provided data in the specified object.
-func (s *s3Storage) setObject(ctx context.Context, objName string, data []byte, contType string) error {
+func (s *s3Storage) setObject(ctx context.Context, objName string, data []byte, contType string, cacheControl string) error {
 	put := &s3.PutObjectInput{
-		Bucket:      aws.String(s.bucket),
-		Key:         aws.String(objName),
-		Body:        bytes.NewReader(data),
-		ContentType: aws.String(contType),
+		Bucket:       aws.String(s.bucket),
+		Key:          aws.String(objName),
+		Body:         bytes.NewReader(data),
+		ContentType:  aws.String(contType),
+		CacheControl: aws.String(cacheControl),
 	}
 
 	if _, err := s.s3Client.PutObject(ctx, put); err != nil {
@@ -1144,12 +1147,13 @@ func (s *s3Storage) setObject(ctx context.Context, objName string, data []byte, 
 // iff no object exists under this key already. If an object already exists under the same key,
 // an error will be returned *unless*  the currently stored data is bit-for-bit identical to the
 // data to-be-written. This is intended to provide idempotentency for writes.
-func (s *s3Storage) setObjectIfNoneMatch(ctx context.Context, objName string, data []byte, contType string) error {
+func (s *s3Storage) setObjectIfNoneMatch(ctx context.Context, objName string, data []byte, contType string, cacheControl string) error {
 	put := &s3.PutObjectInput{
-		Bucket:      aws.String(s.bucket),
-		Key:         aws.String(objName),
-		Body:        bytes.NewReader(data),
-		ContentType: aws.String(contType),
+		Bucket:       aws.String(s.bucket),
+		Key:          aws.String(objName),
+		Body:         bytes.NewReader(data),
+		ContentType:  aws.String(contType),
+		CacheControl: aws.String(cacheControl),
 		// "*" is the expected character for this condition
 		IfNoneMatch: aws.String("*"),
 	}
