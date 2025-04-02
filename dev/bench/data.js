@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1743606018981,
+  "lastUpdate": 1743608593294,
   "repoUrl": "https://github.com/transparency-dev/trillian-tessera",
   "entries": {
     "Benchmark": [
@@ -17952,6 +17952,150 @@ window.BENCHMARK_DATA = {
             "value": 3041,
             "unit": "allocs/op",
             "extra": "4232 times\n4 procs"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "mhutchinson@gmail.com",
+            "name": "Martin Hutchinson",
+            "username": "mhutchinson"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "b53519faa0ba7f8a12ddcb1fd4b39f0ab14288f9",
+          "message": "Fixed go.mod file to remove exclude (#572)\n\nExclude directives break running commands in the repository in the\nnormal go run way:\n\n```shell\ngo run github.com/transparency-dev/trillian-tessera/cmd/examples/posix-oneshot@main --storage_dir=/tmp/mylog --initialise\n\nThe go.mod file for the module providing named packages contains one or\nmore exclude directives. It must not contain directives that would cause\nit to be interpreted differently than if it were the main module.\n```\n\nI've run `go mod tidy` after this and it seems OK. We'll need to keep an\neye for dependabot making a mess.",
+          "timestamp": "2025-04-02T16:42:37+01:00",
+          "tree_id": "0dde22936edc0ca337dbcebf7da9d2f4d193c89c",
+          "url": "https://github.com/transparency-dev/trillian-tessera/commit/b53519faa0ba7f8a12ddcb1fd4b39f0ab14288f9"
+        },
+        "date": 1743608592799,
+        "tool": "go",
+        "benches": [
+          {
+            "name": "BenchmarkDedupe",
+            "value": 749167,
+            "unit": "ns/op\t  721727 B/op\t   21554 allocs/op",
+            "extra": "1616 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDedupe - ns/op",
+            "value": 749167,
+            "unit": "ns/op",
+            "extra": "1616 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDedupe - B/op",
+            "value": 721727,
+            "unit": "B/op",
+            "extra": "1616 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDedupe - allocs/op",
+            "value": 21554,
+            "unit": "allocs/op",
+            "extra": "1616 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWitnessGroupSatisfaction",
+            "value": 135883,
+            "unit": "ns/op\t    3152 B/op\t      36 allocs/op",
+            "extra": "8715 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWitnessGroupSatisfaction - ns/op",
+            "value": 135883,
+            "unit": "ns/op",
+            "extra": "8715 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWitnessGroupSatisfaction - B/op",
+            "value": 3152,
+            "unit": "B/op",
+            "extra": "8715 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWitnessGroupSatisfaction - allocs/op",
+            "value": 36,
+            "unit": "allocs/op",
+            "extra": "8715 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLeafBundle_UnmarshalText",
+            "value": 1650,
+            "unit": "ns/op\t    6528 B/op\t       1 allocs/op",
+            "extra": "702658 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLeafBundle_UnmarshalText - ns/op",
+            "value": 1650,
+            "unit": "ns/op",
+            "extra": "702658 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLeafBundle_UnmarshalText - B/op",
+            "value": 6528,
+            "unit": "B/op",
+            "extra": "702658 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLeafBundle_UnmarshalText - allocs/op",
+            "value": 1,
+            "unit": "allocs/op",
+            "extra": "702658 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkCheckpointUnsafe",
+            "value": 217,
+            "unit": "ns/op\t     224 B/op\t       5 allocs/op",
+            "extra": "5554809 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkCheckpointUnsafe - ns/op",
+            "value": 217,
+            "unit": "ns/op",
+            "extra": "5554809 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkCheckpointUnsafe - B/op",
+            "value": 224,
+            "unit": "B/op",
+            "extra": "5554809 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkCheckpointUnsafe - allocs/op",
+            "value": 5,
+            "unit": "allocs/op",
+            "extra": "5554809 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkIntegrate",
+            "value": 335200,
+            "unit": "ns/op\t  274314 B/op\t    3035 allocs/op",
+            "extra": "4144 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkIntegrate - ns/op",
+            "value": 335200,
+            "unit": "ns/op",
+            "extra": "4144 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkIntegrate - B/op",
+            "value": 274314,
+            "unit": "B/op",
+            "extra": "4144 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkIntegrate - allocs/op",
+            "value": 3035,
+            "unit": "allocs/op",
+            "extra": "4144 times\n4 procs"
           }
         ]
       }
