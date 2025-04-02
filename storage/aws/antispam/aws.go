@@ -156,9 +156,9 @@ func (s *AntispamStorage) initDB(ctx context.Context) error {
 		return err
 	}
 	// Set default values for a newly initialised schema - these rows being present are a precondition for
-	// sequencing and integration to occur.
+	// following and population of mapping data to occur.
 	// Note that this will only succeed if no row exists, so there's no danger
-	// of "resetting" an existing log.
+	// of "resetting" an existing antispam database.
 	if _, err := s.dbPool.ExecContext(ctx,
 		`INSERT IGNORE INTO AntispamMeta (id, compatibilityVersion) VALUES (0, ?)`, SchemaCompatibilityVersion); err != nil {
 		return err
@@ -326,6 +326,11 @@ func (f *follower) Follow(ctx context.Context, lr tessera.LogReader) {
 
 		// Busy loop while there's work to be done
 		for workDone := true; workDone; {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
 			err = func() error {
 				tx, err := f.as.dbPool.BeginTx(ctx, &sql.TxOptions{
 					ReadOnly: false,
@@ -334,7 +339,7 @@ func (f *follower) Follow(ctx context.Context, lr tessera.LogReader) {
 					return err
 				}
 
-				row := tx.QueryRowContext(ctx, "SELECT nextIdx FROM AntispamFollowCoord WHERE id = 0")
+				row := tx.QueryRowContext(ctx, "SELECT nextIdx FROM AntispamFollowCoord WHERE id = 0 FOR UPDATE")
 
 				var followFrom uint64
 				if err := row.Scan(&followFrom); err != nil {
@@ -376,29 +381,19 @@ func (f *follower) Follow(ctx context.Context, lr tessera.LogReader) {
 				curEntries = batch
 				curIndex = followFrom
 
-				// Store antispam entries.
-				//
-				// Note that we're writing the antispam entries outside of the transaction here. The reason is because we absolutely do not want
-				// the transaction to fail if there's already an entry for the same hash in the IDSeq table.
-				//
-				// It looks unusual, but is ok because:
-				//  - individual antispam entries fails because there's already an entry for that hash is perfectly ok
-				//  - we'll only continue on to update FollowCoord if no errors (other than AlreadyExists) occur while inserting entries
-				//  - similarly, if we manage to insert antispam entries here, but then fail to update FollowCoord, we'll end up
-				//    retrying over the same set of log entries, and then ignoring the AlreadyExists which will occur.
-				{
-					sqlStr := "INSERT IGNORE INTO AntispamIDSeq (h, idx) VALUES "
-					vals := make([]any, 0, 2*len(curEntries))
-					for i, e := range curEntries {
-						sqlStr += "(?, ?),"
-						vals = append(vals, e, curIndex+uint64(i))
-					}
-					sqlStr = strings.TrimSuffix(sqlStr, ",")
+				klog.V(1).Infof("Inserting %d entries into antispam database (follow from %d of size %d)", len(curEntries), followFrom, size)
 
-					_, err := f.as.dbPool.ExecContext(ctx, sqlStr, vals...)
-					if err != nil {
-						return fmt.Errorf("failed to insert into AntispamIDSeq with query %q: %v", sqlStr, err)
-					}
+				args := make([]string, 0, len(curEntries))
+				vals := make([]any, 0, 2*len(curEntries))
+				for i, e := range curEntries {
+					args = append(args, "(?, ?)")
+					vals = append(vals, e, curIndex+uint64(i))
+				}
+				sqlStr := fmt.Sprintf("INSERT IGNORE INTO AntispamIDSeq (h, idx) VALUES %s", strings.Join(args, ","))
+
+				_, err = tx.ExecContext(ctx, sqlStr, vals...)
+				if err != nil {
+					return fmt.Errorf("failed to insert into AntispamIDSeq with query %q: %v", sqlStr, err)
 				}
 				numAdded := uint64(len(curEntries))
 				f.as.numWrites.Add(numAdded)
@@ -415,8 +410,10 @@ func (f *follower) Follow(ctx context.Context, lr tessera.LogReader) {
 				if err != errOutOfSync {
 					klog.Errorf("Failed to commit antispam population tx: %v", err)
 				}
-				stop()
-				entryReader = nil
+				if stop != nil {
+					stop()
+					entryReader = nil
+				}
 				continue
 			}
 			curEntries = nil
