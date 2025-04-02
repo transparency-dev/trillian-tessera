@@ -1,6 +1,7 @@
 module github.com/transparency-dev/trillian-tessera
 
 go 1.24.0
+
 require (
 	cloud.google.com/go/spanner v1.78.0
 	cloud.google.com/go/storage v1.51.0
@@ -101,5 +102,3 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250313205543-e70fdf4c4cb4 // indirect
 	google.golang.org/protobuf v1.36.6 // indirect
 )
-
-exclude google.golang.org/grpc/stats/opentelemetry v0.0.0-20240907200651-3ffb98b2c93a
