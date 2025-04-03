@@ -258,12 +258,12 @@ func (o AppendOptions) valid() error {
 
 // CheckpointPublisher returns a function which should be used to create, sign, and potentially witness a new checkpoint.
 func (o AppendOptions) CheckpointPublisher(lr LogReader, httpClient *http.Client) func(context.Context, uint64, []byte) ([]byte, error) {
+	wg := witness.NewWitnessGateway(o.Witnesses(), httpClient, lr.ReadTile)
 	return func(ctx context.Context, size uint64, root []byte) ([]byte, error) {
 		cp, err := o.newCP(ctx, size, root)
 		if err != nil {
 			return nil, fmt.Errorf("newCP: %v", err)
 		}
-		wg := witness.NewWitnessGateway(o.Witnesses(), httpClient, lr.ReadTile)
 		return wg.Witness(ctx, cp)
 	}
 }
