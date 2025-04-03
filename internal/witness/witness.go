@@ -36,8 +36,24 @@ import (
 
 var ErrPolicyNotSatisfied = errors.New("witness policy was not satisfied")
 
+// WitnessGroup defines a group of witnesses, and a threshold of
+// signatures that must be met for this group to be satisfied.
+// Witnesses within a group should be fungible, e.g. all of the Armored
+// Witness devices form a logical group, and N should be picked to
+// represent a threshold of the quorum. For some users this will be a
+// simple majority, but other strategies are available.
+// N must be <= len(WitnessKeys).
 type WitnessGroup interface {
+	// Satisfied returns true if the checkpoint provided is signed by this witness.
+	// This will return false if there is no signature, and also if the
+	// checkpoint cannot be read as a valid note. It is up to the caller to ensure
+	// that the input value represents a valid note.
 	Satisfied(cp []byte) bool
+
+	// Endpoints returns the details required for updating a witness and checking the
+	// response. The returned result is a map from the URL that should be used to update
+	// the witness with a new checkpoint, to the value which is the verifier to check
+	// the response is well formed.
 	Endpoints() map[string]note.Verifier
 }
 
