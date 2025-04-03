@@ -51,7 +51,6 @@ import (
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/api"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
-	"github.com/transparency-dev/trillian-tessera/internal/witness"
 	storage "github.com/transparency-dev/trillian-tessera/storage/internal"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/api/googleapi"
@@ -166,9 +165,6 @@ func (s *Storage) Appender(ctx context.Context, opts *tessera.AppendOptions) (*t
 	if opts.CheckpointInterval() < minCheckpointInterval {
 		return nil, nil, fmt.Errorf("requested CheckpointInterval (%v) is less than minimum permitted %v", opts.CheckpointInterval(), minCheckpointInterval)
 	}
-	if opts.NewCP() == nil {
-		return nil, nil, errors.New("tessera.WithCheckpointSigner must be provided in Appender()")
-	}
 
 	c, err := gcs.NewClient(ctx, gcs.WithJSONReads())
 	if err != nil {
@@ -193,13 +189,6 @@ func (s *Storage) Appender(ctx context.Context, opts *tessera.AppendOptions) (*t
 	}
 	a.queue = storage.NewQueue(ctx, opts.BatchMaxAge(), opts.BatchMaxSize(), a.sequencer.assignEntries)
 
-	if err := a.init(ctx); err != nil {
-		return nil, nil, fmt.Errorf("failed to initialise log storage: %v", err)
-	}
-
-	go a.sequencerJob(ctx)
-	go a.publisherJob(ctx, opts.CheckpointInterval())
-
 	reader := &LogReader{
 		lrs: *a.logStore,
 		integratedSize: func(context.Context) (uint64, error) {
@@ -207,14 +196,15 @@ func (s *Storage) Appender(ctx context.Context, opts *tessera.AppendOptions) (*t
 			return s, err
 		},
 	}
-	wg := witness.NewWitnessGateway(opts.Witnesses(), http.DefaultClient, reader.ReadTile)
-	a.newCP = func(u uint64, b []byte) ([]byte, error) {
-		cp, err := opts.NewCP()(u, b)
-		if err != nil {
-			return cp, err
-		}
-		return wg.Witness(ctx, cp)
+	a.newCP = opts.CheckpointPublisher(reader, http.DefaultClient)
+
+	if err := a.init(ctx); err != nil {
+		return nil, nil, fmt.Errorf("failed to initialise log storage: %v", err)
 	}
+
+	go a.sequencerJob(ctx)
+	go a.publisherJob(ctx, opts.CheckpointInterval())
+
 	return &tessera.Appender{
 		Add: a.Add,
 	}, reader, nil
@@ -222,7 +212,7 @@ func (s *Storage) Appender(ctx context.Context, opts *tessera.AppendOptions) (*t
 
 // Appender is an implementation of the Tessera appender lifecycle contract.
 type Appender struct {
-	newCP func(uint64, []byte) ([]byte, error)
+	newCP func(context.Context, uint64, []byte) ([]byte, error)
 
 	sequencer sequencer
 	logStore  *logResourceStore
@@ -321,7 +311,7 @@ func (a *Appender) publishCheckpoint(ctx context.Context, minStaleness time.Dura
 	if err != nil {
 		return fmt.Errorf("currentTree: %v", err)
 	}
-	cpRaw, err := a.newCP(size, root)
+	cpRaw, err := a.newCP(ctx, size, root)
 	if err != nil {
 		return fmt.Errorf("newCP: %v", err)
 	}

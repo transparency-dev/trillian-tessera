@@ -54,7 +54,6 @@ import (
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/api"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
-	"github.com/transparency-dev/trillian-tessera/internal/witness"
 	storage "github.com/transparency-dev/trillian-tessera/storage/internal"
 	"golang.org/x/sync/errgroup"
 	"k8s.io/klog/v2"
@@ -187,17 +186,10 @@ func (s *Storage) Appender(ctx context.Context, opts *tessera.AppendOptions) (*t
 			return s, err
 		},
 	}
-	wg := witness.NewWitnessGateway(opts.Witnesses(), http.DefaultClient, logStore.ReadTile)
 	r := &Appender{
-		logStore:  logStore,
-		sequencer: seq,
-		newCP: func(u uint64, b []byte) ([]byte, error) {
-			cp, err := opts.NewCP()(u, b)
-			if err != nil {
-				return cp, err
-			}
-			return wg.Witness(ctx, cp)
-		},
+		logStore:    logStore,
+		sequencer:   seq,
+		newCP:       opts.CheckpointPublisher(logStore, http.DefaultClient),
 		treeUpdated: make(chan struct{}),
 	}
 	r.queue = storage.NewQueue(ctx, opts.BatchMaxAge(), opts.BatchMaxSize(), r.sequencer.assignEntries)
@@ -219,7 +211,7 @@ func (s *Storage) Appender(ctx context.Context, opts *tessera.AppendOptions) (*t
 
 // Appender is an implementation of the Tessera appender lifecycle contract.
 type Appender struct {
-	newCP func(uint64, []byte) ([]byte, error)
+	newCP func(context.Context, uint64, []byte) ([]byte, error)
 
 	sequencer sequencer
 	logStore  *logResourceStore
@@ -324,7 +316,7 @@ func (a *Appender) publishCheckpoint(ctx context.Context, minStaleness time.Dura
 	if err != nil {
 		return fmt.Errorf("currentTree: %v", err)
 	}
-	cpRaw, err := a.newCP(size, root)
+	cpRaw, err := a.newCP(ctx, size, root)
 	if err != nil {
 		return fmt.Errorf("newCP: %v", err)
 	}

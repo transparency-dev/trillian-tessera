@@ -33,7 +33,6 @@ import (
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/api"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
-	"github.com/transparency-dev/trillian-tessera/internal/witness"
 	storage "github.com/transparency-dev/trillian-tessera/storage/internal"
 	"k8s.io/klog/v2"
 )
@@ -67,7 +66,7 @@ type appender struct {
 	queue      *storage.Queue
 
 	curSize uint64
-	newCP   func(uint64, []byte) ([]byte, error) // May be nil for mirrored logs.
+	newCP   func(context.Context, uint64, []byte) ([]byte, error) // May be nil for mirrored logs.
 
 	cpUpdated chan struct{}
 }
@@ -94,27 +93,17 @@ func (s *Storage) Appender(ctx context.Context, opts *tessera.AppendOptions) (*t
 	if opts.CheckpointInterval() < minCheckpointInterval {
 		return nil, nil, fmt.Errorf("requested CheckpointInterval (%v) is less than minimum permitted %v", opts.CheckpointInterval(), minCheckpointInterval)
 	}
-	if opts.NewCP() == nil {
-		return nil, nil, errors.New("tessera.WithCheckpointSigner must be provided in Appender()")
-	}
 
 	logStorage := &logResourceStorage{
 		s:           s,
 		entriesPath: opts.EntriesPath(),
 	}
-	wg := witness.NewWitnessGateway(opts.Witnesses(), http.DefaultClient, logStorage.ReadTile)
 
 	a := &appender{
 		s:          s,
 		logStorage: logStorage,
 		cpUpdated:  make(chan struct{}),
-		newCP: func(u uint64, b []byte) ([]byte, error) {
-			cp, err := opts.NewCP()(u, b)
-			if err != nil {
-				return cp, err
-			}
-			return wg.Witness(ctx, cp)
-		},
+		newCP:      opts.CheckpointPublisher(logStorage, http.DefaultClient),
 	}
 	if err := a.initialise(); err != nil {
 		return nil, nil, err
@@ -129,7 +118,7 @@ func (s *Storage) Appender(ctx context.Context, opts *tessera.AppendOptions) (*t
 			case <-a.cpUpdated:
 			case <-time.After(i):
 			}
-			if err := a.publishCheckpoint(i); err != nil {
+			if err := a.publishCheckpoint(ctx, i); err != nil {
 				klog.Warningf("publishCheckpoint: %v", err)
 			}
 		}
@@ -480,7 +469,7 @@ func (a *appender) initialise() error {
 			return fmt.Errorf("failed to write tree-state checkpoint: %v", err)
 		}
 		if a.newCP != nil {
-			if err := a.publishCheckpoint(0); err != nil {
+			if err := a.publishCheckpoint(context.TODO(), 0); err != nil {
 				return fmt.Errorf("failed to publish checkpoint: %v", err)
 			}
 		}
@@ -556,7 +545,7 @@ func (s *Storage) readTreeState() (uint64, []byte, error) {
 // publishCheckpoint checks whether the currently published checkpoint (if any) is more than
 // minStaleness old, and, if so, creates and published a fresh checkpoint from the current
 // stored tree state.
-func (a *appender) publishCheckpoint(minStaleness time.Duration) error {
+func (a *appender) publishCheckpoint(ctx context.Context, minStaleness time.Duration) error {
 	// Lock the destination "published" checkpoint location:
 	lockPath := "publish.lock"
 	unlock, err := a.s.lockFile(lockPath)
@@ -584,7 +573,7 @@ func (a *appender) publishCheckpoint(minStaleness time.Duration) error {
 	if err != nil {
 		return fmt.Errorf("readTreeState: %v", err)
 	}
-	cpRaw, err := a.newCP(size, root)
+	cpRaw, err := a.newCP(ctx, size, root)
 	if err != nil {
 		return fmt.Errorf("newCP: %v", err)
 	}
