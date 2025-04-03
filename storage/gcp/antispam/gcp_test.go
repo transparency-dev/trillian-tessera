@@ -72,7 +72,7 @@ func TestAntispamStorage(t *testing.T) {
 				t.Fatalf("NewAntispam: %v", err)
 			}
 
-			fl, shutdown := testonly.NewTestLog(t, tessera.NewAppendOptions())
+			fl, shutdown := testonly.NewTestLog(t, tessera.NewAppendOptions().WithCheckpointInterval(time.Second))
 			defer func() {
 				if err := shutdown(t.Context()); err != nil {
 					t.Logf("shutdown: %v", err)

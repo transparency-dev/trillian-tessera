@@ -21,6 +21,7 @@ import (
 	"flag"
 	"os"
 	"testing"
+	"time"
 
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/api"
@@ -52,7 +53,7 @@ func TestAntispam(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	fl, shutdown := testonly.NewTestLog(t, tessera.NewAppendOptions())
+	fl, shutdown := testonly.NewTestLog(t, tessera.NewAppendOptions().WithCheckpointInterval(time.Second))
 	defer func() {
 		if err := shutdown(t.Context()); err != nil {
 			t.Logf("shutdown: %v", err)
