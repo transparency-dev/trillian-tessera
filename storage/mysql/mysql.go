@@ -34,7 +34,6 @@ import (
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/api"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
-	"github.com/transparency-dev/trillian-tessera/internal/witness"
 	storage "github.com/transparency-dev/trillian-tessera/storage/internal"
 	"k8s.io/klog/v2"
 )
@@ -86,21 +85,11 @@ func (s *Storage) Appender(ctx context.Context, opts *tessera.AppendOptions) (*t
 	if opts.CheckpointInterval() < minCheckpointInterval {
 		return nil, nil, fmt.Errorf("requested CheckpointInterval too low - %v < %v", opts.CheckpointInterval(), minCheckpointInterval)
 	}
-	if opts.NewCP() == nil {
-		return nil, nil, errors.New("tessera.WithCheckpointSigner must be provided in Appender()")
-	}
 
-	wg := witness.NewWitnessGateway(opts.Witnesses(), http.DefaultClient, s.ReadTile)
 	a := &appender{
-		s: s,
-		newCheckpoint: func(u uint64, b []byte) ([]byte, error) {
-			cp, err := opts.NewCP()(u, b)
-			if err != nil {
-				return cp, err
-			}
-			return wg.Witness(ctx, cp)
-		},
-		cpUpdated: make(chan struct{}, 1),
+		s:             s,
+		newCheckpoint: opts.CheckpointPublisher(s, http.DefaultClient),
+		cpUpdated:     make(chan struct{}, 1),
 	}
 	a.queue = storage.NewQueue(ctx, opts.BatchMaxAge(), opts.BatchMaxSize(), a.sequenceBatch)
 
@@ -492,7 +481,7 @@ func (s *Storage) writeEntryBundle(ctx context.Context, tx dbExecContext, index 
 type appender struct {
 	s             *Storage
 	queue         *storage.Queue
-	newCheckpoint func(uint64, []byte) ([]byte, error)
+	newCheckpoint func(context.Context, uint64, []byte) ([]byte, error)
 	cpUpdated     chan struct{}
 }
 
@@ -525,7 +514,7 @@ func (a *appender) publishCheckpoint(ctx context.Context, interval time.Duration
 		return fmt.Errorf("readTreeState: %v", err)
 	}
 
-	rawCheckpoint, err := a.newCheckpoint(treeState.size, treeState.root)
+	rawCheckpoint, err := a.newCheckpoint(ctx, treeState.size, treeState.root)
 	if err != nil {
 		return err
 	}

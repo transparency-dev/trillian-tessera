@@ -29,7 +29,6 @@ import (
 	"sync"
 
 	"github.com/transparency-dev/formats/log"
-	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/client"
 	"github.com/transparency-dev/trillian-tessera/internal/parse"
 	"golang.org/x/mod/sumdb/note"
@@ -37,11 +36,32 @@ import (
 
 var ErrPolicyNotSatisfied = errors.New("witness policy was not satisfied")
 
+// WitnessGroup defines a group of witnesses, and a threshold of
+// signatures that must be met for this group to be satisfied.
+// Witnesses within a group should be fungible, e.g. all of the Armored
+// Witness devices form a logical group, and N should be picked to
+// represent a threshold of the quorum. For some users this will be a
+// simple majority, but other strategies are available.
+// N must be <= len(WitnessKeys).
+type WitnessGroup interface {
+	// Satisfied returns true if the checkpoint provided is signed by this witness.
+	// This will return false if there is no signature, and also if the
+	// checkpoint cannot be read as a valid note. It is up to the caller to ensure
+	// that the input value represents a valid note.
+	Satisfied(cp []byte) bool
+
+	// Endpoints returns the details required for updating a witness and checking the
+	// response. The returned result is a map from the URL that should be used to update
+	// the witness with a new checkpoint, to the value which is the verifier to check
+	// the response is well formed.
+	Endpoints() map[string]note.Verifier
+}
+
 // NewWitnessGateway returns a WitnessGateway that will send out new checkpoints to witnesses
 // in the group, and will ensure that the policy is satisfied before returning. All outbound
 // requests will be done using the given client. The tile fetcher is used for constructing
 // consistency proofs for the witnesses.
-func NewWitnessGateway(group tessera.WitnessGroup, client *http.Client, fetchTiles client.TileFetcherFunc) WitnessGateway {
+func NewWitnessGateway(group WitnessGroup, client *http.Client, fetchTiles client.TileFetcherFunc) WitnessGateway {
 	endpoints := group.Endpoints()
 	witnesses := make([]*witness, 0, len(endpoints))
 	for u, v := range endpoints {
@@ -61,7 +81,7 @@ func NewWitnessGateway(group tessera.WitnessGroup, client *http.Client, fetchTil
 
 // WitnessGateway allows a log implementation to send out a checkpoint to witnesses.
 type WitnessGateway struct {
-	group     tessera.WitnessGroup
+	group     WitnessGroup
 	witnesses []*witness
 	fetchTile client.TileFetcherFunc
 }
