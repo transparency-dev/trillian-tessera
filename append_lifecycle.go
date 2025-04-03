@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"sync"
 	"sync/atomic"
@@ -27,6 +28,7 @@ import (
 	"github.com/transparency-dev/merkle/rfc6962"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
 	"github.com/transparency-dev/trillian-tessera/internal/parse"
+	"github.com/transparency-dev/trillian-tessera/internal/witness"
 	"golang.org/x/mod/sumdb/note"
 	"k8s.io/klog/v2"
 )
@@ -224,7 +226,7 @@ func NewAppendOptions() *AppendOptions {
 // AppendOptions holds settings for all storage implementations.
 type AppendOptions struct {
 	// newCP knows how to format and sign checkpoints.
-	newCP func(size uint64, hash []byte) ([]byte, error)
+	newCP func(ctx context.Context, size uint64, hash []byte) ([]byte, error)
 
 	batchMaxAge  time.Duration
 	batchMaxSize uint
@@ -243,8 +245,16 @@ type AppendOptions struct {
 	followers     []Follower
 }
 
-func (o AppendOptions) NewCP() func(uint64, []byte) ([]byte, error) {
-	return o.newCP
+// CheckpointPublisher returns a function which should be used to create, sign, and potentially witness a new checkpoint.
+func (o AppendOptions) CheckpointPublisher(lr LogReader, httpClient *http.Client) func(context.Context, uint64, []byte) ([]byte, error) {
+	return func(ctx context.Context, size uint64, root []byte) ([]byte, error) {
+		cp, err := o.newCP(ctx, size, root)
+		if err != nil {
+			return nil, fmt.Errorf("newCP: %v", err)
+		}
+		wg := witness.NewWitnessGateway(o.Witnesses(), httpClient, lr.ReadTile)
+		return wg.Witness(ctx, cp)
+	}
 }
 
 func (o AppendOptions) BatchMaxAge() time.Duration {
@@ -295,7 +305,7 @@ func (o *AppendOptions) WithCheckpointSigner(s note.Signer, additionalSigners ..
 			klog.Exitf("WithCheckpointSigner: additional signer name (%q) does not match primary signer name (%q)", signer.Name(), origin)
 		}
 	}
-	o.newCP = func(size uint64, hash []byte) ([]byte, error) {
+	o.newCP = func(ctx context.Context, size uint64, hash []byte) ([]byte, error) {
 		// If we're signing a zero-sized tree, the tlog-checkpoint spec says (via RFC6962) that
 		// the root must be SHA256 of the empty string, so we'll enforce that here:
 		if size == 0 {
@@ -312,6 +322,7 @@ func (o *AppendOptions) WithCheckpointSigner(s note.Signer, additionalSigners ..
 		if err != nil {
 			return nil, fmt.Errorf("note.Sign: %w", err)
 		}
+
 		return n, nil
 	}
 	return o
