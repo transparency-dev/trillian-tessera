@@ -105,7 +105,7 @@ func (s *Storage) Appender(ctx context.Context, opts *tessera.AppendOptions) (*t
 		cpUpdated:  make(chan struct{}),
 		newCP:      opts.CheckpointPublisher(logStorage, http.DefaultClient),
 	}
-	if err := a.initialise(); err != nil {
+	if err := a.initialise(ctx); err != nil {
 		return nil, nil, err
 	}
 	a.queue = storage.NewQueue(ctx, opts.BatchMaxAge(), opts.BatchMaxSize(), a.sequenceBatch)
@@ -435,7 +435,7 @@ func (lrs *logResourceStorage) writeBundle(_ context.Context, index uint64, part
 
 // initialise ensures that the storage location is valid by loading the checkpoint from this location, or
 // creating a zero-sized one if it doesn't already exist.
-func (a *appender) initialise() error {
+func (a *appender) initialise(ctx context.Context) error {
 	// Idempotent: If folder exists, nothing happens.
 	if err := os.MkdirAll(filepath.Join(a.s.path, stateDir), dirPerm); err != nil {
 		return fmt.Errorf("failed to create log directory: %q", err)
@@ -469,7 +469,7 @@ func (a *appender) initialise() error {
 			return fmt.Errorf("failed to write tree-state checkpoint: %v", err)
 		}
 		if a.newCP != nil {
-			if err := a.publishCheckpoint(context.TODO(), 0); err != nil {
+			if err := a.publishCheckpoint(ctx, 0); err != nil {
 				return fmt.Errorf("failed to publish checkpoint: %v", err)
 			}
 		}
