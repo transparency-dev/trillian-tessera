@@ -29,7 +29,6 @@ import (
 	"sync"
 
 	"github.com/transparency-dev/formats/log"
-	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/client"
 	"github.com/transparency-dev/trillian-tessera/internal/parse"
 	"golang.org/x/mod/sumdb/note"
@@ -37,11 +36,16 @@ import (
 
 var ErrPolicyNotSatisfied = errors.New("witness policy was not satisfied")
 
+type WitnessGroup interface {
+	Satisfied(cp []byte) bool
+	Endpoints() map[string]note.Verifier
+}
+
 // NewWitnessGateway returns a WitnessGateway that will send out new checkpoints to witnesses
 // in the group, and will ensure that the policy is satisfied before returning. All outbound
 // requests will be done using the given client. The tile fetcher is used for constructing
 // consistency proofs for the witnesses.
-func NewWitnessGateway(group tessera.WitnessGroup, client *http.Client, fetchTiles client.TileFetcherFunc) WitnessGateway {
+func NewWitnessGateway(group WitnessGroup, client *http.Client, fetchTiles client.TileFetcherFunc) WitnessGateway {
 	endpoints := group.Endpoints()
 	witnesses := make([]*witness, 0, len(endpoints))
 	for u, v := range endpoints {
@@ -61,7 +65,7 @@ func NewWitnessGateway(group tessera.WitnessGroup, client *http.Client, fetchTil
 
 // WitnessGateway allows a log implementation to send out a checkpoint to witnesses.
 type WitnessGateway struct {
-	group     tessera.WitnessGroup
+	group     WitnessGroup
 	witnesses []*witness
 	fetchTile client.TileFetcherFunc
 }
