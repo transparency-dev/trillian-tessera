@@ -120,7 +120,7 @@ type AntispamStorage struct {
 
 // index returns the index (if any) previously associated with the provided hash
 func (d *AntispamStorage) index(ctx context.Context, h []byte) (*uint64, error) {
-	ctx, span := tracer.Start(ctx, "index")
+	ctx, span := tracer.Start(ctx, "antispam.index")
 	defer span.End()
 
 	d.numLookups.Add(1)

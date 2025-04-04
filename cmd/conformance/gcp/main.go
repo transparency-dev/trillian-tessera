@@ -54,6 +54,9 @@ func main() {
 	flag.Parse()
 	ctx := context.Background()
 
+	shutdownOTel := initOTel()
+	defer shutdownOTel(ctx)
+
 	s, a := signerFromFlags()
 
 	// Create our Tessera storage backend:
