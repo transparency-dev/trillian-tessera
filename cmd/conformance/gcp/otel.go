@@ -26,8 +26,11 @@ import (
 	"k8s.io/klog/v2"
 )
 
+// initOTel initialises the open telemetry support for metrics and tracing.
+//
+// Tracing is enabled with statistical sampling, with the probability passed in.
+// Returns a shutdown function which should be called just before exiting the process.
 func initOTel(ctx context.Context, traceFraction float64) func(context.Context) {
-
 	var shutdownFuncs []func(context.Context) error
 
 	// shutdown combines shutdown functions from multiple OpenTelemetry

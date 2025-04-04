@@ -27,8 +27,10 @@ import (
 	f_log "github.com/transparency-dev/formats/log"
 	"github.com/transparency-dev/merkle/rfc6962"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
+	"github.com/transparency-dev/trillian-tessera/internal/otel"
 	"github.com/transparency-dev/trillian-tessera/internal/parse"
 	"github.com/transparency-dev/trillian-tessera/internal/witness"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 	"golang.org/x/mod/sumdb/note"
 	"k8s.io/klog/v2"
@@ -48,6 +50,7 @@ const (
 var (
 	appenderAddsTotal    metric.Int64Counter
 	appenderAddHistogram metric.Int64Histogram
+	appenderTreeSize     metric.Int64Gauge
 )
 
 func init() {
@@ -67,6 +70,14 @@ func init() {
 		metric.WithUnit("ms"))
 	if err != nil {
 		klog.Exitf("Failed to create appenderAddDuration metric: %v", err)
+	}
+
+	appenderTreeSize, err = meter.Int64Gauge(
+		"appender.tree.size",
+		metric.WithDescription("Number of entries in the published tree"),
+		metric.WithUnit("{entry}"))
+	if err != nil {
+		klog.Exitf("Failed to create appenderTreeSize metric: %v", err)
 	}
 
 }
@@ -139,6 +150,7 @@ func NewAppender(ctx context.Context, d Driver, opts *AppendOptions) (*Appender,
 	for i := len(opts.addDecorators) - 1; i >= 0; i-- {
 		a.Add = opts.addDecorators[i](a.Add)
 	}
+	a.Add = statsDecorator(a.Add)
 	for _, f := range opts.followers {
 		go f.Follow(ctx, r)
 	}
@@ -148,15 +160,39 @@ func NewAppender(ctx context.Context, d Driver, opts *AppendOptions) (*Appender,
 	}
 	// TODO(mhutchinson): move this into the decorators
 	a.Add = func(ctx context.Context, entry *Entry) IndexFuture {
-		start := time.Now()
-		defer func() {
-			d := time.Since(start)
-			appenderAddHistogram.Record(ctx, d.Milliseconds())
-		}()
-		appenderAddsTotal.Add(ctx, 1)
 		return t.Add(ctx, entry)
 	}
 	return a, t.Shutdown, r, nil
+}
+
+// statsDecorator wraps a delegate AddFn with code to calculate/update
+// metric stats.
+func statsDecorator(delegate AddFn) AddFn {
+	return func(ctx context.Context, entry *Entry) IndexFuture {
+		start := time.Now()
+		f := delegate(ctx, entry)
+
+		return func() (Index, error) {
+			idx, err := f()
+			attr := []attribute.KeyValue{}
+			if err != nil {
+				if err == ErrPushback {
+					attr = append(attr, attribute.Bool("pushback", true))
+				} else {
+					// Just flag that it's an errored request to avoid high cardinality of attribute values.
+					// TODO(al): We might want to bucket errors into OTel status codes in the future, though.
+					attr = append(attr, attribute.String("error.type", "_OTHER"))
+				}
+			}
+			if idx.IsDup {
+				attr = append(attr, attribute.Bool("duplicate", true))
+			}
+			appenderAddsTotal.Add(ctx, 1, metric.WithAttributes(attr...))
+			d := time.Since(start)
+			appenderAddHistogram.Record(ctx, d.Milliseconds(), metric.WithAttributes(attr...))
+			return idx, err
+		}
+	}
 }
 
 type terminator struct {
@@ -305,7 +341,12 @@ func (o AppendOptions) CheckpointPublisher(lr LogReader, httpClient *http.Client
 		if err != nil {
 			return nil, fmt.Errorf("newCP: %v", err)
 		}
-		return wg.Witness(ctx, cp)
+		cp, err = wg.Witness(ctx, cp)
+		if err != nil {
+			return nil, err
+		}
+		appenderTreeSize.Record(ctx, otel.Clamp64(size))
+		return cp, err
 	}
 }
 
