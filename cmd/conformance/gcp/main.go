@@ -54,7 +54,7 @@ func main() {
 	flag.Parse()
 	ctx := context.Background()
 
-	shutdownOTel := initOTel()
+	shutdownOTel := initOTel(ctx)
 	defer shutdownOTel(ctx)
 
 	s, a := signerFromFlags()
