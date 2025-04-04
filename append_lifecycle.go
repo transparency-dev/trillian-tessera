@@ -29,6 +29,7 @@ import (
 	"github.com/transparency-dev/trillian-tessera/api/layout"
 	"github.com/transparency-dev/trillian-tessera/internal/parse"
 	"github.com/transparency-dev/trillian-tessera/internal/witness"
+	"go.opentelemetry.io/otel/metric"
 	"golang.org/x/mod/sumdb/note"
 	"k8s.io/klog/v2"
 )
@@ -43,6 +44,32 @@ const (
 	// DefaultPushbackMaxOutstanding is used by storage implementations if no WithPushback option is provided when instantiating it.
 	DefaultPushbackMaxOutstanding = 4096
 )
+
+var (
+	appenderAddsTotal    metric.Int64Counter
+	appenderAddHistogram metric.Int64Histogram
+)
+
+func init() {
+	var err error
+
+	appenderAddsTotal, err = meter.Int64Counter(
+		"appender.add.calls",
+		metric.WithDescription("Number of calls to the appender lifecycle Add function"),
+		metric.WithUnit("{call}"))
+	if err != nil {
+		klog.Exitf("Failed to create appenderAddsTotal metric: %v", err)
+	}
+
+	appenderAddHistogram, err = meter.Int64Histogram(
+		"appender.add.duration",
+		metric.WithDescription("Duration of calls to the appender lifecycle Add function"),
+		metric.WithUnit("ms"))
+	if err != nil {
+		klog.Exitf("Failed to create appenderAddDuration metric: %v", err)
+	}
+
+}
 
 // Add adds a new entry to be sequenced.
 // This method quickly returns an IndexFuture, which will return the index assigned
@@ -120,7 +147,15 @@ func NewAppender(ctx context.Context, d Driver, opts *AppendOptions) (*Appender,
 		readCheckpoint: r.ReadCheckpoint,
 	}
 	// TODO(mhutchinson): move this into the decorators
-	a.Add = t.Add
+	a.Add = func(ctx context.Context, entry *Entry) IndexFuture {
+		start := time.Now()
+		defer func() {
+			d := time.Since(start)
+			appenderAddHistogram.Record(ctx, d.Milliseconds())
+		}()
+		appenderAddsTotal.Add(ctx, 1)
+		return t.Add(ctx, entry)
+	}
 	return a, t.Shutdown, r, nil
 }
 
