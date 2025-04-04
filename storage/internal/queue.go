@@ -95,6 +95,9 @@ func NewQueue(ctx context.Context, maxAge time.Duration, maxSize uint, f FlushFu
 
 // Add places e into the queue, and returns a func which may be called to retrieve the assigned index.
 func (q *Queue) Add(ctx context.Context, e *tessera.Entry) tessera.IndexFuture {
+	_, span := tracer.Start(ctx, "queue.Add")
+	defer span.End()
+
 	qi := newEntry(e)
 
 	if err := q.buf.Push(qi); err != nil {
@@ -105,6 +108,9 @@ func (q *Queue) Add(ctx context.Context, e *tessera.Entry) tessera.IndexFuture {
 
 // doFlush handles the queue flush, and sending notifications of assigned log indices.
 func (q *Queue) doFlush(ctx context.Context, entries []*queueItem) {
+	ctx, span := tracer.Start(ctx, "queue.doFlush")
+	defer span.End()
+
 	entriesData := make([]*tessera.Entry, 0, len(entries))
 	for _, e := range entries {
 		entriesData = append(entriesData, e.entry)
