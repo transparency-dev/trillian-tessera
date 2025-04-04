@@ -16,44 +16,58 @@ package main
 
 import (
 	"context"
-	"log"
+	"errors"
 
-	mexporter "github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric"
-	texporter "github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/trace"
+	"go.opentelemetry.io/contrib/exporters/autoexport"
+	"go.opentelemetry.io/contrib/propagators/autoprop"
 	"go.opentelemetry.io/otel"
-	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
-	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/trace"
 	"k8s.io/klog/v2"
 )
 
-var (
-	tp *sdktrace.TracerProvider
-	mp *sdkmetric.MeterProvider
-)
+func initOTel(ctx context.Context, traceFraction float64) func(context.Context) {
 
-func initOTel() func(context.Context) {
-	// Set up OTel trace and metric exporters
-	texp, err := texporter.New()
-	if err != nil {
-		log.Fatalf("unable to set up tracing: %v", err)
+	var shutdownFuncs []func(context.Context) error
+
+	// shutdown combines shutdown functions from multiple OpenTelemetry
+	// components into a single function.
+	shutdown := func(ctx context.Context) {
+		var err error
+		for _, fn := range shutdownFuncs {
+			err = errors.Join(err, fn(ctx))
+		}
+		shutdownFuncs = nil
+		if err != nil {
+			klog.Errorf("OTel shutdown: %v", err)
+		}
 	}
-	tp = sdktrace.NewTracerProvider(sdktrace.WithBatcher(texp))
+
+	// Configure Context Propagation to use the default W3C traceparent format
+	otel.SetTextMapPropagator(autoprop.NewTextMapPropagator())
+
+	// Configure Trace Export to send spans as OTLP
+	texporter, err := autoexport.NewSpanExporter(ctx)
+	if err != nil {
+		klog.Exitf("Failed to configure span exporter: %v", err)
+	}
+	tp := trace.NewTracerProvider(
+		trace.WithSampler(trace.TraceIDRatioBased(traceFraction)),
+		trace.WithBatcher(texporter),
+	)
+	shutdownFuncs = append(shutdownFuncs, tp.Shutdown)
 	otel.SetTracerProvider(tp)
 
-	mexp, err := mexporter.New()
+	// Configure Metric Export to send metrics as OTLP
+	mreader, err := autoexport.NewMetricReader(ctx)
 	if err != nil {
-		klog.Exitf("Failed to create exporter: %v", err)
+		klog.Exitf("Failed to configure metric exporter: %v", err)
 	}
-	mp = sdkmetric.NewMeterProvider(
-		sdkmetric.WithReader(sdkmetric.NewPeriodicReader(mexp)),
+	mp := metric.NewMeterProvider(
+		metric.WithReader(mreader),
 	)
+	shutdownFuncs = append(shutdownFuncs, mp.Shutdown)
+	otel.SetMeterProvider(mp)
 
-	return func(ctx context.Context) {
-		if err := tp.Shutdown(ctx); err != nil {
-			klog.Errorf("Failed to shut down trace provider: %v", err)
-		}
-		if err := mp.Shutdown(ctx); err != nil {
-			klog.Errorf("Failed to shut down meter provider: %v", err)
-		}
-	}
+	return shutdown
 }
