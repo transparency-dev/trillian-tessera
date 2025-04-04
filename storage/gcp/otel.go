@@ -23,7 +23,6 @@ const name = "github.com/transparency-dev/trillian-tessera/storage/gcp"
 
 var (
 	tracer = otel.Tracer(name)
-	meter  = otel.Meter(name)
 )
 
 var (
