@@ -139,6 +139,9 @@ type terminator struct {
 }
 
 func (t *terminator) Add(ctx context.Context, entry *Entry) IndexFuture {
+	ctx, span := tracer.Start(ctx, "Add")
+	defer span.End()
+
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 	if t.stopped {
@@ -260,6 +263,9 @@ func (o AppendOptions) valid() error {
 func (o AppendOptions) CheckpointPublisher(lr LogReader, httpClient *http.Client) func(context.Context, uint64, []byte) ([]byte, error) {
 	wg := witness.NewWitnessGateway(o.Witnesses(), httpClient, lr.ReadTile)
 	return func(ctx context.Context, size uint64, root []byte) ([]byte, error) {
+		ctx, span := tracer.Start(ctx, "CheckpointPublisher")
+		defer span.End()
+
 		cp, err := o.newCP(ctx, size, root)
 		if err != nil {
 			return nil, fmt.Errorf("newCP: %v", err)
@@ -317,6 +323,9 @@ func (o *AppendOptions) WithCheckpointSigner(s note.Signer, additionalSigners ..
 		}
 	}
 	o.newCP = func(ctx context.Context, size uint64, hash []byte) ([]byte, error) {
+		_, span := tracer.Start(ctx, "SignCheckpoint")
+		defer span.End()
+
 		// If we're signing a zero-sized tree, the tlog-checkpoint spec says (via RFC6962) that
 		// the root must be SHA256 of the empty string, so we'll enforce that here:
 		if size == 0 {
