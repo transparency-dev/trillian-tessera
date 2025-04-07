@@ -8,19 +8,22 @@ resubmitting entries which are already present in the log.
 From a transparency perspective, this is unlikely to be a problem - an entry is _discoverable_ if it's
 present in a log; this property doesn't diminish if there are further copies of it the log.
 
-However, from a cost & operational point of view, particularly for large scale logs, it would be
-preferable to try to minimise the number of duplicate entries, and this is what Tessera's anti-spam
-mechanism is intended to do.
+However, particularly for large scale logs, there is a potentially significant cost to both the log operator
+(in terms of egress & storage), and to monitors/verifiers within the ecosystem (in terms of ingress, and possibly
+compute & storage, too) to allowing the unfetter addition of duplicate entries to a log.
+
+It would, therefore, be preferable to try to minimise the number of duplicate entries, and this is what
+Tessera's anti-spam mechanism is intended to do.
 
 Tessera anti-spam provides _best effort_ support for minimising duplicate entries submitted to a log.
 
 ## Non-goals
 
 Tessera's anti-spam mechanisms are _explicitly not_ intended to provide strong/atomic deduplication, nor any
-guarantee about uniqueness of entries in a log. These properties are not generally required, but are
-expensive and have a profound impact on log performance.
+guarantee about uniqueness of entries in a log. These properties are not generally required, are
+expensive, and have a profound impact on log performance.
 
-If your transparency application needs such properties you will need to handle this "upstream" of Tessera.
+If your transparency application needs such properties you will need to handle this in the personality.
 
 ## Overview
 
@@ -69,9 +72,12 @@ architecture-beta
   f1:L --> R:populater
 ```
 
-If the process of following the log falls too far behind a configurable threshold, the decorator will start
-returning `ErrPushback` to the application until such time as the follower has caught up. This helps to prevent
-the anti-spam mechanism getting so far behind as to become ineffective in preventing abuse.
+If the process of following the log falls too far behind a
+configurable threshold (e.g. on
+[GCP's antispam](https://pkg.go.dev/github.com/transparency-dev/trillian-tessera@main#AppendOptions.WithPushback)
+implementation), the decorator will start returning `ErrPushback` to the application until such time as the
+follower has caught up. This helps to prevent the anti-spam mechanism getting so far behind as to become
+ineffective in preventing abuse.
 
 ## Threats / failure scenarios
 
@@ -96,6 +102,11 @@ with the persistent storage where necessary.
 (T2) is expected to be rarer, but given that the approach is to offer best effort protection, it's important to think through
 how this threat will be handled in various failure cases; we would prefer that anti-spam does not fail to block malicious
 submissions exactly when we're currently overwhelmed, for example.
+
+> [!Note]
+> Note that, if running multiple personality frontents for redundancy purposes, a rapid round-robin submission of
+> duplicate entries can result in a limited number of these duplicates (1 per frontend) being permitted into the log until
+> the persistent deduplication index has caught up.
 
 ## Storage considerations
 
