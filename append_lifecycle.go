@@ -347,7 +347,7 @@ func (o AppendOptions) CheckpointPublisher(lr LogReader, httpClient *http.Client
 		if err != nil {
 			return nil, fmt.Errorf("newCP: %v", err)
 		}
-		appenderWitnessedSize.Record(ctx, otel.Clamp64(size))
+		appenderSignedSize.Record(ctx, otel.Clamp64(size))
 
 		cp, err = wg.Witness(ctx, cp)
 		if err != nil {
