@@ -50,6 +50,7 @@ const (
 var (
 	appenderAddsTotal     metric.Int64Counter
 	appenderAddHistogram  metric.Int64Histogram
+	appenderHighestIndex  metric.Int64Gauge
 	appenderSignedSize    metric.Int64Gauge
 	appenderWitnessedSize metric.Int64Gauge
 )
@@ -71,6 +72,13 @@ func init() {
 		metric.WithUnit("ms"))
 	if err != nil {
 		klog.Exitf("Failed to create appenderAddDuration metric: %v", err)
+	}
+
+	appenderHighestIndex, err = meter.Int64Gauge(
+		"tessera.appender.index",
+		metric.WithDescription("Highest index assigned by appender lifecycle Add function"))
+	if err != nil {
+		klog.Exitf("Failed to create appenderHighestIndex metric: %v", err)
 	}
 
 	appenderSignedSize, err = meter.Int64Gauge(
@@ -238,6 +246,7 @@ func (t *terminator) Add(ctx context.Context, entry *Entry) IndexFuture {
 		for old < i.Index && !t.largestIssued.CompareAndSwap(old, i.Index) {
 			old = t.largestIssued.Load()
 		}
+		appenderHighestIndex.Record(ctx, otel.Clamp64(t.largestIssued.Load()))
 
 		return i, err
 	}
