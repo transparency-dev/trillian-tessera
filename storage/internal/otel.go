@@ -26,10 +26,10 @@ var (
 )
 
 var (
-	fromSizeKey   = attribute.Key("fromSize")
-	numEntriesKey = attribute.Key("numEntries")
+	fromSizeKey   = attribute.Key("tessera.fromSize")
+	numEntriesKey = attribute.Key("tessera.numEntries")
 
-	treeSizeKey = attribute.Key("treeSize")
-	indexKey    = attribute.Key("index")
-	levelKey    = attribute.Key("level")
+	treeSizeKey = attribute.Key("tessera.treeSize")
+	indexKey    = attribute.Key("tessera.index")
+	levelKey    = attribute.Key("tessera.level")
 )

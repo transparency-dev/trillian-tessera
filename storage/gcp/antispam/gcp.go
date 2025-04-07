@@ -120,14 +120,14 @@ type AntispamStorage struct {
 
 // index returns the index (if any) previously associated with the provided hash
 func (d *AntispamStorage) index(ctx context.Context, h []byte) (*uint64, error) {
-	ctx, span := tracer.Start(ctx, "antispam.index")
+	ctx, span := tracer.Start(ctx, "tessera.antispam.gcp.index")
 	defer span.End()
 
 	d.numLookups.Add(1)
 	var idx int64
 	if row, err := d.dbPool.Single().ReadRow(ctx, "IDSeq", spanner.Key{h}, []string{"idx"}); err != nil {
 		if c := spanner.ErrCode(err); c == codes.NotFound {
-			span.AddEvent("miss")
+			span.AddEvent("tessera.miss")
 			return nil, nil
 		}
 		return nil, err
@@ -136,7 +136,7 @@ func (d *AntispamStorage) index(ctx context.Context, h []byte) (*uint64, error) 
 			return nil, fmt.Errorf("failed to read antispam index: %v", err)
 		}
 		idx := uint64(idx)
-		span.AddEvent("hit")
+		span.AddEvent("tessera.hit")
 		d.numHits.Add(1)
 		return &idx, nil
 	}
@@ -147,11 +147,11 @@ func (d *AntispamStorage) index(ctx context.Context, h []byte) (*uint64, error) 
 func (d *AntispamStorage) Decorator() func(f tessera.AddFn) tessera.AddFn {
 	return func(delegate tessera.AddFn) tessera.AddFn {
 		return func(ctx context.Context, e *tessera.Entry) tessera.IndexFuture {
-			ctx, span := tracer.Start(ctx, "antispam.Add")
+			ctx, span := tracer.Start(ctx, "tessera.antispam.gcp.Add")
 			defer span.End()
 
 			if d.pushBack.Load() {
-				span.AddEvent("pushback")
+				span.AddEvent("tessera.pushback")
 				// The follower is too far behind the currently integrated tree, so we're going to push back against
 				// the incoming requests.
 				// This should have two effects:
@@ -292,7 +292,7 @@ func (f *follower) Follow(ctx context.Context, lr tessera.LogReader) {
 		// Busy loop while there's work to be done
 		for workDone := true; workDone; {
 			_, err = f.as.dbPool.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
-				ctx, span := tracer.Start(ctx, "antispam.FollowTxn")
+				ctx, span := tracer.Start(ctx, "tessera.antispam.gcp.FollowTxn")
 				defer span.End()
 
 				// Figure out the last entry we used to populate our antispam storage.
@@ -406,7 +406,7 @@ func (f *follower) Follow(ctx context.Context, lr tessera.LogReader) {
 //     This would work, but would also incur an extra round-trip of data which isn't really necessary but would
 //     slow the process down considerably and add extra load to Spanner for no benefit.
 func (f *follower) batchUpdateIndex(ctx context.Context, _ *spanner.ReadWriteTransaction, ms []*spanner.Mutation) error {
-	ctx, span := tracer.Start(ctx, "antispam.batchUpdateIndex")
+	ctx, span := tracer.Start(ctx, "tessera.antispam.gcp.batchUpdateIndex")
 	defer span.End()
 
 	mgs := make([]*spanner.MutationGroup, 0, len(ms))

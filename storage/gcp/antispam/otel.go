@@ -26,6 +26,6 @@ var (
 )
 
 var (
-	followFromKey = attribute.Key("followFrom")
-	pushbackKey   = attribute.Key("pushback")
+	followFromKey = attribute.Key("tessera.followFrom")
+	pushbackKey   = attribute.Key("tessera.pushback")
 )

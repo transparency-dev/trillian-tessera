@@ -57,7 +57,7 @@ func init() {
 	var err error
 
 	appenderAddsTotal, err = meter.Int64Counter(
-		"appender.add.calls",
+		"tessera.appender.add.calls",
 		metric.WithDescription("Number of calls to the appender lifecycle Add function"),
 		metric.WithUnit("{call}"))
 	if err != nil {
@@ -65,7 +65,7 @@ func init() {
 	}
 
 	appenderAddHistogram, err = meter.Int64Histogram(
-		"appender.add.duration",
+		"tessera.appender.add.duration",
 		metric.WithDescription("Duration of calls to the appender lifecycle Add function"),
 		metric.WithUnit("ms"))
 	if err != nil {
@@ -73,7 +73,7 @@ func init() {
 	}
 
 	appenderTreeSize, err = meter.Int64Gauge(
-		"appender.tree.size",
+		"tessera.appender.tree.size",
 		metric.WithDescription("Number of entries in the published tree"),
 		metric.WithUnit("{entry}"))
 	if err != nil {
@@ -177,15 +177,15 @@ func statsDecorator(delegate AddFn) AddFn {
 			attr := []attribute.KeyValue{}
 			if err != nil {
 				if err == ErrPushback {
-					attr = append(attr, attribute.Bool("pushback", true))
+					attr = append(attr, attribute.Bool("tessera.pushback", true))
 				} else {
 					// Just flag that it's an errored request to avoid high cardinality of attribute values.
 					// TODO(al): We might want to bucket errors into OTel status codes in the future, though.
-					attr = append(attr, attribute.String("error.type", "_OTHER"))
+					attr = append(attr, attribute.String("tessera.error.type", "_OTHER"))
 				}
 			}
 			if idx.IsDup {
-				attr = append(attr, attribute.Bool("duplicate", true))
+				attr = append(attr, attribute.Bool("tessera.duplicate", true))
 			}
 			appenderAddsTotal.Add(ctx, 1, metric.WithAttributes(attr...))
 			d := time.Since(start)
@@ -210,7 +210,7 @@ type terminator struct {
 }
 
 func (t *terminator) Add(ctx context.Context, entry *Entry) IndexFuture {
-	ctx, span := tracer.Start(ctx, "Add")
+	ctx, span := tracer.Start(ctx, "tessera.terminator.Add")
 	defer span.End()
 
 	t.mu.RLock()
@@ -334,7 +334,7 @@ func (o AppendOptions) valid() error {
 func (o AppendOptions) CheckpointPublisher(lr LogReader, httpClient *http.Client) func(context.Context, uint64, []byte) ([]byte, error) {
 	wg := witness.NewWitnessGateway(o.Witnesses(), httpClient, lr.ReadTile)
 	return func(ctx context.Context, size uint64, root []byte) ([]byte, error) {
-		ctx, span := tracer.Start(ctx, "CheckpointPublisher")
+		ctx, span := tracer.Start(ctx, "tessera.CheckpointPublisher")
 		defer span.End()
 
 		cp, err := o.newCP(ctx, size, root)
@@ -399,7 +399,7 @@ func (o *AppendOptions) WithCheckpointSigner(s note.Signer, additionalSigners ..
 		}
 	}
 	o.newCP = func(ctx context.Context, size uint64, hash []byte) ([]byte, error) {
-		_, span := tracer.Start(ctx, "SignCheckpoint")
+		_, span := tracer.Start(ctx, "tessera.SignCheckpoint")
 		defer span.End()
 
 		// If we're signing a zero-sized tree, the tlog-checkpoint spec says (via RFC6962) that

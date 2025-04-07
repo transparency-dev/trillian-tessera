@@ -101,7 +101,7 @@ func UnilateralConsensus(f CheckpointFetcherFunc) ConsensusCheckpointFunc {
 // FetchCheckpoint retrieves and opens a checkpoint from the log.
 // Returns both the parsed structure and the raw serialised checkpoint.
 func FetchCheckpoint(ctx context.Context, f CheckpointFetcherFunc, v note.Verifier, origin string) (*log.Checkpoint, []byte, *note.Note, error) {
-	ctx, span := tracer.Start(ctx, "FetchCheckpoint")
+	ctx, span := tracer.Start(ctx, "tessera.client.FetchCheckpoint")
 	defer span.End()
 
 	cpRaw, err := f(ctx)
@@ -118,7 +118,7 @@ func FetchCheckpoint(ctx context.Context, f CheckpointFetcherFunc, v note.Verifi
 // FetchRangeNodes returns the set of nodes representing the compact range covering
 // a log of size s.
 func FetchRangeNodes(ctx context.Context, s uint64, f TileFetcherFunc) ([][]byte, error) {
-	ctx, span := tracer.Start(ctx, "FetchRangeNodes")
+	ctx, span := tracer.Start(ctx, "tessera.client.FetchRangeNodes")
 	defer span.End()
 
 	nc := newNodeCache(f, s)
@@ -137,7 +137,7 @@ func FetchRangeNodes(ctx context.Context, s uint64, f TileFetcherFunc) ([][]byte
 
 // FetchLeafHashes fetches N consecutive leaf hashes starting with the leaf at index first.
 func FetchLeafHashes(ctx context.Context, f TileFetcherFunc, first, N, logSize uint64) ([][]byte, error) {
-	ctx, span := tracer.Start(ctx, "FetchLeafHashes")
+	ctx, span := tracer.Start(ctx, "tessera.client.FetchLeafHashes")
 	defer span.End()
 
 	span.SetAttributes(firstKey.Int64(otel.Clamp64(first)), NKey.Int64(otel.Clamp64(N)), logSizeKey.Int64(otel.Clamp64(logSize)))
@@ -157,7 +157,7 @@ func FetchLeafHashes(ctx context.Context, f TileFetcherFunc, first, N, logSize u
 
 // GetEntryBundle fetches the entry bundle at the given _tile index_.
 func GetEntryBundle(ctx context.Context, f EntryBundleFetcherFunc, i, logSize uint64) (api.EntryBundle, error) {
-	ctx, span := tracer.Start(ctx, "GetEntryBundle")
+	ctx, span := tracer.Start(ctx, "tessera.client.GetEntryBundle")
 	defer span.End()
 
 	span.SetAttributes(indexKey.Int64(otel.Clamp64(i)), logSizeKey.Int64(otel.Clamp64(logSize)))
@@ -188,7 +188,7 @@ type ProofBuilder struct {
 // The returned ProofBuilder can be re-used for proofs related to a given tree size, but
 // it is not thread-safe and should not be accessed concurrently.
 func NewProofBuilder(ctx context.Context, cp log.Checkpoint, f TileFetcherFunc) (*ProofBuilder, error) {
-	ctx, span := tracer.Start(ctx, "NewProofBuilder")
+	ctx, span := tracer.Start(ctx, "tessera.client.NewProofBuilder")
 	defer span.End()
 
 	span.SetAttributes(logSizeKey.Int64(otel.Clamp64(cp.Size)))
@@ -232,7 +232,7 @@ func NewProofBuilder(ctx context.Context, cp log.Checkpoint, f TileFetcherFunc) 
 // This function uses the passed-in function to retrieve tiles containing any log tree
 // nodes necessary to build the proof.
 func (pb *ProofBuilder) InclusionProof(ctx context.Context, index uint64) ([][]byte, error) {
-	ctx, span := tracer.Start(ctx, "InclusionProof")
+	ctx, span := tracer.Start(ctx, "tessera.client.InclusionProof")
 	defer span.End()
 
 	span.SetAttributes(indexKey.Int64(otel.Clamp64(index)))
@@ -248,7 +248,7 @@ func (pb *ProofBuilder) InclusionProof(ctx context.Context, index uint64) ([][]b
 // This function uses the passed-in function to retrieve tiles containing any log tree
 // nodes necessary to build the proof.
 func (pb *ProofBuilder) ConsistencyProof(ctx context.Context, smaller, larger uint64) ([][]byte, error) {
-	ctx, span := tracer.Start(ctx, "ConsistencyProof")
+	ctx, span := tracer.Start(ctx, "tessera.client.ConsistencyProof")
 	defer span.End()
 
 	span.SetAttributes(smallerKey.Int64(otel.Clamp64(smaller)), largerKey.Int64(otel.Clamp64(larger)))
@@ -335,7 +335,7 @@ func NewLogStateTracker(ctx context.Context, tF TileFetcherFunc, checkpointRaw [
 // If the LatestConsistent checkpoint is 0 sized, no consistency proof will be returned
 // since it would be meaningless to do so.
 func (lst *LogStateTracker) Update(ctx context.Context) ([]byte, [][]byte, []byte, error) {
-	ctx, span := tracer.Start(ctx, "logstatetracker.Update")
+	ctx, span := tracer.Start(ctx, "tessera.client.logstatetracker.Update")
 	defer span.End()
 
 	c, cRaw, _, err := lst.consensusCheckpoint(ctx, lst.cpSigVerifier, lst.origin)
@@ -417,7 +417,7 @@ func (n *nodeCache) SetEphemeralNode(id compact.NodeID, h []byte) {
 // the tile containing the requested node will be fetched and cached, and the
 // node hash returned.
 func (n *nodeCache) GetNode(ctx context.Context, id compact.NodeID) ([]byte, error) {
-	ctx, span := tracer.Start(ctx, "nodecache.GetNode")
+	ctx, span := tracer.Start(ctx, "tessera.client.nodecache.GetNode")
 	defer span.End()
 
 	span.SetAttributes(indexKey.Int64(otel.Clamp64(id.Index)), levelKey.Int64(int64(id.Level)))

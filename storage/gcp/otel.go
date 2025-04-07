@@ -26,8 +26,8 @@ var (
 )
 
 var (
-	treeSizeKey   = attribute.Key("treeSize")
-	fromSizeKey   = attribute.Key("fromSize")
-	numEntriesKey = attribute.Key("numEntries")
-	objectPathKey = attribute.Key("objectPath")
+	treeSizeKey   = attribute.Key("tessera.treeSize")
+	fromSizeKey   = attribute.Key("tessera.fromSize")
+	numEntriesKey = attribute.Key("tessera.numEntries")
+	objectPathKey = attribute.Key("tessera.objectPath")
 )

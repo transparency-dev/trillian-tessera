@@ -132,7 +132,7 @@ type LogReader struct {
 }
 
 func (lr *LogReader) ReadCheckpoint(ctx context.Context) ([]byte, error) {
-	ctx, span := tracer.Start(ctx, "ReadCheckpoint")
+	ctx, span := tracer.Start(ctx, "tessera.storage.gcp.ReadCheckpoint")
 	defer span.End()
 
 	r, err := lr.lrs.getCheckpoint(ctx)
@@ -145,28 +145,28 @@ func (lr *LogReader) ReadCheckpoint(ctx context.Context) ([]byte, error) {
 }
 
 func (lr *LogReader) ReadTile(ctx context.Context, l, i uint64, p uint8) ([]byte, error) {
-	ctx, span := tracer.Start(ctx, "ReadTile")
+	ctx, span := tracer.Start(ctx, "tessera.storage.gcp.ReadTile")
 	defer span.End()
 
 	return lr.lrs.getTile(ctx, l, i, p)
 }
 
 func (lr *LogReader) ReadEntryBundle(ctx context.Context, i uint64, p uint8) ([]byte, error) {
-	ctx, span := tracer.Start(ctx, "ReadEntryBundle")
+	ctx, span := tracer.Start(ctx, "tessera.storage.gcp.ReadEntryBundle")
 	defer span.End()
 
 	return lr.lrs.getEntryBundle(ctx, i, p)
 }
 
 func (lr *LogReader) IntegratedSize(ctx context.Context) (uint64, error) {
-	ctx, span := tracer.Start(ctx, "IntegratedSize")
+	ctx, span := tracer.Start(ctx, "tessera.storage.gcp.IntegratedSize")
 	defer span.End()
 
 	return lr.integratedSize(ctx)
 }
 
 func (lr *LogReader) StreamEntries(ctx context.Context, fromEntry uint64) (next func() (ri layout.RangeInfo, bundle []byte, err error), cancel func()) {
-	ctx, span := tracer.Start(ctx, "StreamEntries")
+	ctx, span := tracer.Start(ctx, "tessera.storage.gcp.StreamEntries")
 	defer span.End()
 
 	klog.Infof("StreamEntries from %d", fromEntry)
@@ -241,7 +241,7 @@ type Appender struct {
 
 // Add is the entrypoint for adding entries to a sequencing log.
 func (a *Appender) Add(ctx context.Context, e *tessera.Entry) tessera.IndexFuture {
-	ctx, span := tracer.Start(ctx, "Add")
+	ctx, span := tracer.Start(ctx, "tessera.storage.gcp.Add")
 	defer span.End()
 
 	return a.queue.Add(ctx, e)
@@ -260,7 +260,7 @@ func (a *Appender) sequencerJob(ctx context.Context) {
 		}
 
 		func() {
-			ctx, span := tracer.Start(ctx, "sequenceTask")
+			ctx, span := tracer.Start(ctx, "tessera.storage.gcp.sequenceTask")
 			defer span.End()
 
 			// Don't quickloop for now, it causes issues updating checkpoint too frequently.
@@ -292,7 +292,7 @@ func (a *Appender) publisherJob(ctx context.Context, i time.Duration) {
 		case <-t.C:
 		}
 		func() {
-			ctx, span := tracer.Start(ctx, "publishTask")
+			ctx, span := tracer.Start(ctx, "tessera.storage.gcp.publishTask")
 			defer span.End()
 
 			if err := a.publishCheckpoint(ctx, i); err != nil {
@@ -327,7 +327,7 @@ func (a *Appender) init(ctx context.Context) error {
 }
 
 func (a *Appender) publishCheckpoint(ctx context.Context, minStaleness time.Duration) error {
-	ctx, span := tracer.Start(ctx, "publishCheckpoint")
+	ctx, span := tracer.Start(ctx, "tessera.storage.gcp.publishCheckpoint")
 	defer span.End()
 
 	m, err := a.logStore.checkpointLastModified(ctx)
@@ -408,7 +408,7 @@ func (s *logResourceStore) getTile(ctx context.Context, level, index uint64, par
 //
 // Tiles are returned in the same order as they're requested, nils represent tiles which were not found.
 func (s *logResourceStore) getTiles(ctx context.Context, tileIDs []storage.TileID, logSize uint64) ([]*api.HashTile, error) {
-	ctx, span := tracer.Start(ctx, "getTiles")
+	ctx, span := tracer.Start(ctx, "tessera.storage.gcp.getTiles")
 	defer span.End()
 
 	r := make([]*api.HashTile, len(tileIDs))
@@ -475,7 +475,7 @@ func (s *logResourceStore) setEntryBundle(ctx context.Context, bundleIndex uint6
 
 // appendEntries incorporates the provided entries into the log starting at fromSeq.
 func (a *Appender) appendEntries(ctx context.Context, fromSeq uint64, entries []storage.SequencedEntry) ([]byte, error) {
-	ctx, span := tracer.Start(ctx, "appendEntries")
+	ctx, span := tracer.Start(ctx, "tessera.storage.gcp.appendEntries")
 	defer span.End()
 
 	var newRoot []byte
@@ -509,7 +509,7 @@ func (a *Appender) appendEntries(ctx context.Context, fromSeq uint64, entries []
 
 // integrate adds the provided leaf hashes to the merkle tree, starting at the provided location.
 func integrate(ctx context.Context, fromSeq uint64, lh [][]byte, logStore *logResourceStore) ([]byte, error) {
-	ctx, span := tracer.Start(ctx, "integrate")
+	ctx, span := tracer.Start(ctx, "tessera.storage.gcp.integrate")
 	defer span.End()
 
 	span.SetAttributes(fromSizeKey.Int64(otel.Clamp64(fromSeq)), numEntriesKey.Int(len(lh)))
@@ -550,7 +550,7 @@ func integrate(ctx context.Context, fromSeq uint64, lh [][]byte, logStore *logRe
 //
 // The right-most bundle will be grown, if it's partial, and/or new bundles will be created as required.
 func (a *Appender) updateEntryBundles(ctx context.Context, fromSeq uint64, entries []storage.SequencedEntry) error {
-	ctx, span := tracer.Start(ctx, "updateEntryBundles")
+	ctx, span := tracer.Start(ctx, "tessera.storage.gcp.updateEntryBundles")
 	defer span.End()
 
 	if len(entries) == 0 {
@@ -695,7 +695,7 @@ func (s *spannerCoordinator) checkDataCompatibility(ctx context.Context) error {
 // This is achieved by storing the passed-in entries in the Seq table in Spanner, keyed by the
 // index assigned to the first entry in the batch.
 func (s *spannerCoordinator) assignEntries(ctx context.Context, entries []*tessera.Entry) error {
-	ctx, span := tracer.Start(ctx, "coordinator.assignEntries")
+	ctx, span := tracer.Start(ctx, "tessera.storage.gcp.assignEntries")
 	defer span.End()
 
 	span.SetAttributes(numEntriesKey.Int(len(entries)))
@@ -779,7 +779,7 @@ func (s *spannerCoordinator) assignEntries(ctx context.Context, entries []*tesse
 //
 // Returns true if some entries were consumed as a weak signal that there may be further entries waiting to be consumed.
 func (s *spannerCoordinator) consumeEntries(ctx context.Context, limit uint64, f consumeFunc, forceUpdate bool) (bool, error) {
-	ctx, span := tracer.Start(ctx, "coordinator.assignEntries")
+	ctx, span := tracer.Start(ctx, "tessera.storage.gcp.assignEntries")
 	defer span.End()
 
 	didWork := false
@@ -888,7 +888,7 @@ type gcsStorage struct {
 
 // getObject returns the data and generation of the specified object, or an error.
 func (s *gcsStorage) getObject(ctx context.Context, obj string) ([]byte, int64, error) {
-	ctx, span := tracer.Start(ctx, "getObject")
+	ctx, span := tracer.Start(ctx, "tessera.storage.gcp.getObject")
 	defer span.End()
 
 	span.SetAttributes(objectPathKey.String(obj))
@@ -914,7 +914,7 @@ func (s *gcsStorage) getObject(ctx context.Context, obj string) ([]byte, int64, 
 // the currently stored data is bit-for-bit identical to the data to-be-written.
 // This is intended to provide idempotentency for writes.
 func (s *gcsStorage) setObject(ctx context.Context, objName string, data []byte, cond *gcs.Conditions, contType string, cacheCtl string) error {
-	ctx, span := tracer.Start(ctx, "setObject")
+	ctx, span := tracer.Start(ctx, "tessera.storage.gcp.setObject")
 	defer span.End()
 
 	span.SetAttributes(objectPathKey.String(objName))

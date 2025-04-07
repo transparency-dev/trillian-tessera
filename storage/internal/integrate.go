@@ -100,7 +100,7 @@ func (t *treeBuilder) newRange(ctx context.Context, treeSize uint64) (*compact.R
 }
 
 func (t *treeBuilder) integrate(ctx context.Context, fromSize uint64, leafHashes [][]byte) (newSize uint64, rootHash []byte, tiles map[TileID]*api.HashTile, err error) {
-	ctx, span := tracer.Start(ctx, "integrate")
+	ctx, span := tracer.Start(ctx, "tessera.storage.integrate")
 	defer span.End()
 
 	span.SetAttributes(fromSizeKey.Int64(otel.Clamp64(fromSize)), numEntriesKey.Int(len(leafHashes)))
@@ -187,7 +187,7 @@ func newTileReadCache(getTiles func(ctx context.Context, tileIDs []TileID, treeS
 
 // Get returns a previously set tile and true, or, if no such tile is in the cache, attempt to fetch it.
 func (r *tileReadCache) Get(ctx context.Context, tileID TileID, treeSize uint64) (*populatedTile, error) {
-	ctx, span := tracer.Start(ctx, "readCache.Get")
+	ctx, span := tracer.Start(ctx, "tessera.storage.readCache.Get")
 	defer span.End()
 
 	span.SetAttributes(indexKey.Int64(otel.Clamp64(tileID.Index)), levelKey.Int64(otel.Clamp64(tileID.Level)), treeSizeKey.Int64(otel.Clamp64(treeSize)))
@@ -214,7 +214,7 @@ func (r *tileReadCache) Get(ctx context.Context, tileID TileID, treeSize uint64)
 //
 // Returns an error if any of the tiles couldn't be fetched.
 func (r *tileReadCache) Prewarm(ctx context.Context, tileIDs []TileID, treeSize uint64) error {
-	ctx, span := tracer.Start(ctx, "readCache.Prewarm")
+	ctx, span := tracer.Start(ctx, "tessera.storage.readCache.Prewarm")
 	defer span.End()
 
 	t, err := r.getTiles(ctx, tileIDs, treeSize)
