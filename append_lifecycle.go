@@ -27,8 +27,11 @@ import (
 	f_log "github.com/transparency-dev/formats/log"
 	"github.com/transparency-dev/merkle/rfc6962"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
+	"github.com/transparency-dev/trillian-tessera/internal/otel"
 	"github.com/transparency-dev/trillian-tessera/internal/parse"
 	"github.com/transparency-dev/trillian-tessera/internal/witness"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
 	"golang.org/x/mod/sumdb/note"
 	"k8s.io/klog/v2"
 )
@@ -43,6 +46,50 @@ const (
 	// DefaultPushbackMaxOutstanding is used by storage implementations if no WithPushback option is provided when instantiating it.
 	DefaultPushbackMaxOutstanding = 4096
 )
+
+var (
+	appenderAddsTotal     metric.Int64Counter
+	appenderAddHistogram  metric.Int64Histogram
+	appenderSignedSize    metric.Int64Gauge
+	appenderWitnessedSize metric.Int64Gauge
+)
+
+func init() {
+	var err error
+
+	appenderAddsTotal, err = meter.Int64Counter(
+		"tessera.appender.add.calls",
+		metric.WithDescription("Number of calls to the appender lifecycle Add function"),
+		metric.WithUnit("{call}"))
+	if err != nil {
+		klog.Exitf("Failed to create appenderAddsTotal metric: %v", err)
+	}
+
+	appenderAddHistogram, err = meter.Int64Histogram(
+		"tessera.appender.add.duration",
+		metric.WithDescription("Duration of calls to the appender lifecycle Add function"),
+		metric.WithUnit("ms"))
+	if err != nil {
+		klog.Exitf("Failed to create appenderAddDuration metric: %v", err)
+	}
+
+	appenderSignedSize, err = meter.Int64Gauge(
+		"tessera.appender.signed.size",
+		metric.WithDescription("Size of the latest signed checkpoint"),
+		metric.WithUnit("{entry}"))
+	if err != nil {
+		klog.Exitf("Failed to create appenderSignedSize metric: %v", err)
+	}
+
+	appenderWitnessedSize, err = meter.Int64Gauge(
+		"tessera.appender.witnessed.size",
+		metric.WithDescription("Size of the latest successfully witnessed checkpoint"),
+		metric.WithUnit("{entry}"))
+	if err != nil {
+		klog.Exitf("Failed to create appenderWitnessedSize metric: %v", err)
+	}
+
+}
 
 // Add adds a new entry to be sequenced.
 // This method quickly returns an IndexFuture, which will return the index assigned
@@ -112,6 +159,7 @@ func NewAppender(ctx context.Context, d Driver, opts *AppendOptions) (*Appender,
 	for i := len(opts.addDecorators) - 1; i >= 0; i-- {
 		a.Add = opts.addDecorators[i](a.Add)
 	}
+	a.Add = statsDecorator(a.Add)
 	for _, f := range opts.followers {
 		go f.Follow(ctx, r)
 	}
@@ -120,8 +168,40 @@ func NewAppender(ctx context.Context, d Driver, opts *AppendOptions) (*Appender,
 		readCheckpoint: r.ReadCheckpoint,
 	}
 	// TODO(mhutchinson): move this into the decorators
-	a.Add = t.Add
+	a.Add = func(ctx context.Context, entry *Entry) IndexFuture {
+		return t.Add(ctx, entry)
+	}
 	return a, t.Shutdown, r, nil
+}
+
+// statsDecorator wraps a delegate AddFn with code to calculate/update
+// metric stats.
+func statsDecorator(delegate AddFn) AddFn {
+	return func(ctx context.Context, entry *Entry) IndexFuture {
+		start := time.Now()
+		f := delegate(ctx, entry)
+
+		return func() (Index, error) {
+			idx, err := f()
+			attr := []attribute.KeyValue{}
+			if err != nil {
+				if err == ErrPushback {
+					attr = append(attr, attribute.Bool("tessera.pushback", true))
+				} else {
+					// Just flag that it's an errored request to avoid high cardinality of attribute values.
+					// TODO(al): We might want to bucket errors into OTel status codes in the future, though.
+					attr = append(attr, attribute.String("tessera.error.type", "_OTHER"))
+				}
+			}
+			if idx.IsDup {
+				attr = append(attr, attribute.Bool("tessera.duplicate", true))
+			}
+			appenderAddsTotal.Add(ctx, 1, metric.WithAttributes(attr...))
+			d := time.Since(start)
+			appenderAddHistogram.Record(ctx, d.Milliseconds(), metric.WithAttributes(attr...))
+			return idx, err
+		}
+	}
 }
 
 type terminator struct {
@@ -260,11 +340,22 @@ func (o AppendOptions) valid() error {
 func (o AppendOptions) CheckpointPublisher(lr LogReader, httpClient *http.Client) func(context.Context, uint64, []byte) ([]byte, error) {
 	wg := witness.NewWitnessGateway(o.Witnesses(), httpClient, lr.ReadTile)
 	return func(ctx context.Context, size uint64, root []byte) ([]byte, error) {
+		ctx, span := tracer.Start(ctx, "tessera.CheckpointPublisher")
+		defer span.End()
+
 		cp, err := o.newCP(ctx, size, root)
 		if err != nil {
 			return nil, fmt.Errorf("newCP: %v", err)
 		}
-		return wg.Witness(ctx, cp)
+		appenderSignedSize.Record(ctx, otel.Clamp64(size))
+
+		cp, err = wg.Witness(ctx, cp)
+		if err != nil {
+			return nil, err
+		}
+		appenderWitnessedSize.Record(ctx, otel.Clamp64(size))
+
+		return cp, err
 	}
 }
 
@@ -317,6 +408,9 @@ func (o *AppendOptions) WithCheckpointSigner(s note.Signer, additionalSigners ..
 		}
 	}
 	o.newCP = func(ctx context.Context, size uint64, hash []byte) ([]byte, error) {
+		_, span := tracer.Start(ctx, "tessera.SignCheckpoint")
+		defer span.End()
+
 		// If we're signing a zero-sized tree, the tlog-checkpoint spec says (via RFC6962) that
 		// the root must be SHA256 of the empty string, so we'll enforce that here:
 		if size == 0 {

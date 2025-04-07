@@ -39,6 +39,7 @@ var (
 	spanner            = flag.String("spanner", "", "Spanner resource URI ('projects/.../...')")
 	signer             = flag.String("signer", "", "Note signer to use to sign checkpoints")
 	persistentAntispam = flag.Bool("antispam", false, "EXPERIMENTAL: Set to true to enable GCP-based persistent antispam storage")
+	traceFraction      = flag.Float64("trace_fraction", 0.01, "Fraction of open-telemetry span traces to sample")
 	additionalSigners  = []string{}
 )
 
@@ -53,6 +54,9 @@ func main() {
 	klog.InitFlags(nil)
 	flag.Parse()
 	ctx := context.Background()
+
+	shutdownOTel := initOTel(ctx, *traceFraction)
+	defer shutdownOTel(ctx)
 
 	s, a := signerFromFlags()
 

@@ -44,6 +44,9 @@ type GetTreeSizeFn func(ctx context.Context) (uint64, error)
 // to balance throughput against consumption of resources, but such balancing needs to be mindful of the nature of the
 // source infrastructure, and how concurrent requests affect performance (e.g. GCS buckets vs. files on a single disk).
 func StreamAdaptor(ctx context.Context, numWorkers uint, getSize GetTreeSizeFn, getBundle GetBundleFn, fromEntry uint64) (next func() (ri layout.RangeInfo, bundle []byte, err error), cancel func()) {
+	ctx, span := tracer.Start(ctx, "tessera.storage.StreamAdaptor")
+	defer span.End()
+
 	// bundleOrErr represents a fetched entry bundle and its params, or an error if we couldn't fetch it for
 	// some reason.
 	type bundleOrErr struct {
@@ -63,6 +66,9 @@ func StreamAdaptor(ctx context.Context, numWorkers uint, getSize GetTreeSizeFn, 
 	// We use a limited number of tokens here to prevent this from
 	// consuming an unbounded amount of resources.
 	go func() {
+		ctx, span := tracer.Start(ctx, "tessera.storage.StreamAdaptorWorker")
+		defer span.End()
+
 		defer close(bundles)
 
 		// We'll limit ourselves to numWorkers worth of on-going work using these tokens:
