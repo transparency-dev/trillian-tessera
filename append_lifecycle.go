@@ -210,9 +210,6 @@ type terminator struct {
 }
 
 func (t *terminator) Add(ctx context.Context, entry *Entry) IndexFuture {
-	ctx, span := tracer.Start(ctx, "tessera.terminator.Add")
-	defer span.End()
-
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 	if t.stopped {
