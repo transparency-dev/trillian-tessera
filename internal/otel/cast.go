@@ -18,7 +18,7 @@ import "math"
 
 // Clamp64 casts a uint64 to an int64, clamping it at MaxInt64 if the value is above.
 //
-// Intended only for coverting Tessera uint64 internal values to int64 for us with
+// Intended only for converting Tessera uint64 internal values to int64 for us with
 // open telemetry metrics.
 func Clamp64(u uint64) int64 {
 	if u > math.MaxInt64 {

@@ -120,6 +120,7 @@ func FetchCheckpoint(ctx context.Context, f CheckpointFetcherFunc, v note.Verifi
 func FetchRangeNodes(ctx context.Context, s uint64, f TileFetcherFunc) ([][]byte, error) {
 	ctx, span := tracer.Start(ctx, "tessera.client.FetchRangeNodes")
 	defer span.End()
+	span.SetAttributes(logSizeKey.Int64(otel.Clamp64(s)))
 
 	nc := newNodeCache(f, s)
 	nIDs := make([]compact.NodeID, 0, compact.RangeSize(0, s))
