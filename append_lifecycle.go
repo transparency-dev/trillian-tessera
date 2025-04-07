@@ -48,12 +48,16 @@ const (
 )
 
 var (
-	appenderAddsTotal      metric.Int64Counter
-	appenderAddHistogram   metric.Int64Histogram
-	appenderHighestIndex   metric.Int64Gauge
-	appenderIntegratedSize metric.Int64Gauge
-	appenderSignedSize     metric.Int64Gauge
-	appenderWitnessedSize  metric.Int64Gauge
+	appenderAddsTotal        metric.Int64Counter
+	appenderAddHistogram     metric.Int64Histogram
+	appenderHighestIndex     metric.Int64Gauge
+	appenderIntegratedSize   metric.Int64Gauge
+	appenderIntegrateLatency metric.Int64Histogram
+	appenderSignedSize       metric.Int64Gauge
+	appenderWitnessedSize    metric.Int64Gauge
+
+	// Custom histogram buckets as we're still interested in details in the 1-2s area.
+	histogramBuckets = []float64{0, 10, 50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1200, 1400, 1600, 1800, 2000, 2500, 3000, 4000, 5000, 6000, 8000, 10000}
 )
 
 func init() {
@@ -70,7 +74,8 @@ func init() {
 	appenderAddHistogram, err = meter.Int64Histogram(
 		"tessera.appender.add.duration",
 		metric.WithDescription("Duration of calls to the appender lifecycle Add function"),
-		metric.WithUnit("ms"))
+		metric.WithUnit("ms"),
+		metric.WithExplicitBucketBoundaries(histogramBuckets...))
 	if err != nil {
 		klog.Exitf("Failed to create appenderAddDuration metric: %v", err)
 	}
@@ -88,6 +93,15 @@ func init() {
 		metric.WithUnit("{entry}"))
 	if err != nil {
 		klog.Exitf("Failed to create appenderIntegratedSize metric: %v", err)
+	}
+
+	appenderIntegrateLatency, err = meter.Int64Histogram(
+		"tessera.appender.integrate.latency",
+		metric.WithDescription("Duration between an index being assigned by Add, and that index being integrated in the tree"),
+		metric.WithUnit("ms"),
+		metric.WithExplicitBucketBoundaries(histogramBuckets...))
+	if err != nil {
+		klog.Exitf("Failed to create appenderIntegrateLatency metric: %v", err)
 	}
 
 	appenderSignedSize, err = meter.Int64Gauge(
@@ -176,11 +190,12 @@ func NewAppender(ctx context.Context, d Driver, opts *AppendOptions) (*Appender,
 	for i := len(opts.addDecorators) - 1; i >= 0; i-- {
 		a.Add = opts.addDecorators[i](a.Add)
 	}
-	a.Add = statsDecorator(a.Add)
+	sd := newIntegrationStats()
+	a.Add = sd.statsDecorator(a.Add)
 	for _, f := range opts.followers {
 		go f.Follow(ctx, r)
 	}
-	go integrationStats(ctx, r)
+	go sd.updateStats(ctx, r)
 	t := terminator{
 		delegate:       a.Add,
 		readCheckpoint: r.ReadCheckpoint,
@@ -192,7 +207,39 @@ func NewAppender(ctx context.Context, d Driver, opts *AppendOptions) (*Appender,
 	return a, t.Shutdown, r, nil
 }
 
-func integrationStats(ctx context.Context, r LogReader) {
+type idxAt struct {
+	idx uint64
+	at  time.Time
+}
+
+type integrationStats struct {
+	sample atomic.Pointer[idxAt]
+}
+
+func newIntegrationStats() *integrationStats {
+	return &integrationStats{}
+}
+
+func (i *integrationStats) saw(idx uint64) {
+	i.sample.CompareAndSwap(nil, &idxAt{idx: idx, at: time.Now()})
+}
+
+func (i *integrationStats) latency(size uint64) (time.Duration, bool) {
+	ia := i.sample.Load()
+	if ia != nil {
+		if ia.idx < size {
+			i.sample.Store(nil)
+		}
+		return time.Since(ia.at), true
+	}
+	return 0, false
+}
+
+func (i *integrationStats) updateStats(ctx context.Context, r LogReader) {
+	if r == nil {
+		klog.Warning("updateStates: nil logreader provided, not updating stats")
+		return
+	}
 	t := time.NewTicker(time.Second)
 	for {
 		select {
@@ -206,12 +253,15 @@ func integrationStats(ctx context.Context, r LogReader) {
 			continue
 		}
 		appenderIntegratedSize.Record(ctx, otel.Clamp64(s))
+		if d, ok := i.latency(s); ok {
+			appenderIntegrateLatency.Record(ctx, d.Milliseconds())
+		}
 	}
 }
 
 // statsDecorator wraps a delegate AddFn with code to calculate/update
 // metric stats.
-func statsDecorator(delegate AddFn) AddFn {
+func (i *integrationStats) statsDecorator(delegate AddFn) AddFn {
 	return func(ctx context.Context, entry *Entry) IndexFuture {
 		start := time.Now()
 		f := delegate(ctx, entry)
@@ -230,6 +280,8 @@ func statsDecorator(delegate AddFn) AddFn {
 			}
 			if idx.IsDup {
 				attr = append(attr, attribute.Bool("tessera.duplicate", true))
+			} else {
+				i.saw(idx.Index)
 			}
 			appenderAddsTotal.Add(ctx, 1, metric.WithAttributes(attr...))
 			d := time.Since(start)
