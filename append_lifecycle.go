@@ -48,9 +48,10 @@ const (
 )
 
 var (
-	appenderAddsTotal    metric.Int64Counter
-	appenderAddHistogram metric.Int64Histogram
-	appenderTreeSize     metric.Int64Gauge
+	appenderAddsTotal     metric.Int64Counter
+	appenderAddHistogram  metric.Int64Histogram
+	appenderSignedSize    metric.Int64Gauge
+	appenderWitnessedSize metric.Int64Gauge
 )
 
 func init() {
@@ -72,12 +73,20 @@ func init() {
 		klog.Exitf("Failed to create appenderAddDuration metric: %v", err)
 	}
 
-	appenderTreeSize, err = meter.Int64Gauge(
-		"tessera.appender.tree.size",
-		metric.WithDescription("Number of entries in the published tree"),
+	appenderSignedSize, err = meter.Int64Gauge(
+		"tessera.appender.signed.size",
+		metric.WithDescription("Size of the latest signed checkpoint"),
 		metric.WithUnit("{entry}"))
 	if err != nil {
-		klog.Exitf("Failed to create appenderTreeSize metric: %v", err)
+		klog.Exitf("Failed to create appenderSignedSize metric: %v", err)
+	}
+
+	appenderWitnessedSize, err = meter.Int64Gauge(
+		"tessera.appender.witnessed.size",
+		metric.WithDescription("Size of the latest successfully witnessed checkpoint"),
+		metric.WithUnit("{entry}"))
+	if err != nil {
+		klog.Exitf("Failed to create appenderWitnessedSize metric: %v", err)
 	}
 
 }
@@ -338,11 +347,14 @@ func (o AppendOptions) CheckpointPublisher(lr LogReader, httpClient *http.Client
 		if err != nil {
 			return nil, fmt.Errorf("newCP: %v", err)
 		}
+		appenderWitnessedSize.Record(ctx, otel.Clamp64(size))
+
 		cp, err = wg.Witness(ctx, cp)
 		if err != nil {
 			return nil, err
 		}
-		appenderTreeSize.Record(ctx, otel.Clamp64(size))
+		appenderWitnessedSize.Record(ctx, otel.Clamp64(size))
+
 		return cp, err
 	}
 }
