@@ -325,7 +325,10 @@ func (s *Storage) ReadEntryBundle(ctx context.Context, index uint64, p uint8) ([
 // This is part of the tessera LogReader contract.
 func (s *Storage) IntegratedSize(ctx context.Context) (uint64, error) {
 	ts, err := s.readTreeState(ctx)
-	return ts.size, err
+	if err != nil {
+		return 0, fmt.Errorf("readTreeState: %v", err)
+	}
+	return ts.size, nil
 }
 
 // StreamEntries() returns functions `next` and `cancel` which act like a pull iterator for
