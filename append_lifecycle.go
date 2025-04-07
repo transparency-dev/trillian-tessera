@@ -48,11 +48,12 @@ const (
 )
 
 var (
-	appenderAddsTotal     metric.Int64Counter
-	appenderAddHistogram  metric.Int64Histogram
-	appenderHighestIndex  metric.Int64Gauge
-	appenderSignedSize    metric.Int64Gauge
-	appenderWitnessedSize metric.Int64Gauge
+	appenderAddsTotal      metric.Int64Counter
+	appenderAddHistogram   metric.Int64Histogram
+	appenderHighestIndex   metric.Int64Gauge
+	appenderIntegratedSize metric.Int64Gauge
+	appenderSignedSize     metric.Int64Gauge
+	appenderWitnessedSize  metric.Int64Gauge
 )
 
 func init() {
@@ -79,6 +80,14 @@ func init() {
 		metric.WithDescription("Highest index assigned by appender lifecycle Add function"))
 	if err != nil {
 		klog.Exitf("Failed to create appenderHighestIndex metric: %v", err)
+	}
+
+	appenderIntegratedSize, err = meter.Int64Gauge(
+		"tessera.appender.integrated.size",
+		metric.WithDescription("Size of the integrated (but not necessarily published) tree"),
+		metric.WithUnit("{entry}"))
+	if err != nil {
+		klog.Exitf("Failed to create appenderIntegratedSize metric: %v", err)
 	}
 
 	appenderSignedSize, err = meter.Int64Gauge(
@@ -171,6 +180,7 @@ func NewAppender(ctx context.Context, d Driver, opts *AppendOptions) (*Appender,
 	for _, f := range opts.followers {
 		go f.Follow(ctx, r)
 	}
+	go integrationStats(ctx, r)
 	t := terminator{
 		delegate:       a.Add,
 		readCheckpoint: r.ReadCheckpoint,
@@ -180,6 +190,23 @@ func NewAppender(ctx context.Context, d Driver, opts *AppendOptions) (*Appender,
 		return t.Add(ctx, entry)
 	}
 	return a, t.Shutdown, r, nil
+}
+
+func integrationStats(ctx context.Context, r LogReader) {
+	t := time.NewTicker(time.Second)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+		s, err := r.IntegratedSize(ctx)
+		if err != nil {
+			klog.Errorf("IntegratedSize: %v", err)
+			continue
+		}
+		appenderIntegratedSize.Record(ctx, otel.Clamp64(s))
+	}
 }
 
 // statsDecorator wraps a delegate AddFn with code to calculate/update
