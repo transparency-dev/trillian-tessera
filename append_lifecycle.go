@@ -56,8 +56,8 @@ var (
 	appenderSignedSize       metric.Int64Gauge
 	appenderWitnessedSize    metric.Int64Gauge
 
-	followerPosition metric.Int64Gauge
-	followerLag      metric.Int64Gauge
+	followerEntriesProcessed metric.Int64Gauge
+	followerLag              metric.Int64Gauge
 
 	// Custom histogram buckets as we're still interested in details in the 1-2s area.
 	histogramBuckets = []float64{0, 10, 50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1200, 1400, 1600, 1800, 2000, 2500, 3000, 4000, 5000, 6000, 8000, 10000}
@@ -123,16 +123,16 @@ func init() {
 		klog.Exitf("Failed to create appenderWitnessedSize metric: %v", err)
 	}
 
-	followerPosition, err = meter.Int64Gauge(
-		"tessera.follower.index",
-		metric.WithDescription("Current follower position"),
+	followerEntriesProcessed, err = meter.Int64Gauge(
+		"tessera.follower.processed",
+		metric.WithDescription("Number of entries processed"),
 		metric.WithUnit("{entry}"))
 	if err != nil {
-		klog.Exitf("Failed to create followerPosition metric: %v", err)
+		klog.Exitf("Failed to create followerEntriesProcessed metric: %v", err)
 	}
 	followerLag, err = meter.Int64Gauge(
 		"tessera.follower.lag",
-		metric.WithDescription("Number of entries between the follower position and the current integrated size"),
+		metric.WithDescription("Number of unprocessed entries in the current integrated tree"),
 		metric.WithUnit("{entry}"))
 	if err != nil {
 		klog.Exitf("Failed to create followerLag metric: %v", err)
