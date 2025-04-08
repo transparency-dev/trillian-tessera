@@ -33,8 +33,8 @@ import (
 
 	// #region common_imports
 	tessera "github.com/transparency-dev/trillian-tessera"
-	// Choose one!
 
+	// Choose one!
 	"github.com/transparency-dev/trillian-tessera/storage/posix"
 	// "github.com/transparency-dev/trillian-tessera/storage/aws"
 	// "github.com/transparency-dev/trillian-tessera/storage/gcp"
@@ -48,11 +48,11 @@ func constructStorage() {
 	ctx := context.Background()
 
 	// #region construct_example
-	// Choose one!
 	driver, _ := posix.New(ctx, "/tmp/mylog")
 	signer := createSigner()
 
-	appender, shutdown, reader, err := tessera.NewAppender(ctx, driver, tessera.NewAppendOptions().WithCheckpointSigner(signer))
+	appender, shutdown, reader, err := tessera.NewAppender(
+		ctx, driver, tessera.NewAppendOptions().WithCheckpointSigner(signer))
 	// #endregion
 
 	// use the vars so the compiler/linter doesn't complain.
@@ -71,7 +71,8 @@ func constructAndUseAppender() {
 	signer := createSigner()
 
 	// #region use_appender_example
-	appender, shutdown, reader, err := tessera.NewAppender(ctx, driver, tessera.NewAppendOptions().WithCheckpointSigner(signer))
+	appender, shutdown, reader, err := tessera.NewAppender(
+		ctx, driver, tessera.NewAppendOptions().WithCheckpointSigner(signer))
 	if err != nil {
 		panic(err)
 	}

@@ -92,7 +92,7 @@ All index numbers are contiguous and start from 0.
 
 ### Integration
 
-Integration is a background process that happens when the Tessera storage object has been created.
+Integration is a background process that happens when a Tessera lifecycle object has been created.
 This process takes sequenced entries and merges them into the log.
 Once this process has been completed, a new entry will:
  - Be available via the read API at the index that was returned from sequencing
@@ -130,7 +130,7 @@ It is designed to efficiently serve logs that allow read access via the [tlog-ti
 The code you write that calls Tessera is referred to as a personality, because it tailors the generic library to your ecosystem.
 
 Before starting to write your own personality, it is strongly recommended that you have familiarized yourself with the provided personalities referenced in [Getting Started](#getting-started).
-When writing your Tessera personality, the biggest decision you need to make first is which of the native drivers to use:
+When writing your Tessera personality, the first decision you need to make is which of the native drivers to use:
  *   [GCP](./storage/gcp/)
  *   [AWS](./storage/aws/)
  *   [MySQL](./storage/mysql/)
@@ -148,8 +148,6 @@ If you aren't using a cloud provider, then your options are MySQL and POSIX:
 To get a sense of the rough performance you can expect from the different backends, take a look at
 [docs/performance.md](/docs/performance.md).
 
-By far the most common way to operate logs is in an append-only manner, and the rest of this guide will discuss
-this mode. For lifecycle states other than Appender mode, take a look at [Lifecycles](#lifecycles) below.
 
 #### Setup
 
@@ -161,13 +159,13 @@ You'll need to import the Tessera library:
 go get github.com/transparency-dev/trillian-tessera@main
 ```
 
-#### Constructing the Storage Object
+#### Constructing the Appender
 
 Import the main `tessera` package, and the driver for the storage backend you want to use:
 ```go file=README_test.go region=common_imports
 	tessera "github.com/transparency-dev/trillian-tessera"
-	// Choose one!
 
+	// Choose one!
 	"github.com/transparency-dev/trillian-tessera/storage/posix"
 	// "github.com/transparency-dev/trillian-tessera/storage/aws"
 	// "github.com/transparency-dev/trillian-tessera/storage/gcp"
@@ -175,33 +173,37 @@ Import the main `tessera` package, and the driver for the storage backend you wa
 
 ```
 
-Now you'll need to instantiate the storage object for the native driver you are using:
+Now you'll need to instantiate the lifecycle object for the native driver you are using.
+
+By far the most common way to operate logs is in an append-only manner, and the rest of this guide will discuss
+this mode.
+For lifecycle states other than Appender mode, take a look at [Lifecycles](#lifecycles) below.
+
+As an example of creating an `Appender` for the POSIX driver:
 ```go file=README_test.go region=construct_example
-	// Choose one!
-	driver, err := posix.New(ctx, "/tmp/mylog")
+	driver, _ := posix.New(ctx, "/tmp/mylog")
 	signer := createSigner()
 
-	appender, shutdown, reader, err := tessera.NewAppender(ctx, driver, tessera.NewAppendOptions().WithCheckpointSigner(signer))
+	appender, shutdown, reader, err := tessera.NewAppender(
+		ctx, driver, tessera.NewAppendOptions().WithCheckpointSigner(signer))
 ```
 
-See the documentation for each storage implementation to understand the parameters that each takes.
+See the documentation for each driver implementation to understand the parameters that each takes.
 
-This driver can be used when constructing the lifecycle object.
-The Appender lifecycle is covered in the next section.
-
-The final part of configuring this storage object is to set up the addition features that you want to use.
+The final part of configuring Tessera is to set up the addition features that you want to use.
 These optional libraries can be used to provide common log behaviours.
 See [Features](#features) after reading the rest of this section for more details.
 
 #### Writing to the Log
 
-Now you should have a storage object configured for your environment, and the correct features set up.
+Now you should have a Tessera instance configured for your environment with the correct features set up.
 Now the fun part - writing to the log!
 
 ```go file=README_test.go region=use_appender_example
-	appender, shutdown, reader, err := tessera.NewAppender(ctx, driver, tessera.NewAppendOptions().WithCheckpointSigner(signer))
+	appender, shutdown, reader, err := tessera.NewAppender(
+		ctx, driver, tessera.NewAppendOptions().WithCheckpointSigner(signer))
 	if err != nil {
-		// exit
+		panic(err)
 	}
 
 	future, err := appender.Add(ctx, tessera.NewEntry(data))()
@@ -210,10 +212,14 @@ Now the fun part - writing to the log!
 The `AppendOptions` allow Tessera behaviour to be tuned.
 Take a look at the methods named `With*` on the `AppendOptions` struct in the root package, e.g. [`WithBatching`](https://pkg.go.dev/github.com/transparency-dev/trillian-tessera@main#AppendOptions.WithBatching) to see the available options are how they should be used.
 
-Whichever storage option you use, writing to the log follows the same pattern: simply call `Add` with a new entry created with the data to be added as a leaf in the log.
-This method returns a _future_ of the form `func() (idx uint64, err error)`.
-When called, this future function will block until the data passed into `Add` has been sequenced and an index number is _durably_ assigned (or until failure, in which case an error is returned).
-Once this index has been returned, the new data is sequenced, but not necessarily integrated into the log.
+Writing to the log follows this flow:
+ 1. Call `Add` with a new entry created with the data to be added as a leaf in the log.
+    - This method returns a _future_ of the form `func() (idx uint64, err error)`.
+ 2. Call this future function, which will block until the data passed into `Add` has been sequenced
+    - On success, an index number is _durably_ assigned and returned
+    - On failure, the error is returned
+    
+Once an index has been returned, the new data is sequenced, but not necessarily integrated into the log.
 
 As discussed above in [Integration](#integration), sequenced entries will be _asynchronously_ integrated into the log and be made available via the read API.
 Some personalities may need to block until this has been performed, e.g. because they will provide the requester with an inclusion proof, which requires integration.
@@ -293,7 +299,7 @@ This allows applications built with Tessera to block until one or more leaves pa
 > [!Tip]
 > This is useful if e.g. your application needs to return an inclusion proof in response to a request to add an entry to the log.
 
-## Lifecyles
+## Lifecycles
 
 ### Appender
 
@@ -302,6 +308,10 @@ contiguous to any entries the log has already committed to.
 
 This mode is instantiated via [`tessera.NewAppender`](https://pkg.go.dev/github.com/transparency-dev/trillian-tessera@main#NewAppender), and
 configured using the [`tessera.NewAppendOptions`](https://pkg.go.dev/github.com/transparency-dev/trillian-tessera@main#NewAppendOptions) struct.
+
+This is described above in [Constructing the Appender](#constructing-the-appender).
+
+See more details in the [Lifecycle Design: Appender](https://github.com/transparency-dev/trillian-tessera/blob/main/docs/design/lifecycle.md#appender).
 
 ### Migration Target
 
@@ -317,6 +327,13 @@ and configured using the [`tessera.NewMigratonOptions`](https://pkg.go.dev/githu
 >    * You're "freezing" your log, and want to move it to a cheap read-only location.
 >
 > You can also use this mode to migrate a [tlog-tiles][] compliant log _into_ Tessera.
+
+Binaries for migrating _into_ each of the storage implementations can be found at [./cmd/experimental/migrate/](./cmd/experimental/migrate/).
+These binaries take the URL of a remote tiled log, and copy it into the target location.
+These binaries ought to be sufficient for most use-cases.
+Users that need to write their own migration binary should use the provided binaries as a reference codelab.
+
+See more details in the [Lifecycle Design: Migration](https://github.com/transparency-dev/trillian-tessera/blob/main/docs/design/lifecycle.md#migration).
 
 ## Contributing
 
