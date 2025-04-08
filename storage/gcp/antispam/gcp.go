@@ -426,8 +426,8 @@ func (f *follower) batchUpdateIndex(ctx context.Context, _ *spanner.ReadWriteTra
 	})
 }
 
-// Position returns the index of the entry furthest from the start of the log which has been processed.
-func (f *follower) Position(ctx context.Context) (uint64, error) {
+// EntriesProcessed returns the total number of log entries processed.
+func (f *follower) EntriesProcessed(ctx context.Context) (uint64, error) {
 	row, err := f.as.dbPool.Single().ReadRow(ctx, "FollowCoord", spanner.Key{0}, []string{"nextIdx"})
 	if err != nil {
 		return 0, err

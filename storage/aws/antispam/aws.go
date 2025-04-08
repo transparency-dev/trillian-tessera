@@ -421,8 +421,8 @@ func (f *follower) Follow(ctx context.Context, lr tessera.LogReader) {
 	}
 }
 
-// Position returns the index of the entry furthest from the start of the log which has been processed.
-func (f *follower) Position(ctx context.Context) (uint64, error) {
+// EntriesProcessed returns the total number of log entries processed.
+func (f *follower) EntriesProcessed(ctx context.Context) (uint64, error) {
 	row := f.as.dbPool.QueryRowContext(ctx, "SELECT nextIdx FROM AntispamFollowCoord WHERE id = 0")
 
 	var idx uint64

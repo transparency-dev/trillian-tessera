@@ -56,6 +56,9 @@ var (
 	appenderSignedSize       metric.Int64Gauge
 	appenderWitnessedSize    metric.Int64Gauge
 
+	followerEntriesProcessed metric.Int64Gauge
+	followerLag              metric.Int64Gauge
+
 	// Custom histogram buckets as we're still interested in details in the 1-2s area.
 	histogramBuckets = []float64{0, 10, 50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1200, 1400, 1600, 1800, 2000, 2500, 3000, 4000, 5000, 6000, 8000, 10000}
 )
@@ -118,6 +121,21 @@ func init() {
 		metric.WithUnit("{entry}"))
 	if err != nil {
 		klog.Exitf("Failed to create appenderWitnessedSize metric: %v", err)
+	}
+
+	followerEntriesProcessed, err = meter.Int64Gauge(
+		"tessera.follower.processed",
+		metric.WithDescription("Number of entries processed"),
+		metric.WithUnit("{entry}"))
+	if err != nil {
+		klog.Exitf("Failed to create followerEntriesProcessed metric: %v", err)
+	}
+	followerLag, err = meter.Int64Gauge(
+		"tessera.follower.lag",
+		metric.WithDescription("Number of unprocessed entries in the current integrated tree"),
+		metric.WithUnit("{entry}"))
+	if err != nil {
+		klog.Exitf("Failed to create followerLag metric: %v", err)
 	}
 
 }
@@ -194,6 +212,7 @@ func NewAppender(ctx context.Context, d Driver, opts *AppendOptions) (*Appender,
 	a.Add = sd.statsDecorator(a.Add)
 	for _, f := range opts.followers {
 		go f.Follow(ctx, r)
+		go followerStats(ctx, f, r.IntegratedSize)
 	}
 	go sd.updateStats(ctx, r)
 	t := terminator{
@@ -205,6 +224,31 @@ func NewAppender(ctx context.Context, d Driver, opts *AppendOptions) (*Appender,
 		return t.Add(ctx, entry)
 	}
 	return a, t.Shutdown, r, nil
+}
+
+func followerStats(ctx context.Context, f Follower, size func(context.Context) (uint64, error)) {
+	name := f.Name()
+	t := time.NewTicker(200 * time.Millisecond)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+
+		n, err := f.EntriesProcessed(ctx)
+		if err != nil {
+			klog.Errorf("followerStats: follower %q EntriesProcessed(): %v", name, err)
+			continue
+		}
+		s, err := size(ctx)
+		if err != nil {
+			klog.Errorf("followerStats: follower %q size(): %v", name, err)
+		}
+		attrs := metric.WithAttributes(followerNameKey.String(name))
+		followerEntriesProcessed.Record(ctx, otel.Clamp64(n), attrs)
+		followerLag.Record(ctx, otel.Clamp64(s-n), attrs)
+	}
 }
 
 // idxAt represents an index first seen at a particular time.
