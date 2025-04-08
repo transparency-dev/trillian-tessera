@@ -179,7 +179,7 @@ By far the most common way to operate logs is in an append-only manner, and the 
 this mode.
 For lifecycle states other than Appender mode, take a look at [Lifecycles](#lifecycles) below.
 
-As an example of creating an `Appender` for the POSIX driver:
+Here's an example of creating an `Appender` for the POSIX driver:
 ```go file=README_test.go region=construct_example
 	driver, _ := posix.New(ctx, "/tmp/mylog")
 	signer := createSigner()
@@ -214,7 +214,7 @@ Take a look at the methods named `With*` on the `AppendOptions` struct in the ro
 
 Writing to the log follows this flow:
  1. Call `Add` with a new entry created with the data to be added as a leaf in the log.
-    - This method returns a _future_ of the form `func() (idx uint64, err error)`.
+    - This method returns a _future_ of the form `func() (Index, error)`.
  2. Call this future function, which will block until the data passed into `Add` has been sequenced
     - On success, an index number is _durably_ assigned and returned
     - On failure, the error is returned
