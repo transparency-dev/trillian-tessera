@@ -93,9 +93,9 @@ type Follower interface {
 	// if e.g. the binary is restarted.
 	Follow(context.Context, LogReader)
 
-	// Position reports the progress of the follower, and should return the largest index which has been
+	// EntriesProcessed reports the progress of the follower, returning the total number of log entries
 	// successfully seen/processed.
-	Position(context.Context) (uint64, error)
+	EntriesProcessed(context.Context) (uint64, error)
 }
 
 // Antispam describes the contract that an antispam implementation must meet in order to be used via the

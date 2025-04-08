@@ -96,9 +96,9 @@ func TestAntispamStorage(t *testing.T) {
 
 			for {
 				time.Sleep(time.Second)
-				pos, err := f.Position(ctx)
+				pos, err := f.EntriesProcessed(ctx)
 				if err != nil {
-					t.Logf("Position: %v", err)
+					t.Logf("EntriesProcessed: %v", err)
 					continue
 				}
 				sz, err := fl.LogReader.IntegratedSize(t.Context())

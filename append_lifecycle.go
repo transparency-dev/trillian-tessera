@@ -236,9 +236,9 @@ func followerStats(ctx context.Context, f Follower, size func(context.Context) (
 		case <-t.C:
 		}
 
-		idx, err := f.Position(ctx)
+		idx, err := f.EntriesProcessed(ctx)
 		if err != nil {
-			klog.Errorf("followerStats: follower %q Position(): %v", name, err)
+			klog.Errorf("followerStats: follower %q EntriesProcessed(): %v", name, err)
 			continue
 		}
 		s, err := size(ctx)
@@ -246,7 +246,7 @@ func followerStats(ctx context.Context, f Follower, size func(context.Context) (
 			klog.Errorf("followerStats: follower %q size(): %v", name, err)
 		}
 		attrs := metric.WithAttributes(followerNameKey.String(name))
-		followerPosition.Record(ctx, otel.Clamp64(idx), attrs)
+		followerEntriesProcessed.Record(ctx, otel.Clamp64(idx), attrs)
 		followerLag.Record(ctx, otel.Clamp64(s-idx), attrs)
 	}
 }

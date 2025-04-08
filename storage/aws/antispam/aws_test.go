@@ -63,7 +63,7 @@ func TestAntispam(t *testing.T) {
 	follower := antispam.Follower(testBundleHasher)
 	go follower.Follow(ctx, fl.LogReader)
 
-	pos, err := follower.Position(ctx)
+	pos, err := follower.EntriesProcessed(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,7 +81,7 @@ func TestAntispam(t *testing.T) {
 		t.Fatal(err)
 	}
 	for {
-		if idx, err := follower.Position(ctx); err != nil {
+		if idx, err := follower.EntriesProcessed(ctx); err != nil {
 			t.Fatal(err)
 		} else if idx == 2 {
 			break

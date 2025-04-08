@@ -161,9 +161,9 @@ func (mt *MigrationTarget) Migrate(ctx context.Context, numWorkers uint, sourceS
 			info = append(info, progress("copy", bn, bundlesToCopy))
 			info = append(info, progress("integration", s, sourceSize))
 			for _, f := range mt.followers {
-				p, err := f.Position(ctx)
+				p, err := f.EntriesProcessed(ctx)
 				if err != nil {
-					klog.Infof("%s Position(): %v", f.Name(), err)
+					klog.Infof("%s EntriesProcessed(): %v", f.Name(), err)
 					continue
 				}
 				info = append(info, progress(f.Name(), p, sourceSize))
@@ -218,9 +218,9 @@ func awaitFollower(ctx context.Context, f Follower, i uint64) func() error {
 			case <-time.After(time.Second):
 			}
 
-			pos, err := f.Position(ctx)
+			pos, err := f.EntriesProcessed(ctx)
 			if err != nil {
-				klog.Infof("%s Position(): %v", f.Name(), err)
+				klog.Infof("%s EntriesProcessed(): %v", f.Name(), err)
 				continue
 			}
 			if pos >= i {
