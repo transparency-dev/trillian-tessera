@@ -190,7 +190,7 @@ func NewAppender(ctx context.Context, d Driver, opts *AppendOptions) (*Appender,
 	for i := len(opts.addDecorators) - 1; i >= 0; i-- {
 		a.Add = opts.addDecorators[i](a.Add)
 	}
-	sd := newIntegrationStats()
+	sd := &integrationStats{}
 	a.Add = sd.statsDecorator(a.Add)
 	for _, f := range opts.followers {
 		go f.Follow(ctx, r)
@@ -207,34 +207,54 @@ func NewAppender(ctx context.Context, d Driver, opts *AppendOptions) (*Appender,
 	return a, t.Shutdown, r, nil
 }
 
+// idxAt represents an index first seen at a particular time.
 type idxAt struct {
 	idx uint64
 	at  time.Time
 }
 
+// integrationStats knows how to track and populate metrics related to integration performance.
+//
+// Currently, this tracks integration latency only.
+// The integration latency tracking works via a "sample & consume" mechanism, whereby an Add decorator
+// will record an assigned index along with the time it was assigned. An asynchronous process will
+// periodically compare the sample with the current integrated tree size, and if the sampled index is
+// found to be covered by the tree the elapsed period is recorded and the sample "consumed".
+//
+// Only one sample may be held at a time.
 type integrationStats struct {
-	sample atomic.Pointer[idxAt]
+	// indexSample points to a sampled indexAt, or nil if there has been no sample made _or_ the sample was consumed.
+	indexSample atomic.Pointer[idxAt]
 }
 
-func newIntegrationStats() *integrationStats {
-	return &integrationStats{}
+// sample creates a new sample with the provided index if no sample is already held.
+func (i *integrationStats) sample(idx uint64) {
+	i.indexSample.CompareAndSwap(nil, &idxAt{idx: idx, at: time.Now()})
 }
 
-func (i *integrationStats) saw(idx uint64) {
-	i.sample.CompareAndSwap(nil, &idxAt{idx: idx, at: time.Now()})
-}
-
+// latency will check whether the provided tree size is larger than the currently sampled index (if one exists),
+// and, if so, "consume" the sample and return the elapsed interval since the sample was taken.
+//
+// The returned bool is true if a sample exists and whose index is lower than the provided tree size, and
+// false otherwise.
 func (i *integrationStats) latency(size uint64) (time.Duration, bool) {
-	ia := i.sample.Load()
+	ia := i.indexSample.Load()
+	// If there _is_ a sample...
 	if ia != nil {
+		// and the sampled index is lower than the tree size
 		if ia.idx < size {
-			i.sample.Store(nil)
+			// then reset the sample store here so that we're able to accept a future sample.
+			i.indexSample.Store(nil)
 		}
 		return time.Since(ia.at), true
 	}
 	return 0, false
 }
 
+// updateStates periodically checks the current integrated tree size and attempts to
+// consume any held sample, updating the metric if possible.
+//
+// This is a long running function, exitingly only when the provided context is done.
 func (i *integrationStats) updateStats(ctx context.Context, r LogReader) {
 	if r == nil {
 		klog.Warning("updateStates: nil logreader provided, not updating stats")
@@ -281,7 +301,7 @@ func (i *integrationStats) statsDecorator(delegate AddFn) AddFn {
 			if idx.IsDup {
 				attr = append(attr, attribute.Bool("tessera.duplicate", true))
 			} else {
-				i.saw(idx.Index)
+				i.sample(idx.Index)
 			}
 			appenderAddsTotal.Add(ctx, 1, metric.WithAttributes(attr...))
 			d := time.Since(start)
