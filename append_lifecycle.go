@@ -48,10 +48,16 @@ const (
 )
 
 var (
-	appenderAddsTotal     metric.Int64Counter
-	appenderAddHistogram  metric.Int64Histogram
-	appenderSignedSize    metric.Int64Gauge
-	appenderWitnessedSize metric.Int64Gauge
+	appenderAddsTotal        metric.Int64Counter
+	appenderAddHistogram     metric.Int64Histogram
+	appenderHighestIndex     metric.Int64Gauge
+	appenderIntegratedSize   metric.Int64Gauge
+	appenderIntegrateLatency metric.Int64Histogram
+	appenderSignedSize       metric.Int64Gauge
+	appenderWitnessedSize    metric.Int64Gauge
+
+	// Custom histogram buckets as we're still interested in details in the 1-2s area.
+	histogramBuckets = []float64{0, 10, 50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1200, 1400, 1600, 1800, 2000, 2500, 3000, 4000, 5000, 6000, 8000, 10000}
 )
 
 func init() {
@@ -68,9 +74,34 @@ func init() {
 	appenderAddHistogram, err = meter.Int64Histogram(
 		"tessera.appender.add.duration",
 		metric.WithDescription("Duration of calls to the appender lifecycle Add function"),
-		metric.WithUnit("ms"))
+		metric.WithUnit("ms"),
+		metric.WithExplicitBucketBoundaries(histogramBuckets...))
 	if err != nil {
 		klog.Exitf("Failed to create appenderAddDuration metric: %v", err)
+	}
+
+	appenderHighestIndex, err = meter.Int64Gauge(
+		"tessera.appender.index",
+		metric.WithDescription("Highest index assigned by appender lifecycle Add function"))
+	if err != nil {
+		klog.Exitf("Failed to create appenderHighestIndex metric: %v", err)
+	}
+
+	appenderIntegratedSize, err = meter.Int64Gauge(
+		"tessera.appender.integrated.size",
+		metric.WithDescription("Size of the integrated (but not necessarily published) tree"),
+		metric.WithUnit("{entry}"))
+	if err != nil {
+		klog.Exitf("Failed to create appenderIntegratedSize metric: %v", err)
+	}
+
+	appenderIntegrateLatency, err = meter.Int64Histogram(
+		"tessera.appender.integrate.latency",
+		metric.WithDescription("Duration between an index being assigned by Add, and that index being integrated in the tree"),
+		metric.WithUnit("ms"),
+		metric.WithExplicitBucketBoundaries(histogramBuckets...))
+	if err != nil {
+		klog.Exitf("Failed to create appenderIntegrateLatency metric: %v", err)
 	}
 
 	appenderSignedSize, err = meter.Int64Gauge(
@@ -159,10 +190,12 @@ func NewAppender(ctx context.Context, d Driver, opts *AppendOptions) (*Appender,
 	for i := len(opts.addDecorators) - 1; i >= 0; i-- {
 		a.Add = opts.addDecorators[i](a.Add)
 	}
-	a.Add = statsDecorator(a.Add)
+	sd := &integrationStats{}
+	a.Add = sd.statsDecorator(a.Add)
 	for _, f := range opts.followers {
 		go f.Follow(ctx, r)
 	}
+	go sd.updateStats(ctx, r)
 	t := terminator{
 		delegate:       a.Add,
 		readCheckpoint: r.ReadCheckpoint,
@@ -174,9 +207,81 @@ func NewAppender(ctx context.Context, d Driver, opts *AppendOptions) (*Appender,
 	return a, t.Shutdown, r, nil
 }
 
+// idxAt represents an index first seen at a particular time.
+type idxAt struct {
+	idx uint64
+	at  time.Time
+}
+
+// integrationStats knows how to track and populate metrics related to integration performance.
+//
+// Currently, this tracks integration latency only.
+// The integration latency tracking works via a "sample & consume" mechanism, whereby an Add decorator
+// will record an assigned index along with the time it was assigned. An asynchronous process will
+// periodically compare the sample with the current integrated tree size, and if the sampled index is
+// found to be covered by the tree the elapsed period is recorded and the sample "consumed".
+//
+// Only one sample may be held at a time.
+type integrationStats struct {
+	// indexSample points to a sampled indexAt, or nil if there has been no sample made _or_ the sample was consumed.
+	indexSample atomic.Pointer[idxAt]
+}
+
+// sample creates a new sample with the provided index if no sample is already held.
+func (i *integrationStats) sample(idx uint64) {
+	i.indexSample.CompareAndSwap(nil, &idxAt{idx: idx, at: time.Now()})
+}
+
+// latency will check whether the provided tree size is larger than the currently sampled index (if one exists),
+// and, if so, "consume" the sample and return the elapsed interval since the sample was taken.
+//
+// The returned bool is true if a sample exists and whose index is lower than the provided tree size, and
+// false otherwise.
+func (i *integrationStats) latency(size uint64) (time.Duration, bool) {
+	ia := i.indexSample.Load()
+	// If there _is_ a sample...
+	if ia != nil {
+		// and the sampled index is lower than the tree size
+		if ia.idx < size {
+			// then reset the sample store here so that we're able to accept a future sample.
+			i.indexSample.Store(nil)
+		}
+		return time.Since(ia.at), true
+	}
+	return 0, false
+}
+
+// updateStates periodically checks the current integrated tree size and attempts to
+// consume any held sample, updating the metric if possible.
+//
+// This is a long running function, exitingly only when the provided context is done.
+func (i *integrationStats) updateStats(ctx context.Context, r LogReader) {
+	if r == nil {
+		klog.Warning("updateStates: nil logreader provided, not updating stats")
+		return
+	}
+	t := time.NewTicker(time.Second)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+		s, err := r.IntegratedSize(ctx)
+		if err != nil {
+			klog.Errorf("IntegratedSize: %v", err)
+			continue
+		}
+		appenderIntegratedSize.Record(ctx, otel.Clamp64(s))
+		if d, ok := i.latency(s); ok {
+			appenderIntegrateLatency.Record(ctx, d.Milliseconds())
+		}
+	}
+}
+
 // statsDecorator wraps a delegate AddFn with code to calculate/update
 // metric stats.
-func statsDecorator(delegate AddFn) AddFn {
+func (i *integrationStats) statsDecorator(delegate AddFn) AddFn {
 	return func(ctx context.Context, entry *Entry) IndexFuture {
 		start := time.Now()
 		f := delegate(ctx, entry)
@@ -195,6 +300,8 @@ func statsDecorator(delegate AddFn) AddFn {
 			}
 			if idx.IsDup {
 				attr = append(attr, attribute.Bool("tessera.duplicate", true))
+			} else {
+				i.sample(idx.Index)
 			}
 			appenderAddsTotal.Add(ctx, 1, metric.WithAttributes(attr...))
 			d := time.Since(start)
@@ -238,6 +345,7 @@ func (t *terminator) Add(ctx context.Context, entry *Entry) IndexFuture {
 		for old < i.Index && !t.largestIssued.CompareAndSwap(old, i.Index) {
 			old = t.largestIssued.Load()
 		}
+		appenderHighestIndex.Record(ctx, otel.Clamp64(t.largestIssued.Load()))
 
 		return i, err
 	}
