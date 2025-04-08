@@ -16,6 +16,7 @@ package tessera
 
 import (
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 const name = "github.com/transparency-dev/trillian-tessera"
@@ -23,4 +24,8 @@ const name = "github.com/transparency-dev/trillian-tessera"
 var (
 	tracer = otel.Tracer(name)
 	meter  = otel.Meter(name)
+)
+
+var (
+	followerNameKey = attribute.Key("tessera.follower.name")
 )
