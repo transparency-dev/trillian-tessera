@@ -3,7 +3,7 @@ terraform {
   backend "s3" {}
   required_providers {
     aws = {
-      source = "hashicorp/aws"
+      source  = "hashicorp/aws"
       version = "5.76.0"
     }
   }
@@ -31,7 +31,7 @@ module "storage" {
 ## ECS cluster #################################################################
 # This will be used to run the conformance and hammer binaries on Fargate.
 resource "aws_ecs_cluster" "ecs_cluster" {
-  name = "${local.name}"
+  name = local.name
 }
 
 resource "aws_ecs_cluster_capacity_providers" "ecs_capacity" {
@@ -44,7 +44,7 @@ resource "aws_ecs_cluster_capacity_providers" "ecs_capacity" {
 # This will be used for the containers to communicate between themselves, and
 # the S3 bucket.
 resource "aws_default_vpc" "default" {
-   tags = {
+  tags = {
     Name = "Default VPC"
   }
 }
@@ -119,9 +119,9 @@ data "aws_iam_policy_document" "allow_access_from_vpce" {
     ]
 
     condition {
-     test = "StringEquals"
-     variable = "aws:sourceVpce" 
-     values = [aws_vpc_endpoint.s3.id]
+      test     = "StringEquals"
+      variable = "aws:sourceVpce"
+      values   = [aws_vpc_endpoint.s3.id]
     }
   }
   depends_on = [aws_vpc_endpoint.s3]
@@ -133,25 +133,25 @@ resource "aws_ecs_task_definition" "conformance" {
   family                   = "conformance"
   requires_compatibilities = ["FARGATE"]
   # Required network_mode for tasks running on Fargate.
-  network_mode             = "awsvpc"
-  cpu                      = 1024
-  memory                   = 2048
-  execution_role_arn       = var.ecs_execution_role
+  network_mode       = "awsvpc"
+  cpu                = 1024
+  memory             = 2048
+  execution_role_arn = var.ecs_execution_role
   # We need a special role that has access to S3.
-  task_role_arn            = var.ecs_conformance_task_role
-  container_definitions    = jsonencode([{
-    "name": "${local.name}-conformance",
-    "image": "${var.ecr_registry}/${var.ecr_repository_conformance}",
-    "cpu": 0,
-    "portMappings": [{
-      "name": "conformance-${local.port}-tcp",
-      "containerPort": local.port,
-      "hostPort": local.port,
-      "protocol": "tcp",
-      "appProtocol": "http"
+  task_role_arn = var.ecs_conformance_task_role
+  container_definitions = jsonencode([{
+    "name" : "${local.name}-conformance",
+    "image" : "${var.ecr_registry}/${var.ecr_repository_conformance}",
+    "cpu" : 0,
+    "portMappings" : [{
+      "name" : "conformance-${local.port}-tcp",
+      "containerPort" : local.port,
+      "hostPort" : local.port,
+      "protocol" : "tcp",
+      "appProtocol" : "http"
     }],
-    "essential": true,
-    "command": [
+    "essential" : true,
+    "command" : [
       "--signer=${var.signer}",
       "--bucket=${module.storage.log_bucket.id}",
       "--db_user=root",
@@ -160,15 +160,38 @@ resource "aws_ecs_task_definition" "conformance" {
       "--db_host=${module.storage.log_rds_db.endpoint}",
       "-v=2"
     ],
-    "logConfiguration": {
-      "logDriver": "awslogs",
-      "options": {
-        "awslogs-group": "/ecs/${local.name}",
-        "mode": "non-blocking",
-        "awslogs-create-group": "true",
-        "max-buffer-size": "25m",
-        "awslogs-region": "us-east-1",
-        "awslogs-stream-prefix": "ecs"
+    "logConfiguration" : {
+      "logDriver" : "awslogs",
+      "options" : {
+        "awslogs-group" : "/ecs/${local.name}",
+        "mode" : "non-blocking",
+        "awslogs-create-group" : "true",
+        "max-buffer-size" : "25m",
+        "awslogs-region" : "us-east-1",
+        "awslogs-stream-prefix" : "ecs"
+      },
+    },
+  }, {
+    "name" : "${local.name}-adot",
+    "image" : "public.ecr.aws/aws-observability/aws-otel-collector:latest",
+    "cpu" : 0,
+    "portMappings" : [{
+      "name" : "adot-grpc-tcp",
+      "containerPort" : 4317
+      "hostPort" : 4317
+      "protocol" : "tcp",
+      "appProtocol" : "grpc"
+    }],
+    "essential" : true,
+    "logConfiguration" : {
+      "logDriver" : "awslogs",
+      "options" : {
+        "awslogs-group" : "/ecs/${local.name}",
+        "mode" : "non-blocking",
+        "awslogs-create-group" : "true",
+        "max-buffer-size" : "25m",
+        "awslogs-region" : "us-east-1",
+        "awslogs-stream-prefix" : "ecs"
       },
     },
   }])
@@ -182,7 +205,7 @@ resource "aws_ecs_task_definition" "conformance" {
 }
 
 resource "aws_ecs_service" "conformance_service" {
-  name                  = "${local.name}"
+  name                  = local.name
   task_definition       = aws_ecs_task_definition.conformance.arn
   cluster               = aws_ecs_cluster.ecs_cluster.arn
   launch_type           = "FARGATE"
@@ -199,7 +222,7 @@ resource "aws_ecs_service" "conformance_service" {
   service_registries {
     registry_arn = aws_service_discovery_service.conformance_discovery.arn
   }
-  
+
   depends_on = [
     aws_service_discovery_private_dns_namespace.internal,
     aws_service_discovery_service.conformance_discovery,
@@ -221,23 +244,23 @@ resource "aws_ecs_task_definition" "hammer" {
   family                   = "hammer"
   requires_compatibilities = ["FARGATE"]
   # Required network_mode for tasks running on Fargate
-  network_mode             = "awsvpc"
-  cpu                      = 1024
-  memory                   = 2048
-  execution_role_arn       = var.ecs_execution_role
+  network_mode       = "awsvpc"
+  cpu                = 1024
+  memory             = 2048
+  execution_role_arn = var.ecs_execution_role
   container_definitions = jsonencode([{
-    "name": "${local.name}-hammer",
-    "image": "${var.ecr_registry}/${var.ecr_repository_hammer}",
-    "cpu": 0,
-    "portMappings": [{
-      "name": "hammer-80-tcp",
-      "containerPort": 80,
-      "hostPort": 80,
-      "protocol": "tcp",
-      "appProtocol": "http"
+    "name" : "${local.name}-hammer",
+    "image" : "${var.ecr_registry}/${var.ecr_repository_hammer}",
+    "cpu" : 0,
+    "portMappings" : [{
+      "name" : "hammer-80-tcp",
+      "containerPort" : 80,
+      "hostPort" : 80,
+      "protocol" : "tcp",
+      "appProtocol" : "http"
     }],
-    "essential": true,
-    "command": [
+    "essential" : true,
+    "command" : [
       "--log_public_key=${var.verifier}",
       "--log_url=https://${module.storage.log_bucket.bucket_regional_domain_name}",
       "--write_log_url=http://${aws_service_discovery_service.conformance_discovery.name}.${aws_service_discovery_private_dns_namespace.internal.name}:${local.port}",
@@ -249,15 +272,15 @@ resource "aws_ecs_task_definition" "hammer" {
       "--leaf_min_size=1024",
       "--leaf_write_goal=50000"
     ],
-    "logConfiguration": {
-      "logDriver": "awslogs",
-      "options": {
-        "awslogs-group": "/ecs/${local.name}-hammer",
-        "mode": "non-blocking",
-        "awslogs-create-group": "true",
-        "max-buffer-size": "25m",
-        "awslogs-region": "us-east-1",
-        "awslogs-stream-prefix": "ecs"
+    "logConfiguration" : {
+      "logDriver" : "awslogs",
+      "options" : {
+        "awslogs-group" : "/ecs/${local.name}-hammer",
+        "mode" : "non-blocking",
+        "awslogs-create-group" : "true",
+        "max-buffer-size" : "25m",
+        "awslogs-region" : "us-east-1",
+        "awslogs-stream-prefix" : "ecs"
       },
     },
   }])
@@ -272,3 +295,5 @@ resource "aws_ecs_task_definition" "hammer" {
     aws_ecs_cluster.ecs_cluster,
   ]
 }
+
+
