@@ -53,7 +53,7 @@ func initOTel(ctx context.Context, traceFraction float64) func(context.Context) 
 	// Code below is mostly taken from the OTEL AWS documentation: https://aws-otel.github.io/docs/getting-started/go-sdk/manual-instr
 
 	// Create and start new OTLP metric exporter
-	metricExporter, err := otlpmetricgrpc.New(ctx, otlpmetricgrpc.WithInsecure(), otlpmetricgrpc.WithEndpoint("0.0.0.0:4317"))
+	metricExporter, err := otlpmetricgrpc.New(ctx, otlpmetricgrpc.WithInsecure(), otlpmetricgrpc.WithEndpoint("localhost:4317"))
 	if err != nil {
 		klog.Exitf("Failed to create new OTLP metric exporter: %v", err)
 	}
@@ -62,7 +62,7 @@ func initOTel(ctx context.Context, traceFraction float64) func(context.Context) 
 	otel.SetMeterProvider(mp)
 
 	// Create and start new OTLP trace exporter
-	traceExporter, err := otlptracegrpc.New(ctx, otlptracegrpc.WithInsecure(), otlptracegrpc.WithEndpoint("0.0.0.0:4317"))
+	traceExporter, err := otlptracegrpc.New(ctx, otlptracegrpc.WithInsecure(), otlptracegrpc.WithEndpoint("localhost:4317"))
 	if err != nil {
 		klog.Exitf("Failed to create new OTLP trace exporter: %v", err)
 	}

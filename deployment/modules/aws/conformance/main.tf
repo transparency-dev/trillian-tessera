@@ -172,28 +172,34 @@ resource "aws_ecs_task_definition" "conformance" {
       },
     },
   }, {
-    "name" : "${local.name}-adot",
-    "image" : "public.ecr.aws/aws-observability/aws-otel-collector:latest",
-    "cpu" : 0,
-    "portMappings" : [{
-      "name" : "adot-grpc-tcp",
-      "containerPort" : 4317
-      "hostPort" : 4317
-      "protocol" : "tcp",
-      "appProtocol" : "grpc"
+      "name": "aws-otel-collector-${local.name}",
+      "image": "amazon/aws-otel-collector",
+      "command":["--config=/etc/ecs/ecs-default-config.yaml"],
+      "essential": true,
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group" : "/ecs/${local.name}",
+          "awslogs-region": "us-east-1",
+          "awslogs-stream-prefix": "ecs",
+          "awslogs-create-group": "True"
+        }
+      },
+      "healthCheck": {
+        "command": [ "/healthcheck" ],
+        "interval": 5,
+        "timeout": 6,
+        "retries": 5,
+        "startPeriod": 1
+      },
+      "portMappings" : [{
+        "name" : "adot-grpc-tcp",
+        "containerPort" : 4317
+        "hostPort" : 4317
+        "protocol" : "tcp",
+        "appProtocol" : "grpc"
     }],
     "essential" : true,
-    "logConfiguration" : {
-      "logDriver" : "awslogs",
-      "options" : {
-        "awslogs-group" : "/ecs/${local.name}",
-        "mode" : "non-blocking",
-        "awslogs-create-group" : "true",
-        "max-buffer-size" : "25m",
-        "awslogs-region" : "us-east-1",
-        "awslogs-stream-prefix" : "ecs"
-      },
-    },
   }])
 
   runtime_platform {
