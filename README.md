@@ -103,10 +103,11 @@ Once this process has been completed, a new entry will:
 Publishing is a background process that creates a new Checkpoint for the latest tree.
 This background process runs periodically (configurable via [WithCheckpointInterval](https://pkg.go.dev/github.com/transparency-dev/trillian-tessera#AppendOptions.WithCheckpointInterval) and performs the following steps:
   1. Create a new Checkpoint and sign it with the signer provided by [WithCheckpointSigner](https://pkg.go.dev/github.com/transparency-dev/trillian-tessera#AppendOptions.WithCheckpointSigner)
-  2. Contact witnesses and collect enough countersignatures to satisfy and witness policy configured by [WithWitnesses](https://pkg.go.dev/github.com/transparency-dev/trillian-tessera#AppendOptions.WithWitnesses)
-  3. If the witness policy is satisfied, make this new checkpoint public available
+  2. Contact witnesses and collect enough countersignatures to satisfy any witness policy configured by [WithWitnesses](https://pkg.go.dev/github.com/transparency-dev/trillian-tessera#AppendOptions.WithWitnesses)
+  3. If the witness policy is satisfied, make this new Checkpoint public available
 
-An entry is considered published when it is committed to by the latest Checkpoint. Due to the nature of append-only logs, all Checkpoints issued after this point will also commit to inclusion of this entry.
+An entry is considered published once it is committed to by a published Checkpoint (i.e. a published Checkpoint's size is larger than the entry's assigned index).
+Due to the nature of append-only logs, all Checkpoints issued after this point will also commit to inclusion of this entry.
 
 ## Usage
 
@@ -346,8 +347,8 @@ See more details in the [Lifecycle Design: Migration](https://github.com/transpa
 
 ### Freezing a Log
 
-Freezing a log prevents new writes to the log, but still allow read access.
-We recommend that the operators allows any pending [sequenced](#sequencing) entries to be [integrated](#integration), and any integrated entries to be [published](#publishing) via a checkpoint.
+Freezing a log prevents new writes to the log, but still allows read access.
+We recommend that operators allow all pending [sequenced](#sequencing) entries to be [integrated](#integration), and all integrated entries to be [published](#publishing) via a Checkpoint before proceeding.
 Once all pending entries are published, the log is now _quiescent_, as described in [Lifecycle Design: Quiescent](https://github.com/transparency-dev/trillian-tessera/blob/main/docs/design/lifecycle.md#quiescent).
 
 To ensure all pending entries are published, keep an instance object for the current lifecycle state in a running process, but disable writes to this at the personality level.
@@ -356,7 +357,7 @@ The instantiated `Appender` allows its background processes to keep running, ens
 
 Determining when this is complete can be done by inspecting the databases, though #588 tracks making this clear via metrics.
 
-A quiescent log using GCP, AWS, or POSIX that is now permanently read-only can be made cheaper to operate. The implementations no longer need any running binaries running Tessera code. Any databases created for this log (i.e. the sequencing tables, or antispam) can be deleted. The read-path can be served directly from the storage buckets (for GCP, AWS) or via a file server (for POSIX).
+A quiescent log using GCP, AWS, or POSIX that is now permanently read-only can be made cheaper to operate. The implementations no longer need any running binaries running Tessera code. Any databases created for this log (i.e. the sequencing tables, or antispam) can be deleted. The read-path can be served directly from the storage buckets (for GCP, AWS) or via a standard HTTP file server (for POSIX).
 
 A log using MySQL must continue to run a personality in order to serve the read path, and thus cannot benefit from the same degree of cost savings when frozen.
 
@@ -371,7 +372,7 @@ Deleting a MySQL log can be done by turning down the personality binaries, and t
 ### Sharding a Log
 
 A common way to deploy logs is to run multiple logs in parallel, each of which accepts a distinct subset of entries.
-For example, CT shards logs temporally, based on the expiry data of the certificate.
+For example, CT shards logs temporally, based on the expiry date of the certificate.
 
 Tessera currently has no special support for sharding logs.
 The recommended way to instantiate a new shard of a log is simply to create a new log as described above.
