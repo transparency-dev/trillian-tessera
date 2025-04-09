@@ -1,4 +1,4 @@
-// Copyright 2024 The Tessera authors. All Rights Reserved.
+// Copyright 2025 The Tessera authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -52,6 +52,7 @@ var (
 	listen            = flag.String("listen", ":2024", "Address:port to listen on")
 	signer            = flag.String("signer", "", "Note signer to use to sign checkpoints")
 	publishInterval   = flag.Duration("publish_interval", 3*time.Second, "How frequently to publish updated checkpoints")
+	traceFraction     = flag.Float64("trace_fraction", 0, "Fraction of open-telemetry span traces to sample")
 	additionalSigners = []string{}
 )
 
@@ -67,6 +68,8 @@ func main() {
 	flag.Parse()
 	ctx := context.Background()
 
+	shutdownOTel := initOTel(ctx, *traceFraction)
+	defer shutdownOTel(ctx)
 	s, a := signerFromFlags()
 
 	// Create our Tessera storage backend:
