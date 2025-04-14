@@ -71,7 +71,7 @@ func main() {
 	// Persistent antispam is currently experimental, so there's no terraform or documentation yet!
 	if *persistentAntispam {
 		asOpts := gcp_as.AntispamOpts{
-			MaxBatchSize:      64,
+			MaxBatchSize:      1024,
 			PushbackThreshold: 1024,
 		}
 		antispam, err = gcp_as.NewAntispam(ctx, fmt.Sprintf("%s-antispam", *spanner), asOpts)
@@ -83,9 +83,9 @@ func main() {
 	appender, shutdown, _, err := tessera.NewAppender(ctx, driver, tessera.NewAppendOptions().
 		WithCheckpointSigner(s, a...).
 		WithCheckpointInterval(10*time.Second).
-		WithBatching(1024, time.Second).
+		WithBatching(512, 300*time.Millisecond).
 		WithPushback(10*4096).
-		WithAntispam(256, antispam))
+		WithAntispam(256<<10, antispam))
 	if err != nil {
 		klog.Exit(err)
 	}
