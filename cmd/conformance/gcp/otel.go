@@ -18,9 +18,12 @@ import (
 	"context"
 	"errors"
 
+	"go.opentelemetry.io/contrib/detectors/gcp"
 	"go.opentelemetry.io/otel"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	semconv "go.opentelemetry.io/otel/semconv/v1.4.0"
 
 	mexporter "github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric"
 	texporter "github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/trace"
@@ -46,6 +49,20 @@ func initOTel(ctx context.Context, traceFraction float64) func(context.Context) 
 		}
 	}
 
+	resources, err := resource.New(ctx,
+		resource.WithTelemetrySDK(),
+		resource.WithFromEnv(), // unpacks OTEL_RESOURCE_ATTRIBUTES
+		// Add your own custom attributes to identify your application
+		resource.WithAttributes(
+			semconv.ServiceNameKey.String("conformance"),
+			semconv.ServiceNamespaceKey.String("tessera"),
+		),
+		resource.WithDetectors(gcp.NewDetector()),
+	)
+	if err != nil {
+		klog.Exitf("Failed to detect resources: %v", err)
+	}
+
 	me, err := mexporter.New()
 	if err != nil {
 		klog.Exitf("Failed to create metric exporter: %v", err)
@@ -54,6 +71,7 @@ func initOTel(ctx context.Context, traceFraction float64) func(context.Context) 
 	// initialize a MeterProvider that periodically exports to the GCP exporter.
 	mp := sdkmetric.NewMeterProvider(
 		sdkmetric.WithReader(sdkmetric.NewPeriodicReader(me)),
+		sdkmetric.WithResource(resources),
 	)
 	shutdownFuncs = append(shutdownFuncs, mp.Shutdown)
 	otel.SetMeterProvider(mp)
@@ -67,6 +85,7 @@ func initOTel(ctx context.Context, traceFraction float64) func(context.Context) 
 	tp := sdktrace.NewTracerProvider(
 		sdktrace.WithSampler(sdktrace.TraceIDRatioBased(traceFraction)),
 		sdktrace.WithBatcher(te),
+		sdktrace.WithResource(resources),
 	)
 	shutdownFuncs = append(shutdownFuncs, mp.Shutdown)
 	otel.SetTracerProvider(tp)
