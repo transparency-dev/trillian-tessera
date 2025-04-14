@@ -23,6 +23,7 @@ require (
 	github.com/transparency-dev/merkle v0.0.2
 	go.opentelemetry.io/contrib/detectors/aws/ec2 v1.35.0
 	go.opentelemetry.io/contrib/detectors/aws/ecs v1.35.0
+	go.opentelemetry.io/contrib/detectors/gcp v1.35.0
 	go.opentelemetry.io/contrib/propagators/aws v1.35.0
 	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc v1.35.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.35.0
@@ -61,7 +62,6 @@ require (
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.26.1 // indirect
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.1.0 // indirect
-	go.opentelemetry.io/contrib/detectors/gcp v1.35.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.59.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.35.0 // indirect
 	go.opentelemetry.io/otel/exporters/stdout/stdoutmetric v1.35.0 // indirect
