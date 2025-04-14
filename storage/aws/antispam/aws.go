@@ -339,6 +339,12 @@ func (f *follower) Follow(ctx context.Context, lr tessera.LogReader) {
 					return err
 				}
 
+				defer func() {
+					if tx != nil {
+						_ = tx.Rollback()
+					}
+				}()
+
 				row := tx.QueryRowContext(ctx, "SELECT nextIdx FROM AntispamFollowCoord WHERE id = 0 FOR UPDATE")
 
 				var followFrom uint64
@@ -404,15 +410,20 @@ func (f *follower) Follow(ctx context.Context, lr tessera.LogReader) {
 				if err != nil {
 					return fmt.Errorf("error updating AntispamFollowCoord: %v", err)
 				}
-				return tx.Commit()
+				if err := tx.Commit(); err != nil {
+					return err
+				}
+				tx = nil
+				return nil
 			}()
 			if err != nil {
 				if err != errOutOfSync {
 					klog.Errorf("Failed to commit antispam population tx: %v", err)
 				}
-				if stop != nil {
+				if entryReader != nil {
 					stop()
 					entryReader = nil
+					stop = nil
 				}
 				continue
 			}

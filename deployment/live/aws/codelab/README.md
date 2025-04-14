@@ -143,8 +143,8 @@ endpoint.
       --db_password=password \
       --db_name=tessera \
       --db_host=$LOG_RDS_DB \
-      --signer=$(cat /home/ec2-user/tessera-keys/$LOG_NAME.sec)
-      -v=3
+      --signer=$(cat /home/ec2-user/tessera-keys/$LOG_NAME.sec) \
+      --v=3
     ```
 
  1. 🎉 **Congratulations** 🎉
@@ -169,3 +169,29 @@ endpoint.
 > the S3 bucket or DynamoDB instance Terraform created to store its state for
 > instance). If `terragrunt destroy` shows no output, run
 > `terragrunt destroy --terragrunt-log-level debug --terragrunt-debug`.
+
+## Trying with Antispam
+
+The instructions above deploy the conformance binary without antispam enabled.
+This means that it will take any number of duplicate entries.
+
+For logs that are publicly writable, it may be beneficial to deploy Antispam, which is a weak form of deduplication.
+The instructions to do this for the codelab are largely the same, except:
+
+ 1. When applying the terraform, instruct it to create an additional DB for the antispam tables:
+    ```
+    terragrunt apply --working-dir=deployment/live/aws/codelab/ -var="create_antispam=true"
+    ```
+ 1. When running the conformance binary, pass in two additional flags to configure antispam:
+    ```
+    go run ./cmd/conformance/aws \
+      --bucket=$LOG_BUCKET \
+      --db_user=root \
+      --db_password=password \
+      --db_name=tessera \
+      --db_host=$LOG_RDS_DB \
+      --signer=$(cat /home/ec2-user/tessera-keys/$LOG_NAME.sec) \
+      --v=3 \
+      --antispam=true \
+      --antispam_db_name=antispam_db
+    ```
