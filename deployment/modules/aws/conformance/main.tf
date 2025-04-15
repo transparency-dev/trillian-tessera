@@ -25,7 +25,7 @@ module "storage" {
   base_name       = var.base_name
   region          = var.region
   ephemeral       = true
-  create_antispam = var.antispam
+  create_antispam = var.create_antispam
 }
 
 # Resources ####################################################################
@@ -160,7 +160,7 @@ resource "aws_ecs_task_definition" "conformance" {
       "--db_name=tessera",
       "--db_host=${module.storage.log_rds_db.endpoint}",
       "--antispam=${var.antispam}",
-      "--antispam_db_name=antispam_db",
+      "--antispam_db_name=${var.antispam_db_name}",
       "-v=2"
     ],
     "logConfiguration" : {

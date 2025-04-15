@@ -16,7 +16,6 @@ locals {
   # Roles are defined externally
   ecs_execution_role        = "arn:aws:iam::864981736166:role/ecsTaskExecutionRole"
   ecs_conformance_task_role = "arn:aws:iam::864981736166:role/ConformanceECSTaskRolePolicy"
-  antispam                  = true
   ephemeral                 = true
 }
 
