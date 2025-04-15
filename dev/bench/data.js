@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1744712545554,
+  "lastUpdate": 1744713174173,
   "repoUrl": "https://github.com/transparency-dev/trillian-tessera",
   "entries": {
     "Benchmark": [
@@ -20112,6 +20112,150 @@ window.BENCHMARK_DATA = {
             "value": 3085,
             "unit": "allocs/op",
             "extra": "3963 times\n4 procs"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "49699333+dependabot[bot]@users.noreply.github.com",
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "8463536cff45ad097fd2310b75e60a12df88ec57",
+          "message": "Bump github/codeql-action in the all-gha-deps group (#596)\n\nBumps the all-gha-deps group with 1 update: [github/codeql-action](https://github.com/github/codeql-action).\n\n\nUpdates `github/codeql-action` from 3.28.14 to 3.28.15\n- [Release notes](https://github.com/github/codeql-action/releases)\n- [Changelog](https://github.com/github/codeql-action/blob/main/CHANGELOG.md)\n- [Commits](https://github.com/github/codeql-action/compare/fc7e4a0fa01c3cca5fd6a1fddec5c0740c977aa2...45775bd8235c68ba998cffa5171334d58593da47)\n\n---\nupdated-dependencies:\n- dependency-name: github/codeql-action\n  dependency-version: 3.28.15\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: all-gha-deps\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
+          "timestamp": "2025-04-15T11:32:08+01:00",
+          "tree_id": "c57500c1b99c8fccf969bec759bdcf63d1e1ef80",
+          "url": "https://github.com/transparency-dev/trillian-tessera/commit/8463536cff45ad097fd2310b75e60a12df88ec57"
+        },
+        "date": 1744713173043,
+        "tool": "go",
+        "benches": [
+          {
+            "name": "BenchmarkDedupe",
+            "value": 3083274,
+            "unit": "ns/op\t  739210 B/op\t   21729 allocs/op",
+            "extra": "368 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDedupe - ns/op",
+            "value": 3083274,
+            "unit": "ns/op",
+            "extra": "368 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDedupe - B/op",
+            "value": 739210,
+            "unit": "B/op",
+            "extra": "368 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDedupe - allocs/op",
+            "value": 21729,
+            "unit": "allocs/op",
+            "extra": "368 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWitnessGroupSatisfaction",
+            "value": 227492,
+            "unit": "ns/op\t    3152 B/op\t      36 allocs/op",
+            "extra": "5250 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWitnessGroupSatisfaction - ns/op",
+            "value": 227492,
+            "unit": "ns/op",
+            "extra": "5250 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWitnessGroupSatisfaction - B/op",
+            "value": 3152,
+            "unit": "B/op",
+            "extra": "5250 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWitnessGroupSatisfaction - allocs/op",
+            "value": 36,
+            "unit": "allocs/op",
+            "extra": "5250 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLeafBundle_UnmarshalText",
+            "value": 7236,
+            "unit": "ns/op\t    6529 B/op\t       1 allocs/op",
+            "extra": "169554 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLeafBundle_UnmarshalText - ns/op",
+            "value": 7236,
+            "unit": "ns/op",
+            "extra": "169554 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLeafBundle_UnmarshalText - B/op",
+            "value": 6529,
+            "unit": "B/op",
+            "extra": "169554 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLeafBundle_UnmarshalText - allocs/op",
+            "value": 1,
+            "unit": "allocs/op",
+            "extra": "169554 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkCheckpointUnsafe",
+            "value": 226.5,
+            "unit": "ns/op\t     224 B/op\t       5 allocs/op",
+            "extra": "5514166 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkCheckpointUnsafe - ns/op",
+            "value": 226.5,
+            "unit": "ns/op",
+            "extra": "5514166 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkCheckpointUnsafe - B/op",
+            "value": 224,
+            "unit": "B/op",
+            "extra": "5514166 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkCheckpointUnsafe - allocs/op",
+            "value": 5,
+            "unit": "allocs/op",
+            "extra": "5514166 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkIntegrate",
+            "value": 340910,
+            "unit": "ns/op\t  279385 B/op\t    3084 allocs/op",
+            "extra": "3992 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkIntegrate - ns/op",
+            "value": 340910,
+            "unit": "ns/op",
+            "extra": "3992 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkIntegrate - B/op",
+            "value": 279385,
+            "unit": "B/op",
+            "extra": "3992 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkIntegrate - allocs/op",
+            "value": 3084,
+            "unit": "allocs/op",
+            "extra": "3992 times\n4 procs"
           }
         ]
       }
