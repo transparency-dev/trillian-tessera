@@ -91,7 +91,7 @@ func main() {
 		}
 		antispam, err = aws_as.NewAntispam(ctx, antispamMysqlConfig().FormatDSN(), asOpts)
 		if err != nil {
-			klog.Exitf("Failed to create new GCP antispam storage: %v", err)
+			klog.Exitf("Failed to create new AWS antispam storage: %v", err)
 		}
 	}
 	appender, shutdown, _, err := tessera.NewAppender(ctx, driver, tessera.NewAppendOptions().

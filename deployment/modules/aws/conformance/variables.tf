@@ -15,7 +15,7 @@ variable "region" {
 
 variable "ephemeral" {
   description = "Set to true if this is a throwaway/temporary log instance. Will set attributes on created resources to allow them to be disabled/deleted more easily."
-  type = bool
+  type        = bool
 }
 
 variable "ecr_registry" {
@@ -51,4 +51,10 @@ variable "ecs_execution_role" {
 variable "ecs_conformance_task_role" {
   description = "Role assumed by conformance containers when they run."
   type        = string
+}
+
+variable "antispam" {
+  description = "Set to true to enable antispam for this conformance log."
+  type        = bool
+  default     = false
 }
