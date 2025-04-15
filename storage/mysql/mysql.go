@@ -331,6 +331,15 @@ func (s *Storage) IntegratedSize(ctx context.Context) (uint64, error) {
 	return ts.size, nil
 }
 
+// PendingCount returns the number of sequenced but not-yet-integrated entries.
+//
+// Currently, this is always zero because integration is synchronous with queue flush.
+//
+// This is part of the tessera LogReader contract.
+func (s *Storage) PendingCount(ctx context.Context) (uint64, error) {
+	return 0, nil
+}
+
 // StreamEntries() returns functions `next` and `cancel` which act like a pull iterator for
 // consecutive entry bundles, starting with the entry bundle which contains the requested entry
 // index.

@@ -200,6 +200,10 @@ func (l *logResourceStorage) IntegratedSize(_ context.Context) (uint64, error) {
 	return size, err
 }
 
+func (l *logResourceStorage) PendingCount(_ context.Context) (uint64, error) {
+	return l.s.pendingCount()
+}
+
 func (l *logResourceStorage) StreamEntries(ctx context.Context, fromEntry uint64) (next func() (ri layout.RangeInfo, bundle []byte, err error), cancel func()) {
 	// TODO(al): Consider making this configurable.
 	// The performance of different levels of concurrency here will depend very much on the nature of the underlying storage infra,
@@ -297,6 +301,7 @@ func (a *appender) sequenceBatch(ctx context.Context, entries []*tessera.Entry) 
 	}
 
 	// For simplicity, in-line the integration of these new entries into the Merkle structure too.
+	// If this is broken out into an async process, we'll need to update the implementation of pendingCount below, too.
 	newSize, newRoot, err := doIntegrate(ctx, seq, leafHashes, a.logStorage)
 	if err != nil {
 		klog.Errorf("Integrate failed: %v", err)
@@ -540,6 +545,13 @@ func (s *Storage) readTreeState() (uint64, []byte, error) {
 		return 0, nil, fmt.Errorf("error in Unmarshal: %v", err)
 	}
 	return ts.Size, ts.Root, nil
+}
+
+// pendingCount returns the number of sequenced but not-yet-integrated entries.
+//
+// Currently, integration is done inline with queue flushes, so this is always zero.
+func (s *Storage) pendingCount() (uint64, error) {
+	return 0, nil
 }
 
 // publishCheckpoint checks whether the currently published checkpoint (if any) is more than
