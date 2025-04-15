@@ -53,7 +53,7 @@ var (
 	appenderHighestIndex     metric.Int64Gauge
 	appenderIntegratedSize   metric.Int64Gauge
 	appenderIntegrateLatency metric.Int64Histogram
-	appenderPendingCount     metric.Int64Gauge
+	appenderNextIndex        metric.Int64Gauge
 	appenderSignedSize       metric.Int64Gauge
 	appenderWitnessedSize    metric.Int64Gauge
 
@@ -108,12 +108,11 @@ func init() {
 		klog.Exitf("Failed to create appenderIntegrateLatency metric: %v", err)
 	}
 
-	appenderPendingCount, err = meter.Int64Gauge(
-		"tessera.appender.pending.count",
-		metric.WithDescription("Number of sequenced but not yet integrated entries"),
-		metric.WithUnit("{entry}"))
+	appenderNextIndex, err = meter.Int64Gauge(
+		"tessera.appender.next_index",
+		metric.WithDescription("The next available index to be assigned to entries"))
 	if err != nil {
-		klog.Exitf("Failed to create appenderPendingCount metric: %v", err)
+		klog.Exitf("Failed to create appenderNextIndex metric: %v", err)
 	}
 
 	appenderSignedSize, err = meter.Int64Gauge(
@@ -329,11 +328,11 @@ func (i *integrationStats) updateStats(ctx context.Context, r LogReader) {
 		if d, ok := i.latency(s); ok {
 			appenderIntegrateLatency.Record(ctx, d.Milliseconds())
 		}
-		p, err := r.PendingCount(ctx)
+		i, err := r.NextIndex(ctx)
 		if err != nil {
-			klog.Errorf("PendingCount: %v", err)
+			klog.Errorf("NextIndex: %v", err)
 		}
-		appenderPendingCount.Record(ctx, otel.Clamp64(p))
+		appenderNextIndex.Record(ctx, otel.Clamp64(i))
 	}
 }
 

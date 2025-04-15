@@ -64,11 +64,12 @@ type LogReader interface {
 	// log should be used. If in doubt, use ReadCheckpoint instead.
 	IntegratedSize(ctx context.Context) (uint64, error)
 
-	// PendingCount returns the number of sequenced but not-yet-integrated entries.
+	// NextIndex returns the first as-yet unassigned index.
 	//
-	// This is primarily intended for use in metrics, and for shifts in lifecycle mode where
-	// it's important to know when the log is fully drained.
-	PendingCount(ctx context.Context) (uint64, error)
+	// In a quiescent log, this will be the same as the checkpoint size. In a log with entries actively
+	// being added, this number will be higher since it will take sequenced but not-yet-integrated
+	// entries into account.
+	NextIndex(ctx context.Context) (uint64, error)
 
 	// StreamEntries() returns functions `next` and `stop` which act like a pull iterator for
 	// consecutive entry bundles, starting with the entry bundle which contains the requested entry

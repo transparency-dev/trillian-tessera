@@ -109,8 +109,8 @@ type sequencer interface {
 	// currentTree returns the sequencer's view of the current tree state.
 	currentTree(ctx context.Context) (uint64, []byte, error)
 
-	// pendingCount returns the number of sequenced but not-yet-integrated entries.
-	pendingCount(ctx context.Context) (uint64, error)
+	// nextIndex returns the next available index in the log.
+	nextIndex(ctx context.Context) (uint64, error)
 }
 
 // consumeFunc is the signature of a function which can consume entries from the sequencer.
@@ -188,8 +188,8 @@ func (s *Storage) Appender(ctx context.Context, opts *tessera.AppendOptions) (*t
 			s, _, err := seq.currentTree(ctx)
 			return s, err
 		},
-		pendingCount: func(context.Context) (uint64, error) {
-			return seq.pendingCount(ctx)
+		nextIndex: func(context.Context) (uint64, error) {
+			return seq.nextIndex(ctx)
 		},
 	}
 	r := &Appender{
@@ -608,7 +608,7 @@ type logResourceStore struct {
 	objStore       objStore
 	entriesPath    func(uint64, uint8) string
 	integratedSize func(context.Context) (uint64, error)
-	pendingCount   func(context.Context) (uint64, error)
+	nextIndex      func(context.Context) (uint64, error)
 }
 
 func (lr *logResourceStore) ReadCheckpoint(ctx context.Context) ([]byte, error) {
@@ -634,8 +634,8 @@ func (lr *logResourceStore) IntegratedSize(ctx context.Context) (uint64, error) 
 	return lr.integratedSize(ctx)
 }
 
-func (lr *logResourceStore) PendingCount(ctx context.Context) (uint64, error) {
-	return lr.pendingCount(ctx)
+func (lr *logResourceStore) NextIndex(ctx context.Context) (uint64, error) {
+	return lr.nextIndex(ctx)
 }
 
 func (lr *logResourceStore) StreamEntries(ctx context.Context, fromEntry uint64) (next func() (ri layout.RangeInfo, bundle []byte, err error), cancel func()) {
@@ -1097,15 +1097,15 @@ func (s *mySQLSequencer) currentTree(ctx context.Context) (uint64, []byte, error
 	return fromSeq, rootHash, nil
 }
 
-// pendingCount returns the number of sequenced but not-yet-integrated entries.
-func (s *mySQLSequencer) pendingCount(ctx context.Context) (uint64, error) {
-	row := s.dbPool.QueryRowContext(ctx, "SELECT seq, next FROM IntCoord INNER JOIN SeqCoord ON IntCoord.ID = SeqCoord.ID WHERE ID = ?", 0)
-	var treeSize, nextSeq uint64
-	if err := row.Scan(&treeSize, &nextSeq); err != nil {
+// nextIndex returns the next available index in the log.
+func (s *mySQLSequencer) nextIndex(ctx context.Context) (uint64, error) {
+	row := s.dbPool.QueryRowContext(ctx, "SELECT next FROM SeqCoord WHERE ID = ?", 0)
+	var nextSeq uint64
+	if err := row.Scan(&nextSeq); err != nil {
 		return 0, fmt.Errorf("failed to read DB: %v", err)
 	}
 
-	return nextSeq - treeSize, nil
+	return nextSeq, nil
 }
 
 func placeholder(n int) string {

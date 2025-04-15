@@ -331,13 +331,12 @@ func (s *Storage) IntegratedSize(ctx context.Context) (uint64, error) {
 	return ts.size, nil
 }
 
-// PendingCount returns the number of sequenced but not-yet-integrated entries.
+// NextIndex returns the next available leaf index.
 //
-// Currently, this is always zero because integration is synchronous with queue flush.
-//
+// Currently, this is the same as the integrated size since new leaves are integrated synchronously.
 // This is part of the tessera LogReader contract.
-func (s *Storage) PendingCount(ctx context.Context) (uint64, error) {
-	return 0, nil
+func (s *Storage) NextIndex(ctx context.Context) (uint64, error) {
+	return s.IntegratedSize(ctx)
 }
 
 // StreamEntries() returns functions `next` and `cancel` which act like a pull iterator for
