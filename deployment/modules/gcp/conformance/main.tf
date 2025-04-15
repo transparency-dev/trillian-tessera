@@ -36,7 +36,7 @@ module "gcs" {
   project_id         = var.project_id
   bucket_readers     = local.readers
   log_writer_members = ["serviceAccount:${local.cloudrun_service_account}"]
-  create_antispam    = var.enable_antispam
+  create_antispam_db = var.enable_antispam_db
   ephemeral          = true
 }
 

@@ -13,7 +13,7 @@ variable "region" {
   type        = string
 }
 
-variable "create_antispam" {
+variable "create_antispam_db" {
   description = "Set to true to create another database to be used by the antispam implementation."
   type        = bool
   default     = false

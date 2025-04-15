@@ -64,5 +64,5 @@ provider "mysql" {
 # Create a second database for antispam.
 resource "mysql_database" "antispam_db" {
   name  = "antispam_db"
-  count = var.create_antispam ? 1 : 0
+  count = var.create_antispam_db ? 1 : 0
 }

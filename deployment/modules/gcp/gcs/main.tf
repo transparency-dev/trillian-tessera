@@ -62,13 +62,13 @@ resource "google_spanner_instance" "log_spanner" {
 
 resource "google_spanner_database" "log_db" {
   instance = google_spanner_instance.log_spanner.name
-  name     = "${var.base_name}"
+  name     = var.base_name
 
   deletion_protection = !var.ephemeral
 }
 
 resource "google_spanner_database" "log_antispam_db" {
-  count    = var.create_antispam ? 1 : 0
+  count    = var.create_antispam_db ? 1 : 0
   instance = google_spanner_instance.log_spanner.name
   name     = "${var.base_name}-antispam"
 
@@ -84,7 +84,7 @@ resource "google_spanner_database_iam_binding" "database" {
 }
 
 resource "google_spanner_database_iam_binding" "database_antispam" {
-  count    = var.create_antispam ? 1 : 0
+  count    = var.create_antispam_db ? 1 : 0
   instance = google_spanner_instance.log_spanner.name
   database = google_spanner_database.log_antispam_db[count.index].name
   role     = "roles/spanner.databaseAdmin"
