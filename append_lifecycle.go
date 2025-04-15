@@ -53,6 +53,7 @@ var (
 	appenderHighestIndex     metric.Int64Gauge
 	appenderIntegratedSize   metric.Int64Gauge
 	appenderIntegrateLatency metric.Int64Histogram
+	appenderNextIndex        metric.Int64Gauge
 	appenderSignedSize       metric.Int64Gauge
 	appenderWitnessedSize    metric.Int64Gauge
 
@@ -105,6 +106,13 @@ func init() {
 		metric.WithExplicitBucketBoundaries(histogramBuckets...))
 	if err != nil {
 		klog.Exitf("Failed to create appenderIntegrateLatency metric: %v", err)
+	}
+
+	appenderNextIndex, err = meter.Int64Gauge(
+		"tessera.appender.next_index",
+		metric.WithDescription("The next available index to be assigned to entries"))
+	if err != nil {
+		klog.Exitf("Failed to create appenderNextIndex metric: %v", err)
 	}
 
 	appenderSignedSize, err = meter.Int64Gauge(
@@ -320,6 +328,11 @@ func (i *integrationStats) updateStats(ctx context.Context, r LogReader) {
 		if d, ok := i.latency(s); ok {
 			appenderIntegrateLatency.Record(ctx, d.Milliseconds())
 		}
+		i, err := r.NextIndex(ctx)
+		if err != nil {
+			klog.Errorf("NextIndex: %v", err)
+		}
+		appenderNextIndex.Record(ctx, otel.Clamp64(i))
 	}
 }
 

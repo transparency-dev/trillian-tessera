@@ -104,6 +104,8 @@ type sequencer interface {
 	consumeEntries(ctx context.Context, limit uint64, f consumeFunc, forceUpdate bool) (bool, error)
 	// currentTree returns the tree state of the currently integrated tree according to the IntCoord table.
 	currentTree(ctx context.Context) (uint64, []byte, error)
+	// nextIndex returns the next available index in the log.
+	nextIndex(ctx context.Context) (uint64, error)
 }
 
 // consumeFunc is the signature of a function which can consume entries from the sequencer and integrate
@@ -129,6 +131,7 @@ func New(ctx context.Context, cfg Config) (tessera.Driver, error) {
 type LogReader struct {
 	lrs            logResourceStore
 	integratedSize func(context.Context) (uint64, error)
+	nextIndex      func(context.Context) (uint64, error)
 }
 
 func (lr *LogReader) ReadCheckpoint(ctx context.Context) ([]byte, error) {
@@ -163,6 +166,13 @@ func (lr *LogReader) IntegratedSize(ctx context.Context) (uint64, error) {
 	defer span.End()
 
 	return lr.integratedSize(ctx)
+}
+
+func (lr *LogReader) NextIndex(ctx context.Context) (uint64, error) {
+	ctx, span := tracer.Start(ctx, "tessera.storage.gcp.NextIndex")
+	defer span.End()
+
+	return lr.nextIndex(ctx)
 }
 
 func (lr *LogReader) StreamEntries(ctx context.Context, fromEntry uint64) (next func() (ri layout.RangeInfo, bundle []byte, err error), cancel func()) {
@@ -211,6 +221,9 @@ func (s *Storage) Appender(ctx context.Context, opts *tessera.AppendOptions) (*t
 		integratedSize: func(context.Context) (uint64, error) {
 			s, _, err := a.sequencer.currentTree(ctx)
 			return s, err
+		},
+		nextIndex: func(context.Context) (uint64, error) {
+			return a.sequencer.nextIndex(ctx)
 		},
 	}
 	a.newCP = opts.CheckpointPublisher(reader, http.DefaultClient)
@@ -880,6 +893,23 @@ func (s *spannerCoordinator) currentTree(ctx context.Context) (uint64, []byte, e
 	return uint64(fromSeq), rootHash, nil
 }
 
+// nextIndex returns the next available index in the log.
+func (s *spannerCoordinator) nextIndex(ctx context.Context) (uint64, error) {
+	txn := s.dbPool.ReadOnlyTransaction()
+	defer txn.Close()
+
+	var nextSeq int64 // Spanner doesn't support uint64
+	row, err := txn.ReadRow(ctx, "SeqCoord", spanner.Key{0}, []string{"next"})
+	if err != nil {
+		return 0, fmt.Errorf("failed to read sequence coordination row: %v", err)
+	}
+	if err := row.Columns(&nextSeq); err != nil {
+		return 0, fmt.Errorf("failed to read sequence coordination info: %v", err)
+	}
+
+	return uint64(nextSeq), nil
+}
+
 // gcsStorage knows how to store and retrieve objects from GCS.
 type gcsStorage struct {
 	bucket    string
@@ -998,6 +1028,9 @@ func (s *Storage) MigrationWriter(ctx context.Context, opts *tessera.MigrationOp
 		integratedSize: func(context.Context) (uint64, error) {
 			s, _, err := m.sequencer.currentTree(ctx)
 			return s, err
+		},
+		nextIndex: func(context.Context) (uint64, error) {
+			return 0, nil
 		},
 	}
 	return m, r, nil

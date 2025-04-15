@@ -331,6 +331,14 @@ func (s *Storage) IntegratedSize(ctx context.Context) (uint64, error) {
 	return ts.size, nil
 }
 
+// NextIndex returns the next available leaf index.
+//
+// Currently, this is the same as the integrated size since new leaves are integrated synchronously.
+// This is part of the tessera LogReader contract.
+func (s *Storage) NextIndex(ctx context.Context) (uint64, error) {
+	return s.IntegratedSize(ctx)
+}
+
 // StreamEntries() returns functions `next` and `cancel` which act like a pull iterator for
 // consecutive entry bundles, starting with the entry bundle which contains the requested entry
 // index.

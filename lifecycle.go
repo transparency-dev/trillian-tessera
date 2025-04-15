@@ -64,6 +64,13 @@ type LogReader interface {
 	// log should be used. If in doubt, use ReadCheckpoint instead.
 	IntegratedSize(ctx context.Context) (uint64, error)
 
+	// NextIndex returns the first as-yet unassigned index.
+	//
+	// In a quiescent log, this will be the same as the checkpoint size. In a log with entries actively
+	// being added, this number will be higher since it will take sequenced but not-yet-integrated/not-yet-published
+	// entries into account.
+	NextIndex(ctx context.Context) (uint64, error)
+
 	// StreamEntries() returns functions `next` and `stop` which act like a pull iterator for
 	// consecutive entry bundles, starting with the entry bundle which contains the requested entry
 	// index.

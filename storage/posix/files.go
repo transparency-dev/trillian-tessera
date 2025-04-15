@@ -200,6 +200,10 @@ func (l *logResourceStorage) IntegratedSize(_ context.Context) (uint64, error) {
 	return size, err
 }
 
+func (l *logResourceStorage) NextIndex(ctx context.Context) (uint64, error) {
+	return l.IntegratedSize(ctx)
+}
+
 func (l *logResourceStorage) StreamEntries(ctx context.Context, fromEntry uint64) (next func() (ri layout.RangeInfo, bundle []byte, err error), cancel func()) {
 	// TODO(al): Consider making this configurable.
 	// The performance of different levels of concurrency here will depend very much on the nature of the underlying storage infra,
@@ -297,6 +301,7 @@ func (a *appender) sequenceBatch(ctx context.Context, entries []*tessera.Entry) 
 	}
 
 	// For simplicity, in-line the integration of these new entries into the Merkle structure too.
+	// If this is broken out into an async process, we'll need to update the implementation of NextIndex, too.
 	newSize, newRoot, err := doIntegrate(ctx, seq, leafHashes, a.logStorage)
 	if err != nil {
 		klog.Errorf("Integrate failed: %v", err)
