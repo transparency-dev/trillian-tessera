@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1744718741917,
+  "lastUpdate": 1744732729422,
   "repoUrl": "https://github.com/transparency-dev/trillian-tessera",
   "entries": {
     "Benchmark": [
@@ -20832,6 +20832,150 @@ window.BENCHMARK_DATA = {
             "value": 3090,
             "unit": "allocs/op",
             "extra": "4260 times\n4 procs"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "mhutchinson@gmail.com",
+            "name": "Martin Hutchinson",
+            "username": "mhutchinson"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "3141408f25541be0ab2bb404be31a269b72c74ef",
+          "message": "[AWS Antispam] Fix CI (#599)\n\nThis is failing at the moment since being enabled in #592. This fixes it\nby not creating a second DB and putting the antispam tables in the main\ntessera DB. Not elegant, but better than not testing antispam in CI.\n\nThis does not change the codelab behaviour; it is still possible to\ncreate the antispam DB from that terraform and run the binaries with the\nflags to use it.",
+          "timestamp": "2025-04-15T16:58:07+01:00",
+          "tree_id": "9c0c03a0d8a1572d02ef18d15f5e24c3ec4870ed",
+          "url": "https://github.com/transparency-dev/trillian-tessera/commit/3141408f25541be0ab2bb404be31a269b72c74ef"
+        },
+        "date": 1744732728885,
+        "tool": "go",
+        "benches": [
+          {
+            "name": "BenchmarkDedupe",
+            "value": 3275485,
+            "unit": "ns/op\t  740242 B/op\t   21739 allocs/op",
+            "extra": "336 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDedupe - ns/op",
+            "value": 3275485,
+            "unit": "ns/op",
+            "extra": "336 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDedupe - B/op",
+            "value": 740242,
+            "unit": "B/op",
+            "extra": "336 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDedupe - allocs/op",
+            "value": 21739,
+            "unit": "allocs/op",
+            "extra": "336 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWitnessGroupSatisfaction",
+            "value": 222809,
+            "unit": "ns/op\t    3152 B/op\t      36 allocs/op",
+            "extra": "4946 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWitnessGroupSatisfaction - ns/op",
+            "value": 222809,
+            "unit": "ns/op",
+            "extra": "4946 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWitnessGroupSatisfaction - B/op",
+            "value": 3152,
+            "unit": "B/op",
+            "extra": "4946 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWitnessGroupSatisfaction - allocs/op",
+            "value": 36,
+            "unit": "allocs/op",
+            "extra": "4946 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLeafBundle_UnmarshalText",
+            "value": 6876,
+            "unit": "ns/op\t    6529 B/op\t       1 allocs/op",
+            "extra": "167778 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLeafBundle_UnmarshalText - ns/op",
+            "value": 6876,
+            "unit": "ns/op",
+            "extra": "167778 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLeafBundle_UnmarshalText - B/op",
+            "value": 6529,
+            "unit": "B/op",
+            "extra": "167778 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLeafBundle_UnmarshalText - allocs/op",
+            "value": 1,
+            "unit": "allocs/op",
+            "extra": "167778 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkCheckpointUnsafe",
+            "value": 220.4,
+            "unit": "ns/op\t     224 B/op\t       5 allocs/op",
+            "extra": "5383803 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkCheckpointUnsafe - ns/op",
+            "value": 220.4,
+            "unit": "ns/op",
+            "extra": "5383803 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkCheckpointUnsafe - B/op",
+            "value": 224,
+            "unit": "B/op",
+            "extra": "5383803 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkCheckpointUnsafe - allocs/op",
+            "value": 5,
+            "unit": "allocs/op",
+            "extra": "5383803 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkIntegrate",
+            "value": 353392,
+            "unit": "ns/op\t  279135 B/op\t    3082 allocs/op",
+            "extra": "4124 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkIntegrate - ns/op",
+            "value": 353392,
+            "unit": "ns/op",
+            "extra": "4124 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkIntegrate - B/op",
+            "value": 279135,
+            "unit": "B/op",
+            "extra": "4124 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkIntegrate - allocs/op",
+            "value": 3082,
+            "unit": "allocs/op",
+            "extra": "4124 times\n4 procs"
           }
         ]
       }
