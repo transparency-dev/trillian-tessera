@@ -21,11 +21,11 @@ provider "aws" {
 module "storage" {
   source = "../storage"
 
-  prefix_name     = var.prefix_name
-  base_name       = var.base_name
-  region          = var.region
-  create_antispam = var.create_antispam
-  ephemeral       = var.ephemeral
+  prefix_name        = var.prefix_name
+  base_name          = var.base_name
+  region             = var.region
+  create_antispam_db = var.create_antispam_db
+  ephemeral          = var.ephemeral
 }
 
 # Resources ####################################################################

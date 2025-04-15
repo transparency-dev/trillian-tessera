@@ -59,7 +59,7 @@ variable "antispam" {
   default     = false
 }
 
-variable "create_antispam" {
+variable "create_antispam_db" {
   description = "Set to true to create a separate DB for the antispam data. This will not work from github actions."
   type        = bool
   default     = false

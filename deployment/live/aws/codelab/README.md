@@ -180,7 +180,7 @@ The instructions to do this for the codelab are largely the same, except:
 
  1. When applying the terraform, instruct it to create an additional DB for the antispam tables:
     ```
-    terragrunt apply --working-dir=deployment/live/aws/codelab/ -var="create_antispam=true"
+    terragrunt apply --working-dir=deployment/live/aws/codelab/ -var="create_antispam_db=true"
     ```
  1. When running the conformance binary, pass in two additional flags to configure antispam:
     ```

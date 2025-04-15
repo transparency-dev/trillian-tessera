@@ -29,7 +29,7 @@ variable "log_writer_members" {
   type        = list(any)
 }
 
-variable "create_antispam" {
+variable "create_antispam_db" {
   description = "Set to true to create the infrastructure required by the GCP antispam implementation."
   type        = bool
 }
