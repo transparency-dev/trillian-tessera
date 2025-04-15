@@ -52,6 +52,9 @@ resource "aws_rds_cluster_instance" "cluster_instances" {
 
 # Configure the MySQL provider based on the outcome of
 # creating the aws_db_instance.
+# This requires that the machine running terraform has access
+# to the DB instance created above. This is _NOT_ the case when
+# github actions are applying the terraform.
 provider "mysql" {
   endpoint = aws_rds_cluster_instance.cluster_instances[0].endpoint
   username = aws_rds_cluster.log_rds.master_username

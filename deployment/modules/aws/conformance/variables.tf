@@ -54,7 +54,19 @@ variable "ecs_conformance_task_role" {
 }
 
 variable "antispam" {
-  description = "Set to true to enable antispam for this conformance log."
+  description = "Set to true to enable antispam for this conformance log. If enabled, antispam_db_name must also be provided."
   type        = bool
   default     = false
+}
+
+variable "create_antispam" {
+  description = "Set to true to create a separate DB for the antispam data. This will not work from github actions."
+  type        = bool
+  default     = false
+}
+
+variable "antispam_db_name" {
+  description = "The name of the antispam database."
+  type        = string
+  default     = ""
 }
