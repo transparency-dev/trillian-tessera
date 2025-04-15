@@ -355,7 +355,8 @@ To ensure all pending entries are published, keep an instance object for the cur
 For example, a personality that takes HTTP requests from the Internet and calls `Appender.Add` should keep a process running with an `Appender`, but disable any code paths that lead to `Add` being invoked (e.g. by flipping a flag that changes this behaviour).
 The instantiated `Appender` allows its background processes to keep running, ensuring all entries are sequenced, integrated, and published.
 
-Determining when this is complete can be done by inspecting the databases, though #588 tracks making this clear via metrics.
+Determining when this is complete can be done by inspecting the databases or via the OpenTelemetry metrics which instrument this code;
+once the next-available sequence number and published checkpoint size have converged and remain stable, the log is in a quiescent state.
 
 A quiescent log using GCP, AWS, or POSIX that is now permanently read-only can be made cheaper to operate. The implementations no longer need any running binaries running Tessera code. Any databases created for this log (i.e. the sequencing tables, or antispam) can be deleted. The read-path can be served directly from the storage buckets (for GCP, AWS) or via a standard HTTP file server (for POSIX).
 
