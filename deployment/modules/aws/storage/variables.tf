@@ -13,7 +13,13 @@ variable "region" {
   type        = string
 }
 
+variable "create_antispam" {
+  description = "Set to true to create another database to be used by the antispam implementation."
+  type        = bool
+  default     = false
+}
+
 variable "ephemeral" {
   description = "Set to true if this is a throwaway/temporary log instance. Will set attributes on created resources to allow them to be disabled/deleted more easily."
-  type = bool
+  type        = bool
 }

@@ -21,10 +21,11 @@ provider "aws" {
 module "storage" {
   source = "../storage"
 
-  prefix_name = var.prefix_name
-  base_name   = var.base_name
-  region      = var.region
-  ephemeral   = true
+  prefix_name     = var.prefix_name
+  base_name       = var.base_name
+  region          = var.region
+  ephemeral       = true
+  create_antispam = var.antispam
 }
 
 # Resources ####################################################################
@@ -158,6 +159,8 @@ resource "aws_ecs_task_definition" "conformance" {
       "--db_password=password",
       "--db_name=tessera",
       "--db_host=${module.storage.log_rds_db.endpoint}",
+      "--antispam=${var.antispam}",
+      "--antispam_db_name=antispam_db",
       "-v=2"
     ],
     "logConfiguration" : {
@@ -171,26 +174,26 @@ resource "aws_ecs_task_definition" "conformance" {
         "awslogs-stream-prefix" : "ecs"
       },
     },
-  }, {
-    "name": "aws-otel-collector-${local.name}",
-    "image": "public.ecr.aws/aws-observability/aws-otel-collector:v0.43.1",
-    "command":["--config=/etc/ecs/ecs-cloudwatch-xray.yaml"],
-    "essential": true,
-    "logConfiguration": {
-      "logDriver": "awslogs",
-      "options": {
+    }, {
+    "name" : "aws-otel-collector-${local.name}",
+    "image" : "public.ecr.aws/aws-observability/aws-otel-collector:v0.43.1",
+    "command" : ["--config=/etc/ecs/ecs-cloudwatch-xray.yaml"],
+    "essential" : true,
+    "logConfiguration" : {
+      "logDriver" : "awslogs",
+      "options" : {
         "awslogs-group" : "/ecs/${local.name}",
-        "awslogs-region": "us-east-1",
-        "awslogs-stream-prefix": "ecs",
-        "awslogs-create-group": "true"
+        "awslogs-region" : "us-east-1",
+        "awslogs-stream-prefix" : "ecs",
+        "awslogs-create-group" : "true"
       }
     },
-    "healthCheck": {
-      "command": [ "/healthcheck" ],
-      "interval": 5,
-      "timeout": 6,
-      "retries": 5,
-      "startPeriod": 1
+    "healthCheck" : {
+      "command" : ["/healthcheck"],
+      "interval" : 5,
+      "timeout" : 6,
+      "retries" : 5,
+      "startPeriod" : 1
     },
     "portMappings" : [],
   }])

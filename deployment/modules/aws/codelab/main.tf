@@ -3,7 +3,7 @@ terraform {
   backend "s3" {}
   required_providers {
     aws = {
-      source = "hashicorp/aws"
+      source  = "hashicorp/aws"
       version = "5.76.0"
     }
   }
@@ -21,10 +21,11 @@ provider "aws" {
 module "storage" {
   source = "../storage"
 
-  prefix_name = var.prefix_name
-  base_name   = var.base_name
-  region      = var.region
-  ephemeral   = true
+  prefix_name     = var.prefix_name
+  base_name       = var.base_name
+  region          = var.region
+  create_antispam = var.create_antispam
+  ephemeral       = var.ephemeral
 }
 
 # Resources ####################################################################
@@ -32,7 +33,7 @@ module "storage" {
 # This will be used for the containers to communicate between themselves, and
 # the S3 bucket.
 resource "aws_default_vpc" "default" {
-   tags = {
+  tags = {
     Name = "Default VPC"
   }
 }
@@ -70,9 +71,9 @@ data "aws_iam_policy_document" "allow_access_from_vpce" {
     ]
 
     condition {
-     test = "StringEquals"
-     variable = "aws:sourceVpce" 
-     values = [aws_vpc_endpoint.s3.id]
+      test     = "StringEquals"
+      variable = "aws:sourceVpce"
+      values   = [aws_vpc_endpoint.s3.id]
     }
   }
   depends_on = [aws_vpc_endpoint.s3]

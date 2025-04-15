@@ -30,6 +30,7 @@ import (
 	"github.com/go-sql-driver/mysql"
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/storage/aws"
+	aws_as "github.com/transparency-dev/trillian-tessera/storage/aws/antispam"
 	"golang.org/x/mod/sumdb/note"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
@@ -38,7 +39,7 @@ import (
 
 var (
 	bucket            = flag.String("bucket", "", "Bucket to use for storing log")
-	dbName            = flag.String("db_name", "", "AuroraDB name")
+	dbName            = flag.String("db_name", "", "AuroraDB name for the log DB")
 	dbHost            = flag.String("db_host", "", "AuroraDB host")
 	dbPort            = flag.Int("db_port", 3306, "AuroraDB port")
 	dbUser            = flag.String("db_user", "", "AuroraDB user")
@@ -54,6 +55,9 @@ var (
 	publishInterval   = flag.Duration("publish_interval", 3*time.Second, "How frequently to publish updated checkpoints")
 	traceFraction     = flag.Float64("trace_fraction", 0, "Fraction of open-telemetry span traces to sample")
 	additionalSigners = []string{}
+
+	antispamEnable = flag.Bool("antispam", false, "EXPERIMENTAL: Set to true to enable persistent antispam storage")
+	antispamDb     = flag.String("antispam_db_name", "", "AuroraDB name for the antispam DB")
 )
 
 func init() {
@@ -78,12 +82,24 @@ func main() {
 	if err != nil {
 		klog.Exitf("Failed to create new AWS storage: %v", err)
 	}
+	var antispam tessera.Antispam
+	// Persistent antispam is currently experimental, so there's no documentation yet!
+	if *antispamEnable {
+		asOpts := aws_as.AntispamOpts{
+			MaxBatchSize:      64,
+			PushbackThreshold: 1024,
+		}
+		antispam, err = aws_as.NewAntispam(ctx, antispamMysqlConfig().FormatDSN(), asOpts)
+		if err != nil {
+			klog.Exitf("Failed to create new AWS antispam storage: %v", err)
+		}
+	}
 	appender, shutdown, _, err := tessera.NewAppender(ctx, driver, tessera.NewAppendOptions().
 		WithCheckpointSigner(s, a...).
 		WithCheckpointInterval(*publishInterval).
 		WithBatching(512, 300*time.Millisecond).
 		WithPushback(10*4096).
-		WithAntispam(256<<10, nil))
+		WithAntispam(256<<10, antispam))
 	if err != nil {
 		klog.Exit(err)
 	}
@@ -184,6 +200,35 @@ func storageConfigFromFlags() aws.Config {
 		DSN:          c.FormatDSN(),
 		MaxOpenConns: *dbMaxConns,
 		MaxIdleConns: *dbMaxIdle,
+	}
+}
+
+func antispamMysqlConfig() *mysql.Config {
+	if *antispamDb == "" {
+		klog.Exit("--antispam_db_name must be set")
+	}
+	if *dbHost == "" {
+		klog.Exit("--db_host must be set")
+	}
+	if *dbPort == 0 {
+		klog.Exit("--db_port must be set")
+	}
+	if *dbUser == "" {
+		klog.Exit("--db_user must be set")
+	}
+	// Empty passord isn't an option with AuroraDB MySQL.
+	if *dbPassword == "" {
+		klog.Exit("--db_password must be set")
+	}
+
+	return &mysql.Config{
+		User:                    *dbUser,
+		Passwd:                  *dbPassword,
+		Net:                     "tcp",
+		Addr:                    fmt.Sprintf("%s:%d", *dbHost, *dbPort),
+		DBName:                  *antispamDb,
+		AllowCleartextPasswords: true,
+		AllowNativePasswords:    true,
 	}
 }
 
