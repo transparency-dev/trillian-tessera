@@ -172,10 +172,10 @@ endpoint.
 
 ## Trying with Antispam
 
-The instructions above deploy the conformance binary without antispam enabled.
-This means that it will take any number of duplicate entries.
+The instructions above deploy the conformance binary without antispam.
+This means that duplicate entries can be written to the log.
 
-For logs that are publicly writable, it may be beneficial to deploy Antispam, which is a weak form of deduplication.
+For logs that are publicly writable, it may be beneficial to deploy antispam, which is a weak form of deduplication.
 The instructions to do this for the codelab are largely the same, except:
 
  1. When applying the terraform, instruct it to create an additional DB for the antispam tables:
