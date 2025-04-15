@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1744717763759,
+  "lastUpdate": 1744718741917,
   "repoUrl": "https://github.com/transparency-dev/trillian-tessera",
   "entries": {
     "Benchmark": [
@@ -20688,6 +20688,150 @@ window.BENCHMARK_DATA = {
             "value": 3083,
             "unit": "allocs/op",
             "extra": "3885 times\n4 procs"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "mhutchinson@gmail.com",
+            "name": "Martin Hutchinson",
+            "username": "mhutchinson"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "d0de2fade1c483fa834446c7b16157d135ebb33c",
+          "message": "[AWS Antispam] End-to-end antispam for conformance (#592)\n\n* [AWS Antispam] End-to-end antispam for conformance\n\nAntispam DB can now be created via the Terraform, and the conformance\ncommand takes flags that allow antispam to be enabled and configured\nwith this DB.\n\nDocs have been added to the end of the codelab instructions to document\nhow to deploy this.\n\nSome performance testing was performed and results look good: with 1200\nwrite workers doing 1200 writes per second, with 30% dupe chance, the\nlog was keeping up, growing by around 800 leaves per second.\n\n```\nRead (8 workers): Current max: 20/s. Oversupply in last second: 0\nWrite (1200 workers): Current max: 1200/s. Oversupply in last second: 0\nTreeSize: 199416 (Δ 745qps over 30s)\nTime-in-queue: 6ms/411ms/1056ms (min/avg/max)\nObserved-time-to-integrate: 43ms/1291ms/4346ms (min/avg/max)\n```\n\nThere are a couple of fixes in here for state/transaction management to\nbe more resilient when following the DB. Previously TXs were sometimes\nnot closed, which would lock the table until TX expiry.\n\nFixes #526.\n\n* Enable antispam in CI",
+          "timestamp": "2025-04-15T13:04:53+01:00",
+          "tree_id": "cbc7bc6f2eb92472c62e3c3e2a9c7af9c9266197",
+          "url": "https://github.com/transparency-dev/trillian-tessera/commit/d0de2fade1c483fa834446c7b16157d135ebb33c"
+        },
+        "date": 1744718740761,
+        "tool": "go",
+        "benches": [
+          {
+            "name": "BenchmarkDedupe",
+            "value": 3456577,
+            "unit": "ns/op\t  741385 B/op\t   21749 allocs/op",
+            "extra": "354 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDedupe - ns/op",
+            "value": 3456577,
+            "unit": "ns/op",
+            "extra": "354 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDedupe - B/op",
+            "value": 741385,
+            "unit": "B/op",
+            "extra": "354 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDedupe - allocs/op",
+            "value": 21749,
+            "unit": "allocs/op",
+            "extra": "354 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWitnessGroupSatisfaction",
+            "value": 224796,
+            "unit": "ns/op\t    3152 B/op\t      36 allocs/op",
+            "extra": "4518 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWitnessGroupSatisfaction - ns/op",
+            "value": 224796,
+            "unit": "ns/op",
+            "extra": "4518 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWitnessGroupSatisfaction - B/op",
+            "value": 3152,
+            "unit": "B/op",
+            "extra": "4518 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWitnessGroupSatisfaction - allocs/op",
+            "value": 36,
+            "unit": "allocs/op",
+            "extra": "4518 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLeafBundle_UnmarshalText",
+            "value": 7249,
+            "unit": "ns/op\t    6529 B/op\t       1 allocs/op",
+            "extra": "180889 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLeafBundle_UnmarshalText - ns/op",
+            "value": 7249,
+            "unit": "ns/op",
+            "extra": "180889 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLeafBundle_UnmarshalText - B/op",
+            "value": 6529,
+            "unit": "B/op",
+            "extra": "180889 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLeafBundle_UnmarshalText - allocs/op",
+            "value": 1,
+            "unit": "allocs/op",
+            "extra": "180889 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkCheckpointUnsafe",
+            "value": 218.6,
+            "unit": "ns/op\t     224 B/op\t       5 allocs/op",
+            "extra": "5251671 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkCheckpointUnsafe - ns/op",
+            "value": 218.6,
+            "unit": "ns/op",
+            "extra": "5251671 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkCheckpointUnsafe - B/op",
+            "value": 224,
+            "unit": "B/op",
+            "extra": "5251671 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkCheckpointUnsafe - allocs/op",
+            "value": 5,
+            "unit": "allocs/op",
+            "extra": "5251671 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkIntegrate",
+            "value": 343600,
+            "unit": "ns/op\t  280172 B/op\t    3090 allocs/op",
+            "extra": "4260 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkIntegrate - ns/op",
+            "value": 343600,
+            "unit": "ns/op",
+            "extra": "4260 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkIntegrate - B/op",
+            "value": 280172,
+            "unit": "B/op",
+            "extra": "4260 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkIntegrate - allocs/op",
+            "value": 3090,
+            "unit": "allocs/op",
+            "extra": "4260 times\n4 procs"
           }
         ]
       }
