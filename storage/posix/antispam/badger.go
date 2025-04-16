@@ -77,8 +77,7 @@ func NewAntispam(ctx context.Context, badgerPath string, opts AntispamOpts) (*An
 		opts.PushbackThreshold = DefaultPushbackThreshold
 	}
 
-	// Open the Badger database located in the /tmp/badger directory.
-	// It is created if it doesn't exist.
+	// Open the Badger database located at badgerPath, it will be created if it doesn't exist.
 	db, err := badger.Open(badger.DefaultOptions(badgerPath))
 	if err != nil {
 		return nil, fmt.Errorf("failed to open badger: %v", err)
