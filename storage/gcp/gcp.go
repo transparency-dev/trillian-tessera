@@ -387,9 +387,8 @@ type objStore interface {
 
 // logResourceStore knows how to read and write entries which represent a tiles log inside an objStore.
 type logResourceStore struct {
-	objStore     objStore
-	bucketPrefix string
-	entriesPath  func(uint64, uint8) string
+	objStore    objStore
+	entriesPath func(uint64, uint8) string
 }
 
 func (lrs *logResourceStore) setCheckpoint(ctx context.Context, cpRaw []byte) error {
@@ -1035,8 +1034,9 @@ func (s *Storage) MigrationWriter(ctx context.Context, opts *tessera.MigrationOp
 		sequencer:    seq,
 		logStore: &logResourceStore{
 			objStore: &gcsStorage{
-				gcsClient: c,
-				bucket:    s.cfg.Bucket,
+				gcsClient:    c,
+				bucket:       s.cfg.Bucket,
+				bucketPrefix: s.cfg.BucketPrefix,
 			},
 			entriesPath: opts.EntriesPath(),
 		},

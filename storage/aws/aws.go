@@ -40,6 +40,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -132,6 +133,9 @@ type Config struct {
 	S3Options func(*s3.Options)
 	// Bucket is the name of the S3 bucket to use for storing log state.
 	Bucket string
+	// BucketPrefix is an optional prefix to prepend to all log resource paths.
+	// This can be used e.g. to store multiple logs in the same bucket.
+	BucketPrefix string
 	// DSN is the DSN of the MySQL instance to use.
 	DSN string
 	// Maximum connections to the MySQL database.
@@ -180,8 +184,9 @@ func (s *Storage) Appender(ctx context.Context, opts *tessera.AppendOptions) (*t
 
 	logStore := &logResourceStore{
 		objStore: &s3Storage{
-			s3Client: s3.NewFromConfig(*s.cfg.SDKConfig, s.cfg.S3Options),
-			bucket:   s.cfg.Bucket,
+			s3Client:     s3.NewFromConfig(*s.cfg.SDKConfig, s.cfg.S3Options),
+			bucket:       s.cfg.Bucket,
+			bucketPrefix: s.cfg.BucketPrefix,
 		},
 		entriesPath: opts.EntriesPath(),
 		integratedSize: func(context.Context) (uint64, error) {
@@ -437,8 +442,9 @@ func (a *Appender) updateEntryBundles(ctx context.Context, fromSeq uint64, entri
 func (s *Storage) MigrationWriter(ctx context.Context, opts *tessera.MigrationOptions) (tessera.MigrationWriter, tessera.LogReader, error) {
 	logStore := &logResourceStore{
 		objStore: &s3Storage{
-			s3Client: s3.NewFromConfig(*s.cfg.SDKConfig, s.cfg.S3Options),
-			bucket:   s.cfg.Bucket,
+			s3Client:     s3.NewFromConfig(*s.cfg.SDKConfig, s.cfg.S3Options),
+			bucket:       s.cfg.Bucket,
+			bucketPrefix: s.cfg.BucketPrefix,
 		},
 		entriesPath: opts.EntriesPath(),
 	}
@@ -1118,12 +1124,17 @@ func placeholder(n int) string {
 
 // s3Storage knows how to store and retrieve objects from S3.
 type s3Storage struct {
-	bucket   string
-	s3Client *s3.Client
+	bucket       string
+	bucketPrefix string
+	s3Client     *s3.Client
 }
 
 // getObject returns the data of the specified object, or an error.
 func (s *s3Storage) getObject(ctx context.Context, obj string) ([]byte, error) {
+	if s.bucketPrefix != "" {
+		obj = filepath.Join(s.bucketPrefix, obj)
+	}
+
 	r, err := s.s3Client.GetObject(ctx, &s3.GetObjectInput{
 		Bucket: aws.String(s.bucket),
 		Key:    aws.String(obj),
@@ -1141,6 +1152,10 @@ func (s *s3Storage) getObject(ctx context.Context, obj string) ([]byte, error) {
 
 // setObject stores the provided data in the specified object.
 func (s *s3Storage) setObject(ctx context.Context, objName string, data []byte, contType string, cacheControl string) error {
+	if s.bucketPrefix != "" {
+		objName = filepath.Join(s.bucketPrefix, objName)
+	}
+
 	put := &s3.PutObjectInput{
 		Bucket:       aws.String(s.bucket),
 		Key:          aws.String(objName),
@@ -1162,6 +1177,10 @@ func (s *s3Storage) setObject(ctx context.Context, objName string, data []byte, 
 // an error will be returned *unless*  the currently stored data is bit-for-bit identical to the
 // data to-be-written. This is intended to provide idempotentency for writes.
 func (s *s3Storage) setObjectIfNoneMatch(ctx context.Context, objName string, data []byte, contType string, cacheControl string) error {
+	if s.bucketPrefix != "" {
+		objName = filepath.Join(s.bucketPrefix, objName)
+	}
+
 	put := &s3.PutObjectInput{
 		Bucket:       aws.String(s.bucket),
 		Key:          aws.String(objName),
@@ -1199,6 +1218,10 @@ func (s *s3Storage) setObjectIfNoneMatch(ctx context.Context, objName string, da
 
 // lastModified returns the time the specified object was last modified, or an error
 func (s *s3Storage) lastModified(ctx context.Context, obj string) (time.Time, error) {
+	if s.bucketPrefix != "" {
+		obj = filepath.Join(s.bucketPrefix, obj)
+	}
+
 	r, err := s.s3Client.GetObject(ctx, &s3.GetObjectInput{
 		Bucket: aws.String(s.bucket),
 		Key:    aws.String(obj),
