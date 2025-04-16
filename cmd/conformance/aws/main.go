@@ -85,10 +85,7 @@ func main() {
 	var antispam tessera.Antispam
 	// Persistent antispam is currently experimental, so there's no documentation yet!
 	if *antispamEnable {
-		asOpts := aws_as.AntispamOpts{
-			MaxBatchSize:      64,
-			PushbackThreshold: 1024,
-		}
+		asOpts := aws_as.AntispamOpts{} // Use defaults
 		antispam, err = aws_as.NewAntispam(ctx, antispamMysqlConfig().FormatDSN(), asOpts)
 		if err != nil {
 			klog.Exitf("Failed to create new AWS antispam storage: %v", err)
