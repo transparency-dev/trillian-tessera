@@ -17,7 +17,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -113,7 +112,7 @@ func main() {
 
 		idx, err := appender.Add(r.Context(), tessera.NewEntry(b))()
 		if err != nil {
-			if errors.Is(err, tessera.ErrPushback) {
+			if tessera.IsPushback(err) {
 				w.Header().Add("Retry-After", "1")
 				w.WriteHeader(http.StatusServiceUnavailable)
 				return

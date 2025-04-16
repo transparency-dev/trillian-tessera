@@ -347,14 +347,14 @@ func (i *integrationStats) statsDecorator(delegate AddFn) AddFn {
 			idx, err := f()
 			attr := []attribute.KeyValue{}
 			if err != nil {
-				if err != ErrPushback {
+				if !IsPushback(err) {
 					// Just flag that it's an errored request to avoid high cardinality of attribute values.
 					// TODO(al): We might want to bucket errors into OTel status codes in the future, though.
 					attr = append(attr, attribute.String("tessera.error.type", "_OTHER"))
 				}
 			}
 
-			attr = append(attr, attribute.Bool("tessera.pushback", err == ErrPushback))
+			attr = append(attr, attribute.Bool("tessera.pushback", IsPushback(err)))
 			attr = append(attr, attribute.Bool("tessera.duplicate", idx.IsDup))
 
 			appenderAddsTotal.Add(ctx, 1, metric.WithAttributes(attr...))
