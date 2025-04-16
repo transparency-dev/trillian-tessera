@@ -16,6 +16,7 @@ package storage
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	tessera "github.com/transparency-dev/trillian-tessera"
@@ -150,4 +151,57 @@ func StreamAdaptor(ctx context.Context, numWorkers uint, getSize GetTreeSizeFn, 
 		return b.ri, b.b, b.err
 	}
 	return next, cancel
+}
+
+// EntryStreamReader converts a stream of {RangeInfo, EntryBundle} into a stream of individually processed entries.
+//
+// This is mostly useful to Follower implementations which need to parse and consume individual entries being streamed
+// from a LogReader.
+type EntryStreamReader[T any] struct {
+	bundleFn func([]byte) ([]T, error)
+	next     func() (layout.RangeInfo, []byte, error)
+
+	curData []T
+	curRI   layout.RangeInfo
+	i       uint64
+}
+
+// NewEntryStreamReader creates a new stream reader which uses the provided bundleFn to process bundles into processed entries of type T.
+//
+// Different bundleFn implementations can be provided to return raw entry bytes, parsed entry structs, or derivations of entries (e.g. hashes) as needed.
+func NewEntryStreamReader[T any](next func() (layout.RangeInfo, []byte, error), bundleFn func([]byte) ([]T, error)) *EntryStreamReader[T] {
+	return &EntryStreamReader[T]{
+		bundleFn: bundleFn,
+		next:     next,
+		i:        0,
+	}
+}
+
+// Next processes and returns the next available entry in the stream along with its index in the log.
+func (e *EntryStreamReader[T]) Next() (uint64, T, error) {
+	var t T
+	if len(e.curData) == 0 {
+		var err error
+		var b []byte
+		e.curRI, b, err = e.next()
+		if err != nil {
+			return 0, t, fmt.Errorf("next: %v", err)
+		}
+		e.curData, err = e.bundleFn(b)
+		if err != nil {
+			return 0, t, fmt.Errorf("bundleFn(bundleEntry @%d): %v", e.curRI.Index, err)
+
+		}
+		if e.curRI.First > 0 {
+			e.curData = e.curData[e.curRI.First:]
+		}
+		if len(e.curData) > int(e.curRI.N) {
+			e.curData = e.curData[:e.curRI.N]
+		}
+		e.i = 0
+	}
+	t, e.curData = e.curData[0], e.curData[1:]
+	rIdx := e.curRI.Index*layout.EntryBundleWidth + uint64(e.curRI.First) + e.i
+	e.i++
+	return rIdx, t, nil
 }
