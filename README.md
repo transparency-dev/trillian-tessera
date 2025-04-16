@@ -54,11 +54,17 @@ Beta in Q2 2025, and production ready around mid 2025.
 |  2  | [tlog-tiles API][] support                                |   ✅   |
 |  3  | Example code and terraform scripts for easy onboarding    |   ✅   |
 |  4  | Stable API                                                |   ⚠️   |
-|  5  | Data migration between releases                           |   ⚠️   |
-|  6  | Data migration between drivers                            |   ⚠️   |
+|  5  | Data migration between releases                           |   ✅   |
+|  6  | Data migration between drivers                            |   ✅   |
 |  7  | Witness support                                           |   ✅   |
-|  8  | Production ready                                          |   ⚠️   |
+|  8  | Monitoring and metrics                                    |   ✅   |
+|  9  | Production ready                                          |   ✅   |
+|  10 | Mirrored logs (#576)                                      |   ❌   |
+|  11 | Preordered logs (#575)                                    |   ❌   |
+|  12 | Trillian v1 to Tessera migration (#577)                   |   ❌   |
 |  N  | Fancy features (to be expanded upon later)                |   ❌   |
+
+The current API is unlikely to change in any significant way, however the API is subject to minor breaking changes until we tag 1.0.
 
 ### What’s happening to Trillian v1?
 
