@@ -27,8 +27,8 @@ import (
 
 	"github.com/dgraph-io/badger/v4"
 	tessera "github.com/transparency-dev/trillian-tessera"
-	"github.com/transparency-dev/trillian-tessera/api/layout"
 	"github.com/transparency-dev/trillian-tessera/internal/otel"
+	storage "github.com/transparency-dev/trillian-tessera/storage/internal"
 	"k8s.io/klog/v2"
 )
 
@@ -195,58 +195,6 @@ func (d *AntispamStorage) Follower(b func([]byte) ([][]byte, error)) tessera.Fol
 	return f
 }
 
-// entryStreamReader converts a stream of {RangeInfo, EntryBundle} into a stream of individually processed entries.
-//
-// TODO(al): Factor this out for re-use elsewhere when it's ready.
-type entryStreamReader[T any] struct {
-	bundleFn func([]byte) ([]T, error)
-	next     func() (layout.RangeInfo, []byte, error)
-
-	curData []T
-	curRI   layout.RangeInfo
-	i       uint64
-}
-
-// newEntryStreamReader creates a new stream reader which uses the provided bundleFn to process bundles into processed entries of type T
-//
-// Different bundleFn implementations can be provided to return raw entry bytes, parsed entry structs, or derivations of entries (e.g. hashes) as needed.
-func newEntryStreamReader[T any](next func() (layout.RangeInfo, []byte, error), bundleFn func([]byte) ([]T, error)) *entryStreamReader[T] {
-	return &entryStreamReader[T]{
-		bundleFn: bundleFn,
-		next:     next,
-		i:        0,
-	}
-}
-
-// Next processes and returns the next available entry in the stream along with its index in the log.
-func (e *entryStreamReader[T]) Next() (uint64, T, error) {
-	var t T
-	if len(e.curData) == 0 {
-		var err error
-		var b []byte
-		e.curRI, b, err = e.next()
-		if err != nil {
-			return 0, t, fmt.Errorf("next: %v", err)
-		}
-		e.curData, err = e.bundleFn(b)
-		if err != nil {
-			return 0, t, fmt.Errorf("bundleFn(bundleEntry @%d): %v", e.curRI.Index, err)
-
-		}
-		if e.curRI.First > 0 {
-			e.curData = e.curData[e.curRI.First:]
-		}
-		if len(e.curData) > int(e.curRI.N) {
-			e.curData = e.curData[:e.curRI.N]
-		}
-		e.i = 0
-	}
-	t, e.curData = e.curData[0], e.curData[1:]
-	rIdx := e.curRI.Index*layout.EntryBundleWidth + uint64(e.curRI.First) + e.i
-	e.i++
-	return rIdx, t, nil
-}
-
 // follower is a struct which knows how to populate the antispam storage with identity hashes
 // for entries in a log.
 type follower struct {
@@ -265,7 +213,7 @@ func (f *follower) Follow(ctx context.Context, lr tessera.LogReader) {
 
 	t := time.NewTicker(time.Second)
 	var (
-		entryReader *entryStreamReader[[]byte]
+		entryReader *storage.EntryStreamReader[[]byte]
 		stop        func()
 
 		curEntries [][]byte
@@ -325,7 +273,7 @@ func (f *follower) Follow(ctx context.Context, lr tessera.LogReader) {
 					span.AddEvent("Start streaming entries")
 					next, st := lr.StreamEntries(ctx, followFrom)
 					stop = st
-					entryReader = newEntryStreamReader(next, f.bundleHasher)
+					entryReader = storage.NewEntryStreamReader(next, f.bundleHasher)
 				}
 
 				if curIndex == followFrom && curEntries != nil {
