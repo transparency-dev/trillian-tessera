@@ -37,8 +37,8 @@ import (
 )
 
 const (
-	DefaultMaxBatchSize      = 64
-	DefaultPushbackThreshold = 1024
+	DefaultMaxBatchSize      = 1500
+	DefaultPushbackThreshold = 2048
 )
 
 // AntispamOpts allows configuration of some tunable options.

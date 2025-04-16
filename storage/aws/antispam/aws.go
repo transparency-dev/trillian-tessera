@@ -36,7 +36,7 @@ import (
 
 const (
 	DefaultMaxBatchSize      = 64
-	DefaultPushbackThreshold = 1024
+	DefaultPushbackThreshold = 2048
 
 	// SchemaCompatibilityVersion represents the expected version (e.g. layout & serialisation) of stored data.
 	//
