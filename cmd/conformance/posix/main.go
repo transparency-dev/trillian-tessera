@@ -112,7 +112,7 @@ func main() {
 	fs := http.FileServer(http.Dir(*storageDir))
 	http.Handle("GET /checkpoint", addCacheHeaders("no-cache", fs))
 	http.Handle("GET /tile/", addCacheHeaders("max-age=31536000, immutable", fs))
-	http.Handle("GET /data/", fs)
+	http.Handle("GET /entries/", fs)
 
 	// TODO(mhutchinson): Change the listen flag to just a port, or fix up this address formatting
 	klog.Infof("Environment variables useful for accessing this log:\n"+
