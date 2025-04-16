@@ -25,12 +25,14 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"time"
 
 	"golang.org/x/mod/sumdb/note"
 
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/storage/posix"
+	badger_as "github.com/transparency-dev/trillian-tessera/storage/posix/antispam"
 	"k8s.io/klog/v2"
 )
 
@@ -38,6 +40,7 @@ var (
 	storageDir                = flag.String("storage_dir", "", "Root directory to store log data.")
 	listen                    = flag.String("listen", ":2025", "Address:port to listen on")
 	privKeyFile               = flag.String("private_key", "", "Location of private key file. If unset, uses the contents of the LOG_PRIVATE_KEY environment variable.")
+	persistentAntispam        = flag.Bool("antispam", false, "EXPERIMENTAL: Set to true to enable Badger-based persistent antispam storage")
 	additionalPrivateKeyFiles = []string{}
 )
 
@@ -68,10 +71,20 @@ func main() {
 	if err != nil {
 		klog.Exitf("Failed to construct storage: %v", err)
 	}
+	var antispam tessera.Antispam
+	// Persistent antispam is currently experimental, so there's no terraform or documentation yet!
+	if *persistentAntispam {
+		asOpts := badger_as.AntispamOpts{}
+		antispam, err = badger_as.NewAntispam(ctx, filepath.Join(*storageDir, ".state", "antispam"), asOpts)
+		if err != nil {
+			klog.Exitf("Failed to create new Badger antispam storage: %v", err)
+		}
+	}
+
 	appender, shutdown, _, err := tessera.NewAppender(ctx, driver, tessera.NewAppendOptions().
 		WithCheckpointSigner(s, a...).
 		WithBatching(256, time.Second).
-		WithAntispam(256, nil))
+		WithAntispam(256, antispam))
 	if err != nil {
 		klog.Exit(err)
 	}
@@ -99,7 +112,7 @@ func main() {
 	fs := http.FileServer(http.Dir(*storageDir))
 	http.Handle("GET /checkpoint", addCacheHeaders("no-cache", fs))
 	http.Handle("GET /tile/", addCacheHeaders("max-age=31536000, immutable", fs))
-	http.Handle("GET /", fs)
+	http.Handle("GET /entries/", fs)
 
 	// TODO(mhutchinson): Change the listen flag to just a port, or fix up this address formatting
 	klog.Infof("Environment variables useful for accessing this log:\n"+
