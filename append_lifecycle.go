@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -359,7 +360,7 @@ func (i *integrationStats) statsDecorator(delegate AddFn) AddFn {
 				}
 			}
 
-			attr = append(attr, attribute.String("tessera.pushback", pushbackType))
+			attr = append(attr, attribute.String("tessera.pushback", strings.ReplaceAll(pushbackType, " ", "_")))
 			attr = append(attr, attribute.Bool("tessera.duplicate", idx.IsDup))
 
 			appenderAddsTotal.Add(ctx, 1, metric.WithAttributes(attr...))
