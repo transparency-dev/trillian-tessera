@@ -346,15 +346,20 @@ func (i *integrationStats) statsDecorator(delegate AddFn) AddFn {
 		return func() (Index, error) {
 			idx, err := f()
 			attr := []attribute.KeyValue{}
+			pushbackType := "" // This will be used for the pushback attribute below, empty string means no pushback
+
 			if err != nil {
-				if !IsPushback(err) {
+				if IsPushback(err) {
+					// record the the fact there was pushback, and use the error string as the type.
+					pushbackType = err.Error()
+				} else {
 					// Just flag that it's an errored request to avoid high cardinality of attribute values.
 					// TODO(al): We might want to bucket errors into OTel status codes in the future, though.
 					attr = append(attr, attribute.String("tessera.error.type", "_OTHER"))
 				}
 			}
 
-			attr = append(attr, attribute.Bool("tessera.pushback", IsPushback(err)))
+			attr = append(attr, attribute.String("tessera.pushback", pushbackType))
 			attr = append(attr, attribute.Bool("tessera.duplicate", idx.IsDup))
 
 			appenderAddsTotal.Add(ctx, 1, metric.WithAttributes(attr...))
