@@ -89,6 +89,24 @@ func NewAntispam(ctx context.Context, badgerPath string, opts AntispamOpts) (*An
 		db:   db,
 	}
 
+	go func() {
+		ticker := time.NewTicker(1 * time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
+
+		again:
+			err := db.RunValueLogGC(0.7)
+			if err == nil {
+				goto again
+			}
+		}
+	}()
+
 	return r, nil
 }
 
