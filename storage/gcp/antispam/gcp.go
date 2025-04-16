@@ -41,6 +41,8 @@ const (
 	DefaultPushbackThreshold = 2048
 )
 
+var errPushback = fmt.Errorf("antispam %w", tessera.ErrPushback)
+
 // AntispamOpts allows configuration of some tunable options.
 type AntispamOpts struct {
 	// MaxBatchSize is the largest number of mutations permitted in a single BatchWrite operation when
@@ -58,7 +60,7 @@ type AntispamOpts struct {
 	// the antispam follower falling too far behind.
 	//
 	// When the antispam follower is at least this many entries behind the size of the locally integrated tree,
-	// the antispam decorator will return tessera.ErrPushback for every Add request.
+	// the antispam decorator will return a wrapped tessera.ErrPushback for every Add request.
 	PushbackThreshold uint
 }
 
@@ -110,7 +112,7 @@ type AntispamStorage struct {
 	// pushBack is used to prevent the follower from getting too far underwater.
 	// Populate dynamically will set this to true/false based on how far behind the follower is from the
 	// currently integrated tree size.
-	// When pushBack is true, the decorator will start returning ErrPushback to all calls.
+	// When pushBack is true, the decorator will start returning a wrapped ErrPushback to all calls.
 	pushBack atomic.Bool
 
 	numLookups atomic.Uint64
@@ -160,7 +162,7 @@ func (d *AntispamStorage) Decorator() func(f tessera.AddFn) tessera.AddFn {
 				//
 				// We may decide in the future that serving duplicate reads is more important than catching up as quickly
 				// as possible, in which case we'd move this check down below the call to index.
-				return func() (tessera.Index, error) { return tessera.Index{}, tessera.ErrPushback }
+				return func() (tessera.Index, error) { return tessera.Index{}, errPushback }
 			}
 			idx, err := d.index(ctx, e.Identity())
 			if err != nil {

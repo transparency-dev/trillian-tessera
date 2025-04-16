@@ -23,7 +23,12 @@ import (
 //
 // Personalities encountering this error should apply back-pressure to the source of new entries
 // in an appropriate manner (e.g. for HTTP services, return a 503 with a Retry-After header).
-var ErrPushback = errors.New("too many unintegrated entries")
+var ErrPushback = errors.New("pushback")
+
+// IsPushback returns true if the provided error is (or wraps) ErrPushback.
+func IsPushback(e error) bool {
+	return errors.Is(e, ErrPushback)
+}
 
 // Driver is the implementation-specific parts of Tessera. No methods are on here as this is not for public use.
 type Driver interface{}
