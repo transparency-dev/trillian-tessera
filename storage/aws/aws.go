@@ -55,6 +55,8 @@ import (
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/api"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
+	"github.com/transparency-dev/trillian-tessera/internal/migrate"
+	"github.com/transparency-dev/trillian-tessera/shizzle"
 	storage "github.com/transparency-dev/trillian-tessera/storage/internal"
 	"golang.org/x/sync/errgroup"
 	"k8s.io/klog/v2"
@@ -98,7 +100,7 @@ type objStore interface {
 // sequencer describes a type which knows how to sequence entries.
 type sequencer interface {
 	// assignEntries should durably allocate contiguous index numbers to the provided entries.
-	assignEntries(ctx context.Context, entries []*tessera.Entry) error
+	assignEntries(ctx context.Context, entries []*shizzle.Entry) error
 	// consumeEntries should call the provided function with up to limit previously sequenced entries.
 	// If the call to consumeFunc returns no error, the entries should be considered to have been consumed.
 	// If any entries were successfully consumed, the implementation should also return true; this
@@ -283,7 +285,7 @@ func (a *Appender) publishCheckpointTask(ctx context.Context, interval time.Dura
 }
 
 // Add is the entrypoint for adding entries to a sequencing log.
-func (a *Appender) Add(ctx context.Context, e *tessera.Entry) tessera.IndexFuture {
+func (a *Appender) Add(ctx context.Context, e *shizzle.Entry) shizzle.IndexFuture {
 	return a.queue.Add(ctx, e)
 }
 
@@ -439,7 +441,7 @@ func (a *Appender) updateEntryBundles(ctx context.Context, fromSeq uint64, entri
 }
 
 // MigrationWriter creates a new AWS storage for the MigrationWriter lifecycle mode.
-func (s *Storage) MigrationWriter(ctx context.Context, opts *tessera.MigrationOptions) (tessera.MigrationWriter, tessera.LogReader, error) {
+func (s *Storage) MigrationWriter(ctx context.Context, opts *tessera.MigrationOptions) (migrate.MigrationWriter, tessera.LogReader, error) {
 	logStore := &logResourceStore{
 		objStore: &s3Storage{
 			s3Client:     s3.NewFromConfig(*s.cfg.SDKConfig, s.cfg.S3Options),
@@ -472,7 +474,7 @@ type MigrationStorage struct {
 	logStore     *logResourceStore
 }
 
-var _ tessera.MigrationWriter = &MigrationStorage{}
+var _ migrate.MigrationWriter = &MigrationStorage{}
 
 func (m *MigrationStorage) AwaitIntegration(ctx context.Context, sourceSize uint64) ([]byte, error) {
 	t := time.NewTicker(time.Second)
@@ -919,7 +921,7 @@ func (s *mySQLSequencer) initDB(ctx context.Context) error {
 // Entries are allocated contiguous indices, in the order in which they appear in the entries parameter.
 // This is achieved by storing the passed-in entries in the Seq table in MySQL, keyed by the
 // index assigned to the first entry in the batch.
-func (s *mySQLSequencer) assignEntries(ctx context.Context, entries []*tessera.Entry) error {
+func (s *mySQLSequencer) assignEntries(ctx context.Context, entries []*shizzle.Entry) error {
 	// First grab the treeSize in a non-locking read-only fashion (we don't want to block/collide with integration).
 	// We'll use this value to determine whether we need to apply back-pressure.
 	var treeSize uint64

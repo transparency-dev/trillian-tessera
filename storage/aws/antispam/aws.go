@@ -28,6 +28,7 @@ import (
 	"time"
 
 	tessera "github.com/transparency-dev/trillian-tessera"
+	"github.com/transparency-dev/trillian-tessera/shizzle"
 	storage "github.com/transparency-dev/trillian-tessera/storage/internal"
 	"k8s.io/klog/v2"
 
@@ -202,9 +203,9 @@ func (d *AntispamStorage) index(ctx context.Context, h []byte) (*uint64, error) 
 
 // Decorator returns a function which will wrap an underlying Add delegate with
 // code to dedup against the stored data.
-func (d *AntispamStorage) Decorator() func(f tessera.AddFn) tessera.AddFn {
-	return func(delegate tessera.AddFn) tessera.AddFn {
-		return func(ctx context.Context, e *tessera.Entry) tessera.IndexFuture {
+func (d *AntispamStorage) Decorator() func(f shizzle.AddFn) shizzle.AddFn {
+	return func(delegate shizzle.AddFn) shizzle.AddFn {
+		return func(ctx context.Context, e *shizzle.Entry) shizzle.IndexFuture {
 			if d.pushBack.Load() {
 				// The follower is too far behind the currently integrated tree, so we're going to push back against
 				// the incoming requests.
@@ -214,14 +215,14 @@ func (d *AntispamStorage) Decorator() func(f tessera.AddFn) tessera.AddFn {
 				//
 				// We may decide in the future that serving duplicate reads is more important than catching up as quickly
 				// as possible, in which case we'd move this check down below the call to index.
-				return func() (tessera.Index, error) { return tessera.Index{}, errPushback }
+				return func() (shizzle.Index, error) { return shizzle.Index{}, errPushback }
 			}
 			idx, err := d.index(ctx, e.Identity())
 			if err != nil {
-				return func() (tessera.Index, error) { return tessera.Index{}, err }
+				return func() (shizzle.Index, error) { return shizzle.Index{}, err }
 			}
 			if idx != nil {
-				return func() (tessera.Index, error) { return tessera.Index{Index: *idx, IsDup: true}, nil }
+				return func() (shizzle.Index, error) { return shizzle.Index{Index: *idx, IsDup: true}, nil }
 			}
 
 			return delegate(ctx, e)

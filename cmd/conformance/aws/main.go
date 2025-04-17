@@ -29,6 +29,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/go-sql-driver/mysql"
 	tessera "github.com/transparency-dev/trillian-tessera"
+	"github.com/transparency-dev/trillian-tessera/shizzle"
 	"github.com/transparency-dev/trillian-tessera/storage/aws"
 	aws_as "github.com/transparency-dev/trillian-tessera/storage/aws/antispam"
 	"golang.org/x/mod/sumdb/note"
@@ -111,7 +112,7 @@ func main() {
 			return
 		}
 
-		idx, err := appender.Add(r.Context(), tessera.NewEntry(b))()
+		idx, err := appender.Add(r.Context(), shizzle.NewEntry(b))()
 		if err != nil {
 			if errors.Is(err, tessera.ErrPushback) {
 				w.Header().Add("Retry-After", "1")

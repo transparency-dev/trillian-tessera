@@ -30,6 +30,7 @@ import (
 	"golang.org/x/mod/sumdb/note"
 
 	tessera "github.com/transparency-dev/trillian-tessera"
+	"github.com/transparency-dev/trillian-tessera/shizzle"
 	"github.com/transparency-dev/trillian-tessera/storage/posix"
 	"k8s.io/klog/v2"
 )
@@ -54,7 +55,7 @@ const (
 // sequence numbers assigned to the data from the provided input files.
 type entryInfo struct {
 	name string
-	f    tessera.IndexFuture
+	f    shizzle.IndexFuture
 }
 
 func main() {
@@ -105,7 +106,7 @@ func main() {
 			klog.Exitf("Failed to read entry file %q: %q", fp, err)
 		}
 
-		f := appender.Add(ctx, tessera.NewEntry(b))
+		f := appender.Add(ctx, shizzle.NewEntry(b))
 		indexFutures = append(indexFutures, entryInfo{name: fp, f: f})
 	}
 

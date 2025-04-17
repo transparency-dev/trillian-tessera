@@ -33,6 +33,8 @@ import (
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/api"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
+	"github.com/transparency-dev/trillian-tessera/internal/migrate"
+	"github.com/transparency-dev/trillian-tessera/shizzle"
 	storage "github.com/transparency-dev/trillian-tessera/storage/internal"
 	"k8s.io/klog/v2"
 )
@@ -174,7 +176,7 @@ func (s *Storage) lockFile(p string) (func() error, error) {
 // by this method have successfully evaluated. Terminating earlier than this will likely
 // mean that some of the entries added are not committed to by a checkpoint, and thus are
 // not considered to be in the log.
-func (a *appender) Add(ctx context.Context, e *tessera.Entry) tessera.IndexFuture {
+func (a *appender) Add(ctx context.Context, e *shizzle.Entry) shizzle.IndexFuture {
 	return a.queue.Add(ctx, e)
 }
 
@@ -219,7 +221,7 @@ func (l *logResourceStorage) StreamEntries(ctx context.Context, fromEntry uint64
 // sequenced entries are contiguous from the zeroth entry (i.e left-hand dense).
 // We try to minimise the number of partially complete entry bundles by writing entries in chunks rather
 // than one-by-one.
-func (a *appender) sequenceBatch(ctx context.Context, entries []*tessera.Entry) error {
+func (a *appender) sequenceBatch(ctx context.Context, entries []*shizzle.Entry) error {
 	// Double locking:
 	// - The mutex `Lock()` ensures that multiple concurrent calls to this function within a task are serialised.
 	// - The POSIX `lockFile()` ensures that distinct tasks are serialised.
@@ -694,7 +696,7 @@ func createEx(p string, d []byte) error {
 }
 
 // MigrationWriter creates a new POSIX storage for the MigrationTarget lifecycle mode.
-func (s *Storage) MigrationWriter(ctx context.Context, opts *tessera.MigrationOptions) (tessera.MigrationWriter, tessera.LogReader, error) {
+func (s *Storage) MigrationWriter(ctx context.Context, opts *tessera.MigrationOptions) (migrate.MigrationWriter, tessera.LogReader, error) {
 	r := &MigrationStorage{
 		s: s,
 		logStorage: &logResourceStorage{
@@ -717,7 +719,7 @@ type MigrationStorage struct {
 	curSize      uint64
 }
 
-var _ tessera.MigrationWriter = &MigrationStorage{}
+var _ migrate.MigrationWriter = &MigrationStorage{}
 
 func (m *MigrationStorage) AwaitIntegration(ctx context.Context, sourceSize uint64) ([]byte, error) {
 	t := time.NewTicker(time.Second)

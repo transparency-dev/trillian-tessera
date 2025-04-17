@@ -25,6 +25,7 @@ import (
 	"cloud.google.com/go/spanner/spannertest"
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/api"
+	"github.com/transparency-dev/trillian-tessera/shizzle"
 	"github.com/transparency-dev/trillian-tessera/testonly"
 	"k8s.io/klog/v2"
 )
@@ -85,7 +86,7 @@ func TestAntispamStorage(t *testing.T) {
 
 			entryIndex := make(map[string]uint64)
 			for i, e := range test.logEntries {
-				idx, err := fl.Appender.Add(t.Context(), tessera.NewEntry(e))()
+				idx, err := fl.Appender.Add(t.Context(), shizzle.NewEntry(e))()
 				if err != nil {
 					t.Fatalf("Add(%d): %v", i, err)
 				}

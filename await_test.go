@@ -27,6 +27,7 @@ import (
 
 	"github.com/transparency-dev/formats/log"
 	tessera "github.com/transparency-dev/trillian-tessera"
+	"github.com/transparency-dev/trillian-tessera/shizzle"
 	"golang.org/x/mod/sumdb/note"
 )
 
@@ -138,9 +139,9 @@ func TestAwait(t *testing.T) {
 			}
 			awaiter := tessera.NewPublicationAwaiter(ctx, readCheckpoint, 10*time.Millisecond)
 
-			future := func() (tessera.Index, error) {
+			future := func() (shizzle.Index, error) {
 				<-time.After(tC.fDelay)
-				return tessera.Index{Index: tC.fIndex}, tC.fErr
+				return shizzle.Index{Index: tC.fIndex}, tC.fErr
 			}
 			i, cp, err := awaiter.Await(ctx, future)
 			if gotErr := err != nil; gotErr != tC.wantErr {
@@ -200,9 +201,9 @@ func TestAwait_multiClient(t *testing.T) {
 	wg := sync.WaitGroup{}
 	for i := range 300 {
 		index := uint64(i)
-		future := func() (tessera.Index, error) {
+		future := func() (shizzle.Index, error) {
 			<-time.After(15 * time.Millisecond)
-			return tessera.Index{Index: index}, nil
+			return shizzle.Index{Index: index}, nil
 		}
 		wg.Add(1)
 		go func() {
