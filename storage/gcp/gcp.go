@@ -52,6 +52,7 @@ import (
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/api"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
+	"github.com/transparency-dev/trillian-tessera/internal/migrate"
 	"github.com/transparency-dev/trillian-tessera/internal/otel"
 	storage "github.com/transparency-dev/trillian-tessera/storage/internal"
 	"golang.org/x/sync/errgroup"
@@ -1017,7 +1018,7 @@ func (s *gcsStorage) lastModified(ctx context.Context, obj string) (time.Time, e
 }
 
 // MigrationWriter creates a new GCP storage for the MigrationTarget lifecycle mode.
-func (s *Storage) MigrationWriter(ctx context.Context, opts *tessera.MigrationOptions) (tessera.MigrationWriter, tessera.LogReader, error) {
+func (s *Storage) MigrationWriter(ctx context.Context, opts *tessera.MigrationOptions) (migrate.MigrationWriter, tessera.LogReader, error) {
 	c, err := gcs.NewClient(ctx, gcs.WithJSONReads())
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create GCS client: %v", err)
@@ -1064,7 +1065,7 @@ type MigrationStorage struct {
 	logStore     *logResourceStore
 }
 
-var _ tessera.MigrationWriter = &MigrationStorage{}
+var _ migrate.MigrationWriter = &MigrationStorage{}
 
 func (m *MigrationStorage) AwaitIntegration(ctx context.Context, sourceSize uint64) ([]byte, error) {
 	t := time.NewTicker(time.Second)

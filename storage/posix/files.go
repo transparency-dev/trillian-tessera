@@ -33,6 +33,7 @@ import (
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/api"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
+	"github.com/transparency-dev/trillian-tessera/internal/migrate"
 	storage "github.com/transparency-dev/trillian-tessera/storage/internal"
 	"k8s.io/klog/v2"
 )
@@ -694,7 +695,7 @@ func createEx(p string, d []byte) error {
 }
 
 // MigrationWriter creates a new POSIX storage for the MigrationTarget lifecycle mode.
-func (s *Storage) MigrationWriter(ctx context.Context, opts *tessera.MigrationOptions) (tessera.MigrationWriter, tessera.LogReader, error) {
+func (s *Storage) MigrationWriter(ctx context.Context, opts *tessera.MigrationOptions) (migrate.MigrationWriter, tessera.LogReader, error) {
 	r := &MigrationStorage{
 		s: s,
 		logStorage: &logResourceStorage{
@@ -717,7 +718,7 @@ type MigrationStorage struct {
 	curSize      uint64
 }
 
-var _ tessera.MigrationWriter = &MigrationStorage{}
+var _ migrate.MigrationWriter = &MigrationStorage{}
 
 func (m *MigrationStorage) AwaitIntegration(ctx context.Context, sourceSize uint64) ([]byte, error) {
 	t := time.NewTicker(time.Second)
