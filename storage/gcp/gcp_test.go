@@ -124,7 +124,7 @@ func TestSpannerSequencerPushback(t *testing.T) {
 			// Now perform the test with a single additional entry to check for pushback
 			entries = []*tessera.Entry{tessera.NewEntry([]byte("additional"))}
 			err = seq.assignEntries(ctx, entries)
-			if gotPushback := tessera.IsPushback(err); gotPushback != test.wantPushback {
+			if gotPushback := errors.Is(err, tessera.ErrPushback); gotPushback != test.wantPushback {
 				t.Fatalf("assignEntries: got pushback %t (%v), want pushback: %t", gotPushback, err, test.wantPushback)
 			} else if !gotPushback && err != nil {
 				t.Fatalf("assignEntries: %v", err)

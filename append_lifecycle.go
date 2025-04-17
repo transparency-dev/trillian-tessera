@@ -151,15 +151,15 @@ func init() {
 
 // Add adds a new entry to be sequenced.
 // This method quickly returns an IndexFuture, which will return the index assigned
-// to the new leaf. Until this is returned, the leaf is not durably added to the log,
-// and terminating the process may lead to this leaf being lost.
+// to the new leaf. Until this index is obtained from the future, the leaf is not durably
+// added to the log, and terminating the process may lead to this leaf being lost.
 // Once the future resolves and returns an index, the leaf is durably sequenced and will
 // be preserved even in the process terminates.
 //
 // Once a leaf is sequenced, it will be integrated into the tree soon (generally single digit
-// seconds). Until it is integrated, clients of the log will not be able to verifiably access
-// this value. Personalities that require blocking until the leaf is integrated can use the
-// IntegrationAwaiter to wrap the call to this method.
+// seconds). Until it is integrated and published, clients of the log will not be able to
+// verifiably access this value. Personalities that require blocking until the leaf is integrated
+// can use the IntegrationAwaiter to wrap the call to this method.
 type AddFn func(ctx context.Context, entry *Entry) IndexFuture
 
 // IndexFuture is the signature of a function which can return an assigned index or error.
@@ -350,7 +350,7 @@ func (i *integrationStats) statsDecorator(delegate AddFn) AddFn {
 			pushbackType := "" // This will be used for the pushback attribute below, empty string means no pushback
 
 			if err != nil {
-				if IsPushback(err) {
+				if errors.Is(err, ErrPushback) {
 					// record the the fact there was pushback, and use the error string as the type.
 					pushbackType = err.Error()
 				} else {
