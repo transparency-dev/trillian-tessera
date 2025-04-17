@@ -17,6 +17,7 @@ package tessera
 import (
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"sync"
 	"testing"
@@ -79,6 +80,57 @@ func TestDedupe(t *testing.T) {
 
 			}
 		})
+	}
+}
+
+func TestDedupeDoesNotCacheError(t *testing.T) {
+	idx := uint64(0)
+	rErr := true
+
+	// This delegate will return an error the first time it's called, but all further
+	// calls will succeed.
+	// When an error is returned, no entry will be "added" to the tree.
+	delegate := func(ctx context.Context, e *Entry) IndexFuture {
+		thisIdx := idx
+		// Don't add an entry if we're returning an error
+		if !rErr {
+			idx++
+		}
+		return func() (Index, error) {
+			var err error
+			// Return an error just the first time we're called
+			if rErr {
+				err = errors.New("bad thing happened")
+				rErr = false
+			}
+			return Index{Index: thisIdx}, err
+		}
+	}
+	dedupeAdd := newInMemoryDedupe(256)(delegate)
+
+	k := "foo"
+	for i := range 10 {
+		idx, err := dedupeAdd(t.Context(), NewEntry([]byte(k)))()
+
+		// We expect an error from the delegate the first time.
+		if i == 0 && err == nil {
+			t.Errorf("dedupeAdd(%q)@%d: was successful, want error", k, i)
+			continue
+		}
+		// But the 2nd call should work.
+		if i > 0 && err != nil {
+			t.Errorf("dedupeAdd(%q)@%d: got %v, want no error", k, i, err)
+			continue
+		}
+
+		// After which, all subsequent adds should dedupe to that successful add.
+		if i > 1 && !idx.IsDup {
+			t.Errorf("got IsDup=false, want isDup=true")
+			continue
+		}
+		if idx.Index != 0 {
+			t.Errorf("got index=%d, want %d", idx.Index, 1)
+		}
 	}
 }
 

@@ -59,10 +59,20 @@ type inMemoryDedupe struct {
 func (d *inMemoryDedupe) add(ctx context.Context, e *Entry) IndexFuture {
 	id := string(e.Identity())
 
-	// However many calls with the same entry come in and are deduped, we should only call delegate
-	// once for each unique entry:
 	f := sync.OnceValue(func() IndexFuture {
-		return d.delegate(ctx, e)
+		// However many calls with the same entry come in and are deduped, we should only call delegate
+		// once for each unique entry:
+		df := d.delegate(ctx, e)
+
+		return func() (Index, error) {
+			idx, err := df()
+			// If things went wrong we shouldn't cache the error, but rather let the request be retried as the error
+			// may be transient (including ErrPushback).
+			if err != nil {
+				d.cache.Remove(id)
+			}
+			return idx, err
+		}
 	})
 
 	// if we've seen this entry before, discard our f and replace
