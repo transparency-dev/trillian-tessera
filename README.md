@@ -239,7 +239,7 @@ Once an index has been returned, the new data is sequenced, but not necessarily 
 
 As discussed above in [Integration](#integration), sequenced entries will be _asynchronously_ integrated into the log and be made available via the read API.
 Some personalities may need to block until this has been performed, e.g. because they will provide the requester with an inclusion proof, which requires integration.
-Such personalities are recommended to use [Synchronous Integration](#synchronous-publication) to perform this blocking.
+Such personalities are recommended to use [Synchronous Publication](#synchronous-publication) to perform this blocking.
 
 #### Reading from the Log
 
