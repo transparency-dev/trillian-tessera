@@ -159,7 +159,7 @@ func init() {
 // Once a leaf is sequenced, it will be integrated into the tree soon (generally single digit
 // seconds). Until it is integrated and published, clients of the log will not be able to
 // verifiably access this value. Personalities that require blocking until the leaf is integrated
-// can use the IntegrationAwaiter to wrap the call to this method.
+// can use the PublicationAwaiter to wrap the call to this method.
 type AddFn func(ctx context.Context, entry *Entry) IndexFuture
 
 // IndexFuture is the signature of a function which can return an assigned index or error.

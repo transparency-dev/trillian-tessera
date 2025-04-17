@@ -28,21 +28,23 @@ import (
 	"k8s.io/klog/v2"
 )
 
-// NewIntegrationAwaiter provides an IntegrationAwaiter that can be cancelled
-// using the provided context. The IntegrationAwaiter will poll every `pollPeriod`
+// NewPublicationAwaiter provides an PublicationAwaiter that can be cancelled
+// using the provided context. The PublicationAwaiter will poll every `pollPeriod`
 // to fetch checkpoints using the `readCheckpoint` function.
-func NewIntegrationAwaiter(ctx context.Context, readCheckpoint func(ctx context.Context) ([]byte, error), pollPeriod time.Duration) *IntegrationAwaiter {
-	a := &IntegrationAwaiter{
+func NewPublicationAwaiter(ctx context.Context, readCheckpoint func(ctx context.Context) ([]byte, error), pollPeriod time.Duration) *PublicationAwaiter {
+	a := &PublicationAwaiter{
 		waiters: list.New(),
 	}
 	go a.pollLoop(ctx, readCheckpoint, pollPeriod)
 	return a
 }
 
-// IntegrationAwaiter allows client threads to block until a leaf is both
-// sequenced and integrated. A single long-lived IntegrationAwaiter instance
+// PublicationAwaiter allows client threads to block until a leaf is published.
+// This means it has a sequence number, and been integrated into the tree, and
+// a checkpoint has been published for it.
+// A single long-lived PublicationAwaiter instance
 // should be reused for all requests in the application code as there is some
-// overhead to each one; the core of an IntegrationAwaiter is a poll loop that
+// overhead to each one; the core of an PublicationAwaiter is a poll loop that
 // will fetch checkpoints whenever it has clients waiting.
 //
 // The expected call pattern is:
@@ -51,7 +53,7 @@ func NewIntegrationAwaiter(ctx context.Context, readCheckpoint func(ctx context.
 //
 // When used this way, it requires very little code at the point of use to
 // block until the new leaf is integrated into the tree.
-type IntegrationAwaiter struct {
+type PublicationAwaiter struct {
 	// This mutex is used to protect all reads and writes to fields below.
 	mu sync.Mutex
 	// waiters is a linked list of type `waiter` and corresponds to all of the
@@ -80,7 +82,7 @@ type IntegrationAwaiter struct {
 // This operation can be aborted early by cancelling the context. In this event,
 // or in the event that there is an error getting a valid checkpoint, an error
 // will be returned from this method.
-func (a *IntegrationAwaiter) Await(ctx context.Context, future IndexFuture) (Index, []byte, error) {
+func (a *PublicationAwaiter) Await(ctx context.Context, future IndexFuture) (Index, []byte, error) {
 	i, err := future()
 	if err != nil {
 		return i, nil, err
@@ -89,16 +91,16 @@ func (a *IntegrationAwaiter) Await(ctx context.Context, future IndexFuture) (Ind
 	return i, cp, err
 }
 
-// pollLoop MUST be called in a goroutine when constructing an IntegrationAwaiter
+// pollLoop MUST be called in a goroutine when constructing an PublicationAwaiter
 // and will run continually until its context is cancelled. It wakes up every
 // `pollPeriod` to check if there are clients blocking. If there are, it requests
 // the latest checkpoint from the log, parses the tree size, and releases all clients
 // that were blocked on an index smaller than this tree size.
-func (a *IntegrationAwaiter) pollLoop(ctx context.Context, readCheckpoint func(ctx context.Context) ([]byte, error), pollPeriod time.Duration) {
+func (a *PublicationAwaiter) pollLoop(ctx context.Context, readCheckpoint func(ctx context.Context) ([]byte, error), pollPeriod time.Duration) {
 	for {
 		select {
 		case <-ctx.Done():
-			klog.Info("IntegrationAwaiter exiting due to context completion")
+			klog.Info("PublicationAwaiter exiting due to context completion")
 			return
 		case <-time.After(pollPeriod):
 			// It's worth this small lock contention to make sure that no unnecessary
@@ -126,7 +128,7 @@ func (a *IntegrationAwaiter) pollLoop(ctx context.Context, readCheckpoint func(c
 	}
 }
 
-func (a *IntegrationAwaiter) await(ctx context.Context, i uint64) ([]byte, error) {
+func (a *PublicationAwaiter) await(ctx context.Context, i uint64) ([]byte, error) {
 	a.mu.Lock()
 	if a.size > i {
 		cp := a.checkpoint
@@ -148,7 +150,7 @@ func (a *IntegrationAwaiter) await(ctx context.Context, i uint64) ([]byte, error
 	}
 }
 
-func (a *IntegrationAwaiter) releaseClientsErr(err error) {
+func (a *PublicationAwaiter) releaseClientsErr(err error) {
 	cod := checkpointOrDeath{
 		err: err,
 	}
@@ -163,7 +165,7 @@ func (a *IntegrationAwaiter) releaseClientsErr(err error) {
 	a.waiters.Init()
 }
 
-func (a *IntegrationAwaiter) releaseClients(size uint64, cp []byte) {
+func (a *PublicationAwaiter) releaseClients(size uint64, cp []byte) {
 	cod := checkpointOrDeath{
 		cp: cp,
 	}

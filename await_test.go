@@ -136,7 +136,7 @@ func TestAwait(t *testing.T) {
 				<-time.After(tC.cpDelay)
 				return tC.cpBody, tC.cpErr
 			}
-			awaiter := tessera.NewIntegrationAwaiter(ctx, readCheckpoint, 10*time.Millisecond)
+			awaiter := tessera.NewPublicationAwaiter(ctx, readCheckpoint, 10*time.Millisecond)
 
 			future := func() (tessera.Index, error) {
 				<-time.After(tC.fDelay)
@@ -195,7 +195,7 @@ func TestAwait_multiClient(t *testing.T) {
 		}
 		return n, nil
 	}
-	awaiter := tessera.NewIntegrationAwaiter(ctx, readCheckpoint, 10*time.Millisecond)
+	awaiter := tessera.NewPublicationAwaiter(ctx, readCheckpoint, 10*time.Millisecond)
 
 	wg := sync.WaitGroup{}
 	for i := range 300 {
