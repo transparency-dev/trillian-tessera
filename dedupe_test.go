@@ -87,6 +87,9 @@ func TestDedupeDoesNotCacheError(t *testing.T) {
 	idx := uint64(0)
 	rErr := true
 
+	// This delegate will return an error the first time it's called, but all further
+	// calls will succeed.
+	// When an error is returned, no entry will be "added" to the tree.
 	delegate := func(ctx context.Context, e *Entry) IndexFuture {
 		thisIdx := idx
 		// Don't add an entry if we're returning an error
@@ -109,15 +112,18 @@ func TestDedupeDoesNotCacheError(t *testing.T) {
 	for i := range 10 {
 		idx, err := dedupeAdd(t.Context(), NewEntry([]byte(k)))()
 
-		// We expect an error the first time:
+		// We expect an error from the delegate the first time.
 		if i == 0 && err == nil {
 			t.Errorf("dedupeAdd(%q)@%d: was successful, want error", k, i)
 			continue
 		}
+		// But the 2nd call should work.
 		if i > 0 && err != nil {
 			t.Errorf("dedupeAdd(%q)@%d: got %v, want no error", k, i, err)
 			continue
 		}
+
+		// After which, all subsequent adds should dedupe to that successful add.
 		if i > 1 && !idx.IsDup {
 			t.Errorf("got IsDup=false, want isDup=true")
 			continue
