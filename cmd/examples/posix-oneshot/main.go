@@ -93,8 +93,8 @@ func main() {
 	}
 
 	// We don't want to exit until our entries have been integrated into the tree, so we'll use Tessera's
-	// IntegrationAwaiter to help with that.
-	await := tessera.NewIntegrationAwaiter(ctx, r.ReadCheckpoint, time.Second)
+	// PublicationAwaiter to help with that.
+	await := tessera.NewPublicationAwaiter(ctx, r.ReadCheckpoint, time.Second)
 
 	// Add each of the leaves in order, and store the futures in a slice
 	// that we will check once all leaves are sent to storage.

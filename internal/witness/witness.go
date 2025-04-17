@@ -258,7 +258,7 @@ func (w *witness) update(ctx context.Context, cp []byte, size uint64, fetchProof
 			return nil, fmt.Errorf("witness %q at %q replied with invalid signature: %q\nconstructed note: %q\nerror: %v", w.verifier.Name(), w.url, rb, string(signed), err)
 		} else {
 			w.size = uint64(size)
-			return []byte(fmt.Sprintf("— %s %s\n", n.Sigs[0].Name, n.Sigs[0].Base64)), nil
+			return fmt.Appendf(nil, "— %s %s\n", n.Sigs[0].Name, n.Sigs[0].Base64), nil
 		}
 	case http.StatusConflict:
 		// Two cases here: the first is a situation we can recover from, the second isn't.

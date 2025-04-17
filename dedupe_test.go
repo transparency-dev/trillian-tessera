@@ -85,7 +85,7 @@ func TestDedupe(t *testing.T) {
 func BenchmarkDedupe(b *testing.B) {
 	ctx := context.Background()
 	// Outer loop is for benchmark calibration, inside here is each individual run of the benchmark
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		idx := uint64(1)
 		delegate := func(ctx context.Context, e *Entry) IndexFuture {
 			thisIdx := idx
@@ -100,7 +100,7 @@ func BenchmarkDedupe(b *testing.B) {
 		for leafIndex := range 1024 {
 			wg.Add(1)
 			go func(index int) {
-				_, err := dedupeAdd(ctx, NewEntry([]byte(fmt.Sprintf("leaf with value %d", index%sha256.Size))))()
+				_, err := dedupeAdd(ctx, NewEntry(fmt.Appendf(nil, "leaf with value %d", index%sha256.Size)))()
 				if err != nil {
 					b.Error(err)
 				}

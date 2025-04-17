@@ -239,7 +239,7 @@ Once an index has been returned, the new data is sequenced, but not necessarily 
 
 As discussed above in [Integration](#integration), sequenced entries will be _asynchronously_ integrated into the log and be made available via the read API.
 Some personalities may need to block until this has been performed, e.g. because they will provide the requester with an inclusion proof, which requires integration.
-Such personalities are recommended to use [Synchronous Integration](#synchronous-integration) to perform this blocking.
+Such personalities are recommended to use [Synchronous Publication](#synchronous-publication) to perform this blocking.
 
 #### Reading from the Log
 
@@ -307,10 +307,10 @@ If this method is not called then no witnessing will be configured.
 > If the policy cannot be satisfied then no checkpoint will be published.
 > It is up to the log operator to ensure that a satisfiable policy is configured, and that the requested publishing rate is acceptable to the configured witnesses.
 
-### Synchronous Integration
+### Synchronous Publication
 
-Synchronous Integration is provided by [`tessera.IntegrationAwaiter`](https://pkg.go.dev/github.com/transparency-dev/trillian-tessera#IntegrationAwaiter).
-This allows applications built with Tessera to block until one or more leaves passed via calls to `Add()` are fully integrated into the tree.
+Synchronous Publication is provided by [`tessera.PublicationAwaiter`](https://pkg.go.dev/github.com/transparency-dev/trillian-tessera#PublicationAwaiter).
+This allows applications built with Tessera to block until leaves passed via calls to `Add()` are committed to via a public checkpoint.
 
 > [!Tip]
 > This is useful if e.g. your application needs to return an inclusion proof in response to a request to add an entry to the log.

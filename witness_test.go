@@ -202,7 +202,7 @@ func BenchmarkWitnessGroupSatisfaction(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		if !group.Satisfied(cp) {
 			b.Fatal("Group should have been satisfied!")
 		}

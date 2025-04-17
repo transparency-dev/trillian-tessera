@@ -18,17 +18,16 @@ import (
 	"errors"
 )
 
-// ErrPushback is returned by underlying storage implementations when there are too many
-// entries with indices assigned but which have not yet been integrated into the tree.
+// ErrPushback is returned by underlying storage implementations when a new entry cannot be accepted
+// due to overload in the system. This could be because there are too many entries with indices assigned
+// but which have not yet been integrated into the tree, or it could be because the antispam mechanism
+// is not able to keep up with recently added entries.
 //
 // Personalities encountering this error should apply back-pressure to the source of new entries
 // in an appropriate manner (e.g. for HTTP services, return a 503 with a Retry-After header).
+//
+// Personalities should check for this error using `errors.Is(e, ErrPushback)`.
 var ErrPushback = errors.New("pushback")
 
-// IsPushback returns true if the provided error is (or wraps) ErrPushback.
-func IsPushback(e error) bool {
-	return errors.Is(e, ErrPushback)
-}
-
 // Driver is the implementation-specific parts of Tessera. No methods are on here as this is not for public use.
-type Driver interface{}
+type Driver any

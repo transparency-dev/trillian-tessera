@@ -168,7 +168,7 @@ func BenchmarkIntegrate(b *testing.B) {
 
 	chunkSize := 200
 	seq := uint64(0)
-	for chunk := 0; chunk < b.N; chunk++ {
+	for chunk := 0; b.Loop(); chunk++ {
 		oldSeq := seq
 		c := make([][]byte, chunkSize)
 		for i := range c {

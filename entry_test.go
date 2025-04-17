@@ -22,7 +22,7 @@ import (
 
 func TestEntryMarshalBundleDelegates(t *testing.T) {
 	const wantIdx = uint64(143)
-	wantBundle := []byte(fmt.Sprintf("Yes %d", wantIdx))
+	wantBundle := fmt.Appendf(nil, "Yes %d", wantIdx)
 
 	e := NewEntry([]byte("this is data"))
 	e.marshalForBundle = func(gotIdx uint64) []byte {

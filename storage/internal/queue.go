@@ -64,7 +64,7 @@ func NewQueue(ctx context.Context, maxAge time.Duration, maxSize uint, f FlushFu
 	// a worker goroutine.
 	// This same worker thread will also handle the callbacks to f.
 	work := make(chan []*queueItem, 1)
-	toWork := func(items []interface{}) {
+	toWork := func(items []any) {
 		entries := make([]*queueItem, len(items))
 		for i, t := range items {
 			entries[i] = t.(*queueItem)

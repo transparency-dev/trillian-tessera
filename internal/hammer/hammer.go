@@ -201,7 +201,7 @@ func newLeafGenerator(startSize uint64, minLeafSize int, dupChance float64) func
 			// coder is to fill in multiple bytes at a time.
 			filler[i] = byte(source.Int())
 		}
-		return []byte(fmt.Sprintf("%x %d", filler, n))
+		return fmt.Appendf(nil, "%x %d", filler, n)
 	}
 
 	sizeLocked := startSize

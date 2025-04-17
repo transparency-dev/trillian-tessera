@@ -136,7 +136,7 @@ func TestAwait(t *testing.T) {
 				<-time.After(tC.cpDelay)
 				return tC.cpBody, tC.cpErr
 			}
-			awaiter := tessera.NewIntegrationAwaiter(ctx, readCheckpoint, 10*time.Millisecond)
+			awaiter := tessera.NewPublicationAwaiter(ctx, readCheckpoint, 10*time.Millisecond)
 
 			future := func() (tessera.Index, error) {
 				<-time.After(tC.fDelay)
@@ -183,7 +183,7 @@ func TestAwait_multiClient(t *testing.T) {
 		// Grow the tree every time this is called
 		size += 10
 		// This isn't generating a real log but can be changed if needed
-		hash := sha256.Sum256([]byte(fmt.Sprint(size)))
+		hash := sha256.Sum256(fmt.Append(nil, size))
 		cpRaw := log.Checkpoint{
 			Origin: "example.com/log/testdata",
 			Size:   size,
@@ -195,7 +195,7 @@ func TestAwait_multiClient(t *testing.T) {
 		}
 		return n, nil
 	}
-	awaiter := tessera.NewIntegrationAwaiter(ctx, readCheckpoint, 10*time.Millisecond)
+	awaiter := tessera.NewPublicationAwaiter(ctx, readCheckpoint, 10*time.Millisecond)
 
 	wg := sync.WaitGroup{}
 	for i := range 300 {

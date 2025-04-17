@@ -170,7 +170,7 @@ func TestGetTile(t *testing.T) {
 	ctx := context.Background()
 	addFn, r, _ := newTestMySQLStorage(t, ctx)
 
-	awaiter := tessera.NewIntegrationAwaiter(ctx, r.ReadCheckpoint, 10*time.Millisecond)
+	awaiter := tessera.NewPublicationAwaiter(ctx, r.ReadCheckpoint, 10*time.Millisecond)
 
 	treeSize := 258
 
@@ -178,7 +178,7 @@ func TestGetTile(t *testing.T) {
 	for i := range treeSize {
 		wg.Go(
 			func() error {
-				_, _, err := awaiter.Await(ctx, addFn(ctx, tessera.NewEntry([]byte(fmt.Sprintf("TestGetTile %d", i)))))
+				_, _, err := awaiter.Await(ctx, addFn(ctx, tessera.NewEntry(fmt.Appendf(nil, "TestGetTile %d", i))))
 				if err != nil {
 					return fmt.Errorf("failed to prep test with entry: %v", err)
 				}
