@@ -37,6 +37,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -117,6 +118,9 @@ type consumeFunc func(ctx context.Context, from uint64, entries []storage.Sequen
 type Config struct {
 	// Bucket is the name of the GCS bucket to use for storing log state.
 	Bucket string
+	// BucketPrefix is an optional prefix to prepend to all log resource paths.
+	// This can be used e.g. to store multiple logs in the same bucket.
+	BucketPrefix string
 	// Spanner is the GCP resource URI of the spanner database instance to use.
 	Spanner string
 }
@@ -206,8 +210,9 @@ func (s *Storage) Appender(ctx context.Context, opts *tessera.AppendOptions) (*t
 	a := &Appender{
 		logStore: &logResourceStore{
 			objStore: &gcsStorage{
-				gcsClient: c,
-				bucket:    s.cfg.Bucket,
+				gcsClient:    c,
+				bucket:       s.cfg.Bucket,
+				bucketPrefix: s.cfg.Bucket,
 			},
 			entriesPath: opts.EntriesPath(),
 		},
@@ -912,14 +917,19 @@ func (s *spannerCoordinator) nextIndex(ctx context.Context) (uint64, error) {
 
 // gcsStorage knows how to store and retrieve objects from GCS.
 type gcsStorage struct {
-	bucket    string
-	gcsClient *gcs.Client
+	bucket       string
+	bucketPrefix string
+	gcsClient    *gcs.Client
 }
 
 // getObject returns the data and generation of the specified object, or an error.
 func (s *gcsStorage) getObject(ctx context.Context, obj string) ([]byte, int64, error) {
 	ctx, span := tracer.Start(ctx, "tessera.storage.gcp.getObject")
 	defer span.End()
+
+	if s.bucketPrefix != "" {
+		obj = filepath.Join(s.bucketPrefix, obj)
+	}
 
 	span.SetAttributes(objectPathKey.String(obj))
 
@@ -946,6 +956,10 @@ func (s *gcsStorage) getObject(ctx context.Context, obj string) ([]byte, int64, 
 func (s *gcsStorage) setObject(ctx context.Context, objName string, data []byte, cond *gcs.Conditions, contType string, cacheCtl string) error {
 	ctx, span := tracer.Start(ctx, "tessera.storage.gcp.setObject")
 	defer span.End()
+
+	if s.bucketPrefix != "" {
+		objName = filepath.Join(s.bucketPrefix, objName)
+	}
 
 	span.SetAttributes(objectPathKey.String(objName))
 
@@ -991,6 +1005,10 @@ func (s *gcsStorage) setObject(ctx context.Context, objName string, data []byte,
 }
 
 func (s *gcsStorage) lastModified(ctx context.Context, obj string) (time.Time, error) {
+	if s.bucketPrefix != "" {
+		obj = filepath.Join(s.bucketPrefix, obj)
+	}
+
 	r, err := s.gcsClient.Bucket(s.bucket).Object(obj).NewReader(ctx)
 	if err != nil {
 		return time.Time{}, fmt.Errorf("failed to create reader for object %q in bucket %q: %w", obj, s.bucket, err)
@@ -1016,8 +1034,9 @@ func (s *Storage) MigrationWriter(ctx context.Context, opts *tessera.MigrationOp
 		sequencer:    seq,
 		logStore: &logResourceStore{
 			objStore: &gcsStorage{
-				gcsClient: c,
-				bucket:    s.cfg.Bucket,
+				gcsClient:    c,
+				bucket:       s.cfg.Bucket,
+				bucketPrefix: s.cfg.BucketPrefix,
 			},
 			entriesPath: opts.EntriesPath(),
 		},
