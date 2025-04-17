@@ -22,6 +22,7 @@ import (
 	"github.com/transparency-dev/merkle/rfc6962"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
 	"github.com/transparency-dev/trillian-tessera/ctonly"
+	"github.com/transparency-dev/trillian-tessera/shizzle"
 	"golang.org/x/crypto/cryptobyte"
 )
 
@@ -35,17 +36,17 @@ import (
 // Users of this MUST NOT call `Add` on the underlying Appender directly.
 //
 // Returns a future, which resolves to the assigned index in the log, or an error.
-func NewCertificateTransparencyAppender(a *Appender) func(context.Context, *ctonly.Entry) IndexFuture {
-	return func(ctx context.Context, e *ctonly.Entry) IndexFuture {
-		return a.Add(ctx, convertCTEntry(e))
+func NewCertificateTransparencyAppender(a shizzle.AddFn) func(context.Context, *ctonly.Entry) shizzle.IndexFuture {
+	return func(ctx context.Context, e *ctonly.Entry) shizzle.IndexFuture {
+		return a(ctx, convertCTEntry(e))
 	}
 }
 
 // convertCTEntry returns an Entry struct which will do the right thing for CT Static API logs.
 //
 // This MUST NOT be used for any other purpose.
-func convertCTEntry(e *ctonly.Entry) *Entry {
-	r := &Entry{}
+func convertCTEntry(e *ctonly.Entry) *shizzle.Entry {
+	r := &shizzle.Entry{}
 	r.internal.Identity = e.Identity()
 	r.marshalForBundle = func(idx uint64) []byte {
 		r.internal.LeafHash = e.MerkleLeafHash(idx)

@@ -31,6 +31,7 @@ import (
 	"golang.org/x/mod/sumdb/note"
 
 	tessera "github.com/transparency-dev/trillian-tessera"
+	"github.com/transparency-dev/trillian-tessera/shizzle"
 	"github.com/transparency-dev/trillian-tessera/storage/posix"
 	badger_as "github.com/transparency-dev/trillian-tessera/storage/posix/antispam"
 	"k8s.io/klog/v2"
@@ -96,7 +97,7 @@ func main() {
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
-		idx, err := appender.Add(r.Context(), tessera.NewEntry(b))()
+		idx, err := appender.Add(r.Context(), shizzle.NewEntry(b))()
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			_, _ = w.Write([]byte(err.Error()))

@@ -33,6 +33,7 @@ import (
 
 	// #region common_imports
 	tessera "github.com/transparency-dev/trillian-tessera"
+	"github.com/transparency-dev/trillian-tessera/shizzle"
 
 	// Choose one!
 	"github.com/transparency-dev/trillian-tessera/storage/posix"
@@ -77,7 +78,7 @@ func constructAndUseAppender() {
 		panic(err)
 	}
 
-	future, err := appender.Add(ctx, tessera.NewEntry(data))()
+	future, err := appender.Add(ctx, shizzle.NewEntry(data))()
 	// #endregion
 
 	// use the vars so the compiler/linter doesn't complain.

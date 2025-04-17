@@ -22,7 +22,7 @@ import (
 	"testing"
 	"time"
 
-	tessera "github.com/transparency-dev/trillian-tessera"
+	"github.com/transparency-dev/trillian-tessera/shizzle"
 	storage "github.com/transparency-dev/trillian-tessera/storage/internal"
 )
 
@@ -53,12 +53,12 @@ func TestQueue(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			ctx := context.Background()
 			assignMu := sync.Mutex{}
-			assignedItems := make([]*tessera.Entry, test.numItems)
+			assignedItems := make([]*shizzle.Entry, test.numItems)
 			assignedIndex := uint64(0)
 
 			// flushFunc mimics sequencing storage - it takes entries, assigns them to
 			// positions in assignedItems.
-			flushFunc := func(_ context.Context, entries []*tessera.Entry) error {
+			flushFunc := func(_ context.Context, entries []*shizzle.Entry) error {
 				assignMu.Lock()
 				defer assignMu.Unlock()
 
@@ -74,11 +74,11 @@ func TestQueue(t *testing.T) {
 			q := storage.NewQueue(ctx, test.maxWait, uint(test.maxEntries), flushFunc)
 
 			// Now submit a bunch of entries
-			adds := make([]tessera.IndexFuture, test.numItems)
-			wantEntries := make([]*tessera.Entry, test.numItems)
+			adds := make([]shizzle.IndexFuture, test.numItems)
+			wantEntries := make([]*shizzle.Entry, test.numItems)
 			for i := uint64(0); i < test.numItems; i++ {
 				d := fmt.Appendf(nil, "item %d", i)
-				wantEntries[i] = tessera.NewEntry(d)
+				wantEntries[i] = shizzle.NewEntry(d)
 				adds[i] = q.Add(ctx, wantEntries[i])
 			}
 

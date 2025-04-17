@@ -36,6 +36,7 @@ import (
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/api"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
+	"github.com/transparency-dev/trillian-tessera/shizzle"
 	"golang.org/x/mod/sumdb/note"
 	"golang.org/x/sync/errgroup"
 	"k8s.io/klog/v2"
@@ -178,7 +179,7 @@ func TestGetTile(t *testing.T) {
 	for i := range treeSize {
 		wg.Go(
 			func() error {
-				_, _, err := awaiter.Await(ctx, addFn(ctx, tessera.NewEntry(fmt.Appendf(nil, "TestGetTile %d", i))))
+				_, _, err := awaiter.Await(ctx, addFn(ctx, shizzle.NewEntry(fmt.Appendf(nil, "TestGetTile %d", i))))
 				if err != nil {
 					return fmt.Errorf("failed to prep test with entry: %v", err)
 				}
@@ -349,7 +350,7 @@ func TestParallelAdd(t *testing.T) {
 			eG := errgroup.Group{}
 			for range 1024 {
 				eG.Go(func() error {
-					_, err := addFn(ctx, tessera.NewEntry(test.entry))()
+					_, err := addFn(ctx, shizzle.NewEntry(test.entry))()
 					return err
 				})
 			}
@@ -382,7 +383,7 @@ func TestTileRoundTrip(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			entryIndex, err := addFn(ctx, tessera.NewEntry(test.entry))()
+			entryIndex, err := addFn(ctx, shizzle.NewEntry(test.entry))()
 			if err != nil {
 				t.Errorf("Add got err: %v", err)
 			}
@@ -433,7 +434,7 @@ func TestEntryBundleRoundTrip(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			entryIndex, err := addFn(ctx, tessera.NewEntry(test.entry))()
+			entryIndex, err := addFn(ctx, shizzle.NewEntry(test.entry))()
 			if err != nil {
 				t.Errorf("Add got err: %v", err)
 			}
@@ -590,7 +591,7 @@ func populateEntries(t *testing.T, size uint64, s *Storage) {
 	}
 }
 
-func newTestMySQLStorage(t *testing.T, ctx context.Context) (tessera.AddFn, tessera.LogReader, *Storage) {
+func newTestMySQLStorage(t *testing.T, ctx context.Context) (shizzle.AddFn, tessera.LogReader, *Storage) {
 	t.Helper()
 	initDatabaseSchema(ctx)
 

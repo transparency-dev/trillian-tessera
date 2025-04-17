@@ -23,6 +23,7 @@ import (
 	"github.com/transparency-dev/merkle/rfc6962"
 	"github.com/transparency-dev/trillian-tessera/api"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
+	"github.com/transparency-dev/trillian-tessera/shizzle"
 )
 
 // NoMoreEntries is a sentinel error returned by StreamEntries when no more entries will be returned by calls to the next function.
@@ -111,7 +112,7 @@ type Antispam interface {
 	// Decorator must return a function which knows how to decorate an Appender's Add function in order
 	// to return an index previously assigned to an entry with the same identity hash, if one exists, or
 	// delegate to the next Add function in the chain otherwise.
-	Decorator() func(AddFn) AddFn
+	Decorator() func(shizzle.AddFn) shizzle.AddFn
 	// Follower should return a structure which will populate the anti-spam index by tailing the contents
 	// of the log, using the provided function to turn entry bundles into identity hashes.
 	Follower(func(entryBundle []byte) ([][]byte, error)) Follower

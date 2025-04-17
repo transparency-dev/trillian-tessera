@@ -31,6 +31,7 @@ import (
 	"github.com/transparency-dev/trillian-tessera/internal/otel"
 	"github.com/transparency-dev/trillian-tessera/internal/parse"
 	"github.com/transparency-dev/trillian-tessera/internal/witness"
+	"github.com/transparency-dev/trillian-tessera/shizzle"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 	"golang.org/x/mod/sumdb/note"
@@ -149,38 +150,11 @@ func init() {
 
 }
 
-// Add adds a new entry to be sequenced.
-// This method quickly returns an IndexFuture, which will return the index assigned
-// to the new leaf. Until this index is obtained from the future, the leaf is not durably
-// added to the log, and terminating the process may lead to this leaf being lost.
-// Once the future resolves and returns an index, the leaf is durably sequenced and will
-// be preserved even in the process terminates.
-//
-// Once a leaf is sequenced, it will be integrated into the tree soon (generally single digit
-// seconds). Until it is integrated and published, clients of the log will not be able to
-// verifiably access this value. Personalities that require blocking until the leaf is integrated
-// can use the PublicationAwaiter to wrap the call to this method.
-type AddFn func(ctx context.Context, entry *Entry) IndexFuture
-
-// IndexFuture is the signature of a function which can return an assigned index or error.
-//
-// Implementations of this func are likely to be "futures", or a promise to return this data at
-// some point in the future, and as such will block when called if the data isn't yet available.
-type IndexFuture func() (Index, error)
-
-// Index represents a durably assigned index for some entry.
-type Index struct {
-	// Index is the location in the log to which a particular entry has been assigned.
-	Index uint64
-	// IsDup is true if Index represents a previously assigned index for an identical entry.
-	IsDup bool
-}
-
 // Appender allows personalities access to the lifecycle methods associated with logs
 // in sequencing mode. This only has a single method, but other methods are likely to be added
 // such as a Shutdown method for #341.
 type Appender struct {
-	Add AddFn
+	Add shizzle.AddFn
 }
 
 // NewAppender returns an Appender, which allows a personality to incrementally append new
@@ -229,7 +203,7 @@ func NewAppender(ctx context.Context, d Driver, opts *AppendOptions) (*Appender,
 		readCheckpoint: r.ReadCheckpoint,
 	}
 	// TODO(mhutchinson): move this into the decorators
-	a.Add = func(ctx context.Context, entry *Entry) IndexFuture {
+	a.Add = func(ctx context.Context, entry *shizzle.Entry) shizzle.IndexFuture {
 		return t.Add(ctx, entry)
 	}
 	return a, t.Shutdown, r, nil
@@ -339,12 +313,12 @@ func (i *integrationStats) updateStats(ctx context.Context, r LogReader) {
 
 // statsDecorator wraps a delegate AddFn with code to calculate/update
 // metric stats.
-func (i *integrationStats) statsDecorator(delegate AddFn) AddFn {
-	return func(ctx context.Context, entry *Entry) IndexFuture {
+func (i *integrationStats) statsDecorator(delegate shizzle.AddFn) shizzle.AddFn {
+	return func(ctx context.Context, entry *shizzle.Entry) shizzle.IndexFuture {
 		start := time.Now()
 		f := delegate(ctx, entry)
 
-		return func() (Index, error) {
+		return func() (shizzle.Index, error) {
 			idx, err := f()
 			attr := []attribute.KeyValue{}
 			pushbackType := "" // This will be used for the pushback attribute below, empty string means no pushback
@@ -377,7 +351,7 @@ func (i *integrationStats) statsDecorator(delegate AddFn) AddFn {
 }
 
 type terminator struct {
-	delegate       AddFn
+	delegate       shizzle.AddFn
 	readCheckpoint func(ctx context.Context) ([]byte, error)
 	// This mutex guards the stopped state. We use this instead of an atomic.Boolean
 	// to get the property that no readers of this state can have the lock when the
@@ -390,16 +364,16 @@ type terminator struct {
 	largestIssued atomic.Uint64
 }
 
-func (t *terminator) Add(ctx context.Context, entry *Entry) IndexFuture {
+func (t *terminator) Add(ctx context.Context, entry *shizzle.Entry) shizzle.IndexFuture {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 	if t.stopped {
-		return func() (Index, error) {
-			return Index{}, errors.New("appender has been shut down")
+		return func() (shizzle.Index, error) {
+			return shizzle.Index{}, errors.New("appender has been shut down")
 		}
 	}
 	res := t.delegate(ctx, entry)
-	return func() (Index, error) {
+	return func() (shizzle.Index, error) {
 		i, err := res()
 		if err != nil {
 			return i, err
@@ -474,7 +448,7 @@ func NewAppendOptions() *AppendOptions {
 		entriesPath:            layout.EntriesPath,
 		bundleIDHasher:         defaultIDHasher,
 		checkpointInterval:     DefaultCheckpointInterval,
-		addDecorators:          make([]func(AddFn) AddFn, 0),
+		addDecorators:          make([]func(shizzle.AddFn) shizzle.AddFn, 0),
 		pushbackMaxOutstanding: DefaultPushbackMaxOutstanding,
 	}
 }
@@ -497,7 +471,7 @@ type AppendOptions struct {
 	checkpointInterval time.Duration
 	witnesses          WitnessGroup
 
-	addDecorators []func(AddFn) AddFn
+	addDecorators []func(shizzle.AddFn) shizzle.AddFn
 	followers     []Follower
 }
 

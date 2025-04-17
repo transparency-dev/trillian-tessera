@@ -20,6 +20,8 @@ import (
 	"fmt"
 	"sync"
 	"testing"
+
+	"github.com/transparency-dev/trillian-tessera/shizzle"
 )
 
 func TestDedupe(t *testing.T) {
@@ -51,23 +53,23 @@ func TestDedupe(t *testing.T) {
 	for _, tC := range testCases {
 		t.Run(tC.desc, func(t *testing.T) {
 			idx := uint64(1)
-			delegate := func(ctx context.Context, e *Entry) IndexFuture {
+			delegate := func(ctx context.Context, e *shizzle.Entry) shizzle.IndexFuture {
 				thisIdx := idx
 				idx++
-				return func() (Index, error) {
-					return Index{Index: thisIdx}, nil
+				return func() (shizzle.Index, error) {
+					return shizzle.Index{Index: thisIdx}, nil
 				}
 			}
 			dedupeAdd := newInMemoryDedupe(256)(delegate)
 
 			// Add foo, bar, baz to prime the cache to make things interesting
 			for _, s := range []string{"foo", "bar", "baz"} {
-				if _, err := dedupeAdd(ctx, NewEntry([]byte(s)))(); err != nil {
+				if _, err := dedupeAdd(ctx, shizzle.NewEntry([]byte(s)))(); err != nil {
 					t.Fatalf("dedupeAdd(%q): %v", s, err)
 				}
 			}
 
-			i, err := dedupeAdd(ctx, NewEntry([]byte(tC.newValue)))()
+			i, err := dedupeAdd(ctx, shizzle.NewEntry([]byte(tC.newValue)))()
 			if err != nil {
 				t.Fatalf("dedupeAdd(%q): %v", tC.newValue, err)
 			}
@@ -87,11 +89,11 @@ func BenchmarkDedupe(b *testing.B) {
 	// Outer loop is for benchmark calibration, inside here is each individual run of the benchmark
 	for b.Loop() {
 		idx := uint64(1)
-		delegate := func(ctx context.Context, e *Entry) IndexFuture {
+		delegate := func(ctx context.Context, e *shizzle.Entry) shizzle.IndexFuture {
 			thisIdx := idx
 			idx++
-			return func() (Index, error) {
-				return Index{Index: thisIdx}, nil
+			return func() (shizzle.Index, error) {
+				return shizzle.Index{Index: thisIdx}, nil
 			}
 		}
 		dedupeAdd := newInMemoryDedupe(256)(delegate)
@@ -100,7 +102,7 @@ func BenchmarkDedupe(b *testing.B) {
 		for leafIndex := range 1024 {
 			wg.Add(1)
 			go func(index int) {
-				_, err := dedupeAdd(ctx, NewEntry(fmt.Appendf(nil, "leaf with value %d", index%sha256.Size)))()
+				_, err := dedupeAdd(ctx, shizzle.NewEntry(fmt.Appendf(nil, "leaf with value %d", index%sha256.Size)))()
 				if err != nil {
 					b.Error(err)
 				}

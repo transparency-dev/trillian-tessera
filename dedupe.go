@@ -20,6 +20,7 @@ import (
 	"sync"
 
 	lru "github.com/hashicorp/golang-lru/v2"
+	"github.com/transparency-dev/trillian-tessera/shizzle"
 )
 
 // newInMemoryDedupe wraps an Add function to prevent duplicate entries being written to the underlying
@@ -35,9 +36,9 @@ import (
 // When using this with a persistent dedupe, the persistent layer should be the delegate of this
 // InMemoryDedupe. This allows recent duplicates to be deduplicated in memory, reducing the need to
 // make calls to a persistent storage.
-func newInMemoryDedupe(size uint) func(AddFn) AddFn {
-	return func(af AddFn) AddFn {
-		c, err := lru.New[string, func() IndexFuture](int(size))
+func newInMemoryDedupe(size uint) func(shizzle.AddFn) shizzle.AddFn {
+	return func(af shizzle.AddFn) shizzle.AddFn {
+		c, err := lru.New[string, func() shizzle.IndexFuture](int(size))
 		if err != nil {
 			panic(fmt.Errorf("lru.New(%d): %v", size, err))
 		}
@@ -50,26 +51,26 @@ func newInMemoryDedupe(size uint) func(AddFn) AddFn {
 }
 
 type inMemoryDedupe struct {
-	delegate func(ctx context.Context, e *Entry) IndexFuture
-	cache    *lru.Cache[string, func() IndexFuture]
+	delegate func(ctx context.Context, e *shizzle.Entry) shizzle.IndexFuture
+	cache    *lru.Cache[string, func() shizzle.IndexFuture]
 }
 
 // Add adds the entry to the underlying delegate only if e hasn't been recently seen. In either case,
 // an IndexFuture will be returned that the client can use to get the sequence number of this entry.
-func (d *inMemoryDedupe) add(ctx context.Context, e *Entry) IndexFuture {
+func (d *inMemoryDedupe) add(ctx context.Context, e *shizzle.Entry) shizzle.IndexFuture {
 	id := string(e.Identity())
 
 	// However many calls with the same entry come in and are deduped, we should only call delegate
 	// once for each unique entry:
-	f := sync.OnceValue(func() IndexFuture {
+	f := sync.OnceValue(func() shizzle.IndexFuture {
 		return d.delegate(ctx, e)
 	})
 
 	// if we've seen this entry before, discard our f and replace
 	// with the one we created last time, otherwise store f against id.
 	if prev, ok, _ := d.cache.PeekOrAdd(id, f); ok {
-		f = func() IndexFuture {
-			return func() (Index, error) {
+		f = func() shizzle.IndexFuture {
+			return func() (shizzle.Index, error) {
 				i, err := prev()()
 				i.IsDup = true
 				return i, err

@@ -25,6 +25,7 @@ import (
 	"container/list"
 
 	"github.com/transparency-dev/trillian-tessera/internal/parse"
+	"github.com/transparency-dev/trillian-tessera/shizzle"
 	"k8s.io/klog/v2"
 )
 
@@ -82,7 +83,7 @@ type PublicationAwaiter struct {
 // This operation can be aborted early by cancelling the context. In this event,
 // or in the event that there is an error getting a valid checkpoint, an error
 // will be returned from this method.
-func (a *PublicationAwaiter) Await(ctx context.Context, future IndexFuture) (Index, []byte, error) {
+func (a *PublicationAwaiter) Await(ctx context.Context, future shizzle.IndexFuture) (shizzle.Index, []byte, error) {
 	i, err := future()
 	if err != nil {
 		return i, nil, err
