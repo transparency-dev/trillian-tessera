@@ -154,7 +154,7 @@ func BenchmarkLeafBundle_UnmarshalText(b *testing.B) {
 		_, _ = bs.Write(tessera.NewEntry([]byte(leafStr)).MarshalBundleData(uint64(i)))
 	}
 	rawBundle := bs.Bytes()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		tile := api.EntryBundle{}
 		if err := tile.UnmarshalText(rawBundle); err != nil {
 			b.Fatal(err)

@@ -183,7 +183,7 @@ func TestAwait_multiClient(t *testing.T) {
 		// Grow the tree every time this is called
 		size += 10
 		// This isn't generating a real log but can be changed if needed
-		hash := sha256.Sum256([]byte(fmt.Sprint(size)))
+		hash := sha256.Sum256(fmt.Append(nil, size))
 		cpRaw := log.Checkpoint{
 			Origin: "example.com/log/testdata",
 			Size:   size,

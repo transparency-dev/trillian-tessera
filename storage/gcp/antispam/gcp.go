@@ -85,7 +85,7 @@ func NewAntispam(ctx context.Context, spannerDB string, opts AntispamOpts) (*Ant
 			"CREATE TABLE IF NOT EXISTS IDSeq (h BYTES(32) NOT NULL, idx INT64 NOT NULL) PRIMARY KEY (h)",
 		},
 		[][]*spanner.Mutation{
-			{spanner.Insert("FollowCoord", []string{"id", "nextIdx"}, []interface{}{0, 0})},
+			{spanner.Insert("FollowCoord", []string{"id", "nextIdx"}, []any{0, 0})},
 		},
 	); err != nil {
 		return nil, fmt.Errorf("failed to create tables: %v", err)
@@ -307,7 +307,7 @@ func (f *follower) Follow(ctx context.Context, lr tessera.LogReader) {
 				{
 					ms := make([]*spanner.Mutation, 0, len(curEntries))
 					for i, e := range curEntries {
-						ms = append(ms, spanner.Insert("IDSeq", []string{"h", "idx"}, []interface{}{e, int64(curIndex + uint64(i))}))
+						ms = append(ms, spanner.Insert("IDSeq", []string{"h", "idx"}, []any{e, int64(curIndex + uint64(i))}))
 					}
 					if err := f.updateIndex(ctx, txn, ms); err != nil {
 						return err
@@ -319,7 +319,7 @@ func (f *follower) Follow(ctx context.Context, lr tessera.LogReader) {
 
 				// Insertion of dupe entries was successful, so update our follow coordination row:
 				m := make([]*spanner.Mutation, 0)
-				m = append(m, spanner.Update("FollowCoord", []string{"id", "nextIdx"}, []interface{}{0, int64(followFrom + numAdded)}))
+				m = append(m, spanner.Update("FollowCoord", []string{"id", "nextIdx"}, []any{0, int64(followFrom + numAdded)}))
 
 				return txn.BufferWrite(m)
 			})

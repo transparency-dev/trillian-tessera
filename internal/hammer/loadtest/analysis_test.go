@@ -15,15 +15,13 @@
 package loadtest
 
 import (
-	"context"
 	"sync"
 	"testing"
 	"time"
 )
 
 func TestHammerAnalyser_Stats(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	var treeSize treeSizeState
 	ha := NewHammerAnalyser(treeSize.getSize)

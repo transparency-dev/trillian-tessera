@@ -130,7 +130,7 @@ func TestLiveLogIntegration(t *testing.T) {
 	errG := errgroup.Group{}
 	for i := range *testEntrySize {
 		errG.Go(func() error {
-			index, err := entryWriter.add(ctx, []byte(fmt.Sprintf("%d", i)))
+			index, err := entryWriter.add(ctx, fmt.Appendf(nil, "%d", i))
 			if err != nil {
 				return fmt.Errorf("entryWriter.add(%d): %v", i, err)
 			}
@@ -171,7 +171,7 @@ func TestLiveLogIntegration(t *testing.T) {
 			t.Fatalf("client.GetEntryBundle: %v", err)
 		}
 
-		got, want := entryBundle.Entries[index%layout.EntryBundleWidth], []byte(fmt.Sprintf("%d", data))
+		got, want := entryBundle.Entries[index%layout.EntryBundleWidth], fmt.Appendf(nil, "%d", data)
 		if !bytes.Equal(got, want) {
 			t.Errorf("Entry bundle (index: %d) got %v want %v", index, got, want)
 		}
@@ -185,7 +185,7 @@ func TestLiveLogIntegration(t *testing.T) {
 		if err != nil {
 			t.Errorf("pb.InclusionProof: %v", err)
 		}
-		leafHash := rfc6962.DefaultHasher.HashLeaf([]byte(fmt.Sprint(data)))
+		leafHash := rfc6962.DefaultHasher.HashLeaf(fmt.Append(nil, data))
 		if err := proof.VerifyInclusion(rfc6962.DefaultHasher, index, lst.Latest().Size, leafHash, ip, lst.Latest().Hash); err != nil {
 			t.Errorf("proof.VerifyInclusion: %v", err)
 		}

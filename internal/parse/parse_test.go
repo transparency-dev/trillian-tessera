@@ -93,7 +93,7 @@ func mustDecodeB64(t *testing.T, encoded string) []byte {
 
 func BenchmarkCheckpointUnsafe(b *testing.B) {
 	cpRaw := []byte("go.sum database tree\n31700353\nqINS1GRFhWHwdkUeqLEoP4yEMkTBBzxBkGwGQlVlVcs=\n\n— sum.golang.org Az3grnmrIUEDFqHzAElIQCPNoRFRAAdFo47fooyWKMHb89k11GJh5zHIfNCOBmwn/C3YI8oW9/C8DJ87F61QqspBYwM=")
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _, _, err := parse.CheckpointUnsafe(cpRaw)
 		if err != nil {
 			b.Error(err)

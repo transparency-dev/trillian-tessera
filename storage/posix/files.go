@@ -497,7 +497,7 @@ func (s *Storage) ensureVersion(version uint16) error {
 
 	if _, err := s.stat(versionFile); errors.Is(err, os.ErrNotExist) {
 		klog.V(1).Infof("No version file exists, creating")
-		data := []byte(fmt.Sprintf("%d", version))
+		data := fmt.Appendf(nil, "%d", version)
 		if err := s.createExclusive(versionFile, data); err != nil {
 			return fmt.Errorf("failed to create version file: %v", err)
 		}

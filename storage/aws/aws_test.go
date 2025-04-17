@@ -127,7 +127,7 @@ func TestMySQLSequencerAssignEntries(t *testing.T) {
 	for chunks := range 10 {
 		entries := []*tessera.Entry{}
 		for i := range 10 + chunks {
-			entries = append(entries, tessera.NewEntry([]byte(fmt.Sprintf("item %d/%d", chunks, i))))
+			entries = append(entries, tessera.NewEntry(fmt.Appendf(nil, "item %d/%d", chunks, i)))
 		}
 		if err := seq.assignEntries(ctx, entries); err != nil {
 			t.Fatalf("assignEntries: %v", err)
@@ -183,7 +183,7 @@ func TestMySQLSequencerPushback(t *testing.T) {
 			// Set up the test scenario with the configured number of initial outstanding entries
 			entries := []*tessera.Entry{}
 			for i := range test.initialEntries {
-				entries = append(entries, tessera.NewEntry([]byte(fmt.Sprintf("initial item %d", i))))
+				entries = append(entries, tessera.NewEntry(fmt.Appendf(nil, "initial item %d", i)))
 			}
 			if err := seq.assignEntries(ctx, entries); err != nil {
 				t.Fatalf("initial assignEntries: %v", err)
@@ -220,7 +220,7 @@ func TestMySQLSequencerRoundTrip(t *testing.T) {
 	for chunks := range 10 {
 		entries := []*tessera.Entry{}
 		for range 10 + chunks {
-			e := tessera.NewEntry([]byte(fmt.Sprintf("item %d", seq)))
+			e := tessera.NewEntry(fmt.Appendf(nil, "item %d", seq))
 			entries = append(entries, e)
 			wantEntries = append(wantEntries, storage.SequencedEntry{
 				BundleData: e.MarshalBundleData(uint64(seq)),
@@ -261,7 +261,7 @@ func makeTile(t *testing.T, size uint64) *api.HashTile {
 	t.Helper()
 	r := &api.HashTile{Nodes: make([][]byte, size)}
 	for i := uint64(0); i < size; i++ {
-		h := sha256.Sum256([]byte(fmt.Sprintf("%d", i)))
+		h := sha256.Sum256(fmt.Appendf(nil, "%d", i))
 		r.Nodes[i] = h[:]
 	}
 	return r
@@ -317,7 +317,7 @@ func makeBundle(t *testing.T, idx uint64, size int) []byte {
 		size = layout.EntryBundleWidth
 	}
 	for i := range size {
-		e := tessera.NewEntry([]byte(fmt.Sprintf("%d:%d", idx, i)))
+		e := tessera.NewEntry(fmt.Appendf(nil, "%d:%d", idx, i))
 		if _, err := r.Write(e.MarshalBundleData(uint64(i))); err != nil {
 			t.Fatalf("MarshalBundleEntry: %v", err)
 		}
@@ -410,7 +410,7 @@ func TestPublishCheckpoint(t *testing.T) {
 				},
 				sequencer: s,
 				newCP: func(_ context.Context, size uint64, hash []byte) ([]byte, error) {
-					return []byte(fmt.Sprintf("%d/%x,", size, hash)), nil
+					return fmt.Appendf(nil, "%d/%x,", size, hash), nil
 				},
 			}
 			// Call init so we've got a zero-sized checkpoint to work with.

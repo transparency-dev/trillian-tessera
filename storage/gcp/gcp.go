@@ -682,9 +682,9 @@ func (s *spannerCoordinator) initDB(ctx context.Context, spannerDB string) error
 			"CREATE TABLE IF NOT EXISTS IntCoord (id INT64 NOT NULL, seq INT64 NOT NULL, rootHash BYTES(32)) PRIMARY KEY (id)",
 		},
 		[][]*spanner.Mutation{
-			{spanner.Insert("Tessera", []string{"id", "compatibilityVersion"}, []interface{}{0, SchemaCompatibilityVersion})},
-			{spanner.Insert("SeqCoord", []string{"id", "next"}, []interface{}{0, 0})},
-			{spanner.Insert("IntCoord", []string{"id", "seq", "rootHash"}, []interface{}{0, 0, rfc6962.DefaultHasher.EmptyRoot()})},
+			{spanner.Insert("Tessera", []string{"id", "compatibilityVersion"}, []any{0, SchemaCompatibilityVersion})},
+			{spanner.Insert("SeqCoord", []string{"id", "next"}, []any{0, 0})},
+			{spanner.Insert("IntCoord", []string{"id", "seq", "rootHash"}, []any{0, 0, rfc6962.DefaultHasher.EmptyRoot()})},
 		},
 	)
 }
@@ -772,9 +772,9 @@ func (s *spannerCoordinator) assignEntries(ctx context.Context, entries []*tesse
 		// TODO(al): think about whether aligning bundles to tile boundaries would be a good idea or not.
 		m := []*spanner.Mutation{
 			// Insert our newly sequenced batch of entries into Seq,
-			spanner.Insert("Seq", []string{"id", "seq", "v"}, []interface{}{0, int64(next), data}),
+			spanner.Insert("Seq", []string{"id", "seq", "v"}, []any{0, int64(next), data}),
 			// and update the next-available sequence number row in SeqCoord.
-			spanner.Update("SeqCoord", []string{"id", "next"}, []interface{}{0, int64(next) + int64(num)}),
+			spanner.Update("SeqCoord", []string{"id", "next"}, []any{0, int64(next) + int64(num)}),
 		}
 		if err := txn.BufferWrite(m); err != nil {
 			return fmt.Errorf("failed to apply TX: %v", err)
@@ -863,7 +863,7 @@ func (s *spannerCoordinator) consumeEntries(ctx context.Context, limit uint64, f
 		// consumeFunc was successful, so we can update our coordination row, and delete the row(s) for
 		// the then consumed entries.
 		m := make([]*spanner.Mutation, 0)
-		m = append(m, spanner.Update("IntCoord", []string{"id", "seq", "rootHash"}, []interface{}{0, int64(orderCheck), newRoot}))
+		m = append(m, spanner.Update("IntCoord", []string{"id", "seq", "rootHash"}, []any{0, int64(orderCheck), newRoot}))
 		for _, c := range seqsConsumed {
 			m = append(m, spanner.Delete("Seq", spanner.Key{0, c}))
 		}
@@ -1186,7 +1186,7 @@ func (m *MigrationStorage) buildTree(ctx context.Context, sourceSize uint64) (ui
 
 		// integration was successful, so we can update our coordination row
 		m := make([]*spanner.Mutation, 0)
-		m = append(m, spanner.Update("IntCoord", []string{"id", "seq", "rootHash"}, []interface{}{0, int64(from + added), newRoot}))
+		m = append(m, spanner.Update("IntCoord", []string{"id", "seq", "rootHash"}, []any{0, int64(from + added), newRoot}))
 		return txn.BufferWrite(m)
 	})
 
