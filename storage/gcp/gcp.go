@@ -212,7 +212,7 @@ func (s *Storage) Appender(ctx context.Context, opts *tessera.AppendOptions) (*t
 			objStore: &gcsStorage{
 				gcsClient:    c,
 				bucket:       s.cfg.Bucket,
-				bucketPrefix: s.cfg.Bucket,
+				bucketPrefix: s.cfg.BucketPrefix,
 			},
 			entriesPath: opts.EntriesPath(),
 		},
