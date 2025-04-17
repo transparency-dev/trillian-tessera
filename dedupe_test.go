@@ -17,6 +17,7 @@ package tessera
 import (
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"sync"
 	"testing"
@@ -79,6 +80,51 @@ func TestDedupe(t *testing.T) {
 
 			}
 		})
+	}
+}
+
+func TestDedupeDoesNotCacheError(t *testing.T) {
+	idx := uint64(0)
+	rErr := true
+
+	delegate := func(ctx context.Context, e *Entry) IndexFuture {
+		thisIdx := idx
+		// Don't add an entry if we're returning an error
+		if !rErr {
+			idx++
+		}
+		return func() (Index, error) {
+			var err error
+			// Return an error just the first time we're called
+			if rErr {
+				err = errors.New("bad thing happened")
+				rErr = false
+			}
+			return Index{Index: thisIdx}, err
+		}
+	}
+	dedupeAdd := newInMemoryDedupe(256)(delegate)
+
+	k := "foo"
+	for i := range 10 {
+		idx, err := dedupeAdd(t.Context(), NewEntry([]byte(k)))()
+
+		// We expect an error the first time:
+		if i == 0 && err == nil {
+			t.Errorf("dedupeAdd(%q)@%d: was successful, want error", k, i)
+			continue
+		}
+		if i > 0 && err != nil {
+			t.Errorf("dedupeAdd(%q)@%d: got %v, want no error", k, i, err)
+			continue
+		}
+		if i > 1 && !idx.IsDup {
+			t.Errorf("got IsDup=false, want isDup=true")
+			continue
+		}
+		if idx.Index != 0 {
+			t.Errorf("got index=%d, want %d", idx.Index, 1)
+		}
 	}
 }
 
