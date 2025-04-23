@@ -20,7 +20,7 @@ require (
 	github.com/google/go-cmp v0.7.0
 	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/rivo/tview v0.0.0-20240625185742-b0a7293b8130
-	github.com/transparency-dev/formats v0.0.0-20240826204810-ad21d25a1c7f
+	github.com/transparency-dev/formats v0.0.0-20250421220931-bb8ad4d07c26
 	github.com/transparency-dev/merkle v0.0.2
 	go.opentelemetry.io/contrib/detectors/aws/ec2 v1.35.0
 	go.opentelemetry.io/contrib/detectors/aws/ecs v1.35.0
