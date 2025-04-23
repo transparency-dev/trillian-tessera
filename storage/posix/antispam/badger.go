@@ -142,7 +142,7 @@ func (d *AntispamStorage) index(ctx context.Context, h []byte) (*uint64, error) 
 		d.numHits.Add(1)
 
 		return item.Value(func(v []byte) error {
-			i := binary.LittleEndian.Uint64(v)
+			i := binary.BigEndian.Uint64(v)
 			idx = &i
 			return nil
 		})
@@ -247,7 +247,7 @@ func (f *follower) Follow(ctx context.Context, lr tessera.LogReader) {
 					return fmt.Errorf("failed to get nextIdx: %v", err)
 				default:
 					if err := row.Value(func(val []byte) error {
-						followFrom = binary.LittleEndian.Uint64(val)
+						followFrom = binary.BigEndian.Uint64(val)
 						return nil
 					}); err != nil {
 						return fmt.Errorf("failed to get nextIdx value: %v", err)
@@ -308,7 +308,7 @@ func (f *follower) Follow(ctx context.Context, lr tessera.LogReader) {
 					for i, e := range curEntries {
 						if _, err := txn.Get(e); err == badger.ErrKeyNotFound {
 							b := make([]byte, 8)
-							binary.LittleEndian.PutUint64(b, curIndex+uint64(i))
+							binary.BigEndian.PutUint64(b, curIndex+uint64(i))
 							if err := txn.Set(e, b); err != nil {
 								return err
 							}
@@ -321,7 +321,7 @@ func (f *follower) Follow(ctx context.Context, lr tessera.LogReader) {
 
 				// and update the follower state
 				b := make([]byte, 8)
-				binary.LittleEndian.PutUint64(b, curIndex+numAdded)
+				binary.BigEndian.PutUint64(b, curIndex+numAdded)
 				if err := txn.Set(nextKey, b); err != nil {
 					return fmt.Errorf("failed to update follower state: %v", err)
 				}
@@ -353,7 +353,7 @@ func (f *follower) EntriesProcessed(ctx context.Context) (uint64, error) {
 			return fmt.Errorf("failed to read nextKey: %v", err)
 		default:
 			return item.Value(func(val []byte) error {
-				nextIdx = binary.LittleEndian.Uint64(val)
+				nextIdx = binary.BigEndian.Uint64(val)
 				return nil
 			})
 		}
