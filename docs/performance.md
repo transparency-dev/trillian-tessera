@@ -58,9 +58,7 @@ The table below shows some rough numbers of measured performance:
 
 A single local instance on an 12-core VM with 8GB of RAM writing to local filesystem stored on a mirrored pair of SAS disks.
 
-Without antispam, it was was able to sustain around 2900 writes/s.
-
-With antispam enabled, it was able to sustain around 1600 writes/s.
+Without antispam, it was able to sustain around 2900 writes/s.
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────────────┐
@@ -72,7 +70,18 @@ With antispam enabled, it was able to sustain around 1600 writes/s.
 ├────────────────────────────────────────────────────────────────────────────────────┤
 ```
 
-##### With antispam
+With antispam enabled (badger), it was able to sustain around 1600 writes/s.
+
+```
+┌────────────────────────────────────────────────────────────────────────────────────┐
+│Read (8 workers): Current max: 20/s. Oversupply in last second: 0                   │
+│Write (1800 workers): Current max: 1800/s. Oversupply in last second: 0             │
+│TreeSize: 2041087 (Δ 1664qps over 30s)                                              │
+│Time-in-queue: 0ms/112ms/448ms (min/avg/max)                                        │
+│Observed-time-to-integrate: 593ms/3232ms/5754ms (min/avg/max)                       │
+├────────────────────────────────────────────────────────────────────────────────────┤
+│
+```
 
 
 #### Network storage
