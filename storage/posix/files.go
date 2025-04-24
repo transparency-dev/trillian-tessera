@@ -45,8 +45,6 @@ const (
 	// that were created before we introduced this.
 	compatibilityVersion = 1
 
-	dirPerm  = 0o755
-	filePerm = 0o644
 	stateDir = ".state"
 
 	minCheckpointInterval = time.Second
@@ -442,7 +440,7 @@ func (lrs *logResourceStorage) writeBundle(_ context.Context, index uint64, part
 // creating a zero-sized one if it doesn't already exist.
 func (a *appender) initialise(ctx context.Context) error {
 	// Idempotent: If folder exists, nothing happens.
-	if err := os.MkdirAll(filepath.Join(a.s.path, stateDir), dirPerm); err != nil {
+	if err := mkdirAll(filepath.Join(a.s.path, stateDir), dirPerm); err != nil {
 		return fmt.Errorf("failed to create log directory: %q", err)
 	}
 	// Double locking:
@@ -527,7 +525,7 @@ func (s *Storage) writeTreeState(size uint64, root []byte) error {
 		return fmt.Errorf("error in Marshal: %v", err)
 	}
 
-	if err := s.overwrite(filepath.Join(stateDir, "treeState"), raw); err != nil {
+	if err := overwrite(filepath.Join(s.path, stateDir, "treeState"), raw); err != nil {
 		return fmt.Errorf("failed to create private tree state file: %w", err)
 	}
 	return nil
@@ -583,9 +581,7 @@ func (a *appender) publishCheckpoint(ctx context.Context, minStaleness time.Dura
 		return fmt.Errorf("newCP: %v", err)
 	}
 
-	// TODO(mhutchinson): grab witness signatures
-
-	if err := a.s.overwrite(layout.CheckpointPath, cpRaw); err != nil {
+	if err := overwrite(filepath.Join(a.s.path, layout.CheckpointPath), cpRaw); err != nil {
 		return fmt.Errorf("overwrite(%s): %v", layout.CheckpointPath, err)
 	}
 
@@ -599,8 +595,7 @@ func (a *appender) publishCheckpoint(ctx context.Context, minStaleness time.Dura
 // It will error if a file already exists at the specified location, or it's unable to fully write the
 // data & close the file.
 func (s *Storage) createExclusive(p string, d []byte) error {
-	p = filepath.Join(s.path, p)
-	return createEx(p, d)
+	return createEx(filepath.Join(s.path, p), d)
 }
 
 func (s *Storage) readAll(p string) ([]byte, error) {
@@ -615,29 +610,17 @@ func (s *Storage) readAll(p string) ([]byte, error) {
 func (s *Storage) createIdempotent(p string, d []byte) error {
 	if err := s.createExclusive(p, d); err != nil {
 		if errors.Is(err, os.ErrExist) {
-			if r, err := s.readAll(p); err != nil {
+			r, err := s.readAll(p)
+			if err != nil {
 				return fmt.Errorf("file %q already exists, but unable to read it: %v", p, err)
-			} else if bytes.Equal(d, r) {
-				// Idempotent write
-				return nil
 			}
+			if !bytes.Equal(d, r) {
+				return fmt.Errorf("file %q already exists but has different contents", p)
+			}
+			// Idempotent write.
+			return nil
 		}
 		return err
-	}
-	return nil
-}
-
-// overwrite atomically overwrites the specified file relative to the root of the log (or creates it if it doesn't exist)
-// with the provided data.
-func (s *Storage) overwrite(p string, d []byte) error {
-	p = filepath.Join(s.path, p)
-	tmpN := p + ".tmp"
-	if err := os.WriteFile(tmpN, d, filePerm); err != nil {
-		return fmt.Errorf("failed to write temp file %q: %v", tmpN, err)
-	}
-	if err := os.Rename(tmpN, p); err != nil {
-		_ = os.Remove(tmpN)
-		return fmt.Errorf("failed to move temp file into target location %q: %v", p, err)
 	}
 	return nil
 }
@@ -646,51 +629,6 @@ func (s *Storage) overwrite(p string, d []byte) error {
 func (s *Storage) stat(p string) (os.FileInfo, error) {
 	p = filepath.Join(s.path, p)
 	return os.Stat(p)
-}
-
-// createEx atomically creates a file at the given path containing the provided data.
-//
-// It will error if a file already exists at the specified location, or it's unable to fully write the
-// data & close the file.
-func createEx(p string, d []byte) error {
-	dir, f := filepath.Split(p)
-	if err := os.MkdirAll(dir, dirPerm); err != nil {
-		return fmt.Errorf("failed to make entries directory structure: %w", err)
-	}
-	tmpF, err := os.CreateTemp(dir, f+"-*")
-	if err != nil {
-		return fmt.Errorf("failed to create temp file: %v", err)
-	}
-	if err := tmpF.Chmod(filePerm); err != nil {
-		return fmt.Errorf("failed to chmod temp file: %v", err)
-	}
-	tmpName := tmpF.Name()
-	defer func() {
-		if tmpF != nil {
-			if err := tmpF.Close(); err != nil {
-				klog.Warningf("Failed to close temporary file: %v", err)
-			}
-		}
-		if err := os.Remove(tmpName); err != nil {
-			klog.Warningf("Failed to remove temporary file %q: %v", tmpName, err)
-		}
-	}()
-
-	if n, err := tmpF.Write(d); err != nil {
-		return fmt.Errorf("unable to write data to temporary file: %v", err)
-	} else if l := len(d); n != l {
-		return fmt.Errorf("short write (%d < %d byte) on temporary file", n, l)
-	}
-	if err := tmpF.Close(); err != nil {
-		return fmt.Errorf("failed to close temporary file: %v", err)
-	}
-	tmpF = nil
-	if err := os.Link(tmpName, p); err != nil {
-		// Wrap the error here because we need to know if it's os.ErrExists at higher levels.
-		return fmt.Errorf("failed to link temporary file to target %q: %w", p, err)
-	}
-
-	return nil
 }
 
 // MigrationWriter creates a new POSIX storage for the MigrationTarget lifecycle mode.
@@ -743,7 +681,7 @@ func (m *MigrationStorage) AwaitIntegration(ctx context.Context, sourceSize uint
 
 func (m *MigrationStorage) initialise() error {
 	// Idempotent: If folder exists, nothing happens.
-	if err := os.MkdirAll(filepath.Join(m.s.path, stateDir), dirPerm); err != nil {
+	if err := mkdirAll(filepath.Join(m.s.path, stateDir), dirPerm); err != nil {
 		return fmt.Errorf("failed to create log directory: %q", err)
 	}
 	// Double locking:
