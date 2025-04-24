@@ -617,7 +617,7 @@ func (s *Storage) createIdempotent(p string, d []byte) error {
 			if !bytes.Equal(d, r) {
 				return fmt.Errorf("file %q already exists but has different contents", p)
 			}
-			// Idempotent write
+			// Idempotent write.
 			return nil
 		}
 		return err

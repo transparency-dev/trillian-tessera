@@ -1,4 +1,4 @@
-// Copyright 2024 The Tessera authors. All Rights Reserved.
+// Copyright 2025 The Tessera authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -50,15 +50,12 @@ func syncDir(d string) error {
 // mkdirAll is a reimplementation of os.mkdirAll but where we fsync the parent directory/ies
 // we modify.
 func mkdirAll(name string, perm os.FileMode) (err error) {
-	// Remove any trailing slash.
-	if strings.HasSuffix(name, string(filepath.Separator)) {
-		name = name[:len(name)-1]
-	}
+	name = strings.TrimSuffix(name, string(filepath.Separator))
 	if name == "" {
 		return nil
 	}
 
-	// Finally, check and create the dir if necessary
+	// Finally, check and create the dir if necessary.
 	dir, _ := filepath.Split(name)
 	di, err := os.Lstat(name)
 	switch {
