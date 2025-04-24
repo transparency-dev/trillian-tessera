@@ -32,7 +32,7 @@ The final step in the dance above is atomic according to the POSIX spec, so in p
 of actions we can avoid corrupt or partially written files being part of the tree.
 
 1. Leaves are submitted by the binary built using Tessera via a call the storage's `Add` func.
-1. The storage library batches these entries up, and, after a configurable period of time has elapsed
+1. The storage library batches these entries up in memory, and, after a configurable period of time has elapsed
    or the batch reaches a configurable size threshold, the batch is sequenced and appended to the tree:
    1. An advisory lock is taken on `.state/treeState.lock` file.
       This helps prevent multiple frontends from stepping on each other, but isn't necesary for safety.
@@ -48,6 +48,12 @@ will be updated:
 
 ## Filesystems
 
-This implementation has been somewhat tested on both a local `ext4` filesystem and on a distributed
-[CephFS](https://docs.ceph.com/en/reef/cephfs/) instance on GCP, in both cases with multiple
+This implementation has been somewhat tested on local `ext4` and `ZFS` filesystems, and on a distributed
+[CephFS](https://docs.ceph.com/en/reef/cephfs/) instance on GCP, in all cases with multiple
 personality binaries attempting to add new entries concurrently.
+
+Other POSIX compliant filesystems such as `XFS` _should_ work, but filesystems which do not offer strong
+POSIX compliance (e.g. `s3fs` or `NFS`) are unlikely to result in long term happiness.
+
+If in doubt, tools like https://github.com/saidsay-so/pjdfstest may help in determining whether a given
+filesystem is suitable.

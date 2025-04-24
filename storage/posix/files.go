@@ -396,7 +396,7 @@ func (lrs *logResourceStorage) storeTile(ctx context.Context, level, index, logS
 func (lrs *logResourceStorage) writeTile(_ context.Context, level, index uint64, partial uint8, t []byte) error {
 	tPath := layout.TilePath(level, index, partial)
 
-	if err := lrs.s.createIdempotent(tPath, t); err != nil {
+	if err := lrs.s.createOverwrite(tPath, t); err != nil {
 		return err
 	}
 
@@ -428,7 +428,7 @@ func (lrs *logResourceStorage) writeTile(_ context.Context, level, index uint64,
 // writeBundle takes care of writing out the serialised entry bundle file.
 func (lrs *logResourceStorage) writeBundle(_ context.Context, index uint64, partial uint8, bundle []byte) error {
 	bf := lrs.entriesPath(index, partial)
-	if err := lrs.s.createIdempotent(bf, bundle); err != nil {
+	if err := lrs.s.createOverwrite(bf, bundle); err != nil {
 		if !errors.Is(err, os.ErrExist) {
 			return err
 		}
@@ -525,7 +525,7 @@ func (s *Storage) writeTreeState(size uint64, root []byte) error {
 		return fmt.Errorf("error in Marshal: %v", err)
 	}
 
-	if err := overwrite(filepath.Join(s.path, stateDir, "treeState"), raw); err != nil {
+	if err := s.createOverwrite(filepath.Join(stateDir, "treeState"), raw); err != nil {
 		return fmt.Errorf("failed to create private tree state file: %w", err)
 	}
 	return nil
@@ -581,8 +581,8 @@ func (a *appender) publishCheckpoint(ctx context.Context, minStaleness time.Dura
 		return fmt.Errorf("newCP: %v", err)
 	}
 
-	if err := overwrite(filepath.Join(a.s.path, layout.CheckpointPath), cpRaw); err != nil {
-		return fmt.Errorf("overwrite(%s): %v", layout.CheckpointPath, err)
+	if err := a.s.createOverwrite(layout.CheckpointPath, cpRaw); err != nil {
+		return fmt.Errorf("createOverwrite(%s): %v", layout.CheckpointPath, err)
 	}
 
 	klog.V(2).Infof("Published latest checkpoint: %d, %x", size, root)
@@ -598,31 +598,15 @@ func (s *Storage) createExclusive(p string, d []byte) error {
 	return createEx(filepath.Join(s.path, p), d)
 }
 
+// createOverwrite atomically creates or overwrites a file at the given path with the provided data.
+func (s *Storage) createOverwrite(p string, d []byte) error {
+	return overwrite(filepath.Join(s.path, p), d)
+}
+
 func (s *Storage) readAll(p string) ([]byte, error) {
 	p = filepath.Join(s.path, p)
 	return os.ReadFile(p)
 
-}
-
-// createIdempotent atomically writes the provided data to a file at the provided path, relative to the root of the log.
-// An error will be returned if a file already exists in the named location AND that file's
-// contents is not identical to the provided data.
-func (s *Storage) createIdempotent(p string, d []byte) error {
-	if err := s.createExclusive(p, d); err != nil {
-		if errors.Is(err, os.ErrExist) {
-			r, err := s.readAll(p)
-			if err != nil {
-				return fmt.Errorf("file %q already exists, but unable to read it: %v", p, err)
-			}
-			if !bytes.Equal(d, r) {
-				return fmt.Errorf("file %q already exists but has different contents", p)
-			}
-			// Idempotent write.
-			return nil
-		}
-		return err
-	}
-	return nil
 }
 
 // stat returns os.Stat info for the speficied file relative to the log root.
