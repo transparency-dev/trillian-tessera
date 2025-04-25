@@ -80,7 +80,6 @@ With antispam enabled (badger), it was able to sustain around 1600 writes/s.
 │Time-in-queue: 0ms/112ms/448ms (min/avg/max)                                        │
 │Observed-time-to-integrate: 593ms/3232ms/5754ms (min/avg/max)                       │
 ├────────────────────────────────────────────────────────────────────────────────────┤
-│
 ```
 
 
