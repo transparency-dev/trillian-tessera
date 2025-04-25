@@ -54,23 +54,34 @@ The table below shows some rough numbers of measured performance:
 
 ### POSIX
 
-The POSIX storage backend does not currently support the optional persistent dedup storage, so all numbers are without
-deduplication.
-
 #### Local storage
 
-A single local instance on an 12-core VM with 8GB of RAM writing to local filesystem stored on a mirrored pair of SAS disks
-was able to sustain 40,000 writes/s using roughly 4 of the cores for the server, and 5 for the hammer. 
+A single local instance on an 12-core VM with 8GB of RAM writing to local filesystem stored on a mirrored pair of SAS disks.
+
+Without antispam, it was able to sustain around 2900 writes/s.
 
 ```
-┌───────────────────────────────────────────────────────────────────────────────┐
-│Read (8 workers): Current max: 20/s. Oversupply in last second: 0              │
-│Write (2000 workers): Current max: 40000/s. Oversupply in last second: 0       │
-│TreeSize: 2360352 (Δ 40021qps over 30s)                                        │
-│Time-in-queue: 212ms/228ms/273ms (min/avg/max)                                 │
-│Observed-time-to-integrate: 5409ms/5492ms/5537ms (min/avg/max)                 │
-├───────────────────────────────────────────────────────────────────────────────┤
+┌────────────────────────────────────────────────────────────────────────────────────┐
+│Read (8 workers): Current max: 20/s. Oversupply in last second: 0                   │
+│Write (3000 workers): Current max: 3000/s. Oversupply in last second: 0             │
+│TreeSize: 1470460 (Δ 2927qps over 30s)                                              │
+│Time-in-queue: 136ms/1110ms/1356ms (min/avg/max)                                    │
+│Observed-time-to-integrate: 583ms/6019ms/6594ms (min/avg/max)                       │
+├────────────────────────────────────────────────────────────────────────────────────┤
 ```
+
+With antispam enabled (badger), it was able to sustain around 1600 writes/s.
+
+```
+┌────────────────────────────────────────────────────────────────────────────────────┐
+│Read (8 workers): Current max: 20/s. Oversupply in last second: 0                   │
+│Write (1800 workers): Current max: 1800/s. Oversupply in last second: 0             │
+│TreeSize: 2041087 (Δ 1664qps over 30s)                                              │
+│Time-in-queue: 0ms/112ms/448ms (min/avg/max)                                        │
+│Observed-time-to-integrate: 593ms/3232ms/5754ms (min/avg/max)                       │
+├────────────────────────────────────────────────────────────────────────────────────┤
+```
+
 
 #### Network storage
 

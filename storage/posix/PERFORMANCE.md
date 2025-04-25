@@ -2,30 +2,44 @@
 
 ## Local system VM + local disk
 
-An LXC container with 8 cores and 8GB RAM, using a local ZFS filesystem built from two 6TB SAS disks configured as a mirrored device.
+An LXC container with 12 cores and 8GB RAM, using a local ZFS filesystem built from two 6TB SAS disks configured as a mirrored device.
 
-This configuration is likely to continue scaling, but 40000 writes/s seemed _sufficient_ for most usecases.
+The limiting factor is storage latency; writes are `fsync`'d for durability. NVME storage would likely improve throughput.
 
-```
-┌───────────────────────────────────────────────────────────────────────────────┐
-│Read (8 workers): Current max: 20/s. Oversupply in last second: 0              │
-│Write (2000 workers): Current max: 40000/s. Oversupply in last second: 0       │
-│TreeSize: 2360352 (Δ 40021qps over 30s)                                        │
-│Time-in-queue: 212ms/228ms/273ms (min/avg/max)                                 │
-│Observed-time-to-integrate: 5409ms/5492ms/5537ms (min/avg/max)                 │
-├───────────────────────────────────────────────────────────────────────────────┤
-```
+Without antispam, it was able to sustain around 2900 writes/s.
 
 ```
-top - 12:46:53 up 8 days, 17:51,  1 user,  load average: 23.96, 15.37, 7.22
-Tasks:  35 total,   1 running,  34 sleeping,   0 stopped,   0 zombie
-%Cpu(s): 13.7 us,  6.1 sy,  0.0 ni, 78.5 id,  0.5 wa,  0.0 hi,  1.2 si,  0.0 st
+┌────────────────────────────────────────────────────────────────────────────────────┐
+│Read (8 workers): Current max: 20/s. Oversupply in last second: 0                   │
+│Write (3000 workers): Current max: 3000/s. Oversupply in last second: 0             │
+│TreeSize: 1470460 (Δ 2927qps over 30s)                                              │
+│Time-in-queue: 136ms/1110ms/1356ms (min/avg/max)                                    │
+│Observed-time-to-integrate: 583ms/6019ms/6594ms (min/avg/max)                       │
+├────────────────────────────────────────────────────────────────────────────────────┤
+```
+
+With antispam enabled (badger), it was able to sustain around 1600 writes/s.
+
+```
+┌────────────────────────────────────────────────────────────────────────────────────┐
+│Read (8 workers): Current max: 20/s. Oversupply in last second: 0                   │
+│Write (1800 workers): Current max: 1800/s. Oversupply in last second: 0             │
+│TreeSize: 2041087 (Δ 1664qps over 30s)                                              │
+│Time-in-queue: 0ms/112ms/448ms (min/avg/max)                                        │
+│Observed-time-to-integrate: 593ms/3232ms/5754ms (min/avg/max)                       │
+├────────────────────────────────────────────────────────────────────────────────────┤
+```
+
+```
+top - 16:03:40 up 13 days,  7:14,  3 users,  load average: 1.47, 1.94, 1.97
+Tasks:  72 total,   1 running,  71 sleeping,   0 stopped,   0 zombie
+%Cpu(s):  1.7 us,  1.2 sy,  0.0 ni, 97.0 id,  0.0 wa,  0.0 hi,  0.1 si,  0.0 st
 MiB Mem :   8192.0 total,   5552.3 free,   1844.5 used,    795.1 buff/cache
-MiB Swap:    512.0 total,    512.0 free,      0.0 used.   6346.3 avail Mem
+MiB Swap:    512.0 total,    512.0 free,      0.0 used.  28332.6 avail Mem
 
     PID USER      PR  NI    VIRT    RES    SHR S  %CPU  %MEM     TIME+ COMMAND
- 710077 al        20   0 1371244 132940   5632 S 325.3   1.6  21:22.60 hammer
- 709742 al        20   0 1304500 105820   4096 S 278.3   1.3  19:03.57 posix
+2141681 al        20   0 4258436 114576   5120 S  50.5   0.3   6:26.34 hammer
+2140012 al        20   0 7480052 735092 143196 S  29.9   2.2   4:55.74 posix
 ```
 
 ## GCP Free Tier VM Instance
@@ -39,28 +53,28 @@ MiB Swap:    512.0 total,    512.0 free,      0.0 used.   6346.3 avail Mem
 > [!NOTE]
 > Virtual CPUs (vCPUs) in virtualized environments often share physical CPU cores with other vCPUs and introduce variability and potential performance impacts.
 
+This is able to sustain around 600 write/s with antispam enabled.
+
 
 ```
-┌───────────────────────────────────────────────────────────────────────┐
-│Read (184 workers): Current max: 0/s. Oversupply in last second: 0     │
-│Write (600 workers): Current max: 1758/s. Oversupply in last second: 0 │
-│TreeSize: 1882477 (Δ 1587qps over 30s)                                 │
-│Time-in-queue: 149ms/371ms/692ms (min/avg/max)                         │
-│Observed-time-to-integrate: 569ms/1191ms/1878ms (min/avg/max)          │
-└───────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│Read (8 workers): Current max: 20/s. Oversupply in last second: 0        │
+│Write (1000 workers): Current max: 1000/s. Oversupply in last second: 538│
+│TreeSize: 96827 (Δ 683qps over 30s)                                      │
+│Time-in-queue: 167ms/1264ms/2000ms (min/avg/max)                         │
+│Observed-time-to-integrate: 416ms/7877ms/10990ms (min/avg/max)           │
+├─────────────────────────────────────────────────────────────────────────┤
 ```
 
 ```
-top - 20:45:35 up 47 min,  3 users,  load average: 1.89, 0.88, 1.03
-Tasks:  97 total,   1 running,  96 sleeping,   0 stopped,   0 zombie
-%Cpu(s): 47.2 us, 24.7 sy,  0.0 ni,  0.0 id,  0.0 wa,  0.0 hi, 28.1 si,  0.0 st 
-MiB Mem :    970.0 total,    158.7 free,    566.8 used,    409.3 buff/cache     
-MiB Swap:      0.0 total,      0.0 free,      0.0 used.    403.2 avail Mem 
-
+top - 15:37:30 up 22 min,  4 users,  load average: 6.56, 4.83, 2.68
+Tasks: 101 total,   1 running, 100 sleeping,   0 stopped,   0 zombie
+Cpu(s): 56.8 us, 21.6 sy,  0.0 ni,  8.0 id,  9.1 wa,  0.0 hi,  4.5 si,  0.0 st
+MiB Mem :    970.0 total,     62.2 free,    839.5 used,    227.0 buff/cache
+0.0 total,      0.0 free,      0.0 used.    130.5 avail Mem
     PID USER      PR  NI    VIRT    RES    SHR S  %CPU  %MEM     TIME+ COMMAND
-   8336 root      20   0 1231800  34784   5080 S 200.0   3.5   2:59.50 conformance-pos
-    409 root      20   0 2442648  79112  26836 S   1.0   8.0   0:49.10 dockerd
-   6848 root      20   0 1800176  34376  16940 S   0.7   3.5   0:12.57 docker-compose
+   4716 al        20   0 3671328 196420  15700 S  96.0  19.8   5:01.70 posix
+   5244 al        20   0 1300984  85548   6160 S  74.4   8.6   3:44.09 hammer
 ```
 
 ### Steps
