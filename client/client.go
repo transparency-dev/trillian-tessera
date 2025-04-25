@@ -188,11 +188,6 @@ type ProofBuilder struct {
 // The returned ProofBuilder can be re-used for proofs related to a given tree size, but
 // it is not thread-safe and should not be accessed concurrently.
 func NewProofBuilder(ctx context.Context, treeSize uint64, f TileFetcherFunc) (*ProofBuilder, error) {
-	ctx, span := tracer.Start(ctx, "tessera.client.NewProofBuilder")
-	defer span.End()
-
-	span.SetAttributes(logSizeKey.Int64(otel.Clamp64(treeSize)))
-
 	pb := &ProofBuilder{
 		treeSize:  treeSize,
 		nodeCache: newNodeCache(f, treeSize),
