@@ -106,7 +106,7 @@ func (wg *WitnessGateway) Witness(ctx context.Context, cp []byte) ([]byte, error
 		Size:   size,
 		Hash:   hash,
 	}
-	pb, err := client.NewProofBuilder(ctx, logCP, wg.fetchTile)
+	pb, err := client.NewProofBuilder(ctx, logCP.Size, wg.fetchTile)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build proof builder: %v", err)
 	}
@@ -188,7 +188,7 @@ func (pf *sharedConsistencyProofFetcher) ConsistencyProof(ctx context.Context, s
 	pf.mu.Lock()
 	if f, ok = pf.results[smaller]; !ok {
 		f = sync.OnceValues(func() ([][]byte, error) {
-			return pf.pb.ConsistencyProof(ctx, smaller, larger)
+			return pf.pb.ConsistencyProof(ctx, smaller)
 		})
 		pf.results[smaller] = f
 	}

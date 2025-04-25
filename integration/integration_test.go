@@ -177,7 +177,7 @@ func TestLiveLogIntegration(t *testing.T) {
 		}
 
 		// Step 4.2 - Test inclusion proofs.
-		pb, err := client.NewProofBuilder(ctx, lst.Latest(), logReadTile)
+		pb, err := client.NewProofBuilder(ctx, lst.Latest().Size, logReadTile)
 		if err != nil {
 			t.Errorf("client.NewProofBuilder: %v", err)
 		}
