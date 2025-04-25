@@ -19,7 +19,6 @@
 package client
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -181,49 +180,22 @@ func GetEntryBundle(ctx context.Context, f EntryBundleFetcherFunc, i, logSize ui
 // Since the tiles commit only to immutable nodes, the job of building proofs is slightly
 // more complex as proofs can touch "ephemeral" nodes, so these need to be synthesized.
 type ProofBuilder struct {
-	cp        log.Checkpoint
+	treeSize  uint64
 	nodeCache nodeCache
 }
 
 // NewProofBuilder creates a new ProofBuilder object for a given tree size.
 // The returned ProofBuilder can be re-used for proofs related to a given tree size, but
 // it is not thread-safe and should not be accessed concurrently.
-func NewProofBuilder(ctx context.Context, cp log.Checkpoint, f TileFetcherFunc) (*ProofBuilder, error) {
+func NewProofBuilder(ctx context.Context, treeSize uint64, f TileFetcherFunc) (*ProofBuilder, error) {
 	ctx, span := tracer.Start(ctx, "tessera.client.NewProofBuilder")
 	defer span.End()
 
-	span.SetAttributes(logSizeKey.Int64(otel.Clamp64(cp.Size)))
+	span.SetAttributes(logSizeKey.Int64(otel.Clamp64(treeSize)))
 
 	pb := &ProofBuilder{
-		cp:        cp,
-		nodeCache: newNodeCache(f, cp.Size),
-	}
-	// Can't re-create the root of a zero size checkpoint other than by convention,
-	// so return early here in that case.
-	if cp.Size == 0 {
-		return pb, nil
-	}
-
-	hashes, err := FetchRangeNodes(ctx, cp.Size, f)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch range nodes: %v", err)
-	}
-	// Create a compact range which represents the state of the log.
-	r, err := (&compact.RangeFactory{Hash: hasher.HashChildren}).NewRange(0, cp.Size, hashes)
-	if err != nil {
-		return nil, err
-	}
-
-	// Recreate the root hash so that:
-	// a) we validate the self-integrity of the log state, and
-	// b) we calculate (and cache) and ephemeral nodes present in the tree,
-	//    this is important since they could be required by proofs.
-	sr, err := r.GetRootHash(pb.nodeCache.SetEphemeralNode)
-	if err != nil {
-		return nil, err
-	}
-	if !bytes.Equal(cp.Hash, sr) {
-		return nil, fmt.Errorf("invalid checkpoint hash %x, expected %x", cp.Hash, sr)
+		treeSize:  treeSize,
+		nodeCache: newNodeCache(f, treeSize),
 	}
 	return pb, nil
 }
@@ -238,23 +210,24 @@ func (pb *ProofBuilder) InclusionProof(ctx context.Context, index uint64) ([][]b
 
 	span.SetAttributes(indexKey.Int64(otel.Clamp64(index)))
 
-	nodes, err := proof.Inclusion(index, pb.cp.Size)
+	nodes, err := proof.Inclusion(index, pb.treeSize)
 	if err != nil {
 		return nil, fmt.Errorf("failed to calculate inclusion proof node list: %v", err)
 	}
 	return pb.fetchNodes(ctx, nodes)
 }
 
-// ConsistencyProof constructs a consistency proof between the two passed in tree sizes.
+// ConsistencyProof constructs a consistency proof between the smaller passed-in treesize, and
+// the larger size the ProofBuilder was constructed for.
 // This function uses the passed-in function to retrieve tiles containing any log tree
 // nodes necessary to build the proof.
-func (pb *ProofBuilder) ConsistencyProof(ctx context.Context, smaller, larger uint64) ([][]byte, error) {
+func (pb *ProofBuilder) ConsistencyProof(ctx context.Context, smaller uint64) ([][]byte, error) {
 	ctx, span := tracer.Start(ctx, "tessera.client.ConsistencyProof")
 	defer span.End()
 
-	span.SetAttributes(smallerKey.Int64(otel.Clamp64(smaller)), largerKey.Int64(otel.Clamp64(larger)))
+	span.SetAttributes(smallerKey.Int64(otel.Clamp64(smaller)), largerKey.Int64(otel.Clamp64(pb.treeSize)))
 
-	nodes, err := proof.Consistency(smaller, larger)
+	nodes, err := proof.Consistency(smaller, pb.treeSize)
 	if err != nil {
 		return nil, fmt.Errorf("failed to calculate consistency proof node list: %v", err)
 	}
@@ -318,7 +291,7 @@ func NewLogStateTracker(ctx context.Context, tF TileFetcherFunc, checkpointRaw [
 			return ret, err
 		}
 		ret.latestConsistent = *cp
-		ret.proofBuilder, err = NewProofBuilder(ctx, ret.latestConsistent, ret.tileFetcher)
+		ret.proofBuilder, err = NewProofBuilder(ctx, ret.latestConsistent.Size, ret.tileFetcher)
 		if err != nil {
 			return ret, fmt.Errorf("NewProofBuilder: %v", err)
 		}
@@ -343,7 +316,7 @@ func (lst *LogStateTracker) Update(ctx context.Context) ([]byte, [][]byte, []byt
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	builder, err := NewProofBuilder(ctx, *c, lst.tileFetcher)
+	builder, err := NewProofBuilder(ctx, c.Size, lst.tileFetcher)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to create proof builder: %v", err)
 	}
@@ -354,7 +327,7 @@ func (lst *LogStateTracker) Update(ctx context.Context) ([]byte, [][]byte, []byt
 		if c.Size <= lst.latestConsistent.Size {
 			return lst.latestConsistentRaw, p, lst.latestConsistentRaw, nil
 		}
-		p, err = builder.ConsistencyProof(ctx, lst.latestConsistent.Size, c.Size)
+		p, err = builder.ConsistencyProof(ctx, lst.latestConsistent.Size)
 		if err != nil {
 			return nil, nil, nil, err
 		}
