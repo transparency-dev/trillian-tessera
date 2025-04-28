@@ -229,7 +229,7 @@ func TestHandleZeroRoot(t *testing.T) {
 	if len(zeroCP.Hash) == 0 {
 		t.Fatal("BadTestData: checkpoint.0 has empty root hash")
 	}
-	if _, err := NewProofBuilder(context.Background(), zeroCP, testLogTileFetcher); err != nil {
+	if _, err := NewProofBuilder(context.Background(), zeroCP.Size, testLogTileFetcher); err != nil {
 		t.Fatalf("NewProofBuilder: %v", err)
 	}
 }
