@@ -212,17 +212,19 @@ func (pb *ProofBuilder) InclusionProof(ctx context.Context, index uint64) ([][]b
 	return pb.fetchNodes(ctx, nodes)
 }
 
-// ConsistencyProof constructs a consistency proof between the smaller passed-in treesize, and
-// the larger size the ProofBuilder was constructed for.
+// ConsistencyProof constructs a consistency proof between the provided tree sizes.
 // This function uses the passed-in function to retrieve tiles containing any log tree
 // nodes necessary to build the proof.
-func (pb *ProofBuilder) ConsistencyProof(ctx context.Context, smaller uint64) ([][]byte, error) {
+func (pb *ProofBuilder) ConsistencyProof(ctx context.Context, smaller, larger uint64) ([][]byte, error) {
 	ctx, span := tracer.Start(ctx, "tessera.client.ConsistencyProof")
 	defer span.End()
+	span.SetAttributes(smallerKey.Int64(otel.Clamp64(smaller)), largerKey.Int64(otel.Clamp64(larger)))
 
-	span.SetAttributes(smallerKey.Int64(otel.Clamp64(smaller)), largerKey.Int64(otel.Clamp64(pb.treeSize)))
+	if m := max(smaller, larger); m > pb.treeSize {
+		return nil, fmt.Errorf("requested consistency proof to %d which is larger than tree size %d", m, pb.treeSize)
+	}
 
-	nodes, err := proof.Consistency(smaller, pb.treeSize)
+	nodes, err := proof.Consistency(smaller, larger)
 	if err != nil {
 		return nil, fmt.Errorf("failed to calculate consistency proof node list: %v", err)
 	}
@@ -322,7 +324,7 @@ func (lst *LogStateTracker) Update(ctx context.Context) ([]byte, [][]byte, []byt
 		if c.Size <= lst.latestConsistent.Size {
 			return lst.latestConsistentRaw, p, lst.latestConsistentRaw, nil
 		}
-		p, err = builder.ConsistencyProof(ctx, lst.latestConsistent.Size)
+		p, err = builder.ConsistencyProof(ctx, lst.latestConsistent.Size, c.Size)
 		if err != nil {
 			return nil, nil, nil, err
 		}

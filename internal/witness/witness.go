@@ -188,7 +188,7 @@ func (pf *sharedConsistencyProofFetcher) ConsistencyProof(ctx context.Context, s
 	pf.mu.Lock()
 	if f, ok = pf.results[smaller]; !ok {
 		f = sync.OnceValues(func() ([][]byte, error) {
-			return pf.pb.ConsistencyProof(ctx, smaller)
+			return pf.pb.ConsistencyProof(ctx, smaller, larger)
 		})
 		pf.results[smaller] = f
 	}
