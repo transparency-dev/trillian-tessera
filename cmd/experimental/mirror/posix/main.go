@@ -17,15 +17,14 @@
 package main
 
 import (
-	"bytes"
 	"context"
-	"errors"
 	"flag"
-	"fmt"
 	"net/url"
 	"os"
 	"path/filepath"
+	"time"
 
+	"github.com/transparency-dev/trillian-tessera/api/layout"
 	"github.com/transparency-dev/trillian-tessera/client"
 	mirror "github.com/transparency-dev/trillian-tessera/cmd/experimental/mirror/internal"
 	"k8s.io/klog/v2"
@@ -51,30 +50,57 @@ func main() {
 		klog.Exitf("Failed to create HTTP fetcher: %v", err)
 	}
 
-	if err := mirror.Mirror(ctx, src, *numWorkers, storeFunc(*storageDir)); err != nil {
+	m := &mirror.Mirror{
+		NumWorkers: *numWorkers,
+		Src:        src,
+		Store:      &posixStore{root: *storageDir},
+	}
+
+	// Print out stats.
+	go func() {
+		t := time.NewTicker(time.Second)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				total, done := m.Progress()
+				p := float64(done*100) / float64(total)
+				klog.Infof("Progress %d of %d resources (%0.2f%%)", done, total, p)
+			}
+		}
+	}()
+
+	if err := m.Run(ctx); err != nil {
 		klog.Exitf("Failed to mirror log: %v", err)
 	}
 
-	klog.Exitf("Log mirrored successfully.")
+	klog.Info("Log mirrored successfully.")
 }
 
-func storeFunc(root string) mirror.StoreFn {
-	return func(ctx context.Context, p string, d []byte) (err error) {
-		fp := filepath.Join(root, p)
-		if err := os.MkdirAll(filepath.Dir(fp), 0o755); err != nil {
-			return err
-		}
-		if err := os.WriteFile(fp, d, 0o644); err != nil {
-			if errors.Is(err, os.ErrExist) {
-				if e, err := os.ReadFile(fp); err != nil {
-					return fmt.Errorf("%q already exists, but couldn't read it: %v", fp, err)
-				} else if !bytes.Equal(d, e) {
-					return fmt.Errorf("%q already exists, but contains different data", fp)
-				}
-				return nil
-			}
-			return err
-		}
-		return nil
+type posixStore struct {
+	root string
+}
+
+func (s *posixStore) WriteCheckpoint(_ context.Context, d []byte) error {
+	return s.store(layout.CheckpointPath, d)
+}
+
+func (s *posixStore) WriteTile(_ context.Context, l, i uint64, p uint8, d []byte) error {
+	return s.store(layout.TilePath(l, i, p), d)
+}
+
+func (s *posixStore) WriteEntryBundle(_ context.Context, i uint64, p uint8, d []byte) error {
+	return s.store(layout.EntriesPath(i, p), d)
+}
+
+func (s *posixStore) store(p string, d []byte) (err error) {
+	fp := filepath.Join(s.root, p)
+	if err := os.MkdirAll(filepath.Dir(fp), 0o755); err != nil {
+		return err
 	}
+	if err := os.WriteFile(fp, d, 0o644); err != nil {
+		return err
+	}
+	return nil
 }
