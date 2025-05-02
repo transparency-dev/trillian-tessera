@@ -19,13 +19,12 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"strconv"
-	"strings"
 	"sync/atomic"
 	"time"
 
 	"github.com/avast/retry-go/v4"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
+	"github.com/transparency-dev/trillian-tessera/internal/parse"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -54,10 +53,9 @@ func Mirror(ctx context.Context, src Fetcher, numWorkers uint, store StoreFn) er
 	if err != nil {
 		return fmt.Errorf("failed to fetch initial source checkpoint: %v", err)
 	}
-	bits := strings.Split(string(sourceCP), "\n")
-	srcSize, err := strconv.ParseUint(bits[1], 10, 64)
+	_, srcSize, _, err := parse.CheckpointUnsafe(sourceCP)
 	if err != nil {
-		return fmt.Errorf("invalid CP size %q: %v", bits[1], err)
+		return fmt.Errorf("invalid CP: %v", err)
 	}
 	log.Printf("Source log size: %d", srcSize)
 
@@ -87,7 +85,7 @@ func Mirror(ctx context.Context, src Fetcher, numWorkers uint, store StoreFn) er
 				from = from + N
 			}
 		}
-		log.Println("no more work")
+		log.Println("No more work")
 	}()
 
 	go func() {
