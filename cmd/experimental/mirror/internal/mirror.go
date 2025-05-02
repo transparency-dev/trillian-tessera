@@ -113,14 +113,12 @@ func (m *Mirror) Run(ctx context.Context) error {
 						log.Println(err.Error())
 						return err
 					}
-					m.resourcesFetched.Add(1)
 
 					if j.level == 0 {
 						if err := retry.Do(m.copyBundle(ctx, ri.Index, ri.Partial)); err != nil {
 							log.Println(err.Error())
 							return err
 						}
-						m.resourcesFetched.Add(1)
 					}
 				}
 			}

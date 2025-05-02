@@ -17,12 +17,8 @@
 package main
 
 import (
-	"bytes"
 	"context"
-	"errors"
 	"flag"
-	"fmt"
-	"log"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -70,7 +66,7 @@ func main() {
 			case <-t.C:
 				total, done := m.Progress()
 				p := float64(done*100) / float64(total)
-				log.Printf("Progress %d of %d resources (%0.2f%%)", done, total, p)
+				klog.Infof("Progress %d of %d resources (%0.2f%%)", done, total, p)
 			}
 		}
 	}()
@@ -86,32 +82,24 @@ type posixStore struct {
 	root string
 }
 
-func (s *posixStore) WriteCheckpoint(ctx context.Context, d []byte) error {
-	return s.store(ctx, layout.CheckpointPath, d)
+func (s *posixStore) WriteCheckpoint(_ context.Context, d []byte) error {
+	return s.store(layout.CheckpointPath, d)
 }
 
-func (s *posixStore) WriteTile(ctx context.Context, l, i uint64, p uint8, d []byte) error {
-	return s.store(ctx, layout.TilePath(l, i, p), d)
+func (s *posixStore) WriteTile(_ context.Context, l, i uint64, p uint8, d []byte) error {
+	return s.store(layout.TilePath(l, i, p), d)
 }
 
-func (s *posixStore) WriteEntryBundle(ctx context.Context, i uint64, p uint8, d []byte) error {
-	return s.store(ctx, layout.EntriesPath(i, p), d)
+func (s *posixStore) WriteEntryBundle(_ context.Context, i uint64, p uint8, d []byte) error {
+	return s.store(layout.EntriesPath(i, p), d)
 }
 
-func (s *posixStore) store(ctx context.Context, p string, d []byte) (err error) {
+func (s *posixStore) store(p string, d []byte) (err error) {
 	fp := filepath.Join(s.root, p)
 	if err := os.MkdirAll(filepath.Dir(fp), 0o755); err != nil {
 		return err
 	}
 	if err := os.WriteFile(fp, d, 0o644); err != nil {
-		if errors.Is(err, os.ErrExist) {
-			if e, err := os.ReadFile(fp); err != nil {
-				return fmt.Errorf("%q already exists, but couldn't read it: %v", fp, err)
-			} else if !bytes.Equal(d, e) {
-				return fmt.Errorf("%q already exists, but contains different data", fp)
-			}
-			return nil
-		}
 		return err
 	}
 	return nil
