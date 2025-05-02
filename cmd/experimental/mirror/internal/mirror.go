@@ -89,7 +89,7 @@ func (m *Mirror) Run(ctx context.Context) error {
 		return nil
 	}
 
-	m.totalResources = calcNumResouces(srcSize, targetSize, stride)
+	m.totalResources = calcNumResources(srcSize, targetSize, stride)
 	m.resourcesFetched = atomic.Uint64{}
 
 	work := make(chan job, m.NumWorkers)
@@ -204,7 +204,7 @@ func jobs(srcSize, targetSize, stride uint64) iter.Seq[job] {
 
 // calcNumResources calculates the number of new static resources which need to be mirrored, given the
 // size of the source and target.
-func calcNumResouces(srcSize, targetSize, stride uint64) uint64 {
+func calcNumResources(srcSize, targetSize, stride uint64) uint64 {
 	leafBundles := uint64(0)
 	tiles := uint64(0)
 
