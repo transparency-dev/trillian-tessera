@@ -38,6 +38,7 @@ var (
 
 func main() {
 	klog.InitFlags(nil)
+	klog.CopyStandardLogTo("INFO")
 	flag.Parse()
 	ctx := context.Background()
 
@@ -52,8 +53,8 @@ func main() {
 
 	m := &mirror.Mirror{
 		NumWorkers: *numWorkers,
-		Src:        src,
-		Store:      &posixStore{root: *storageDir},
+		Source:     src,
+		Target:     &posixTarget{root: *storageDir},
 	}
 
 	// Print out stats.
@@ -64,9 +65,7 @@ func main() {
 			case <-ctx.Done():
 				return
 			case <-t.C:
-				total, done := m.Progress()
-				p := float64(done*100) / float64(total)
-				klog.Infof("Progress %d of %d resources (%0.2f%%)", done, total, p)
+				printProgress(m.Progress)
 			}
 		}
 	}()
@@ -75,26 +74,41 @@ func main() {
 		klog.Exitf("Failed to mirror log: %v", err)
 	}
 
+	printProgress(m.Progress)
 	klog.Info("Log mirrored successfully.")
 }
 
-type posixStore struct {
+func printProgress(f func() (uint64, uint64)) {
+	total, done := f()
+	p := float64(done*100) / float64(total)
+	// Let's just say we're 100% done if we've completed no work when nothing needed doing.
+	if total == done && done == 0 {
+		p = 100.0
+	}
+	klog.Infof("Progress: %d of %d resources (%0.2f%%)", done, total, p)
+}
+
+type posixTarget struct {
 	root string
 }
 
-func (s *posixStore) WriteCheckpoint(_ context.Context, d []byte) error {
+func (s *posixTarget) ReadCheckpoint(_ context.Context) ([]byte, error) {
+	return os.ReadFile(filepath.Join(s.root, layout.CheckpointPath))
+}
+
+func (s *posixTarget) WriteCheckpoint(_ context.Context, d []byte) error {
 	return s.store(layout.CheckpointPath, d)
 }
 
-func (s *posixStore) WriteTile(_ context.Context, l, i uint64, p uint8, d []byte) error {
+func (s *posixTarget) WriteTile(_ context.Context, l, i uint64, p uint8, d []byte) error {
 	return s.store(layout.TilePath(l, i, p), d)
 }
 
-func (s *posixStore) WriteEntryBundle(_ context.Context, i uint64, p uint8, d []byte) error {
+func (s *posixTarget) WriteEntryBundle(_ context.Context, i uint64, p uint8, d []byte) error {
 	return s.store(layout.EntriesPath(i, p), d)
 }
 
-func (s *posixStore) store(p string, d []byte) (err error) {
+func (s *posixTarget) store(p string, d []byte) (err error) {
 	fp := filepath.Join(s.root, p)
 	if err := os.MkdirAll(filepath.Dir(fp), 0o755); err != nil {
 		return err
