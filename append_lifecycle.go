@@ -496,6 +496,7 @@ type AppendOptions struct {
 
 	checkpointInterval time.Duration
 	witnesses          WitnessGroup
+	witnessOpts        WitnessOptions
 
 	addDecorators []func(AddFn) AddFn
 	followers     []Follower
@@ -511,7 +512,7 @@ func (o AppendOptions) valid() error {
 
 // CheckpointPublisher returns a function which should be used to create, sign, and potentially witness a new checkpoint.
 func (o AppendOptions) CheckpointPublisher(lr LogReader, httpClient *http.Client) func(context.Context, uint64, []byte) ([]byte, error) {
-	wg := witness.NewWitnessGateway(o.Witnesses(), httpClient, lr.ReadTile)
+	wg := witness.NewWitnessGateway(o.witnesses, httpClient, lr.ReadTile)
 	return func(ctx context.Context, size uint64, root []byte) ([]byte, error) {
 		ctx, span := tracer.Start(ctx, "tessera.CheckpointPublisher")
 		defer span.End()
@@ -524,7 +525,10 @@ func (o AppendOptions) CheckpointPublisher(lr LogReader, httpClient *http.Client
 
 		cp, err = wg.Witness(ctx, cp)
 		if err != nil {
-			return nil, err
+			if !o.witnessOpts.FailOpen {
+				return nil, err
+			}
+			klog.Warningf("WitnessGateway: failing-open despite error: %v", err)
 		}
 		appenderWitnessedSize.Record(ctx, otel.Clamp64(size))
 
@@ -550,10 +554,6 @@ func (o AppendOptions) EntriesPath() func(uint64, uint8) string {
 
 func (o AppendOptions) CheckpointInterval() time.Duration {
 	return o.checkpointInterval
-}
-
-func (o AppendOptions) Witnesses() WitnessGroup {
-	return o.witnesses
 }
 
 // WithCheckpointSigner is an option for setting the note signer and verifier to use when creating and parsing checkpoints.
@@ -660,7 +660,23 @@ func (o *AppendOptions) WithCheckpointInterval(interval time.Duration) *AppendOp
 //
 // If this method is not called, then the default empty WitnessGroup will be used, which contacts zero
 // witnesses and requires zero witnesses in order to publish.
-func (o *AppendOptions) WithWitnesses(witnesses WitnessGroup) *AppendOptions {
+func (o *AppendOptions) WithWitnesses(witnesses WitnessGroup, opts *WitnessOptions) *AppendOptions {
+	if opts == nil {
+		opts = &WitnessOptions{}
+	}
+
 	o.witnesses = witnesses
+	o.witnessOpts = *opts
 	return o
+}
+
+// WitnessOptions contains extra optional configuration for how Tessera should use/interact with
+// a user-provided WitnessGroup policy.
+type WitnessOptions struct {
+	// FailOpen controls whether a checkpoint, for which the witness policy was unable to be met,
+	// should still be published.
+	//
+	// This setting is intended only for facilitating early "non-blocking" adoption of witnessing,
+	// and will be disabled and/or removed in the future.
+	FailOpen bool
 }
