@@ -511,7 +511,7 @@ func (o AppendOptions) valid() error {
 
 // CheckpointPublisher returns a function which should be used to create, sign, and potentially witness a new checkpoint.
 func (o AppendOptions) CheckpointPublisher(lr LogReader, httpClient *http.Client) func(context.Context, uint64, []byte) ([]byte, error) {
-	wg := witness.NewWitnessGateway(o.Witnesses(), httpClient, lr.ReadTile)
+	wg := witness.NewWitnessGateway(o.witnesses, httpClient, lr.ReadTile)
 	return func(ctx context.Context, size uint64, root []byte) ([]byte, error) {
 		ctx, span := tracer.Start(ctx, "tessera.CheckpointPublisher")
 		defer span.End()
@@ -550,10 +550,6 @@ func (o AppendOptions) EntriesPath() func(uint64, uint8) string {
 
 func (o AppendOptions) CheckpointInterval() time.Duration {
 	return o.checkpointInterval
-}
-
-func (o AppendOptions) Witnesses() WitnessGroup {
-	return o.witnesses
 }
 
 // WithCheckpointSigner is an option for setting the note signer and verifier to use when creating and parsing checkpoints.
