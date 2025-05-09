@@ -68,28 +68,28 @@ type Mirror struct {
 // This is a long-lived operation, returning only once ctx becomes Done, the copy is completed,
 // or an error occurs during the operation.
 func (m *Mirror) Run(ctx context.Context) error {
-	sourceCP, srcSize, err := fetchAndParseCP(ctx, m.Source.ReadCheckpoint)
+	sourceCP, sourceSize, err := fetchAndParseCP(ctx, m.Source.ReadCheckpoint)
 	if err != nil {
-		return fmt.Errorf("failed to fetch source source checkpoint size: %v", err)
+		return fmt.Errorf("failed to fetch source checkpoint size: %v", err)
 	}
 	_, targetSize, err := fetchAndParseCP(ctx, m.Target.ReadCheckpoint)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("failed to read checkpoint in target: %v", err)
 	}
 
-	delta := srcSize - targetSize
+	delta := sourceSize - targetSize
 	stride := delta / uint64(m.NumWorkers)
 	if r := stride % layout.TileWidth; r != 0 {
 		stride += (layout.TileWidth - r)
 	}
 
-	log.Printf("Source log size: %d, target log size: %d, ∆ %d, stride: %d", srcSize, targetSize, delta, stride)
+	log.Printf("Source log size: %d, target log size: %d, ∆ %d, stride: %d", sourceSize, targetSize, delta, stride)
 
 	if delta == 0 {
 		return nil
 	}
 
-	m.totalResources = calcNumResources(srcSize, targetSize, stride)
+	m.totalResources = calcNumResources(sourceSize, targetSize, stride)
 	m.resourcesFetched = atomic.Uint64{}
 
 	work := make(chan job, m.NumWorkers)
@@ -97,7 +97,7 @@ func (m *Mirror) Run(ctx context.Context) error {
 	go func() {
 		defer close(work)
 
-		for j := range jobs(srcSize, targetSize, stride) {
+		for j := range jobs(sourceSize, targetSize, stride) {
 			select {
 			case <-ctx.Done():
 				return
@@ -113,7 +113,7 @@ func (m *Mirror) Run(ctx context.Context) error {
 		g.Go(func() error {
 			for j := range work {
 				log.Printf("Worker %d: working on %s", i, j)
-				for ri := range layout.Range(j.from, j.N, srcSize>>(j.level*layout.TileHeight)) {
+				for ri := range layout.Range(j.from, j.N, sourceSize>>(j.level*layout.TileHeight)) {
 					if err := retry.Do(m.copyTile(ctx, j.level, ri.Index, ri.Partial)); err != nil {
 						log.Println(err.Error())
 						return err
