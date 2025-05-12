@@ -78,7 +78,6 @@ func (h HTTPFetcher) fetch(ctx context.Context, p string) ([]byte, error) {
 	switch r.StatusCode {
 	case http.StatusOK:
 		// All good, continue below
-		break
 	case http.StatusNotFound:
 		// Need to return ErrNotExist here, by contract.
 		return nil, fmt.Errorf("get(%q): %w", u.String(), os.ErrNotExist)
