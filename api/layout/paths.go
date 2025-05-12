@@ -38,7 +38,8 @@ const (
 // The logSize is required so that a partial qualifier can be appended to tiles that
 // would contain fewer than 256 entries.
 func EntriesPathForLogIndex(seq, logSize uint64) string {
-	return EntriesPath(seq/EntryBundleWidth, PartialTileSize(0, seq, logSize))
+	tileIndex := seq / EntryBundleWidth
+	return EntriesPath(tileIndex, PartialTileSize(0, tileIndex, logSize))
 }
 
 // Range returns an iterator over a list of RangeInfo structs which describe the bundles/tiles

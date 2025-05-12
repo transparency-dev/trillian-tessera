@@ -25,8 +25,8 @@ const (
 	EntryBundleWidth = TileWidth
 )
 
-// PartialTileSize returns the expected number of leaves in a tile at the given location within
-// a tree of the specified logSize, or 0 if the tile is expected to be fully populated.
+// PartialTileSize returns the expected number of leaves in a tile at the given tile level and index
+// within a tree of the specified logSize, or 0 if the tile is expected to be fully populated.
 func PartialTileSize(level, index, logSize uint64) uint8 {
 	sizeAtLevel := logSize >> (level * TileHeight)
 	fullTiles := sizeAtLevel / TileWidth

@@ -44,6 +44,10 @@ func TestEntriesPathForLogIndex(t *testing.T) {
 			logSize:  512,
 			wantPath: "tile/entries/001",
 		}, {
+			seq:      3,
+			logSize:  257,
+			wantPath: "tile/entries/000",
+		}, {
 			seq:      256,
 			logSize:  257,
 			wantPath: "tile/entries/001.p/1",
