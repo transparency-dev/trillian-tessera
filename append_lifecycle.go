@@ -57,6 +57,7 @@ var (
 	appenderNextIndex        metric.Int64Gauge
 	appenderSignedSize       metric.Int64Gauge
 	appenderWitnessedSize    metric.Int64Gauge
+	appenderWitnessRequests  metric.Int64Counter
 
 	followerEntriesProcessed metric.Int64Gauge
 	followerLag              metric.Int64Gauge
@@ -139,12 +140,21 @@ func init() {
 	if err != nil {
 		klog.Exitf("Failed to create followerEntriesProcessed metric: %v", err)
 	}
+
 	followerLag, err = meter.Int64Gauge(
 		"tessera.follower.lag",
 		metric.WithDescription("Number of unprocessed entries in the current integrated tree"),
 		metric.WithUnit("{entry}"))
 	if err != nil {
 		klog.Exitf("Failed to create followerLag metric: %v", err)
+	}
+
+	appenderWitnessRequests, err = meter.Int64Counter(
+		"tessera.appender.witness.requests",
+		metric.WithDescription("Number of attempts to witness a log checkpoint"),
+		metric.WithUnit("{call}"))
+	if err != nil {
+		klog.Exitf("Failed to create appenderWitnessRequests metric: %v", err)
 	}
 
 }
@@ -523,16 +533,21 @@ func (o AppendOptions) CheckpointPublisher(lr LogReader, httpClient *http.Client
 		}
 		appenderSignedSize.Record(ctx, otel.Clamp64(size))
 
+		witAttr := []attribute.KeyValue{}
 		cp, err = wg.Witness(ctx, cp)
 		if err != nil {
 			if !o.witnessOpts.FailOpen {
+				appenderWitnessRequests.Add(ctx, 1, metric.WithAttributes(attribute.String("error.type", "failed")))
 				return nil, err
 			}
 			klog.Warningf("WitnessGateway: failing-open despite error: %v", err)
+			witAttr = append(witAttr, attribute.String("error.type", "failed_open"))
 		}
+
+		appenderWitnessRequests.Add(ctx, 1, metric.WithAttributes(witAttr...))
 		appenderWitnessedSize.Record(ctx, otel.Clamp64(size))
 
-		return cp, err
+		return cp, nil
 	}
 }
 
