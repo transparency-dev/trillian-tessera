@@ -57,6 +57,7 @@ var (
 	appenderNextIndex        metric.Int64Gauge
 	appenderSignedSize       metric.Int64Gauge
 	appenderWitnessedSize    metric.Int64Gauge
+	appenderWitnessRequests  metric.Int64Counter
 
 	followerEntriesProcessed metric.Int64Gauge
 	followerLag              metric.Int64Gauge
@@ -139,12 +140,21 @@ func init() {
 	if err != nil {
 		klog.Exitf("Failed to create followerEntriesProcessed metric: %v", err)
 	}
+
 	followerLag, err = meter.Int64Gauge(
 		"tessera.follower.lag",
 		metric.WithDescription("Number of unprocessed entries in the current integrated tree"),
 		metric.WithUnit("{entry}"))
 	if err != nil {
 		klog.Exitf("Failed to create followerLag metric: %v", err)
+	}
+
+	appenderWitnessRequests, err = meter.Int64Counter(
+		"tessera.appender.witness.requests",
+		metric.WithDescription("Number of attempts to witness a log checkpoint"),
+		metric.WithUnit("{call}"))
+	if err != nil {
+		klog.Exitf("Failed to create appenderWitnessRequests metric: %v", err)
 	}
 
 }
@@ -496,6 +506,7 @@ type AppendOptions struct {
 
 	checkpointInterval time.Duration
 	witnesses          WitnessGroup
+	witnessOpts        WitnessOptions
 
 	addDecorators []func(AddFn) AddFn
 	followers     []Follower
@@ -511,7 +522,7 @@ func (o AppendOptions) valid() error {
 
 // CheckpointPublisher returns a function which should be used to create, sign, and potentially witness a new checkpoint.
 func (o AppendOptions) CheckpointPublisher(lr LogReader, httpClient *http.Client) func(context.Context, uint64, []byte) ([]byte, error) {
-	wg := witness.NewWitnessGateway(o.Witnesses(), httpClient, lr.ReadTile)
+	wg := witness.NewWitnessGateway(o.witnesses, httpClient, lr.ReadTile)
 	return func(ctx context.Context, size uint64, root []byte) ([]byte, error) {
 		ctx, span := tracer.Start(ctx, "tessera.CheckpointPublisher")
 		defer span.End()
@@ -522,13 +533,21 @@ func (o AppendOptions) CheckpointPublisher(lr LogReader, httpClient *http.Client
 		}
 		appenderSignedSize.Record(ctx, otel.Clamp64(size))
 
+		witAttr := []attribute.KeyValue{}
 		cp, err = wg.Witness(ctx, cp)
 		if err != nil {
-			return nil, err
+			if !o.witnessOpts.FailOpen {
+				appenderWitnessRequests.Add(ctx, 1, metric.WithAttributes(attribute.String("error.type", "failed")))
+				return nil, err
+			}
+			klog.Warningf("WitnessGateway: failing-open despite error: %v", err)
+			witAttr = append(witAttr, attribute.String("error.type", "failed_open"))
 		}
+
+		appenderWitnessRequests.Add(ctx, 1, metric.WithAttributes(witAttr...))
 		appenderWitnessedSize.Record(ctx, otel.Clamp64(size))
 
-		return cp, err
+		return cp, nil
 	}
 }
 
@@ -550,10 +569,6 @@ func (o AppendOptions) EntriesPath() func(uint64, uint8) string {
 
 func (o AppendOptions) CheckpointInterval() time.Duration {
 	return o.checkpointInterval
-}
-
-func (o AppendOptions) Witnesses() WitnessGroup {
-	return o.witnesses
 }
 
 // WithCheckpointSigner is an option for setting the note signer and verifier to use when creating and parsing checkpoints.
@@ -660,7 +675,23 @@ func (o *AppendOptions) WithCheckpointInterval(interval time.Duration) *AppendOp
 //
 // If this method is not called, then the default empty WitnessGroup will be used, which contacts zero
 // witnesses and requires zero witnesses in order to publish.
-func (o *AppendOptions) WithWitnesses(witnesses WitnessGroup) *AppendOptions {
+func (o *AppendOptions) WithWitnesses(witnesses WitnessGroup, opts *WitnessOptions) *AppendOptions {
+	if opts == nil {
+		opts = &WitnessOptions{}
+	}
+
 	o.witnesses = witnesses
+	o.witnessOpts = *opts
 	return o
+}
+
+// WitnessOptions contains extra optional configuration for how Tessera should use/interact with
+// a user-provided WitnessGroup policy.
+type WitnessOptions struct {
+	// FailOpen controls whether a checkpoint, for which the witness policy was unable to be met,
+	// should still be published.
+	//
+	// This setting is intended only for facilitating early "non-blocking" adoption of witnessing,
+	// and will be disabled and/or removed in the future.
+	FailOpen bool
 }
