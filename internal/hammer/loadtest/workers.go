@@ -115,7 +115,7 @@ func (r *LeafReader) getLeaf(ctx context.Context, i uint64, logSize uint64) ([]b
 	return r.c.leaves[ti], nil
 }
 
-// Kills this leaf reader at the next opportune moment.
+// Kill kills this leaf reader at the next opportune moment.
 // This function may return before the reader is dead.
 func (r *LeafReader) Kill() {
 	if r.cancel != nil {
@@ -224,7 +224,7 @@ func (w *LogWriter) Run(ctx context.Context) {
 	}
 }
 
-// Kills this writer at the next opportune moment.
+// Kill kills this writer at the next opportune moment.
 // This function may return before the writer is dead.
 func (w *LogWriter) Kill() {
 	if w.cancel != nil {
