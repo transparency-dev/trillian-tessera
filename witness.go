@@ -60,7 +60,7 @@ func NewWitness(vkey string, witnessRoot *url.URL) (Witness, error) {
 
 	return Witness{
 		Key: v,
-		Url: u.String(),
+		URL: u.String(),
 	}, err
 }
 
@@ -69,7 +69,7 @@ func NewWitness(vkey string, witnessRoot *url.URL) (Witness, error) {
 // provides a predicate to check whether this witness has signed a checkpoint.
 type Witness struct {
 	Key note.Verifier
-	Url string
+	URL string
 }
 
 // Satisfied returns true if the checkpoint provided is signed by this witness.
@@ -89,7 +89,7 @@ func (w Witness) Satisfied(cp []byte) bool {
 // the witness with a new checkpoint, to the value which is the verifier to check
 // the response is well formed.
 func (w Witness) Endpoints() map[string]note.Verifier {
-	return map[string]note.Verifier{w.Url: w.Key}
+	return map[string]note.Verifier{w.URL: w.Key}
 }
 
 // NewWitnessGroup creates a grouping of Witness or WitnessGroup with a configurable threshold
