@@ -81,7 +81,7 @@ func (h HTTPFetcher) fetch(ctx context.Context, p string) ([]byte, error) {
 		break
 	case http.StatusNotFound:
 		// Need to return ErrNotExist here, by contract.
-		return nil, fmt.Errorf("get(%q): %v", u.String(), os.ErrNotExist)
+		return nil, fmt.Errorf("get(%q): %w", u.String(), os.ErrNotExist)
 	default:
 		return nil, fmt.Errorf("get(%q): %v", u.String(), r.StatusCode)
 	}
