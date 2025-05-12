@@ -60,15 +60,15 @@ func TestWitnessGateway_Update(t *testing.T) {
 	var wit2 tessera.Witness
 	var witBad tessera.Witness
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w1u, err := url.Parse(wit1.Url)
+		w1u, err := url.Parse(wit1.URL)
 		if err != nil {
 			t.Fatal(err)
 		}
-		w2u, err := url.Parse(wit2.Url)
+		w2u, err := url.Parse(wit2.URL)
 		if err != nil {
 			t.Fatal(err)
 		}
-		wbu, err := url.Parse(witBad.Url)
+		wbu, err := url.Parse(witBad.URL)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -84,19 +84,19 @@ func TestWitnessGateway_Update(t *testing.T) {
 			t.Fatalf("Unknown case: %s", r.URL.String())
 		}
 	}))
-	baseUrl, err := url.Parse(ts.URL)
+	baseURL, err := url.Parse(ts.URL)
 	if err != nil {
 		t.Fatal(err)
 	}
-	wit1, err = tessera.NewWitness(wit1Vkey, baseUrl)
+	wit1, err = tessera.NewWitness(wit1Vkey, baseURL)
 	if err != nil {
 		t.Fatal(err)
 	}
-	wit2, err = tessera.NewWitness(wit2Vkey, baseUrl)
+	wit2, err = tessera.NewWitness(wit2Vkey, baseURL)
 	if err != nil {
 		t.Fatal(err)
 	}
-	witBad, err = tessera.NewWitness(witBadVkey, baseUrl)
+	witBad, err = tessera.NewWitness(witBadVkey, baseURL)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -232,9 +232,9 @@ func TestWitness_UpdateRequest(t *testing.T) {
 				}
 				_, _ = w.Write(sigForSigner(t, n.Text, wit1Skey))
 			}))
-			baseUrl := mustUrl(t, ts.URL)
+			baseURL := mustURL(t, ts.URL)
 			var err error
-			wit1, err := tessera.NewWitness(wit1Vkey, baseUrl)
+			wit1, err := tessera.NewWitness(wit1Vkey, baseURL)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -305,8 +305,8 @@ func TestWitness_UpdateResponse(t *testing.T) {
 				_, _ = w.Write(tC.body)
 			}))
 
-			baseUrl := mustUrl(t, ts.URL)
-			wit1, err := tessera.NewWitness(wit1Vkey, baseUrl)
+			baseURL := mustURL(t, ts.URL)
+			wit1, err := tessera.NewWitness(wit1Vkey, baseURL)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -337,7 +337,7 @@ func TestWitnessStateEvolution(t *testing.T) {
 	var wit1 tessera.Witness
 	var count int
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w1u := mustUrl(t, wit1.Url)
+		w1u := mustURL(t, wit1.URL)
 		if got, want := r.URL.String(), w1u.Path; got != want {
 			t.Fatalf("got request to URL %q but expected %q", got, want)
 		}
@@ -369,9 +369,9 @@ func TestWitnessStateEvolution(t *testing.T) {
 		}
 		count++
 	}))
-	baseUrl := mustUrl(t, ts.URL)
+	baseURL := mustURL(t, ts.URL)
 	var err error
-	wit1, err = tessera.NewWitness(wit1Vkey, baseUrl)
+	wit1, err = tessera.NewWitness(wit1Vkey, baseURL)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -409,8 +409,8 @@ func TestWitnessReusesProofs(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		w1u := mustUrl(t, wit1.Url)
-		w2u := mustUrl(t, wit2.Url)
+		w1u := mustURL(t, wit1.URL)
+		w2u := mustURL(t, wit2.URL)
 
 		switch r.URL.String() {
 		case w1u.Path:
@@ -421,13 +421,13 @@ func TestWitnessReusesProofs(t *testing.T) {
 			t.Fatalf("Unknown case: %s", r.URL.String())
 		}
 	}))
-	baseUrl := mustUrl(t, ts.URL)
+	baseURL := mustURL(t, ts.URL)
 	var err error
-	wit1, err = tessera.NewWitness(wit1Vkey, baseUrl)
+	wit1, err = tessera.NewWitness(wit1Vkey, baseURL)
 	if err != nil {
 		t.Fatal(err)
 	}
-	wit2, err = tessera.NewWitness(wit2Vkey, baseUrl)
+	wit2, err = tessera.NewWitness(wit2Vkey, baseURL)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -484,7 +484,7 @@ func testLogTileFetcher(ctx context.Context, l, i uint64, p uint8) ([]byte, erro
 	return os.ReadFile(path)
 }
 
-func mustUrl(t *testing.T, u string) *url.URL {
+func mustURL(t *testing.T, u string) *url.URL {
 	t.Helper()
 	parsed, err := url.Parse(u)
 	if err != nil {

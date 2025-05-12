@@ -58,7 +58,7 @@ func NewLogClients(readLogURLs, writeLogURLs []string, opts ClientOpts) (LogRead
 		writeLogURLs = readLogURLs
 	}
 
-	rootUrlOrDie := func(s string) *url.URL {
+	rootURLOrDie := func(s string) *url.URL {
 		// url must reference a directory, by definition
 		if !strings.HasSuffix(s, "/") {
 			s += "/"
@@ -72,11 +72,11 @@ func NewLogClients(readLogURLs, writeLogURLs []string, opts ClientOpts) (LogRead
 
 	fetchers := []fetcher{}
 	for _, s := range readLogURLs {
-		fetchers = append(fetchers, newFetcher(rootUrlOrDie(s), opts.BearerToken))
+		fetchers = append(fetchers, newFetcher(rootURLOrDie(s), opts.BearerToken))
 	}
 	writers := []httpLeafWriter{}
 	for _, s := range writeLogURLs {
-		addURL, err := rootUrlOrDie(s).Parse("add")
+		addURL, err := rootURLOrDie(s).Parse("add")
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to create add URL: %v", err)
 		}
