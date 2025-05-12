@@ -159,7 +159,7 @@ func init() {
 
 }
 
-// Add adds a new entry to be sequenced.
+// AddFn adds a new entry to be sequenced.
 // This method quickly returns an IndexFuture, which will return the index assigned
 // to the new leaf. Until this index is obtained from the future, the leaf is not durably
 // added to the log, and terminating the process may lead to this leaf being lost.

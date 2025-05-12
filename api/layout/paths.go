@@ -145,7 +145,7 @@ func fmtN(N uint64) string {
 	return n
 }
 
-// ParseTileLevelIndexWidth takes level and index in string, validates and returns the level, index and width in uint64.
+// ParseTileLevelIndexPartial takes level and index in string, validates and returns the level, index and width in uint64.
 //
 // Examples:
 // "/tile/0/x001/x234/067" means level 0 and index 1234067 of a full tile.
