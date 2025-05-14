@@ -87,7 +87,7 @@ func initOTel(ctx context.Context, traceFraction float64) func(context.Context) 
 		sdktrace.WithBatcher(te),
 		sdktrace.WithResource(resources),
 	)
-	shutdownFuncs = append(shutdownFuncs, mp.Shutdown)
+	shutdownFuncs = append(shutdownFuncs, tp.Shutdown)
 	otel.SetTracerProvider(tp)
 
 	return shutdown
