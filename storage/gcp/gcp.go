@@ -53,6 +53,7 @@ import (
 	"github.com/transparency-dev/trillian-tessera/api"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
 	"github.com/transparency-dev/trillian-tessera/internal/otel"
+	"github.com/transparency-dev/trillian-tessera/internal/stream"
 	storage "github.com/transparency-dev/trillian-tessera/storage/internal"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/api/googleapi"
@@ -188,7 +189,7 @@ func (lr *LogReader) StreamEntries(ctx context.Context, fromEntry uint64) (next 
 	// TODO(al): Consider making this configurable.
 	// Requests to GCS can go super parallel without too much issue, but even just 10 concurrent requests seems to provide pretty good throughput.
 	numWorkers := uint(10)
-	return storage.StreamAdaptor(ctx, numWorkers, lr.integratedSize, lr.lrs.getEntryBundle, fromEntry)
+	return stream.StreamAdaptor(ctx, numWorkers, lr.integratedSize, lr.lrs.getEntryBundle, fromEntry)
 }
 
 func (s *Storage) Appender(ctx context.Context, opts *tessera.AppendOptions) (*tessera.Appender, tessera.LogReader, error) {
