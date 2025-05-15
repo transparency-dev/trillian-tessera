@@ -31,6 +31,10 @@ This holds batches of entries keyed by the sequence number assigned to the first
 ### `IntCoord`
 This table is used to coordinate integration of sequenced batches in the `Seq` table.
 
+### `PubCoord`
+This table is used to coordinate publication of new checkpoints, ensuring that checkpoints are not published
+more frequently than configured.
+
 ## Life of a leaf
 
 1. Leaves are submitted by the binary built using Tessera via a call the storage's `Add` func.
