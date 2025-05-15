@@ -23,9 +23,9 @@ import (
 
 	"cloud.google.com/go/spanner"
 	"cloud.google.com/go/spanner/spannertest"
-	tessera "github.com/transparency-dev/trillian-tessera"
-	"github.com/transparency-dev/trillian-tessera/api"
-	"github.com/transparency-dev/trillian-tessera/testonly"
+	"github.com/transparency-dev/tessera"
+	"github.com/transparency-dev/tessera/api"
+	"github.com/transparency-dev/tessera/testonly"
 	"k8s.io/klog/v2"
 )
 

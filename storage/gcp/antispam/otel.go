@@ -19,7 +19,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 )
 
-const name = "github.com/transparency-dev/trillian-tessera/storage/gcp/antispam"
+const name = "github.com/transparency-dev/tessera/storage/gcp/antispam"
 
 var (
 	tracer = otel.Tracer(name)

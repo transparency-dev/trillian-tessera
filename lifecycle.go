@@ -21,8 +21,8 @@ import (
 	"fmt"
 
 	"github.com/transparency-dev/merkle/rfc6962"
-	"github.com/transparency-dev/trillian-tessera/api"
-	"github.com/transparency-dev/trillian-tessera/api/layout"
+	"github.com/transparency-dev/tessera/api"
+	"github.com/transparency-dev/tessera/api/layout"
 )
 
 // NoMoreEntries is a sentinel error returned by StreamEntries when no more entries will be returned by calls to the next function.

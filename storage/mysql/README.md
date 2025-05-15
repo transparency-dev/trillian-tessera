@@ -20,8 +20,8 @@ Here is an example code snippet to initialise the MySQL storage in Trillian Tess
 import (
     "context"
 
-    tessera "github.com/transparency-dev/trillian-tessera"
-    "github.com/transparency-dev/trillian-tessera/storage/mysql"
+    "github.com/transparency-dev/tessera"
+    "github.com/transparency-dev/tessera/storage/mysql"
     "k8s.io/klog/v2"
 )
 
@@ -45,4 +45,4 @@ See [MySQL conformance example](/cmd/conformance/mysql/).
 
 ## Future Work
 
-- [Separate sequencing and integration](https://github.com/transparency-dev/trillian-tessera/pull/282)
+- [Separate sequencing and integration](https://github.com/transparency-dev/tessera/pull/282)

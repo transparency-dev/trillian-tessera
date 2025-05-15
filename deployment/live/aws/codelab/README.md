@@ -44,7 +44,7 @@ the defaults settings, including for the default VPC. Don't forget to run
 
     Here's an example run:
     ```
-    [ec2-user@ip-172-31-21-186 trillian-tessera]$ aws configure sso
+    [ec2-user@ip-172-31-21-186 tessera]$ aws configure sso
     SSO session name (Recommended): greenfield-session
     SSO start URL [None]: https://console.aws.amazon.com/ // unless you use a custom signin console
     SSO region [None]: us-east-1
@@ -79,8 +79,8 @@ the defaults settings, including for the default VPC. Don't forget to run
 
  1. Fetch the Tessera repo, and go to its root:
     ```
-    git clone https://github.com/transparency-dev/trillian-tessera
-    cd trillian-tessera/
+    git clone https://github.com/transparency-dev/tessera
+    cd tessera/
     ```
 
 ### Deploy a Trillian Tessera storage infrastructure
@@ -88,7 +88,7 @@ In this section, we'll bring up a [S3](https://aws.amazon.com/s3/) bucket, an
 [Aurora](https://aws.amazon.com/rds/aurora/) MySQL, and we'll connect them to the
 VM.
 
- 1. From the root of the trillian-tessera repo, initialize terragrunt:
+ 1. From the root of the tessera repo, initialize terragrunt:
     ```
     terragrunt init --working-dir=deployment/live/aws/codelab/
     ```
@@ -158,7 +158,7 @@ endpoint.
     Log entries can be read directly from S3 without going through the server,
     at `READ_URL`, and checkpoint signatures can be verified with `LOG_PUBLIC_KEY`.
 
- 1. Head over to the [remainder of this codelab](https://github.com/transparency-dev/trillian-tessera/tree/main/cmd/conformance#codelab)
+ 1. Head over to the [remainder of this codelab](https://github.com/transparency-dev/tessera/tree/main/cmd/conformance#codelab)
     to add leaves to the log and inspect its contents.
 
 > [!IMPORTANT]  

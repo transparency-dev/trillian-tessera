@@ -27,9 +27,9 @@ import (
 	"os"
 	"time"
 
-	tessera "github.com/transparency-dev/trillian-tessera"
-	"github.com/transparency-dev/trillian-tessera/api/layout"
-	"github.com/transparency-dev/trillian-tessera/storage/mysql"
+	"github.com/transparency-dev/tessera"
+	"github.com/transparency-dev/tessera/api/layout"
+	"github.com/transparency-dev/tessera/storage/mysql"
 	"golang.org/x/mod/sumdb/note"
 	"k8s.io/klog/v2"
 )

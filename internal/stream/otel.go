@@ -18,7 +18,7 @@ import (
 	"go.opentelemetry.io/otel"
 )
 
-const name = "github.com/transparency-dev/trillian-tessera/internal/stream"
+const name = "github.com/transparency-dev/tessera/internal/stream"
 
 var (
 	tracer = otel.Tracer(name)

@@ -29,7 +29,7 @@ If your transparency application needs such properties you will need to handle t
 
 The anti-spam support is optional, and needs to be explicitly provisioned in the infrastructure and enabled
 by the personality application (via the
-[`WithAntispam`](https://pkg.go.dev/github.com/transparency-dev/trillian-tessera@main#AppendOptions.WithAntispam))
+[`WithAntispam`](https://pkg.go.dev/github.com/transparency-dev/tessera@main#AppendOptions.WithAntispam))
  option).
 
 The following diagram gives a high-level overview of how it works.
@@ -74,7 +74,7 @@ architecture-beta
 
 If the process of following the log falls too far behind a
 configurable threshold (e.g. on
-[GCP's antispam](https://pkg.go.dev/github.com/transparency-dev/trillian-tessera@main#AppendOptions.WithPushback)
+[GCP's antispam](https://pkg.go.dev/github.com/transparency-dev/tessera@main#AppendOptions.WithPushback)
 implementation), the decorator will start returning `ErrPushback` to the application until such time as the
 follower has caught up. This helps to prevent the anti-spam mechanism getting so far behind as to become
 ineffective in preventing abuse.

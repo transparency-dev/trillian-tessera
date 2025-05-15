@@ -32,13 +32,13 @@ import (
 	"testing"
 
 	// #region common_imports
-	tessera "github.com/transparency-dev/trillian-tessera"
+	"github.com/transparency-dev/tessera"
 
 	// Choose one!
-	"github.com/transparency-dev/trillian-tessera/storage/posix"
-	// "github.com/transparency-dev/trillian-tessera/storage/aws"
-	// "github.com/transparency-dev/trillian-tessera/storage/gcp"
-	// "github.com/transparency-dev/trillian-tessera/storage/mysql"
+	"github.com/transparency-dev/tessera/storage/posix"
+	// "github.com/transparency-dev/tessera/storage/aws"
+	// "github.com/transparency-dev/tessera/storage/gcp"
+	// "github.com/transparency-dev/tessera/storage/mysql"
 
 	// #endregion
 	"golang.org/x/mod/sumdb/note"

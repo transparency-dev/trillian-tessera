@@ -105,18 +105,18 @@ MiB Mem :    970.0 total,     62.2 free,    839.5 used,    227.0 buff/cache
 1. Clone the Trillian Tessera repository
 
    ```sh
-   instance:~$ git clone https://github.com/transparency-dev/trillian-tessera.git
-   Cloning into 'trillian-tessera'...
+   instance:~$ git clone https://github.com/transparency-dev/tessera.git
+   Cloning into 'tessera'...
    ```
 
 1. Run `cmd/conformance/posix` via Docker compose
 
    ```sh
-   instance:~/trillian-tessera$ sudo docker compose -f ./cmd/conformance/posix/docker/compose.yaml up
+   instance:~/tessera$ sudo docker compose -f ./cmd/conformance/posix/docker/compose.yaml up
    ```
 
 1. Run `hammer` and get performance metrics
 
    ```sh
-   hammer:~/trillian-tessera$ go run ./internal/hammer --log_public_key=example.com/log/testdata+33d7b496+AeHTu4Q3hEIMHNqc6fASMsq3rKNx280NI+oO5xCFkkSx --log_url=http://localhost:2025 --max_read_ops=0 --num_writers=512 --max_write_ops=512
+   hammer:~/tessera$ go run ./internal/hammer --log_public_key=example.com/log/testdata+33d7b496+AeHTu4Q3hEIMHNqc6fASMsq3rKNx280NI+oO5xCFkkSx --log_url=http://localhost:2025 --max_read_ops=0 --num_writers=512 --max_write_ops=512
    ```

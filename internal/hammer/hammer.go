@@ -27,8 +27,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/transparency-dev/trillian-tessera/client"
-	"github.com/transparency-dev/trillian-tessera/internal/hammer/loadtest"
+	"github.com/transparency-dev/tessera/client"
+	"github.com/transparency-dev/tessera/internal/hammer/loadtest"
 	"golang.org/x/mod/sumdb/note"
 	"golang.org/x/net/http2"
 

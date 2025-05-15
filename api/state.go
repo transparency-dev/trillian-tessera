@@ -23,7 +23,7 @@ import (
 	"encoding/binary"
 	"fmt"
 
-	"github.com/transparency-dev/trillian-tessera/api/layout"
+	"github.com/transparency-dev/tessera/api/layout"
 )
 
 // HashTile represents a tile within the Merkle hash tree.

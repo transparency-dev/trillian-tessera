@@ -70,20 +70,20 @@ MiB Swap:      0.0 total,      0.0 free,      0.0 used.     37.3 avail Mem
 1. Clone the Trillian Tessera repository
 
    ```sh
-   instance:~$ git clone https://github.com/transparency-dev/trillian-tessera.git
-   Cloning into 'trillian-tessera'...
+   instance:~$ git clone https://github.com/transparency-dev/tessera.git
+   Cloning into 'tessera'...
    ```
 
 1. Run `cmd/conformance/mysql` and MySQL database via Docker compose
 
    ```sh
-   instance:~/trillian-tessera$ sudo docker compose -f ./cmd/conformance/mysql/docker/compose.yaml up
+   instance:~/tessera$ sudo docker compose -f ./cmd/conformance/mysql/docker/compose.yaml up
    ```
 
 1. Run `hammer` and get performance metrics
 
    ```sh
-   hammer:~/trillian-tessera$ go run ./internal/hammer --log_public_key=transparency.dev/tessera/example+ae330e15+ASf4/L1zE859VqlfQgGzKy34l91Gl8W6wfwp+vKP62DW --log_url=http://10.128.0.3:2024 --max_read_ops=0 --num_writers=512 --max_write_ops=512
+   hammer:~/tessera$ go run ./internal/hammer --log_public_key=transparency.dev/tessera/example+ae330e15+ASf4/L1zE859VqlfQgGzKy34l91Gl8W6wfwp+vKP62DW --log_url=http://10.128.0.3:2024 --max_read_ops=0 --num_writers=512 --max_write_ops=512
    ```
 
 ### GCP Free Tier VM Instance + Cloud SQL (MySQL)
@@ -149,8 +149,8 @@ The bottleneck comes from CPU usage of the `cmd/conformance/mysql` binary on the
 1. Clone the Trillian Tessera repository
 
    ```sh
-   instance:~$ git clone https://github.com/transparency-dev/trillian-tessera.git
-   Cloning into 'trillian-tessera'...
+   instance:~$ git clone https://github.com/transparency-dev/tessera.git
+   Cloning into 'tessera'...
    ```
 
 1. Run `cloud-sql-proxy`
@@ -162,13 +162,13 @@ The bottleneck comes from CPU usage of the `cmd/conformance/mysql` binary on the
 1. Run `cmd/conformance/mysql`
 
    ```sh
-   instance:~/trillian-tessera$ go run ./cmd/conformance/mysql --mysql_uri="root:root@tcp(127.0.0.1:3306)/test_tessera" --init_schema_path="./storage/mysql/schema.sql" --private_key_path="./cmd/conformance/mysql/docker/testdata/key" --db_max_open_conns=1024 --db_max_idle_conns=512
+   instance:~/tessera$ go run ./cmd/conformance/mysql --mysql_uri="root:root@tcp(127.0.0.1:3306)/test_tessera" --init_schema_path="./storage/mysql/schema.sql" --private_key_path="./cmd/conformance/mysql/docker/testdata/key" --db_max_open_conns=1024 --db_max_idle_conns=512
    ```
 
 1. Run `hammer` and get performance metrics
 
    ```sh
-   hammer:~/trillian-tessera$ go run ./internal/hammer --log_public_key=transparency.dev/tessera/example+ae330e15+ASf4/L1zE859VqlfQgGzKy34l91Gl8W6wfwp+vKP62DW --log_url=http://10.128.0.3:2024 --max_read_ops=0 --num_writers=512 --max_write_ops=512
+   hammer:~/tessera$ go run ./internal/hammer --log_public_key=transparency.dev/tessera/example+ae330e15+ASf4/L1zE859VqlfQgGzKy34l91Gl8W6wfwp+vKP62DW --log_url=http://10.128.0.3:2024 --max_read_ops=0 --num_writers=512 --max_write_ops=512
    ```
 
 ## POSIX
@@ -237,20 +237,20 @@ MiB Swap:      0.0 total,      0.0 free,      0.0 used.    403.2 avail Mem
 1. Clone the Trillian Tessera repository
 
    ```sh
-   instance:~$ git clone https://github.com/transparency-dev/trillian-tessera.git
-   Cloning into 'trillian-tessera'...
+   instance:~$ git clone https://github.com/transparency-dev/tessera.git
+   Cloning into 'tessera'...
    ```
 
 1. Run `cmd/conformance/posix` via Docker compose
 
    ```sh
-   instance:~/trillian-tessera$ sudo docker compose -f ./cmd/conformance/posix/docker/compose.yaml up
+   instance:~/tessera$ sudo docker compose -f ./cmd/conformance/posix/docker/compose.yaml up
    ```
 
 1. Run `hammer` and get performance metrics
 
    ```sh
-   hammer:~/trillian-tessera$ go run ./internal/hammer --log_public_key=example.com/log/testdata+33d7b496+AeHTu4Q3hEIMHNqc6fASMsq3rKNx280NI+oO5xCFkkSx --log_url=http://localhost:2025 --max_read_ops=0 --num_writers=512 --max_write_ops=512
+   hammer:~/tessera$ go run ./internal/hammer --log_public_key=example.com/log/testdata+33d7b496+AeHTu4Q3hEIMHNqc6fASMsq3rKNx280NI+oO5xCFkkSx --log_url=http://localhost:2025 --max_read_ops=0 --num_writers=512 --max_write_ops=512
    ```
 
 ## GCP

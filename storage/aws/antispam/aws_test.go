@@ -23,10 +23,10 @@ import (
 	"testing"
 	"time"
 
-	tessera "github.com/transparency-dev/trillian-tessera"
-	"github.com/transparency-dev/trillian-tessera/api"
-	aws "github.com/transparency-dev/trillian-tessera/storage/aws/antispam"
-	"github.com/transparency-dev/trillian-tessera/testonly"
+	"github.com/transparency-dev/tessera"
+	"github.com/transparency-dev/tessera/api"
+	aws "github.com/transparency-dev/tessera/storage/aws/antispam"
+	"github.com/transparency-dev/tessera/testonly"
 	"k8s.io/klog/v2"
 )
 

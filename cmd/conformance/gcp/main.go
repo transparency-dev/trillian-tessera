@@ -24,9 +24,9 @@ import (
 	"net/http"
 	"time"
 
-	tessera "github.com/transparency-dev/trillian-tessera"
-	"github.com/transparency-dev/trillian-tessera/storage/gcp"
-	gcp_as "github.com/transparency-dev/trillian-tessera/storage/gcp/antispam"
+	"github.com/transparency-dev/tessera"
+	"github.com/transparency-dev/tessera/storage/gcp"
+	gcp_as "github.com/transparency-dev/tessera/storage/gcp/antispam"
 	"golang.org/x/mod/sumdb/note"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"

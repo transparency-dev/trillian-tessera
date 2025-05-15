@@ -31,7 +31,7 @@ export AWS_PROFILE={VALUE}
 ```
 
 Optionally, customize the AWS region (defaults to "us-east-1"), prefix, and base
-name for resources (defaults to "trillian-tessera" and "conformance"):
+name for resources (defaults to "tessera" and "conformance"):
 ```bash
 export TESSERA_BASE_NAME={VALUE}
 export TESSERA_PREFIX_NAME={VALUE}

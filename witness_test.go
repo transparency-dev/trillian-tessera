@@ -5,7 +5,7 @@ import (
 	"slices"
 	"testing"
 
-	tessera "github.com/transparency-dev/trillian-tessera"
+	"github.com/transparency-dev/tessera"
 	"golang.org/x/mod/sumdb/note"
 )
 

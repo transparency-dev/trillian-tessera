@@ -29,8 +29,8 @@ import (
 
 	"golang.org/x/mod/sumdb/note"
 
-	tessera "github.com/transparency-dev/trillian-tessera"
-	"github.com/transparency-dev/trillian-tessera/storage/posix"
+	"github.com/transparency-dev/tessera"
+	"github.com/transparency-dev/tessera/storage/posix"
 	"k8s.io/klog/v2"
 )
 

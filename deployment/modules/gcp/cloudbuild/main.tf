@@ -26,7 +26,7 @@ resource "google_cloudbuild_trigger" "docker" {
 
   github {
     owner = "transparency-dev"
-    name  = "trillian-tessera"
+    name  = "tessera"
     push {
       branch = "^main$"
     }

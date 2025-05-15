@@ -20,7 +20,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/transparency-dev/trillian-tessera/ctonly"
+	"github.com/transparency-dev/tessera/ctonly"
 )
 
 func TestCTEntriesPath(t *testing.T) {

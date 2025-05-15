@@ -24,9 +24,9 @@ import (
 
 	f_note "github.com/transparency-dev/formats/note"
 	"github.com/transparency-dev/merkle/rfc6962"
-	"github.com/transparency-dev/trillian-tessera/api"
-	"github.com/transparency-dev/trillian-tessera/client"
-	"github.com/transparency-dev/trillian-tessera/internal/fsck"
+	"github.com/transparency-dev/tessera/api"
+	"github.com/transparency-dev/tessera/client"
+	"github.com/transparency-dev/tessera/internal/fsck"
 	"golang.org/x/mod/sumdb/note"
 	"k8s.io/klog/v2"
 )

@@ -30,8 +30,8 @@ import (
 	adminpb "cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	"cloud.google.com/go/spanner/apiv1/spannerpb"
 
-	tessera "github.com/transparency-dev/trillian-tessera"
-	"github.com/transparency-dev/trillian-tessera/internal/stream"
+	"github.com/transparency-dev/tessera"
+	"github.com/transparency-dev/tessera/internal/stream"
 	"google.golang.org/grpc/codes"
 	"k8s.io/klog/v2"
 )

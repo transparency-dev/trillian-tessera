@@ -1,4 +1,4 @@
-module github.com/transparency-dev/trillian-tessera
+module github.com/transparency-dev/tessera
 
 go 1.24.0
 
