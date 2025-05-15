@@ -4,7 +4,7 @@ terraform {
 
 locals {
   region      = get_env("AWS_REGION", "us-east-1")
-  base_name   = "trillian-tessera"
+  base_name   = "tessera"
   prefix_name = "codelab-${get_aws_account_id()}"
   ephemeral   = true
 }

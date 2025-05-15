@@ -28,10 +28,10 @@ import (
 	"testing"
 
 	"github.com/transparency-dev/formats/log"
-	tessera "github.com/transparency-dev/trillian-tessera"
-	"github.com/transparency-dev/trillian-tessera/api/layout"
-	"github.com/transparency-dev/trillian-tessera/internal/witness"
-	"github.com/transparency-dev/trillian-tessera/storage/posix"
+	tessera "github.com/transparency-dev/tessera"
+	"github.com/transparency-dev/tessera/api/layout"
+	"github.com/transparency-dev/tessera/internal/witness"
+	"github.com/transparency-dev/tessera/storage/posix"
 	"golang.org/x/mod/sumdb/note"
 )
 

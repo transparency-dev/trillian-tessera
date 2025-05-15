@@ -27,8 +27,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	tessera "github.com/transparency-dev/trillian-tessera"
-	"github.com/transparency-dev/trillian-tessera/internal/stream"
+	tessera "github.com/transparency-dev/tessera"
+	"github.com/transparency-dev/tessera/internal/stream"
 	"k8s.io/klog/v2"
 
 	_ "github.com/go-sql-driver/mysql"

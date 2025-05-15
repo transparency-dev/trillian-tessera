@@ -1,8 +1,8 @@
 # Trillian Tessera
 
-[![Go Report Card](https://goreportcard.com/badge/github.com/transparency-dev/trillian-tessera)](https://goreportcard.com/report/github.com/transparency-dev/trillian-tessera)
-[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/transparency-dev/trillian-tessera/badge)](https://scorecard.dev/viewer/?uri=github.com/transparency-dev/trillian-tessera)
-[![Benchmarks](https://img.shields.io/badge/Benchmarks-blue.svg)](https://transparency-dev.github.io/trillian-tessera/dev/bench/)
+[![Go Report Card](https://goreportcard.com/badge/github.com/transparency-dev/tessera)](https://goreportcard.com/report/github.com/transparency-dev/tessera)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/transparency-dev/tessera/badge)](https://scorecard.dev/viewer/?uri=github.com/transparency-dev/tessera)
+[![Benchmarks](https://img.shields.io/badge/Benchmarks-blue.svg)](https://transparency-dev.github.io/tessera/dev/bench/)
 [![Slack Status](https://img.shields.io/badge/Slack-Chat-blue.svg)](https://transparency-dev.slack.com/)
 
 Trillian Tessera is a Go library for building [tile-based transparency logs (tlogs)](https://c2sp.org/tlog-tiles).
@@ -41,7 +41,7 @@ into any other API, this strategy will lose a lot of the read scaling that Tesse
 
 ## Status
 
-Tessera is under active development, with an [alpha 2 release](https://github.com/transparency-dev/trillian-tessera/releases/tag/v0.1.1) available now.
+Tessera is under active development, with an [alpha 3 release](https://github.com/transparency-dev/tessera/releases/tag/v0.1.2) available now.
 Users of GCP, AWS, MySQL, and POSIX are welcome to try the relevant [Getting Started](#getting-started) guide.
 
 ## Roadmap
@@ -83,7 +83,7 @@ This section introduces concepts and terms that will be used throughout the user
 
 ### Sequencing
 
-When data is added to a log, it is first stored in memory for some period (this can be controlled via the [batching options](https://pkg.go.dev/github.com/transparency-dev/trillian-tessera#WithBatching)).
+When data is added to a log, it is first stored in memory for some period (this can be controlled via the [batching options](https://pkg.go.dev/github.com/transparency-dev/tessera#WithBatching)).
 If the process dies in this state, the entry will be lost.
 
 Once a batch of entries is processed by the sequencer, the new data will transition from a volatile state to one where it is durably assigned an index.
@@ -107,9 +107,9 @@ Once this process has been completed, a new entry will:
 ### Publishing
 
 Publishing is a background process that creates a new Checkpoint for the latest tree.
-This background process runs periodically (configurable via [WithCheckpointInterval](https://pkg.go.dev/github.com/transparency-dev/trillian-tessera#AppendOptions.WithCheckpointInterval) and performs the following steps:
-  1. Create a new Checkpoint and sign it with the signer provided by [WithCheckpointSigner](https://pkg.go.dev/github.com/transparency-dev/trillian-tessera#AppendOptions.WithCheckpointSigner)
-  2. Contact witnesses and collect enough countersignatures to satisfy any witness policy configured by [WithWitnesses](https://pkg.go.dev/github.com/transparency-dev/trillian-tessera#AppendOptions.WithWitnesses)
+This background process runs periodically (configurable via [WithCheckpointInterval](https://pkg.go.dev/github.com/transparency-dev/tessera#AppendOptions.WithCheckpointInterval) and performs the following steps:
+  1. Create a new Checkpoint and sign it with the signer provided by [WithCheckpointSigner](https://pkg.go.dev/github.com/transparency-dev/tessera#AppendOptions.WithCheckpointSigner)
+  2. Contact witnesses and collect enough countersignatures to satisfy any witness policy configured by [WithWitnesses](https://pkg.go.dev/github.com/transparency-dev/tessera#AppendOptions.WithWitnesses)
   3. If the witness policy is satisfied, make this new Checkpoint public available
 
 An entry is considered published once it is committed to by a published Checkpoint (i.e. a published Checkpoint's size is larger than the entry's assigned index).
@@ -172,20 +172,20 @@ You'll need to import the Tessera library:
 ```shell
 # This imports the library at main.
 # This should be set to the latest release version to get a stable release.
-go get github.com/transparency-dev/trillian-tessera@main
+go get github.com/transparency-dev/tessera@main
 ```
 
 #### Constructing the Appender
 
 Import the main `tessera` package, and the driver for the storage backend you want to use:
 ```go file=README_test.go region=common_imports
-	tessera "github.com/transparency-dev/trillian-tessera"
+	tessera "github.com/transparency-dev/tessera"
 
 	// Choose one!
-	"github.com/transparency-dev/trillian-tessera/storage/posix"
-	// "github.com/transparency-dev/trillian-tessera/storage/aws"
-	// "github.com/transparency-dev/trillian-tessera/storage/gcp"
-	// "github.com/transparency-dev/trillian-tessera/storage/mysql"
+	"github.com/transparency-dev/tessera/storage/posix"
+	// "github.com/transparency-dev/tessera/storage/aws"
+	// "github.com/transparency-dev/tessera/storage/gcp"
+	// "github.com/transparency-dev/tessera/storage/mysql"
 
 ```
 
@@ -226,7 +226,7 @@ Now the fun part - writing to the log!
 ```
 
 The `AppendOptions` allow Tessera behaviour to be tuned.
-Take a look at the methods named `With*` on the `AppendOptions` struct in the root package, e.g. [`WithBatching`](https://pkg.go.dev/github.com/transparency-dev/trillian-tessera@main#AppendOptions.WithBatching) to see the available options are how they should be used.
+Take a look at the methods named `With*` on the `AppendOptions` struct in the root package, e.g. [`WithBatching`](https://pkg.go.dev/github.com/transparency-dev/tessera@main#AppendOptions.WithBatching) to see the available options are how they should be used.
 
 Writing to the log follows this flow:
  1. Call `Add` with a new entry created with the data to be added as a leaf in the log.
@@ -276,8 +276,8 @@ The antispam mechanism consists of two layers which sit in front of the underlyi
    version's assigned position in the log.
 
 These layes are configured by the `WithAntispam` method of the
-[AppendOptions](https://pkg.go.dev/github.com/transparency-dev/trillian-tessera@main#AppendOptions.WithAntispam) and
-[MigrateOptions](https://pkg.go.dev/github.com/transparency-dev/trillian-tessera@main#AppendOptions.WithAntispam).
+[AppendOptions](https://pkg.go.dev/github.com/transparency-dev/tessera@main#AppendOptions.WithAntispam) and
+[MigrateOptions](https://pkg.go.dev/github.com/transparency-dev/tessera@main#AppendOptions.WithAntispam).
 
 > [!Tip]
 > Persistent antispam is fairly expensive in terms of storage-compute, so should only be used where it is actually necessary.
@@ -293,14 +293,14 @@ Logs are required to be append-only data structures.
 This property can be verified by witnesses, and signatures from witnesses can be provided in the published checkpoint to increase confidence for users of the log.
 
 Personalities can configure Tessera with options that specify witnesses compatible with the [C2SP Witness Protocol](https://github.com/C2SP/C2SP/blob/main/tlog-witness.md).
-Configuring the witnesses is done by creating a top-level [`WitnessGroup`](https://pkg.go.dev/github.com/transparency-dev/trillian-tessera@main#WitnessGroup) that contains either sub `WitnessGroup`s or [`Witness`es](https://pkg.go.dev/github.com/transparency-dev/trillian-tessera@main#Witness).
+Configuring the witnesses is done by creating a top-level [`WitnessGroup`](https://pkg.go.dev/github.com/transparency-dev/tessera@main#WitnessGroup) that contains either sub `WitnessGroup`s or [`Witness`es](https://pkg.go.dev/github.com/transparency-dev/tessera@main#Witness).
 Each `Witness` is configured with a URL at which the witness can be requested to make witnessing operations via the C2SP Witness Protocol, and a Verifier for the key that it must sign with.
 `WitnessGroup`s are configured with their sub-components, and a number of these components that must be satisfied in order for the group to be satisfied.
 
 These primitives allow arbitrarily complex witness policies to be specified.
 
 Once a top-level `WitnessGroup` is configured, it is passed in to the `Appender` lifecycle options using
-[AppendOptions#WithWitnesses](https://pkg.go.dev/github.com/transparency-dev/trillian-tessera@main#AppendOptions.WithWitnesses).
+[AppendOptions#WithWitnesses](https://pkg.go.dev/github.com/transparency-dev/tessera@main#AppendOptions.WithWitnesses).
 If this method is not called then no witnessing will be configured.
 
 > [!Note]
@@ -309,7 +309,7 @@ If this method is not called then no witnessing will be configured.
 
 ### Synchronous Publication
 
-Synchronous Publication is provided by [`tessera.PublicationAwaiter`](https://pkg.go.dev/github.com/transparency-dev/trillian-tessera#PublicationAwaiter).
+Synchronous Publication is provided by [`tessera.PublicationAwaiter`](https://pkg.go.dev/github.com/transparency-dev/tessera#PublicationAwaiter).
 This allows applications built with Tessera to block until leaves passed via calls to `Add()` are committed to via a public checkpoint.
 
 > [!Tip]
@@ -322,19 +322,19 @@ This allows applications built with Tessera to block until leaves passed via cal
 This is the most common lifecycle mode. Appender allows the application to add leaves, which will be assigned positions in the log
 contiguous to any entries the log has already committed to.
 
-This mode is instantiated via [`tessera.NewAppender`](https://pkg.go.dev/github.com/transparency-dev/trillian-tessera@main#NewAppender), and
-configured using the [`tessera.NewAppendOptions`](https://pkg.go.dev/github.com/transparency-dev/trillian-tessera@main#NewAppendOptions) struct.
+This mode is instantiated via [`tessera.NewAppender`](https://pkg.go.dev/github.com/transparency-dev/tessera@main#NewAppender), and
+configured using the [`tessera.NewAppendOptions`](https://pkg.go.dev/github.com/transparency-dev/tessera@main#NewAppendOptions) struct.
 
 This is described above in [Constructing the Appender](#constructing-the-appender).
 
-See more details in the [Lifecycle Design: Appender](https://github.com/transparency-dev/trillian-tessera/blob/main/docs/design/lifecycle.md#appender).
+See more details in the [Lifecycle Design: Appender](https://github.com/transparency-dev/tessera/blob/main/docs/design/lifecycle.md#appender).
 
 ### Migration Target
 
 This mode is used to migrate a log from one location to another.
 
-This is instantiated via [`tessera.NewMigrationTarget`](https://pkg.go.dev/github.com/transparency-dev/trillian-tessera@main#NewMigrationTarget),
-and configured using the [`tessera.NewMigratonOptions`](https://pkg.go.dev/github.com/transparency-dev/trillian-tessera@main#NewMigrationOptions) struct.
+This is instantiated via [`tessera.NewMigrationTarget`](https://pkg.go.dev/github.com/transparency-dev/tessera@main#NewMigrationTarget),
+and configured using the [`tessera.NewMigratonOptions`](https://pkg.go.dev/github.com/transparency-dev/tessera@main#NewMigrationOptions) struct.
 
 > [!Tip]
 > This mode enables the migration of logs between different Tessera storage backends, e.g. you may wish to switch
@@ -349,13 +349,13 @@ These binaries take the URL of a remote tiled log, and copy it into the target l
 These binaries ought to be sufficient for most use-cases.
 Users that need to write their own migration binary should use the provided binaries as a reference codelab.
 
-See more details in the [Lifecycle Design: Migration](https://github.com/transparency-dev/trillian-tessera/blob/main/docs/design/lifecycle.md#migration).
+See more details in the [Lifecycle Design: Migration](https://github.com/transparency-dev/tessera/blob/main/docs/design/lifecycle.md#migration).
 
 ### Freezing a Log
 
 Freezing a log prevents new writes to the log, but still allows read access.
 We recommend that operators allow all pending [sequenced](#sequencing) entries to be [integrated](#integration), and all integrated entries to be [published](#publishing) via a Checkpoint before proceeding.
-Once all pending entries are published, the log is now _quiescent_, as described in [Lifecycle Design: Quiescent](https://github.com/transparency-dev/trillian-tessera/blob/main/docs/design/lifecycle.md#quiescent).
+Once all pending entries are published, the log is now _quiescent_, as described in [Lifecycle Design: Quiescent](https://github.com/transparency-dev/tessera/blob/main/docs/design/lifecycle.md#quiescent).
 
 To ensure all pending entries are published, keep an instance object for the current lifecycle state in a running process, but disable writes to this at the personality level.
 For example, a personality that takes HTTP requests from the Internet and calls `Appender.Add` should keep a process running with an `Appender`, but disable any code paths that lead to `Add` being invoked (e.g. by flipping a flag that changes this behaviour).

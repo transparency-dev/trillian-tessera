@@ -19,7 +19,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/transparency-dev/trillian-tessera/client"
+	"github.com/transparency-dev/tessera/client"
 
 	"k8s.io/klog/v2"
 )

@@ -24,7 +24,7 @@ import (
 
 	"container/list"
 
-	"github.com/transparency-dev/trillian-tessera/internal/parse"
+	"github.com/transparency-dev/tessera/internal/parse"
 	"k8s.io/klog/v2"
 )
 

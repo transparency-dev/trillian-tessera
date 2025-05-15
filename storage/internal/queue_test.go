@@ -22,8 +22,8 @@ import (
 	"testing"
 	"time"
 
-	tessera "github.com/transparency-dev/trillian-tessera"
-	storage "github.com/transparency-dev/trillian-tessera/storage/internal"
+	tessera "github.com/transparency-dev/tessera"
+	storage "github.com/transparency-dev/tessera/storage/internal"
 )
 
 func TestQueue(t *testing.T) {

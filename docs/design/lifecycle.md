@@ -20,7 +20,7 @@ The definitions below will use terms that we'll define here:
 The purpose of this mode is to allow entries to be assigned indices by, and integrated into, the log.
 
 This is the "normal" state of most active logs, and is characterized by the writer personality using only the
-[`tessera.NewAppender`](https://pkg.go.dev/github.com/transparency-dev/trillian-tessera@main#NewAppender)
+[`tessera.NewAppender`](https://pkg.go.dev/github.com/transparency-dev/tessera@main#NewAppender)
 lifecycle API.
 
 In this mode, storage drivers:
@@ -42,7 +42,7 @@ infrastructure.
 
 This state must start from an empty tree.
 It is characterized by the personality that uses only the
-[`tessera.NewMigrationTarget`](https://pkg.go.dev/github.com/transparency-dev/trillian-tessera@main#MigrationTarget)
+[`tessera.NewMigrationTarget`](https://pkg.go.dev/github.com/transparency-dev/tessera@main#MigrationTarget)
 lifecycle API.
 
 In this mode, the lifecycle struct will copy entry bundle resources from the source log into the target log, and

@@ -18,7 +18,7 @@ import (
 	"encoding/base64"
 	"testing"
 
-	"github.com/transparency-dev/trillian-tessera/internal/parse"
+	"github.com/transparency-dev/tessera/internal/parse"
 )
 
 func TestCheckpointUnsafe(t *testing.T) {

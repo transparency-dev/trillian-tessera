@@ -31,10 +31,10 @@ import (
 	"cloud.google.com/go/spanner/spannertest"
 	gcs "cloud.google.com/go/storage"
 	"github.com/google/go-cmp/cmp"
-	tessera "github.com/transparency-dev/trillian-tessera"
-	"github.com/transparency-dev/trillian-tessera/api"
-	"github.com/transparency-dev/trillian-tessera/api/layout"
-	storage "github.com/transparency-dev/trillian-tessera/storage/internal"
+	tessera "github.com/transparency-dev/tessera"
+	"github.com/transparency-dev/tessera/api"
+	"github.com/transparency-dev/tessera/api/layout"
+	storage "github.com/transparency-dev/tessera/storage/internal"
 )
 
 func newSpannerDB(t *testing.T) func() {

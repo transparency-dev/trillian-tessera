@@ -26,7 +26,7 @@ import (
 	"testing"
 
 	"github.com/transparency-dev/formats/log"
-	tessera "github.com/transparency-dev/trillian-tessera"
+	tessera "github.com/transparency-dev/tessera"
 	"golang.org/x/mod/sumdb/note"
 )
 

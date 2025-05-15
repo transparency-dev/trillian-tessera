@@ -7,6 +7,6 @@ inputs = merge(
   include.root.locals,
   {
     # Service accounts are managed externally.
-    service_account = "cloudbuild-${include.root.locals.env}-sa@trillian-tessera.iam.gserviceaccount.com"
+    service_account = "cloudbuild-${include.root.locals.env}-sa@tessera.iam.gserviceaccount.com"
   }
 )

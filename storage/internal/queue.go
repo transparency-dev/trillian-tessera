@@ -22,7 +22,7 @@ import (
 	"time"
 
 	"github.com/globocom/go-buffer"
-	tessera "github.com/transparency-dev/trillian-tessera"
+	tessera "github.com/transparency-dev/tessera"
 )
 
 // Queue knows how to queue up a number of entries in order, taking care of deduplication as they're added.

@@ -31,10 +31,10 @@ import (
 
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/transparency-dev/merkle/rfc6962"
-	tessera "github.com/transparency-dev/trillian-tessera"
-	"github.com/transparency-dev/trillian-tessera/api"
-	"github.com/transparency-dev/trillian-tessera/api/layout"
-	storage "github.com/transparency-dev/trillian-tessera/storage/internal"
+	tessera "github.com/transparency-dev/tessera"
+	"github.com/transparency-dev/tessera/api"
+	"github.com/transparency-dev/tessera/api/layout"
+	storage "github.com/transparency-dev/tessera/storage/internal"
 	"k8s.io/klog/v2"
 )
 

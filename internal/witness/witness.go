@@ -29,8 +29,8 @@ import (
 	"sync"
 
 	"github.com/transparency-dev/formats/log"
-	"github.com/transparency-dev/trillian-tessera/client"
-	"github.com/transparency-dev/trillian-tessera/internal/parse"
+	"github.com/transparency-dev/tessera/client"
+	"github.com/transparency-dev/tessera/internal/parse"
 	"golang.org/x/mod/sumdb/note"
 )
 

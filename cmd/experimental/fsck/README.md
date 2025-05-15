@@ -15,7 +15,7 @@ tiles implied by the tree size it contains.
 It can be run with the following command:
 
 ```bash
-$ go run github.com/transparency-dev/trillian-tessera/cmd/experimental/fsck --storage_url=http://localhost:2024/ --public_key=tessera.pub
+$ go run github.com/transparency-dev/tessera/cmd/experimental/fsck --storage_url=http://localhost:2024/ --public_key=tessera.pub
 I0515 11:53:10.652868  241971 fsck.go:54] Fsck: checkpoint:
 TestTessera
 193446

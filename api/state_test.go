@@ -24,8 +24,8 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	tessera "github.com/transparency-dev/trillian-tessera"
-	"github.com/transparency-dev/trillian-tessera/api"
+	tessera "github.com/transparency-dev/tessera"
+	"github.com/transparency-dev/tessera/api"
 )
 
 func TestHashTile_MarshalTileRoundtrip(t *testing.T) {

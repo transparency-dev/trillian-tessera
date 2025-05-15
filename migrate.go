@@ -20,8 +20,8 @@ import (
 	"sync/atomic"
 
 	"github.com/avast/retry-go/v4"
-	"github.com/transparency-dev/trillian-tessera/api/layout"
-	"github.com/transparency-dev/trillian-tessera/client"
+	"github.com/transparency-dev/tessera/api/layout"
+	"github.com/transparency-dev/tessera/client"
 	"golang.org/x/sync/errgroup"
 	"k8s.io/klog/v2"
 )

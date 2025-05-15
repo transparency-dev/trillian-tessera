@@ -17,7 +17,7 @@ package layout_test
 import (
 	"fmt"
 
-	"github.com/transparency-dev/trillian-tessera/api/layout"
+	"github.com/transparency-dev/tessera/api/layout"
 )
 
 func ExampleNodeCoordsToTileAddress() {

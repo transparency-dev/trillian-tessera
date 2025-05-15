@@ -25,8 +25,8 @@ import (
 	"sync/atomic"
 
 	"github.com/avast/retry-go/v4"
-	"github.com/transparency-dev/trillian-tessera/api/layout"
-	"github.com/transparency-dev/trillian-tessera/internal/parse"
+	"github.com/transparency-dev/tessera/api/layout"
+	"github.com/transparency-dev/tessera/internal/parse"
 	"golang.org/x/sync/errgroup"
 )
 

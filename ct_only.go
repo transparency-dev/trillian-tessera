@@ -20,8 +20,8 @@ import (
 	"fmt"
 
 	"github.com/transparency-dev/merkle/rfc6962"
-	"github.com/transparency-dev/trillian-tessera/api/layout"
-	"github.com/transparency-dev/trillian-tessera/ctonly"
+	"github.com/transparency-dev/tessera/api/layout"
+	"github.com/transparency-dev/tessera/ctonly"
 	"golang.org/x/crypto/cryptobyte"
 )
 
