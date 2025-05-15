@@ -93,7 +93,6 @@ type objStore interface {
 	getObject(ctx context.Context, obj string) ([]byte, error)
 	setObject(ctx context.Context, obj string, data []byte, contType string, cacheControl string) error
 	setObjectIfNoneMatch(ctx context.Context, obj string, data []byte, contType string, cacheControl string) error
-	lastModified(ctx context.Context, obj string) (time.Time, error)
 }
 
 // sequencer describes a type which knows how to sequence entries.
@@ -112,7 +111,9 @@ type sequencer interface {
 	currentTree(ctx context.Context) (uint64, []byte, error)
 
 	// nextIndex returns the next available index in the log.
-	nextIndex(ctx context.Context) (uint64, error)
+
+	// publishTree coordinates the publication of new checkpoints based on the current integrated tree.
+	publishTree(ctx context.Context, minAge time.Duration, f func(ctx context.Context, size uint64, root []byte) error) error
 }
 
 // consumeFunc is the signature of a function which can consume entries from the sequencer.
@@ -277,7 +278,7 @@ func (a *Appender) publishCheckpointTask(ctx context.Context, interval time.Dura
 		case <-a.treeUpdated:
 		case <-t.C:
 		}
-		if err := a.publishCheckpoint(ctx, interval); err != nil {
+		if err := a.sequencer.publishTree(ctx, interval, a.publishCheckpoint); err != nil {
 			klog.Warningf("publishCheckpoint: %v", err)
 		}
 	}
@@ -313,21 +314,7 @@ func (a *Appender) init(ctx context.Context) error {
 	return nil
 }
 
-func (a *Appender) publishCheckpoint(ctx context.Context, minStaleness time.Duration) error {
-	m, err := a.logStore.checkpointLastModified(ctx)
-	// Do not use errors.Is. Keep errors.As to compare by type and not by value.
-	var nske *types.NoSuchKey
-	if err != nil && !errors.As(err, &nske) {
-		return fmt.Errorf("checkpointLastModified(): %v", err)
-	}
-	if time.Since(m) < minStaleness {
-		return nil
-	}
-
-	size, root, err := a.sequencer.currentTree(ctx)
-	if err != nil {
-		return fmt.Errorf("currentTree: %v", err)
-	}
+func (a *Appender) publishCheckpoint(ctx context.Context, size uint64, root []byte) error {
 	cpRaw, err := a.newCP(ctx, size, root)
 	if err != nil {
 		return fmt.Errorf("newCP: %v", err)
@@ -667,11 +654,6 @@ func (lrs *logResourceStore) setCheckpoint(ctx context.Context, cpRaw []byte) er
 	return lrs.objStore.setObject(ctx, layout.CheckpointPath, cpRaw, ckptContType, ckptCacheControl)
 }
 
-func (lrs *logResourceStore) checkpointLastModified(ctx context.Context) (time.Time, error) {
-	t, err := lrs.objStore.lastModified(ctx, layout.CheckpointPath)
-	return t, err
-}
-
 // setTile idempotently stores the provided tile at the location implied by the given level, index, and treeSize.
 //
 // The location to which the tile is written is defined by the tile layout spec.
@@ -895,6 +877,14 @@ func (s *mySQLSequencer) initDB(ctx context.Context) error {
 		)`); err != nil {
 		return err
 	}
+	if _, err := s.dbPool.ExecContext(ctx,
+		`CREATE TABLE IF NOT EXISTS PubCoord(
+			id INT UNSIGNED NOT NULL,
+			publishedAt BIGINT NOT NULL,
+			PRIMARY KEY (id)
+		)`); err != nil {
+		return err
+	}
 
 	// Set default values for a newly initialised schema - these rows being present are a precondition for
 	// sequencing and integration to occur.
@@ -910,6 +900,10 @@ func (s *mySQLSequencer) initDB(ctx context.Context) error {
 	}
 	if _, err := s.dbPool.ExecContext(ctx,
 		`INSERT IGNORE INTO IntCoord (id, seq, rootHash) VALUES (0, 0, ?)`, rfc6962.DefaultHasher.EmptyRoot()); err != nil {
+		return err
+	}
+	if _, err := s.dbPool.ExecContext(ctx,
+		`INSERT IGNORE INTO PubCoord (id, publishedAt) VALUES (0, 0)`); err != nil {
 		return err
 	}
 	return nil
@@ -1115,6 +1109,51 @@ func (s *mySQLSequencer) nextIndex(ctx context.Context) (uint64, error) {
 	return nextSeq, nil
 }
 
+// publishTree checks when the last checkpoint was published, and if it was more than minAge ago, calls the provided
+// function to publish a new one.
+//
+// This function uses PubCoord with an exclusive lock to guarantee that only one tessera instance can attempt to publish
+// a checkpoint at any given time.
+func (s *mySQLSequencer) publishTree(ctx context.Context, minAge time.Duration, f func(context.Context, uint64, []byte) error) error {
+	tx, err := s.dbPool.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if tx != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	pRow := tx.QueryRowContext(ctx, "SELECT publishedAt FROM PubCoord WHERE id = ? FOR UPDATE", 0)
+	var pubAt int64
+	if err := pRow.Scan(&pubAt); err != nil {
+		return fmt.Errorf("failed to parse publishedAt: %v", err)
+	}
+	if time.Since(time.Unix(pubAt, 0)) > minAge {
+		row := tx.QueryRowContext(ctx, "SELECT seq, rootHash FROM IntCoord WHERE id = ?", 0)
+		var fromSeq uint64
+		var rootHash []byte
+		if err := row.Scan(&fromSeq, &rootHash); err != nil {
+			return fmt.Errorf("failed to read IntCoord: %v", err)
+		}
+
+		if err := f(ctx, fromSeq, rootHash); err != nil {
+			return err
+		}
+
+		if _, err := tx.ExecContext(ctx, "UPDATE PubCoord SET publishedAt=? WHERE id=?", time.Now().Unix(), 0); err != nil {
+			return err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	tx = nil
+
+	return nil
+}
+
 func placeholder(n int) string {
 	places := make([]string, n)
 	for i := range n {
@@ -1215,23 +1254,6 @@ func (s *s3Storage) setObjectIfNoneMatch(ctx context.Context, objName string, da
 		return fmt.Errorf("failed to write object %q to bucket %q: %w", objName, s.bucket, err)
 	}
 	return nil
-}
-
-// lastModified returns the time the specified object was last modified, or an error
-func (s *s3Storage) lastModified(ctx context.Context, obj string) (time.Time, error) {
-	if s.bucketPrefix != "" {
-		obj = filepath.Join(s.bucketPrefix, obj)
-	}
-
-	r, err := s.s3Client.GetObject(ctx, &s3.GetObjectInput{
-		Bucket: aws.String(s.bucket),
-		Key:    aws.String(obj),
-	})
-	if err != nil {
-		return time.Time{}, fmt.Errorf("getObject: failed to create reader for object %q in bucket %q: %w", obj, s.bucket, err)
-	}
-
-	return *r.LastModified, r.Body.Close()
 }
 
 func printDragonsWarning() {
