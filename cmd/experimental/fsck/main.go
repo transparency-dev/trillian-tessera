@@ -30,6 +30,7 @@ import (
 
 var (
 	storageURL = flag.String("storage_url", "", "Base tlog-tiles URL")
+	N          = flag.Uint("N", 1, "The number of workers to use when fetching/comparing resources")
 )
 
 func main() {
@@ -44,7 +45,7 @@ func main() {
 	if err != nil {
 		klog.Exitf("Failed to create HTTP fetcher: %v", err)
 	}
-	if err := fsck.Check(ctx, src, defaultMerkleLeafHasher); err != nil {
+	if err := fsck.Check(ctx, src, *N, defaultMerkleLeafHasher); err != nil {
 		klog.Exitf("fsck failed: %v", err)
 	}
 }

@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"sync/atomic"
 
 	"github.com/transparency-dev/merkle/compact"
 	"github.com/transparency-dev/merkle/rfc6962"
@@ -29,13 +30,23 @@ import (
 	"k8s.io/klog/v2"
 )
 
+// Fetcher describes a struct which knows how to retrieve tlog-tiles artifacts from a log.
 type Fetcher interface {
 	ReadCheckpoint(ctx context.Context) ([]byte, error)
 	ReadTile(ctx context.Context, l, i uint64, p uint8) ([]byte, error)
 	ReadEntryBundle(ctx context.Context, i uint64, p uint8) ([]byte, error)
 }
 
-func Check(ctx context.Context, f Fetcher, bundleHasher func([]byte) ([][]byte, error)) error {
+// Check performs an integrity check against a log via the provided fetcher, using the provided
+// bundleHasher to parse and convert entries from the log's entry bundles into leaf hashes.
+//
+// The leaf hashes are used to:
+// 1. re-construct the root hash of the log, and compare it against the value in the log's checkpoint
+// 2. re-construct the internal tiles of the log, and compare them against the log's tile resources.
+//
+// The checking will use the provided N parameter to control the number of concurrent workers undertaking
+// this process.
+func Check(ctx context.Context, f Fetcher, N uint, bundleHasher func([]byte) ([][]byte, error)) error {
 	cp, err := f.ReadCheckpoint(ctx)
 	if err != nil {
 		klog.Exitf("fetch initial source checkpoint: %v", err)
@@ -48,8 +59,6 @@ func Check(ctx context.Context, f Fetcher, bundleHasher func([]byte) ([][]byte, 
 	}
 	klog.Infof("Fsck: checking log of size %d", logSize)
 
-	N := uint(1)
-
 	fTree := fsckTree{
 		fetcher:           f,
 		bundleHasher:      bundleHasher,
@@ -59,13 +68,20 @@ func Check(ctx context.Context, f Fetcher, bundleHasher func([]byte) ([][]byte, 
 		expectedResources: make(chan resource, N),
 	}
 
+	// Set up a stream of entry bundles from the log to be checked.
 	getSize := func(_ context.Context) (uint64, error) { return logSize, nil }
 	next, cancel := stream.StreamAdaptor(ctx, N, getSize, f.ReadEntryBundle, 0)
 	defer cancel()
 
 	eg := errgroup.Group{}
-	eg.Go(fTree.compareResources(ctx))
 
+	// Kick off resource comparing workers
+	for range N {
+		eg.Go(fTree.resourceCheckWorker(ctx))
+	}
+
+	// Consume the stream of bundles to re-derive the other log resources.
+	// TODO(al): consider chunking the log and doing each in parallel.
 	for {
 		ri, b, err := next()
 		if err != nil {
@@ -80,13 +96,18 @@ func Check(ctx context.Context, f Fetcher, bundleHasher func([]byte) ([][]byte, 
 			break
 		}
 	}
+
+	// Ensure we see process any partial tiles too.
 	fTree.flushPartialTiles()
+	// Signal that there will be no more resource checking jobs coming so workers can exit when the channel is drained.
 	close(fTree.expectedResources)
 
+	// Wait for all the work to be done.
 	if err := eg.Wait(); err != nil {
 		klog.Exitf("Failed: %v", err)
 	}
 
+	// Finally, check that the claimed root hash matches what we calculated.
 	gotRoot, err := fTree.tree.GetRootHash(nil)
 	switch {
 	case err != nil:
@@ -100,24 +121,40 @@ func Check(ctx context.Context, f Fetcher, bundleHasher func([]byte) ([][]byte, 
 	return nil
 }
 
+// resource represents a single static tile resource on the log, and the derived content we expect it to contain.
 type resource struct {
 	level, index uint64
 	partial      uint8
 	content      []byte
 }
 
+// fsckTree represents the tree we're currently checking.
 type fsckTree struct {
-	fetcher      Fetcher
+	// fetcher knows how to retrieve static tlog-tile resources.
+	fetcher Fetcher
+	// bundleHasher knows how to convert entry bundles into leaf hashes.
 	bundleHasher func([]byte) ([][]byte, error)
-	tree         *compact.Range
-	sourceSize   uint64
+	// tree contains the running state of the leaves we've appended so far.
+	tree *compact.Range
+	// sourceSize is the size of the source log we're checking.
+	sourceSize uint64
 
+	// pendingTiles holds tlog-tile structs which we are currently populating, but which we haven't yet
+	// verified.
+	// Entries are removed from this map once they either a) become fully populated, or b) flushPartialTiles is called.
 	pendingTiles map[compact.NodeID]*api.HashTile
 
+	// expectedResources is a channel of derived tlog resources which need to be verified against the source log's static resources.
+	// Entries in this channel are consumed by the resoruceCheckWorker functions.
 	expectedResources chan resource
 }
 
+// AppendBundle appends leaf hashes from the provided entry bundle.
 func (f *fsckTree) AppendBundle(ri layout.RangeInfo, data []byte) error {
+	if impliedSeq := ri.Index*layout.EntryBundleWidth + uint64(ri.First); impliedSeq != f.tree.End() {
+		return fmt.Errorf("bundle with implied sequence number %d but expected %d", impliedSeq, f.tree.End())
+	}
+
 	hs, err := f.bundleHasher(data)
 	if err != nil {
 		return err
@@ -130,6 +167,7 @@ func (f *fsckTree) AppendBundle(ri layout.RangeInfo, data []byte) error {
 	return nil
 }
 
+// visit is used to populate the derived tiles as we consume entries from the log we're checking.
 func (f *fsckTree) visit(id compact.NodeID, h []byte) {
 	// We're only storing the lowest level of hash in the tiles, so early-out in other cases.
 	if id.Level%layout.TileHeight != 0 {
@@ -146,7 +184,6 @@ func (f *fsckTree) visit(id compact.NodeID, h []byte) {
 		klog.Exitf("LOGIC ERROR: got tile (l: %d, idx: %d) node index %d, for tile with %d nodes", tLevel, tIdx, hIdx, len(t.Nodes))
 	}
 	t.Nodes = append(t.Nodes, h)
-	// TODO: make this better
 	if len(t.Nodes) == layout.EntryBundleWidth {
 		c, err := t.MarshalText()
 		if err != nil {
@@ -162,6 +199,8 @@ func (f *fsckTree) visit(id compact.NodeID, h []byte) {
 	}
 }
 
+// flushPartialTiles ensures that any remaining derived tiles, which due to the size of the tree are partial, are also flushed to the
+// expectedResources work queue.
 func (f *fsckTree) flushPartialTiles() {
 	for k, t := range f.pendingTiles {
 		c, err := t.MarshalText()
@@ -178,7 +217,13 @@ func (f *fsckTree) flushPartialTiles() {
 	}
 }
 
-func (f *fsckTree) compareResources(ctx context.Context) func() error {
+var resourceWorkerID atomic.Uint32
+
+// resourceCheckWorker returns a func which will consume resource check jobs from the
+// expectedResources channel.
+func (f *fsckTree) resourceCheckWorker(ctx context.Context) func() error {
+	id := fmt.Sprintf("rc-worker-%d", resourceWorkerID.Add(1))
+
 	return func() error {
 		for r := range f.expectedResources {
 			data, err := f.fetcher.ReadTile(ctx, r.level, r.index, r.partial)
@@ -189,7 +234,7 @@ func (f *fsckTree) compareResources(ctx context.Context) func() error {
 			if !bytes.Equal(data, r.content) {
 				return fmt.Errorf("%s: log has %x expected %x", p, data, r.content)
 			}
-			klog.V(2).Infof("%s ok", p)
+			klog.V(2).Infof("%s: %s ok", id, p)
 		}
 		return nil
 	}
