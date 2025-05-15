@@ -28,7 +28,7 @@ import (
 	"time"
 
 	tessera "github.com/transparency-dev/trillian-tessera"
-	storage "github.com/transparency-dev/trillian-tessera/storage/internal"
+	"github.com/transparency-dev/trillian-tessera/internal/stream"
 	"k8s.io/klog/v2"
 
 	_ "github.com/go-sql-driver/mysql"
@@ -256,7 +256,7 @@ func (f *follower) Follow(ctx context.Context, lr tessera.LogReader) {
 
 	t := time.NewTicker(time.Second)
 	var (
-		entryReader *storage.EntryStreamReader[[]byte]
+		entryReader *stream.EntryStreamReader[[]byte]
 		stop        func()
 
 		curEntries [][]byte
@@ -315,7 +315,7 @@ func (f *follower) Follow(ctx context.Context, lr tessera.LogReader) {
 				if entryReader == nil {
 					next, st := lr.StreamEntries(ctx, followFrom)
 					stop = st
-					entryReader = storage.NewEntryStreamReader(next, f.bundleHasher)
+					entryReader = stream.NewEntryStreamReader(next, f.bundleHasher)
 				}
 
 				bs := uint64(f.as.opts.MaxBatchSize)

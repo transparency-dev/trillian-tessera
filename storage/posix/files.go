@@ -33,6 +33,7 @@ import (
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/api"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
+	"github.com/transparency-dev/trillian-tessera/internal/stream"
 	storage "github.com/transparency-dev/trillian-tessera/storage/internal"
 	"k8s.io/klog/v2"
 )
@@ -208,7 +209,7 @@ func (l *logResourceStorage) StreamEntries(ctx context.Context, fromEntry uint64
 	// e.g. NVME will likely respond well to some concurrency, HDD less so.
 	// For now, we'll just stick to a safe default.
 	numWorkers := uint(1)
-	return storage.StreamAdaptor(ctx, numWorkers, l.IntegratedSize, l.ReadEntryBundle, fromEntry)
+	return stream.StreamAdaptor(ctx, numWorkers, l.IntegratedSize, l.ReadEntryBundle, fromEntry)
 }
 
 // sequenceBatch writes the entries from the provided batch into the entry bundle files of the log.

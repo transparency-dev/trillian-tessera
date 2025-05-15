@@ -55,6 +55,7 @@ import (
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/api"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
+	"github.com/transparency-dev/trillian-tessera/internal/stream"
 	storage "github.com/transparency-dev/trillian-tessera/storage/internal"
 	"golang.org/x/sync/errgroup"
 	"k8s.io/klog/v2"
@@ -651,7 +652,7 @@ func (lr *logResourceStore) StreamEntries(ctx context.Context, fromEntry uint64)
 	// Reads to S3 should be able to go highly concurrent without issue, but some performance testing should probably be undertaken.
 	// 10 works well for GCP, so start with that as a default.
 	numWorkers := uint(10)
-	return storage.StreamAdaptor(ctx, numWorkers, lr.IntegratedSize, lr.ReadEntryBundle, fromEntry)
+	return stream.StreamAdaptor(ctx, numWorkers, lr.IntegratedSize, lr.ReadEntryBundle, fromEntry)
 }
 
 // get returns the requested object.

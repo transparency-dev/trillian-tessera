@@ -28,7 +28,7 @@ import (
 	"github.com/dgraph-io/badger/v4"
 	tessera "github.com/transparency-dev/trillian-tessera"
 	"github.com/transparency-dev/trillian-tessera/internal/otel"
-	storage "github.com/transparency-dev/trillian-tessera/storage/internal"
+	"github.com/transparency-dev/trillian-tessera/internal/stream"
 	"k8s.io/klog/v2"
 )
 
@@ -213,7 +213,7 @@ func (f *follower) Follow(ctx context.Context, lr tessera.LogReader) {
 
 	t := time.NewTicker(time.Second)
 	var (
-		entryReader *storage.EntryStreamReader[[]byte]
+		entryReader *stream.EntryStreamReader[[]byte]
 		stop        func()
 
 		curEntries [][]byte
@@ -273,7 +273,7 @@ func (f *follower) Follow(ctx context.Context, lr tessera.LogReader) {
 					span.AddEvent("Start streaming entries")
 					next, st := lr.StreamEntries(ctx, followFrom)
 					stop = st
-					entryReader = storage.NewEntryStreamReader(next, f.bundleHasher)
+					entryReader = stream.NewEntryStreamReader(next, f.bundleHasher)
 				}
 
 				if curIndex == followFrom && curEntries != nil {
