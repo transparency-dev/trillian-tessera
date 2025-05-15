@@ -17,15 +17,17 @@ package fsck
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"fmt"
 	"sync/atomic"
 
+	f_log "github.com/transparency-dev/formats/log"
 	"github.com/transparency-dev/merkle/compact"
 	"github.com/transparency-dev/merkle/rfc6962"
 	"github.com/transparency-dev/trillian-tessera/api"
 	"github.com/transparency-dev/trillian-tessera/api/layout"
-	"github.com/transparency-dev/trillian-tessera/internal/parse"
 	"github.com/transparency-dev/trillian-tessera/internal/stream"
+	"golang.org/x/mod/sumdb/note"
 	"golang.org/x/sync/errgroup"
 	"k8s.io/klog/v2"
 )
@@ -46,30 +48,29 @@ type Fetcher interface {
 //
 // The checking will use the provided N parameter to control the number of concurrent workers undertaking
 // this process.
-func Check(ctx context.Context, f Fetcher, N uint, bundleHasher func([]byte) ([][]byte, error)) error {
-	cp, err := f.ReadCheckpoint(ctx)
+func Check(ctx context.Context, origin string, verifier note.Verifier, f Fetcher, N uint, bundleHasher func([]byte) ([][]byte, error)) error {
+	cpRaw, err := f.ReadCheckpoint(ctx)
 	if err != nil {
-		klog.Exitf("fetch initial source checkpoint: %v", err)
+		return fmt.Errorf("fetch initial source checkpoint: %v", err)
 	}
-	klog.V(1).Infof("Fsck: checkpoint:\n%s", cp)
-	// TODO(al): Should really open this with the pubK to verify the checkpoint is well formed.
-	_, logSize, logRoot, err := parse.CheckpointUnsafe(cp)
+	klog.V(1).Infof("Fsck: checkpoint:\n%s", cpRaw)
+	cp, _, _, err := f_log.ParseCheckpoint(cpRaw, origin, verifier)
 	if err != nil {
 		klog.Exitf("Failed to parse checkpoint: %v", err)
 	}
-	klog.Infof("Fsck: checking log of size %d", logSize)
+	klog.Infof("Fsck: checking log of size %d", cp.Size)
 
 	fTree := fsckTree{
 		fetcher:           f,
 		bundleHasher:      bundleHasher,
 		tree:              (&compact.RangeFactory{Hash: rfc6962.DefaultHasher.HashChildren}).NewEmptyRange(0),
-		sourceSize:        logSize,
+		sourceSize:        cp.Size,
 		pendingTiles:      make(map[compact.NodeID]*api.HashTile),
 		expectedResources: make(chan resource, N),
 	}
 
 	// Set up a stream of entry bundles from the log to be checked.
-	getSize := func(_ context.Context) (uint64, error) { return logSize, nil }
+	getSize := func(_ context.Context) (uint64, error) { return cp.Size, nil }
 	next, cancel := stream.StreamAdaptor(ctx, N, getSize, f.ReadEntryBundle, 0)
 	defer cancel()
 
@@ -82,7 +83,7 @@ func Check(ctx context.Context, f Fetcher, N uint, bundleHasher func([]byte) ([]
 
 	// Consume the stream of bundles to re-derive the other log resources.
 	// TODO(al): consider chunking the log and doing each in parallel.
-	for {
+	for fTree.tree.End() < cp.Size {
 		ri, b, err := next()
 		if err != nil {
 			klog.Warningf("next: %v", err)
@@ -90,9 +91,6 @@ func Check(ctx context.Context, f Fetcher, N uint, bundleHasher func([]byte) ([]
 		}
 		if err := fTree.AppendBundle(ri, b); err != nil {
 			klog.Warningf("AppendBundle(%v): %v", ri, err)
-			break
-		}
-		if fTree.tree.End() == logSize {
 			break
 		}
 	}
@@ -112,10 +110,10 @@ func Check(ctx context.Context, f Fetcher, N uint, bundleHasher func([]byte) ([]
 	switch {
 	case err != nil:
 		klog.Exitf("Failed to calculate root: %v", err)
-	case !bytes.Equal(gotRoot, logRoot):
-		klog.Exitf("Calculated root %x, but checkpoint claims %x", gotRoot, logRoot)
+	case !bytes.Equal(gotRoot, cp.Hash):
+		klog.Exitf("Calculated root %x, but checkpoint claims %x", gotRoot, cp.Hash)
 	default:
-		klog.Infof("Successfully fsck'd log with size %d and root %x", logSize, gotRoot)
+		klog.Infof("Successfully fsck'd log with size %d and root %s (%x)", cp.Size, base64.StdEncoding.EncodeToString(gotRoot), gotRoot)
 	}
 
 	return nil
