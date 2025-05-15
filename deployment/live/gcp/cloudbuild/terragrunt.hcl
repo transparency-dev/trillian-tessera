@@ -3,7 +3,7 @@ terraform {
 }
 
 locals {
-  project_id = "tessera"
+  project_id = "trillian-tessera"
   region     = "us-central1"
   env        = path_relative_to_include()
 }

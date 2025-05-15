@@ -45,9 +45,9 @@ resource "google_cloudbuild_trigger" "docker" {
       env = [
         "TESSERA_SIGNER=unused",
         "TESSERA_CLOUD_RUN_DOCKER_IMAGE=${local.conformance_gcp_docker_image}:latest",
-        "TESSERA_CLOUD_RUN_SERVICE_ACCOUNT=cloudrun-ci-sa@tessera.iam.gserviceaccount.com",
-        "TESSERA_READER=serviceAccount:cloudbuild-prod-sa@tessera.iam.gserviceaccount.com",
-        "TESSERA_WRITER=serviceAccount:cloudbuild-prod-sa@tessera.iam.gserviceaccount.com",
+        "TESSERA_CLOUD_RUN_SERVICE_ACCOUNT=cloudrun-ci-sa@trillian-tessera.iam.gserviceaccount.com",
+        "TESSERA_READER=serviceAccount:cloudbuild-prod-sa@trillian-tessera.iam.gserviceaccount.com",
+        "TESSERA_WRITER=serviceAccount:cloudbuild-prod-sa@trillian-tessera.iam.gserviceaccount.com",
         "GOOGLE_PROJECT=${var.project_id}",
         "TF_IN_AUTOMATION=1",
         "TF_INPUT=false",
@@ -103,9 +103,9 @@ resource "google_cloudbuild_trigger" "docker" {
       env = [
         "GOOGLE_PROJECT=${var.project_id}",
         "TESSERA_CLOUD_RUN_DOCKER_IMAGE=${local.conformance_gcp_docker_image}:latest",
-        "TESSERA_CLOUD_RUN_SERVICE_ACCOUNT=cloudrun-ci-sa@tessera.iam.gserviceaccount.com",
-        "TESSERA_READER=serviceAccount:cloudbuild-prod-sa@tessera.iam.gserviceaccount.com",
-        "TESSERA_WRITER=serviceAccount:cloudbuild-prod-sa@tessera.iam.gserviceaccount.com",
+        "TESSERA_CLOUD_RUN_SERVICE_ACCOUNT=cloudrun-ci-sa@trillian-tessera.iam.gserviceaccount.com",
+        "TESSERA_READER=serviceAccount:cloudbuild-prod-sa@trillian-tessera.iam.gserviceaccount.com",
+        "TESSERA_WRITER=serviceAccount:cloudbuild-prod-sa@trillian-tessera.iam.gserviceaccount.com",
         "TF_IN_AUTOMATION=1",
         "TF_INPUT=false",
         "TF_VAR_project_id=${var.project_id}"
