@@ -20,17 +20,22 @@ import (
 	"flag"
 	"fmt"
 	"net/url"
+	"os"
 
+	f_note "github.com/transparency-dev/formats/note"
 	"github.com/transparency-dev/merkle/rfc6962"
 	"github.com/transparency-dev/trillian-tessera/api"
 	"github.com/transparency-dev/trillian-tessera/client"
 	"github.com/transparency-dev/trillian-tessera/internal/fsck"
+	"golang.org/x/mod/sumdb/note"
 	"k8s.io/klog/v2"
 )
 
 var (
 	storageURL = flag.String("storage_url", "", "Base tlog-tiles URL")
 	N          = flag.Uint("N", 1, "The number of workers to use when fetching/comparing resources")
+	origin     = flag.String("origin", "", "Origin of the log to check, if unset, will use the name of the provided public key")
+	pubKey     = flag.String("public_key", "", "Path to a file containing the log's public key")
 )
 
 func main() {
@@ -45,7 +50,11 @@ func main() {
 	if err != nil {
 		klog.Exitf("Failed to create HTTP fetcher: %v", err)
 	}
-	if err := fsck.Check(ctx, src, *N, defaultMerkleLeafHasher); err != nil {
+	v := verifierFromFlags()
+	if *origin == "" {
+		*origin = v.Name()
+	}
+	if err := fsck.Check(ctx, *origin, v, src, *N, defaultMerkleLeafHasher); err != nil {
 		klog.Exitf("fsck failed: %v", err)
 	}
 }
@@ -62,4 +71,19 @@ func defaultMerkleLeafHasher(bundle []byte) ([][]byte, error) {
 		r = append(r, h[:])
 	}
 	return r, nil
+}
+
+func verifierFromFlags() note.Verifier {
+	if *pubKey == "" {
+		klog.Exit("Must provide the --public_key flag")
+	}
+	b, err := os.ReadFile(*pubKey)
+	if err != nil {
+		klog.Exitf("Failed to read verifier from %q: %v", *pubKey, err)
+	}
+	v, err := f_note.NewVerifier(string(b))
+	if err != nil {
+		klog.Exitf("Invalid verifier in %q: %v", *pubKey, err)
+	}
+	return v
 }
