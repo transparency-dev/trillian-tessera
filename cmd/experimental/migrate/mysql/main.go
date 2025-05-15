@@ -27,7 +27,7 @@ import (
 	"strings"
 	"time"
 
-	tessera "github.com/transparency-dev/tessera"
+	"github.com/transparency-dev/tessera"
 	"github.com/transparency-dev/tessera/client"
 	"github.com/transparency-dev/tessera/storage/mysql"
 	"k8s.io/klog/v2"

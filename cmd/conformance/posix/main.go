@@ -30,7 +30,7 @@ import (
 
 	"golang.org/x/mod/sumdb/note"
 
-	tessera "github.com/transparency-dev/tessera"
+	"github.com/transparency-dev/tessera"
 	"github.com/transparency-dev/tessera/storage/posix"
 	badger_as "github.com/transparency-dev/tessera/storage/posix/antispam"
 	"k8s.io/klog/v2"

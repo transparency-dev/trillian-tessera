@@ -179,7 +179,7 @@ go get github.com/transparency-dev/tessera@main
 
 Import the main `tessera` package, and the driver for the storage backend you want to use:
 ```go file=README_test.go region=common_imports
-	tessera "github.com/transparency-dev/tessera"
+	"github.com/transparency-dev/tessera"
 
 	// Choose one!
 	"github.com/transparency-dev/tessera/storage/posix"

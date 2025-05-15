@@ -23,7 +23,7 @@ import (
 	"testing"
 	"time"
 
-	tessera "github.com/transparency-dev/tessera"
+	"github.com/transparency-dev/tessera"
 	"github.com/transparency-dev/tessera/api"
 	aws "github.com/transparency-dev/tessera/storage/aws/antispam"
 	"github.com/transparency-dev/tessera/testonly"

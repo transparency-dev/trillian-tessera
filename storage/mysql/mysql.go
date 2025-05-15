@@ -31,7 +31,7 @@ import (
 
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/transparency-dev/merkle/rfc6962"
-	tessera "github.com/transparency-dev/tessera"
+	"github.com/transparency-dev/tessera"
 	"github.com/transparency-dev/tessera/api"
 	"github.com/transparency-dev/tessera/api/layout"
 	storage "github.com/transparency-dev/tessera/storage/internal"

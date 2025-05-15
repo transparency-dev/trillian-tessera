@@ -32,7 +32,7 @@ import (
 	"testing"
 
 	// #region common_imports
-	tessera "github.com/transparency-dev/tessera"
+	"github.com/transparency-dev/tessera"
 
 	// Choose one!
 	"github.com/transparency-dev/tessera/storage/posix"

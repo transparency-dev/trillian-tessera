@@ -20,7 +20,7 @@ import (
 	"fmt"
 	"time"
 
-	tessera "github.com/transparency-dev/tessera"
+	"github.com/transparency-dev/tessera"
 	"github.com/transparency-dev/tessera/api/layout"
 	"k8s.io/klog/v2"
 )

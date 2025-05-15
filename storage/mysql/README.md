@@ -20,7 +20,7 @@ Here is an example code snippet to initialise the MySQL storage in Trillian Tess
 import (
     "context"
 
-    tessera "github.com/transparency-dev/tessera"
+    "github.com/transparency-dev/tessera"
     "github.com/transparency-dev/tessera/storage/mysql"
     "k8s.io/klog/v2"
 )

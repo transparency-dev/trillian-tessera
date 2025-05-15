@@ -26,7 +26,7 @@ import (
 	"time"
 
 	"github.com/dgraph-io/badger/v4"
-	tessera "github.com/transparency-dev/tessera"
+	"github.com/transparency-dev/tessera"
 	"github.com/transparency-dev/tessera/internal/otel"
 	"github.com/transparency-dev/tessera/internal/stream"
 	"k8s.io/klog/v2"

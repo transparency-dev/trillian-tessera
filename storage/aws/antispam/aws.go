@@ -27,7 +27,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	tessera "github.com/transparency-dev/tessera"
+	"github.com/transparency-dev/tessera"
 	"github.com/transparency-dev/tessera/internal/stream"
 	"k8s.io/klog/v2"
 

@@ -27,7 +27,7 @@ import (
 	"os"
 	"time"
 
-	tessera "github.com/transparency-dev/tessera"
+	"github.com/transparency-dev/tessera"
 	"github.com/transparency-dev/tessera/api/layout"
 	"github.com/transparency-dev/tessera/storage/mysql"
 	"golang.org/x/mod/sumdb/note"

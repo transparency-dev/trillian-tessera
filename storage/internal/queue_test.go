@@ -22,7 +22,7 @@ import (
 	"testing"
 	"time"
 
-	tessera "github.com/transparency-dev/tessera"
+	"github.com/transparency-dev/tessera"
 	storage "github.com/transparency-dev/tessera/storage/internal"
 )
 
