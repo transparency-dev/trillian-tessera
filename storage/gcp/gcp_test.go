@@ -432,19 +432,19 @@ func TestPublishCheckpoint(t *testing.T) {
 
 	for _, test := range []struct {
 		name            string
-		cpModifiedAt    time.Time
 		publishInterval time.Duration
+		wait            time.Duration
 		wantUpdate      bool
 	}{
 		{
 			name:            "works ok",
-			cpModifiedAt:    time.Now().Add(-15 * time.Second),
-			publishInterval: 10 * time.Second,
+			publishInterval: 10 * time.Millisecond,
+			wait:            1 * time.Second,
 			wantUpdate:      true,
 		}, {
 			name:            "too soon, skip update",
-			cpModifiedAt:    time.Now().Add(-5 * time.Second),
 			publishInterval: 10 * time.Second,
+			wait:            100 * time.Millisecond,
 			wantUpdate:      false,
 		},
 	} {
@@ -464,12 +464,17 @@ func TestPublishCheckpoint(t *testing.T) {
 			if err := storage.init(ctx); err != nil {
 				t.Fatalf("storage.init: %v", err)
 			}
+			if err := s.publishTree(ctx, test.publishInterval, storage.publishCheckpoint); err != nil {
+				t.Fatalf("publishCheckpoint: %v", err)
+			}
 			cpOld := []byte("bananas")
 			if err := m.setObject(ctx, layout.CheckpointPath, cpOld, nil, "", ""); err != nil {
 				t.Fatalf("setObject(bananas): %v", err)
 			}
-			m.lMod = test.cpModifiedAt
-			if err := storage.publishCheckpoint(ctx, test.publishInterval); err != nil {
+
+			time.Sleep(test.wait)
+
+			if err := s.publishTree(ctx, test.publishInterval, storage.publishCheckpoint); err != nil {
 				t.Fatalf("publishCheckpoint: %v", err)
 			}
 			cpNew, _, err := m.getObject(ctx, layout.CheckpointPath)
@@ -489,8 +494,7 @@ func TestPublishCheckpoint(t *testing.T) {
 
 type memObjStore struct {
 	sync.RWMutex
-	mem  map[string][]byte
-	lMod time.Time
+	mem map[string][]byte
 }
 
 func newMemObjStore() *memObjStore {
@@ -526,8 +530,4 @@ func (m *memObjStore) setObject(_ context.Context, obj string, data []byte, cond
 	}
 	m.mem[obj] = data
 	return nil
-}
-
-func (m *memObjStore) lastModified(_ context.Context, obj string) (time.Time, error) {
-	return m.lMod, nil
 }
