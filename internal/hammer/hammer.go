@@ -16,13 +16,17 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"flag"
 	"fmt"
+	"io"
 	"math/rand/v2"
 	"net/http"
+	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -98,18 +102,15 @@ func main() {
 		klog.Exitf("failed to create verifier: %v", err)
 	}
 
-	f, w, err := loadtest.NewLogClients(logURL, writeLogURL, loadtest.ClientOpts{
-		Client:           hc,
-		BearerToken:      *bearerToken,
-		BearerTokenWrite: *bearerTokenWrite,
-	})
-	if err != nil {
-		klog.Exit(err)
+	r := mustCreateReaders(logURL)
+	if len(writeLogURL) == 0 {
+		writeLogURL = logURL
 	}
+	w := mustCreateWriters(writeLogURL)
 
 	var cpRaw []byte
-	cons := client.UnilateralConsensus(f.ReadCheckpoint)
-	tracker, err := client.NewLogStateTracker(ctx, f.ReadTile, cpRaw, logSigV, logSigV.Name(), cons)
+	cons := client.UnilateralConsensus(r.ReadCheckpoint)
+	tracker, err := client.NewLogStateTracker(ctx, r.ReadTile, cpRaw, logSigV, logSigV.Name(), cons)
 	if err != nil {
 		klog.Exitf("Failed to create LogStateTracker: %v", err)
 	}
@@ -130,7 +131,7 @@ func main() {
 		NumReadersFull:       *numReadersFull,
 		NumWriters:           *numWriters,
 	}
-	hammer := loadtest.NewHammer(tracker, f.ReadEntryBundle, w, gen, ha.SeqLeafChan, ha.ErrChan, opts)
+	hammer := loadtest.NewHammer(tracker, r.ReadEntryBundle, w, gen, ha.SeqLeafChan, ha.ErrChan, opts)
 
 	exitCode := 0
 	if *leafWriteGoal > 0 {
@@ -220,6 +221,108 @@ func newLeafGenerator(startSize uint64, minLeafSize int, dupChance float64) func
 		// Do this outside of the protected block so that writers don't block on leaf generation (especially for larger leaves).
 		return genLeaf(thisSize)
 	}
+}
+
+func mustCreateReaders(us []string) loadtest.LogReader {
+	r := []loadtest.LogReader{}
+	for _, u := range us {
+		if !strings.HasSuffix(u, "/") {
+			u += "/"
+		}
+		rURL, err := url.Parse(u)
+		if err != nil {
+			klog.Exitf("Invalid log reader URL %q: %v", u, err)
+		}
+
+		switch rURL.Scheme {
+		case "http", "https":
+			c, err := client.NewHTTPFetcher(rURL, http.DefaultClient)
+			if err != nil {
+				klog.Exitf("Failed to create HTTP fetcher for %q: %v", u, err)
+			}
+			if *bearerToken != "" {
+				c.SetAuthorizationHeader(fmt.Sprintf("Bearer %s", *bearerToken))
+			}
+			r = append(r, c)
+		case "file":
+			r = append(r, client.FileFetcher{Root: rURL.Path})
+		default:
+			klog.Exitf("Unsupported scheme %s on log URL", rURL.Scheme)
+		}
+	}
+	return loadtest.NewRoundRobinReader(r)
+}
+
+func mustCreateWriters(us []string) loadtest.LeafWriter {
+	w := []loadtest.LeafWriter{}
+	for _, u := range us {
+		if !strings.HasSuffix(u, "/") {
+			u += "/"
+		}
+		u += "add"
+		wURL, err := url.Parse(u)
+		if err != nil {
+			klog.Exitf("Invalid log writer URL %q: %v", u, err)
+		}
+		w = append(w, httpWriter(wURL, http.DefaultClient, *bearerToken))
+	}
+	return loadtest.NewRoundRobinWriter(w)
+}
+
+func httpWriter(u *url.URL, hc *http.Client, bearerToken string) loadtest.LeafWriter {
+	return func(ctx context.Context, newLeaf []byte) (uint64, error) {
+		req, err := http.NewRequest(http.MethodPost, u.String(), bytes.NewReader(newLeaf))
+		if err != nil {
+			return 0, fmt.Errorf("failed to create request: %v", err)
+		}
+		if bearerToken != "" {
+			req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", bearerToken))
+		}
+		resp, err := hc.Do(req.WithContext(ctx))
+		if err != nil {
+			return 0, fmt.Errorf("failed to write leaf: %v", err)
+		}
+		body, err := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		if err != nil {
+			return 0, fmt.Errorf("failed to read body: %v", err)
+		}
+		switch resp.StatusCode {
+		case http.StatusOK:
+			if resp.Request.Method != http.MethodPost {
+				return 0, fmt.Errorf("write leaf was redirected to %s", resp.Request.URL)
+			}
+			// Continue below
+		case http.StatusServiceUnavailable, http.StatusBadGateway, http.StatusGatewayTimeout:
+			// These status codes may indicate a delay before retrying, so handle that here:
+			time.Sleep(retryDelay(resp.Header.Get("RetryAfter"), time.Second))
+
+			return 0, fmt.Errorf("log not available. Status code: %d. Body: %q %w", resp.StatusCode, body, loadtest.ErrRetry)
+		default:
+			return 0, fmt.Errorf("write leaf was not OK. Status code: %d. Body: %q", resp.StatusCode, body)
+		}
+		parts := bytes.Split(body, []byte("\n"))
+		index, err := strconv.ParseUint(string(parts[0]), 10, 64)
+		if err != nil {
+			return 0, fmt.Errorf("write leaf failed to parse response: %v", body)
+		}
+		return index, nil
+	}
+}
+
+func retryDelay(retryAfter string, defaultDur time.Duration) time.Duration {
+	if retryAfter == "" {
+		return defaultDur
+	}
+	d, err := time.Parse(http.TimeFormat, retryAfter)
+	if err == nil {
+		return time.Until(d)
+	}
+	s, err := strconv.Atoi(retryAfter)
+	if err == nil {
+		return time.Duration(s) * time.Second
+	}
+	return defaultDur
 }
 
 // multiStringFlag allows a flag to be specified multiple times on the command
