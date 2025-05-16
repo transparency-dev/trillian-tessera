@@ -108,6 +108,8 @@ type sequencer interface {
 	currentTree(ctx context.Context) (uint64, []byte, error)
 	// nextIndex returns the next available index in the log.
 	nextIndex(ctx context.Context) (uint64, error)
+	// publishTree coordinates the publication of new checkpoints based on the current integrated tree.
+	publishTree(ctx context.Context, minAge time.Duration, f func(ctx context.Context, size uint64, root []byte) error) error
 }
 
 // consumeFunc is the signature of a function which can consume entries from the sequencer and integrate
@@ -313,8 +315,7 @@ func (a *Appender) publisherJob(ctx context.Context, i time.Duration) {
 		func() {
 			ctx, span := tracer.Start(ctx, "tessera.storage.gcp.publishTask")
 			defer span.End()
-
-			if err := a.publishCheckpoint(ctx, i); err != nil {
+			if err := a.sequencer.publishTree(ctx, i, a.publishCheckpoint); err != nil {
 				klog.Warningf("publishCheckpoint failed: %v", err)
 			}
 		}()
@@ -345,23 +346,9 @@ func (a *Appender) init(ctx context.Context) error {
 	return nil
 }
 
-func (a *Appender) publishCheckpoint(ctx context.Context, minStaleness time.Duration) error {
+func (a *Appender) publishCheckpoint(ctx context.Context, size uint64, root []byte) error {
 	ctx, span := tracer.Start(ctx, "tessera.storage.gcp.publishCheckpoint")
 	defer span.End()
-
-	m, err := a.logStore.checkpointLastModified(ctx)
-	if err != nil && !errors.Is(err, gcs.ErrObjectNotExist) {
-		return fmt.Errorf("lastModified(%q): %v", layout.CheckpointPath, err)
-	}
-	if time.Since(m) < minStaleness {
-		span.AddEvent("Abort, too soon")
-		return nil
-	}
-
-	size, root, err := a.sequencer.currentTree(ctx)
-	if err != nil {
-		return fmt.Errorf("currentTree: %v", err)
-	}
 	span.SetAttributes(treeSizeKey.Int64(otel.Clamp64(size)))
 
 	cpRaw, err := a.newCP(ctx, size, root)
@@ -383,7 +370,6 @@ func (a *Appender) publishCheckpoint(ctx context.Context, minStaleness time.Dura
 type objStore interface {
 	getObject(ctx context.Context, obj string) ([]byte, int64, error)
 	setObject(ctx context.Context, obj string, data []byte, cond *gcs.Conditions, contType string, cacheCtl string) error
-	lastModified(ctx context.Context, obj string) (time.Time, error)
 }
 
 // logResourceStore knows how to read and write entries which represent a tiles log inside an objStore.
@@ -394,11 +380,6 @@ type logResourceStore struct {
 
 func (lrs *logResourceStore) setCheckpoint(ctx context.Context, cpRaw []byte) error {
 	return lrs.objStore.setObject(ctx, layout.CheckpointPath, cpRaw, nil, ckptContType, ckptCacheControl)
-}
-
-func (lrs *logResourceStore) checkpointLastModified(ctx context.Context) (time.Time, error) {
-	t, err := lrs.objStore.lastModified(ctx, layout.CheckpointPath)
-	return t, err
 }
 
 func (lrs *logResourceStore) getCheckpoint(ctx context.Context) ([]byte, error) {
@@ -681,11 +662,13 @@ func (s *spannerCoordinator) initDB(ctx context.Context, spannerDB string) error
 			"CREATE TABLE IF NOT EXISTS SeqCoord (id INT64 NOT NULL, next INT64 NOT NULL,) PRIMARY KEY (id)",
 			"CREATE TABLE IF NOT EXISTS Seq (id INT64 NOT NULL, seq INT64 NOT NULL, v BYTES(MAX),) PRIMARY KEY (id, seq)",
 			"CREATE TABLE IF NOT EXISTS IntCoord (id INT64 NOT NULL, seq INT64 NOT NULL, rootHash BYTES(32)) PRIMARY KEY (id)",
+			"CREATE TABLE IF NOT EXISTS PubCoord (id INT64 NOT NULL, publishedAt TIMESTAMP NOT NULL) PRIMARY KEY (id)",
 		},
 		[][]*spanner.Mutation{
 			{spanner.Insert("Tessera", []string{"id", "compatibilityVersion"}, []any{0, SchemaCompatibilityVersion})},
 			{spanner.Insert("SeqCoord", []string{"id", "next"}, []any{0, 0})},
 			{spanner.Insert("IntCoord", []string{"id", "seq", "rootHash"}, []any{0, 0, rfc6962.DefaultHasher.EmptyRoot()})},
+			{spanner.Insert("PubCoord", []string{"id", "publishedAt"}, []any{0, time.Unix(0, 0)})},
 		},
 	)
 }
@@ -916,6 +899,47 @@ func (s *spannerCoordinator) nextIndex(ctx context.Context) (uint64, error) {
 	return uint64(nextSeq), nil
 }
 
+// publishTree checks when the last checkpoint was published, and if it was more than minAge ago, calls the provided
+// function to publish a new one.
+//
+// This function uses PubCoord with an exclusive lock to guarantee that only one tessera instance can attempt to publish
+// a checkpoint at any given time.
+func (s *spannerCoordinator) publishTree(ctx context.Context, minAge time.Duration, f func(context.Context, uint64, []byte) error) error {
+	if _, err := s.dbPool.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
+		pRow, err := txn.ReadRowWithOptions(ctx, "PubCoord", spanner.Key{0}, []string{"publishedAt"}, &spanner.ReadOptions{LockHint: spannerpb.ReadRequest_LOCK_HINT_EXCLUSIVE})
+		if err != nil {
+			return fmt.Errorf("failed to read PubCoord: %v", err)
+		}
+		var pubAt time.Time
+		if err := pRow.Column(0, &pubAt); err != nil {
+			return fmt.Errorf("failed to parse publishedAt: %v", err)
+		}
+		if time.Since(pubAt) > minAge {
+			// Can't just use currentTree() here as the spanner emulator doesn't do nested transactions, so do it manually:
+			row, err := txn.ReadRow(ctx, "IntCoord", spanner.Key{0}, []string{"seq", "rootHash"})
+			if err != nil {
+				return fmt.Errorf("failed to read IntCoord: %v", err)
+			}
+			var fromSeq int64 // Spanner doesn't support uint64
+			var rootHash []byte
+			if err := row.Columns(&fromSeq, &rootHash); err != nil {
+				return fmt.Errorf("failed to parse integration coordination info: %v", err)
+			}
+			if err := f(ctx, uint64(fromSeq), rootHash); err != nil {
+				return err
+			}
+		}
+		if err := txn.BufferWrite([]*spanner.Mutation{spanner.Update("PubCoord", []string{"id", "publishedAt"}, []any{0, time.Now()})}); err != nil {
+			return err
+		}
+
+		return nil
+	}); err != nil {
+		return err
+	}
+	return nil
+}
+
 // gcsStorage knows how to store and retrieve objects from GCS.
 type gcsStorage struct {
 	bucket       string
@@ -1003,18 +1027,6 @@ func (s *gcsStorage) setObject(ctx context.Context, objName string, data []byte,
 		return fmt.Errorf("failed to close write on %q: %v", objName, err)
 	}
 	return nil
-}
-
-func (s *gcsStorage) lastModified(ctx context.Context, obj string) (time.Time, error) {
-	if s.bucketPrefix != "" {
-		obj = filepath.Join(s.bucketPrefix, obj)
-	}
-
-	r, err := s.gcsClient.Bucket(s.bucket).Object(obj).NewReader(ctx)
-	if err != nil {
-		return time.Time{}, fmt.Errorf("failed to create reader for object %q in bucket %q: %w", obj, s.bucket, err)
-	}
-	return r.Attrs.LastModified, r.Close()
 }
 
 // MigrationWriter creates a new GCP storage for the MigrationTarget lifecycle mode.
