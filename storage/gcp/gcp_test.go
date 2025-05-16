@@ -419,7 +419,7 @@ func TestStreamEntries(t *testing.T) {
 	}
 }
 
-func TestPublishCheckpoint(t *testing.T) {
+func TestPublishTree(t *testing.T) {
 	ctx := context.Background()
 
 	close := newSpannerDB(t)
@@ -465,7 +465,7 @@ func TestPublishCheckpoint(t *testing.T) {
 				t.Fatalf("storage.init: %v", err)
 			}
 			if err := s.publishTree(ctx, test.publishInterval, storage.publishCheckpoint); err != nil {
-				t.Fatalf("publishCheckpoint: %v", err)
+				t.Fatalf("publishTree: %v", err)
 			}
 			cpOld := []byte("bananas")
 			if err := m.setObject(ctx, layout.CheckpointPath, cpOld, nil, "", ""); err != nil {
@@ -475,7 +475,7 @@ func TestPublishCheckpoint(t *testing.T) {
 			time.Sleep(test.wait)
 
 			if err := s.publishTree(ctx, test.publishInterval, storage.publishCheckpoint); err != nil {
-				t.Fatalf("publishCheckpoint: %v", err)
+				t.Fatalf("publishTree: %v", err)
 			}
 			cpNew, _, err := m.getObject(ctx, layout.CheckpointPath)
 			cpUpdated := !bytes.Equal(cpOld, cpNew)

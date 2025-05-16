@@ -111,6 +111,7 @@ type sequencer interface {
 	currentTree(ctx context.Context) (uint64, []byte, error)
 
 	// nextIndex returns the next available index in the log.
+	nextIndex(ctx context.Context) (uint64, error)
 
 	// publishTree coordinates the publication of new checkpoints based on the current integrated tree.
 	publishTree(ctx context.Context, minAge time.Duration, f func(ctx context.Context, size uint64, root []byte) error) error

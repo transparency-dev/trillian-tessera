@@ -369,7 +369,7 @@ func TestBundleRoundtrip(t *testing.T) {
 	}
 }
 
-func TestPublishCheckpoint(t *testing.T) {
+func TestPublishTree(t *testing.T) {
 	ctx := context.Background()
 	if canSkipMySQLTest(t, ctx) {
 		klog.Warningf("MySQL not available, skipping %s", t.Name())
@@ -418,7 +418,7 @@ func TestPublishCheckpoint(t *testing.T) {
 				t.Fatalf("storage.init: %v", err)
 			}
 			if err := s.publishTree(ctx, test.publishInterval, storage.publishCheckpoint); err != nil {
-				t.Fatalf("publishCheckpoint: %v", err)
+				t.Fatalf("publishTree: %v", err)
 			}
 			cpOld := []byte("bananas")
 			if err := m.setObject(ctx, layout.CheckpointPath, cpOld, "", ""); err != nil {
@@ -428,7 +428,7 @@ func TestPublishCheckpoint(t *testing.T) {
 			time.Sleep(test.wait)
 
 			if err := s.publishTree(ctx, test.publishInterval, storage.publishCheckpoint); err != nil {
-				t.Fatalf("publishCheckpoint: %v", err)
+				t.Fatalf("publishTree: %v", err)
 			}
 			cpNew, err := m.getObject(ctx, layout.CheckpointPath)
 			cpUpdated := !bytes.Equal(cpOld, cpNew)
