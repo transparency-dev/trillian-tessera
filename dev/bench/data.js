@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1747665627893,
+  "lastUpdate": 1747667994204,
   "repoUrl": "https://github.com/transparency-dev/tessera",
   "entries": {
     "Benchmark": [
@@ -27456,6 +27456,150 @@ window.BENCHMARK_DATA = {
             "value": 3077,
             "unit": "allocs/op",
             "extra": "3741 times\n4 procs"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "mhutchinson@gmail.com",
+            "name": "Martin Hutchinson",
+            "username": "mhutchinson"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "2439e77f10e18037c288291847869c738afb4d83",
+          "message": "[Hammer] Make failed leaves be stickier (#650)\n\nPreviously if a leaf failed on a write, we would discard it and try again with another leaf. This was useful in the event that we generated an invalid leaf, because it would be temporary and the worker could continue. But in reality, we don't generate invalid leaves. So what happened is that in the event of the log temporarily pushing back to the user, leaves would be dropped. This meant that the tree size could be much smaller than the seed index that any indices that leaves had been generated from. All of this meant that on restarting the hammer against a populated log, it could spend a long time resubmitting duplicates because of this index mismatch. This is still possible, but the drift is much smaller now (at most N indices are leaked per hammer run, where N is the number of write workers).",
+          "timestamp": "2025-05-19T16:19:18+01:00",
+          "tree_id": "65947c749bbfa208af55ff3a73b09c913a0e5ca7",
+          "url": "https://github.com/transparency-dev/tessera/commit/2439e77f10e18037c288291847869c738afb4d83"
+        },
+        "date": 1747667993479,
+        "tool": "go",
+        "benches": [
+          {
+            "name": "BenchmarkDedupe",
+            "value": 828814,
+            "unit": "ns/op\t  716160 B/op\t   20570 allocs/op",
+            "extra": "1359 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDedupe - ns/op",
+            "value": 828814,
+            "unit": "ns/op",
+            "extra": "1359 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDedupe - B/op",
+            "value": 716160,
+            "unit": "B/op",
+            "extra": "1359 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDedupe - allocs/op",
+            "value": 20570,
+            "unit": "allocs/op",
+            "extra": "1359 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWitnessGroupSatisfaction",
+            "value": 138772,
+            "unit": "ns/op\t    3152 B/op\t      36 allocs/op",
+            "extra": "7897 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWitnessGroupSatisfaction - ns/op",
+            "value": 138772,
+            "unit": "ns/op",
+            "extra": "7897 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWitnessGroupSatisfaction - B/op",
+            "value": 3152,
+            "unit": "B/op",
+            "extra": "7897 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWitnessGroupSatisfaction - allocs/op",
+            "value": 36,
+            "unit": "allocs/op",
+            "extra": "7897 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLeafBundle_UnmarshalText",
+            "value": 1613,
+            "unit": "ns/op\t    6528 B/op\t       1 allocs/op",
+            "extra": "657228 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLeafBundle_UnmarshalText - ns/op",
+            "value": 1613,
+            "unit": "ns/op",
+            "extra": "657228 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLeafBundle_UnmarshalText - B/op",
+            "value": 6528,
+            "unit": "B/op",
+            "extra": "657228 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLeafBundle_UnmarshalText - allocs/op",
+            "value": 1,
+            "unit": "allocs/op",
+            "extra": "657228 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkCheckpointUnsafe",
+            "value": 222.4,
+            "unit": "ns/op\t     224 B/op\t       5 allocs/op",
+            "extra": "5373872 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkCheckpointUnsafe - ns/op",
+            "value": 222.4,
+            "unit": "ns/op",
+            "extra": "5373872 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkCheckpointUnsafe - B/op",
+            "value": 224,
+            "unit": "B/op",
+            "extra": "5373872 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkCheckpointUnsafe - allocs/op",
+            "value": 5,
+            "unit": "allocs/op",
+            "extra": "5373872 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkIntegrate",
+            "value": 348047,
+            "unit": "ns/op\t  279733 B/op\t    3086 allocs/op",
+            "extra": "3951 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkIntegrate - ns/op",
+            "value": 348047,
+            "unit": "ns/op",
+            "extra": "3951 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkIntegrate - B/op",
+            "value": 279733,
+            "unit": "B/op",
+            "extra": "3951 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkIntegrate - allocs/op",
+            "value": 3086,
+            "unit": "allocs/op",
+            "extra": "3951 times\n4 procs"
           }
         ]
       }
