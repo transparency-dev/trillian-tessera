@@ -95,6 +95,8 @@ type LogReader interface {
 // Intended to be used via WithAntispam option.
 type Antispam any
 
+// antispam is the internal interface for Antispam. This is only intended for implementation and usage
+// within Tessera.
 type antispam interface {
 	// Decorator must return a function which knows how to decorate an Appender's Add function in order
 	// to return an index previously assigned to an entry with the same identity hash, if one exists, or
