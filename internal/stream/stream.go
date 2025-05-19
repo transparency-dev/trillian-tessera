@@ -17,22 +17,28 @@ package stream
 
 import (
 	"context"
-	"errors"
 	"fmt"
+	"iter"
 	"time"
 
 	"github.com/transparency-dev/tessera/api/layout"
 	"k8s.io/klog/v2"
 )
 
-// NoMoreEntries is a sentinel error returned by StreamEntries when no more entries will be returned by calls to the next function.
-var ErrNoMoreEntries = errors.New("no more entries")
-
 // GetBundleFn is a function which knows how to fetch a single entry bundle from the specified address.
 type GetBundleFn func(ctx context.Context, bundleIdx uint64, partial uint8) ([]byte, error)
 
 // GetTreeSizeFn is a function which knows how to return a tree size.
 type GetTreeSizeFn func(ctx context.Context) (uint64, error)
+
+// Bundle represents an entry bundle in a log, along with some metadata about which parts of the bundle
+// are relevent.
+type Bundle struct {
+	// RangeInfo decribes which of the entries in this bundle are relevent.
+	RangeInfo layout.RangeInfo
+	// Data is the raw serialised bundle, as fetched from the log.
+	Data []byte
+}
 
 // StreamAdaptor uses the provided function to produce a stream of entry bundles accesible via the returned functions.
 //
@@ -48,15 +54,14 @@ type GetTreeSizeFn func(ctx context.Context) (uint64, error)
 // requests to getBundle. The request parallelism is set by the value of the numWorkers paramemter, which can be tuned
 // to balance throughput against consumption of resources, but such balancing needs to be mindful of the nature of the
 // source infrastructure, and how concurrent requests affect performance (e.g. GCS buckets vs. files on a single disk).
-func StreamAdaptor(ctx context.Context, numWorkers uint, getSize GetTreeSizeFn, getBundle GetBundleFn, fromEntry uint64) (next func() (ri layout.RangeInfo, bundle []byte, err error), cancel func()) {
+func StreamAdaptor(ctx context.Context, numWorkers uint, getSize GetTreeSizeFn, getBundle GetBundleFn, fromEntry uint64) iter.Seq2[Bundle, error] {
 	ctx, span := tracer.Start(ctx, "tessera.storage.StreamAdaptor")
 	defer span.End()
 
 	// bundleOrErr represents a fetched entry bundle and its params, or an error if we couldn't fetch it for
 	// some reason.
 	type bundleOrErr struct {
-		ri  layout.RangeInfo
-		b   []byte
+		b   Bundle
 		err error
 	}
 
@@ -106,7 +111,7 @@ func StreamAdaptor(ctx context.Context, numWorkers uint, getSize GetTreeSizeFn, 
 				c := make(chan bundleOrErr, 1)
 				go func(ri layout.RangeInfo) {
 					b, err := getBundle(ctx, ri.Index, ri.Partial)
-					c <- bundleOrErr{ri: ri, b: b, err: err}
+					c <- bundleOrErr{b: Bundle{RangeInfo: ri, Data: b}, err: err}
 				}(ri)
 
 				f := func() bundleOrErr {
@@ -133,28 +138,15 @@ func StreamAdaptor(ctx context.Context, numWorkers uint, getSize GetTreeSizeFn, 
 		}
 	}()
 
-	cancel = func() {
-		close(exit)
+	return func(yield func(Bundle, error) bool) {
+		for f := range bundles {
+			b := f()
+			if !yield(b.b, b.err) {
+				return
+			}
+		}
+		klog.Infof("iter done")
 	}
-
-	var streamErr error
-	next = func() (layout.RangeInfo, []byte, error) {
-		if streamErr != nil {
-			return layout.RangeInfo{}, nil, streamErr
-		}
-
-		f, ok := <-bundles
-		if !ok {
-			streamErr = ErrNoMoreEntries
-			return layout.RangeInfo{}, nil, streamErr
-		}
-		b := f()
-		if b.err != nil {
-			streamErr = b.err
-		}
-		return b.ri, b.b, b.err
-	}
-	return next, cancel
 }
 
 // EntryStreamReader converts a stream of {RangeInfo, EntryBundle} into a stream of individually processed entries.

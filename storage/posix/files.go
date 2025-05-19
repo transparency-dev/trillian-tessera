@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"iter"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -204,7 +205,7 @@ func (l *logResourceStorage) NextIndex(ctx context.Context) (uint64, error) {
 	return l.IntegratedSize(ctx)
 }
 
-func (l *logResourceStorage) StreamEntries(ctx context.Context, fromEntry uint64) (next func() (ri layout.RangeInfo, bundle []byte, err error), cancel func()) {
+func (l *logResourceStorage) StreamEntries(ctx context.Context, fromEntry uint64) iter.Seq2[stream.Bundle, error] {
 	// TODO(al): Consider making this configurable.
 	// The performance of different levels of concurrency here will depend very much on the nature of the underlying storage infra,
 	// e.g. NVME will likely respond well to some concurrency, HDD less so.

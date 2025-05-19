@@ -16,8 +16,7 @@ package stream
 
 import (
 	"context"
-
-	"github.com/transparency-dev/tessera/api/layout"
+	"iter"
 )
 
 // Follower describes the contract of something which is required to track the contents of the local log.
@@ -56,19 +55,5 @@ type Streamer interface {
 	// entries into account.
 	NextIndex(ctx context.Context) (uint64, error)
 
-	// StreamEntries() returns functions `next` and `stop` which act like a pull iterator for
-	// consecutive entry bundles, starting with the entry bundle which contains the requested entry
-	// index.
-	//
-	// Each call to `next` will return raw entry bundle bytes along with a RangeInfo struct which
-	// contains information on which entries within that bundle are to be considered valid.
-	//
-	// next will hang if it has reached the extent of the current tree, and return once either
-	// the tree has grown and more entries are available, or cancel was called.
-	//
-	// next will cease iterating if either:
-	//   - it produces an error (e.g. via the underlying calls to the log storage)
-	//   - the returned cancel function is called
-	// and will continue to return an error if called again after either of these cases.
-	StreamEntries(ctx context.Context, fromEntryIdx uint64) (next func() (layout.RangeInfo, []byte, error), cancel func())
+	StreamEntries(ctx context.Context, fromEntryIdx uint64) iter.Seq2[Bundle, error]
 }

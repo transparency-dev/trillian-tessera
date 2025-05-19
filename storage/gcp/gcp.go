@@ -35,6 +35,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"iter"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -183,7 +184,7 @@ func (lr *LogReader) NextIndex(ctx context.Context) (uint64, error) {
 	return lr.nextIndex(ctx)
 }
 
-func (lr *LogReader) StreamEntries(ctx context.Context, fromEntry uint64) (next func() (ri layout.RangeInfo, bundle []byte, err error), cancel func()) {
+func (lr *LogReader) StreamEntries(ctx context.Context, fromEntry uint64) iter.Seq2[stream.Bundle, error] {
 	ctx, span := tracer.Start(ctx, "tessera.storage.gcp.StreamEntries")
 	defer span.End()
 

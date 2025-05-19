@@ -70,9 +70,6 @@ func Check(ctx context.Context, origin string, verifier note.Verifier, f Fetcher
 	}
 
 	// Set up a stream of entry bundles from the log to be checked.
-	getSize := func(_ context.Context) (uint64, error) { return cp.Size, nil }
-	next, cancel := stream.StreamAdaptor(ctx, N, getSize, f.ReadEntryBundle, 0)
-	defer cancel()
 
 	eg := errgroup.Group{}
 
@@ -81,16 +78,19 @@ func Check(ctx context.Context, origin string, verifier note.Verifier, f Fetcher
 		eg.Go(fTree.resourceCheckWorker(ctx))
 	}
 
+	getSize := func(_ context.Context) (uint64, error) { return cp.Size, nil }
 	// Consume the stream of bundles to re-derive the other log resources.
 	// TODO(al): consider chunking the log and doing each in parallel.
-	for fTree.tree.End() < cp.Size {
-		ri, b, err := next()
+	for b, err := range stream.StreamAdaptor(ctx, N, getSize, f.ReadEntryBundle, 0) {
 		if err != nil {
-			klog.Warningf("next: %v", err)
+			klog.Warningf("StreamAdaptor: %v", err)
 			break
 		}
-		if err := fTree.AppendBundle(ri, b); err != nil {
-			klog.Warningf("AppendBundle(%v): %v", ri, err)
+		if err := fTree.AppendBundle(b.RangeInfo, b.Data); err != nil {
+			klog.Warningf("AppendBundle(%v): %v", b.RangeInfo, err)
+			break
+		}
+		if fTree.tree.End() >= cp.Size {
 			break
 		}
 	}

@@ -38,6 +38,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"iter"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -634,7 +635,7 @@ func (lr *logResourceStore) NextIndex(ctx context.Context) (uint64, error) {
 	return lr.nextIndex(ctx)
 }
 
-func (lr *logResourceStore) StreamEntries(ctx context.Context, fromEntry uint64) (next func() (ri layout.RangeInfo, bundle []byte, err error), cancel func()) {
+func (lr *logResourceStore) StreamEntries(ctx context.Context, fromEntry uint64) iter.Seq2[stream.Bundle, error] {
 	klog.Infof("StreamEntries from %d", fromEntry)
 
 	// TODO(al): Consider making this configurable.

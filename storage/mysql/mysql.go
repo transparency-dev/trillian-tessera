@@ -35,6 +35,7 @@ import (
 	"github.com/transparency-dev/tessera/api"
 	"github.com/transparency-dev/tessera/api/layout"
 	"github.com/transparency-dev/tessera/internal/migrate"
+	"github.com/transparency-dev/tessera/internal/stream"
 	storage "github.com/transparency-dev/tessera/storage/internal"
 	"k8s.io/klog/v2"
 )
@@ -345,7 +346,7 @@ func (s *Storage) NextIndex(ctx context.Context) (uint64, error) {
 // index.
 //
 // This is part of the tessera LogReader contract.
-func (s *Storage) StreamEntries(ctx context.Context, fromEntry uint64) (next func() (ri layout.RangeInfo, bundle []byte, err error), cancel func()) {
+func (s *Storage) StreamEntries(ctx context.Context, fromEntry uint64) iter.Seq2[stream.Bundle, error] {
 	type riBundle struct {
 		ri  layout.RangeInfo
 		b   []byte
