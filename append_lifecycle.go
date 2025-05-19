@@ -470,10 +470,14 @@ func (t *terminator) Shutdown(ctx context.Context) error {
 }
 
 func (o *AppendOptions) WithAntispam(inMemEntries uint, as Antispam) *AppendOptions {
+	asi, ok := as.(antispam)
+	if !ok {
+		panic(fmt.Errorf("Antispam %T does not implement antispam methods", as))
+	}
 	o.addDecorators = append(o.addDecorators, newInMemoryDedupe(inMemEntries))
 	if as != nil {
-		o.addDecorators = append(o.addDecorators, as.Decorator())
-		o.followers = append(o.followers, as.Follower(o.bundleIDHasher))
+		o.addDecorators = append(o.addDecorators, asi.Decorator())
+		o.followers = append(o.followers, asi.Follower(o.bundleIDHasher))
 	}
 	return o
 }
