@@ -17,13 +17,16 @@ package stream
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
-	"github.com/transparency-dev/tessera"
 	"github.com/transparency-dev/tessera/api/layout"
 	"k8s.io/klog/v2"
 )
+
+// NoMoreEntries is a sentinel error returned by StreamEntries when no more entries will be returned by calls to the next function.
+var ErrNoMoreEntries = errors.New("no more entries")
 
 // GetBundleFn is a function which knows how to fetch a single entry bundle from the specified address.
 type GetBundleFn func(ctx context.Context, bundleIdx uint64, partial uint8) ([]byte, error)
@@ -142,7 +145,7 @@ func StreamAdaptor(ctx context.Context, numWorkers uint, getSize GetTreeSizeFn, 
 
 		f, ok := <-bundles
 		if !ok {
-			streamErr = tessera.ErrNoMoreEntries
+			streamErr = ErrNoMoreEntries
 			return layout.RangeInfo{}, nil, streamErr
 		}
 		b := f()

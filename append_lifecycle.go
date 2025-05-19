@@ -30,6 +30,7 @@ import (
 	"github.com/transparency-dev/tessera/api/layout"
 	"github.com/transparency-dev/tessera/internal/otel"
 	"github.com/transparency-dev/tessera/internal/parse"
+	"github.com/transparency-dev/tessera/internal/stream"
 	"github.com/transparency-dev/tessera/internal/witness"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
@@ -245,7 +246,7 @@ func NewAppender(ctx context.Context, d Driver, opts *AppendOptions) (*Appender,
 	return a, t.Shutdown, r, nil
 }
 
-func followerStats(ctx context.Context, f Follower, size func(context.Context) (uint64, error)) {
+func followerStats(ctx context.Context, f stream.Follower, size func(context.Context) (uint64, error)) {
 	name := f.Name()
 	t := time.NewTicker(200 * time.Millisecond)
 	for {
@@ -509,7 +510,7 @@ type AppendOptions struct {
 	witnessOpts        WitnessOptions
 
 	addDecorators []func(AddFn) AddFn
-	followers     []Follower
+	followers     []stream.Follower
 }
 
 // valid returns an error if an invalid combination of options has been set, or nil otherwise.
