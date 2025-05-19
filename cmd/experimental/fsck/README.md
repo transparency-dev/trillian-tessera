@@ -1,6 +1,6 @@
 # fsck
 
-`fsck` is a simple tool for verifying the integrity of a [`tlog-tiles`][] log.
+`fsck` is a simple tool for verifying the integrity of a [`tlog-tiles`](https://c2sp.org/tlog-tiles) log.
 
 It is so-named as a nod towards the 'nix tools which perform a similar job for filesystems.
 Note, however, that this tool is generally applicable for all tlog-tile instances accessible
@@ -16,15 +16,8 @@ It can be run with the following command:
 
 ```bash
 $ go run github.com/transparency-dev/tessera/cmd/experimental/fsck --storage_url=http://localhost:2024/ --public_key=tessera.pub
-I0515 11:53:10.652868  241971 fsck.go:54] Fsck: checkpoint:
-TestTessera
-193446
-3dFT/ML7vbDp84UT+SVR+Y9csuztBzvu5yuZXoV4E+k=
-
-— TestTessera V9zVSATPw3zQN8jQ5hVhDTqQv0IMov4Ax+2xYE0yUNyySVHfX5xxuka0/HiwjaWqI96ux4/5kZsEqLjUFCMnzX/z2AA=
-I0515 11:53:10.652964  241971 fsck.go:60] Fsck: checking log of size 193446
-I0515 11:53:10.653001  241971 stream.go:90] StreamAdaptor: streaming from 0 to 193446
-I0515 11:53:11.297305  241971 fsck.go:118] Successfully fsck'd log with size 193446 and root ddd153fcc2fbbdb0e9f38513f92551f98f5cb2eced073beee72b995e857813e9
+I0519 12:48:18.776151   16532 fsck.go:61] Fsck: checking log of size 203150
+I0519 12:48:20.991727   16532 fsck.go:116] Successfully fsck'd log with size 203150 and root veoRTC8vvpl5VyXbG4mALWTBlz75rVKWKnSXoUX3UHU= (bdea114c2f2fbe99795725db1b89802d64c1973ef9ad52962a7497a145f75075)
 ```
 
 Optional flags may be used to control the amount of parallelism used during the process, run the tool with `--help`
