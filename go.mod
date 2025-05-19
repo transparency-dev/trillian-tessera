@@ -3,7 +3,7 @@ module github.com/transparency-dev/tessera
 go 1.24.0
 
 require (
-	cloud.google.com/go/spanner v1.81.0
+	cloud.google.com/go/spanner v1.81.1
 	cloud.google.com/go/storage v1.54.0
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric v0.51.0
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/trace v1.27.0
@@ -32,8 +32,8 @@ require (
 	go.opentelemetry.io/otel/sdk/metric v1.35.0
 	golang.org/x/exp v0.0.0-20240325151524-a685a6edb6d8
 	golang.org/x/mod v0.24.0
-	google.golang.org/api v0.232.0
-	google.golang.org/grpc v1.72.0
+	google.golang.org/api v0.233.0
+	google.golang.org/grpc v1.72.1
 	k8s.io/klog/v2 v2.130.1
 )
 
