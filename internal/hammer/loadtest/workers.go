@@ -200,13 +200,13 @@ func (w *LogWriter) Run(ctx context.Context) {
 		panic("LogWriter was run multiple times")
 	}
 	ctx, w.cancel = context.WithCancel(ctx)
+	newLeaf := w.gen()
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-w.throttle:
 		}
-		newLeaf := w.gen()
 		lt := LeafTime{QueuedAt: time.Now()}
 		index, err := w.writer(ctx, newLeaf)
 		if err != nil {
@@ -221,6 +221,7 @@ func (w *LogWriter) Run(ctx context.Context) {
 		default:
 		}
 		klog.V(2).Infof("Wrote leaf at index %d", index)
+		newLeaf = w.gen()
 	}
 }
 
