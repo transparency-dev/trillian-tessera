@@ -908,7 +908,7 @@ func (s *spannerCoordinator) publishTree(ctx context.Context, minAge time.Durati
 	if _, err := s.dbPool.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
 		pRow, err := txn.ReadRowWithOptions(ctx, "PubCoord", spanner.Key{0}, []string{"publishedAt"}, &spanner.ReadOptions{LockHint: spannerpb.ReadRequest_LOCK_HINT_EXCLUSIVE})
 		if err != nil {
-			return fmt.Errorf("failed to read PubCoord: %v", err)
+			return fmt.Errorf("failed to read PubCoord: %w", err)
 		}
 		var pubAt time.Time
 		if err := pRow.Column(0, &pubAt); err != nil {
@@ -918,7 +918,7 @@ func (s *spannerCoordinator) publishTree(ctx context.Context, minAge time.Durati
 			// Can't just use currentTree() here as the spanner emulator doesn't do nested transactions, so do it manually:
 			row, err := txn.ReadRow(ctx, "IntCoord", spanner.Key{0}, []string{"seq", "rootHash"})
 			if err != nil {
-				return fmt.Errorf("failed to read IntCoord: %v", err)
+				return fmt.Errorf("failed to read IntCoord: %w", err)
 			}
 			var fromSeq int64 // Spanner doesn't support uint64
 			var rootHash []byte
