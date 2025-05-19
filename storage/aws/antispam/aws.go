@@ -232,7 +232,7 @@ func (d *AntispamStorage) Decorator() func(f tessera.AddFn) tessera.AddFn {
 // Follower returns a follower which knows how to populate the antispam index.
 //
 // This implements tessera.Antispam.
-func (d *AntispamStorage) Follower(b func([]byte) ([][]byte, error)) tessera.Follower {
+func (d *AntispamStorage) Follower(b func([]byte) ([][]byte, error)) stream.Follower {
 	return &follower{
 		as:           d,
 		bundleHasher: b,
@@ -251,7 +251,7 @@ func (f *follower) Name() string {
 }
 
 // Follow uses entry data from the log to populate the antispam storage.
-func (f *follower) Follow(ctx context.Context, lr tessera.LogReader) {
+func (f *follower) Follow(ctx context.Context, lr stream.Streamer) {
 	errOutOfSync := errors.New("out-of-sync")
 
 	t := time.NewTicker(time.Second)

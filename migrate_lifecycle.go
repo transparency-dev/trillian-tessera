@@ -23,6 +23,7 @@ import (
 
 	"github.com/transparency-dev/tessera/api/layout"
 	"github.com/transparency-dev/tessera/client"
+	"github.com/transparency-dev/tessera/internal/stream"
 	"golang.org/x/sync/errgroup"
 	"k8s.io/klog/v2"
 )
@@ -88,7 +89,7 @@ type MigrationOptions struct {
 	// bundleLeafHasher knows how to create Merkle leaf hashes for the entries in a serialised bundle.
 	// This field's value must not be updated once configured or weird and probably unwanted integration behaviour is likely to occur.
 	bundleLeafHasher func([]byte) ([][]byte, error)
-	followers        []Follower
+	followers        []stream.Follower
 }
 
 func (o MigrationOptions) EntriesPath() func(uint64, uint8) string {
@@ -115,7 +116,7 @@ func (o *MigrationOptions) WithAntispam(as Antispam) *MigrationOptions {
 type MigrationTarget struct {
 	writer    MigrationWriter
 	reader    LogReader
-	followers []Follower
+	followers []stream.Follower
 }
 
 // Migrate performs the work of importing a source log into the local Tessera instance.
@@ -209,7 +210,7 @@ func (mt *MigrationTarget) Migrate(ctx context.Context, numWorkers uint, sourceS
 
 // awaitFollower returns a function which will block until the provided follower has processed
 // at least as far as the provided index.
-func awaitFollower(ctx context.Context, f Follower, i uint64) func() error {
+func awaitFollower(ctx context.Context, f stream.Follower, i uint64) func() error {
 	return func() error {
 		for {
 			select {

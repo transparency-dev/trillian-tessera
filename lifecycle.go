@@ -17,16 +17,16 @@ package tessera
 import (
 	"context"
 	"crypto/sha256"
-	"errors"
 	"fmt"
 
 	"github.com/transparency-dev/merkle/rfc6962"
 	"github.com/transparency-dev/tessera/api"
 	"github.com/transparency-dev/tessera/api/layout"
+	"github.com/transparency-dev/tessera/internal/stream"
 )
 
 // NoMoreEntries is a sentinel error returned by StreamEntries when no more entries will be returned by calls to the next function.
-var ErrNoMoreEntries = errors.New("no more entries")
+var ErrNoMoreEntries = stream.ErrNoMoreEntries
 
 // LogReader provides read-only access to the log.
 type LogReader interface {
@@ -88,23 +88,6 @@ type LogReader interface {
 	StreamEntries(ctx context.Context, fromEntryIdx uint64) (next func() (layout.RangeInfo, []byte, error), cancel func())
 }
 
-// Follower describes the contract of something which is required to track the contents of the local log.
-type Follower interface {
-	// Name returns a human readable name for this follower.
-	Name() string
-
-	// Follow should be implemented so as to visit entries in the log in order, using the provided
-	// LogReader to access the entry bundles which contain them.
-	//
-	// Implementations should keep track of their progress such that they can pick-up where they left off
-	// if e.g. the binary is restarted.
-	Follow(context.Context, LogReader)
-
-	// EntriesProcessed reports the progress of the follower, returning the total number of log entries
-	// successfully seen/processed.
-	EntriesProcessed(context.Context) (uint64, error)
-}
-
 // Antispam describes the contract that an antispam implementation must meet in order to be used via the
 // WithAntispam option below.
 type Antispam interface {
@@ -114,7 +97,7 @@ type Antispam interface {
 	Decorator() func(AddFn) AddFn
 	// Follower should return a structure which will populate the anti-spam index by tailing the contents
 	// of the log, using the provided function to turn entry bundles into identity hashes.
-	Follower(func(entryBundle []byte) ([][]byte, error)) Follower
+	Follower(func(entryBundle []byte) ([][]byte, error)) stream.Follower
 }
 
 // identityHash calculates the antispam identity hash for the provided (single) leaf entry data.
