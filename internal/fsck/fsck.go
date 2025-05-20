@@ -81,7 +81,7 @@ func Check(ctx context.Context, origin string, verifier note.Verifier, f Fetcher
 	getSize := func(_ context.Context) (uint64, error) { return cp.Size, nil }
 	// Consume the stream of bundles to re-derive the other log resources.
 	// TODO(al): consider chunking the log and doing each in parallel.
-	for b, err := range stream.StreamAdaptor(ctx, N, getSize, f.ReadEntryBundle, 0) {
+	for b, err := range stream.StreamAdaptor(ctx, N, getSize, f.ReadEntryBundle, 0, cp.Size) {
 		if err != nil {
 			klog.Warningf("StreamAdaptor: %v", err)
 			break
