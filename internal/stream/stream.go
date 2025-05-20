@@ -17,7 +17,6 @@ package stream
 
 import (
 	"context"
-	"fmt"
 	"iter"
 
 	"github.com/transparency-dev/tessera/api/layout"
@@ -134,55 +133,39 @@ func StreamAdaptor(ctx context.Context, numWorkers uint, getSize GetTreeSizeFn, 
 	}
 }
 
-// EntryStreamReader converts a stream of {RangeInfo, EntryBundle} into a stream of individually processed entries.
-//
-// This is mostly useful to Follower implementations which need to parse and consume individual entries being streamed
-// from a LogReader.
-type EntryStreamReader[T any] struct {
-	bundleFn func([]byte) ([]T, error)
-	next     func() (layout.RangeInfo, []byte, error)
-
-	curData []T
-	curRI   layout.RangeInfo
-	i       uint64
+// Entry represents a single leaf in a log.
+type Entry[T any] struct {
+	// Index is the index of the entry in the log.
+	Index uint64
+	// Entry is the entry from the log.
+	Entry T
 }
 
-// NewEntryStreamReader creates a new stream reader which uses the provided bundleFn to process bundles into processed entries of type T.
+// NewEntryIterator creates a new stream reader which uses the provided bundleFn to process bundles into processed entries of type T.
 //
 // Different bundleFn implementations can be provided to return raw entry bytes, parsed entry structs, or derivations of entries (e.g. hashes) as needed.
-func NewEntryStreamReader[T any](next func() (layout.RangeInfo, []byte, error), bundleFn func([]byte) ([]T, error)) *EntryStreamReader[T] {
-	return &EntryStreamReader[T]{
-		bundleFn: bundleFn,
-		next:     next,
-		i:        0,
-	}
-}
+func NewEntryIterator[T any](bundles iter.Seq2[Bundle, error], bundleFn func([]byte) ([]T, error)) iter.Seq2[Entry[T], error] {
+	return func(yield func(Entry[T], error) bool) {
+		for b, err := range bundles {
+			if err != nil {
+				yield(Entry[T]{}, err)
+				return
+			}
+			es, err := bundleFn(b.Data)
+			if err != nil {
+				yield(Entry[T]{}, err)
+				return
+			}
+			if len(es) > int(b.RangeInfo.N) {
+				es = es[:b.RangeInfo.N]
+			}
 
-// Next processes and returns the next available entry in the stream along with its index in the log.
-func (e *EntryStreamReader[T]) Next() (uint64, T, error) {
-	var t T
-	if len(e.curData) == 0 {
-		var err error
-		var b []byte
-		e.curRI, b, err = e.next()
-		if err != nil {
-			return 0, t, fmt.Errorf("next: %v", err)
+			rIdx := b.RangeInfo.Index*layout.EntryBundleWidth + uint64(b.RangeInfo.First)
+			for i, e := range es {
+				if !yield(Entry[T]{Index: rIdx + uint64(i), Entry: e}, nil) {
+					return
+				}
+			}
 		}
-		e.curData, err = e.bundleFn(b)
-		if err != nil {
-			return 0, t, fmt.Errorf("bundleFn(bundleEntry @%d): %v", e.curRI.Index, err)
-
-		}
-		if e.curRI.First > 0 {
-			e.curData = e.curData[e.curRI.First:]
-		}
-		if len(e.curData) > int(e.curRI.N) {
-			e.curData = e.curData[:e.curRI.N]
-		}
-		e.i = 0
 	}
-	t, e.curData = e.curData[0], e.curData[1:]
-	rIdx := e.curRI.Index*layout.EntryBundleWidth + uint64(e.curRI.First) + e.i
-	e.i++
-	return rIdx, t, nil
 }
