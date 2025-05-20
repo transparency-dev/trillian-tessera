@@ -12,10 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package tessera provides an implementation of a tile-based logging framework.
-package tessera
+// Package core contains Tessera stuff that doesn't need pointers back into Tessera,
+// and that is referenced in lots of places. It is stuff that we would ideally like
+// to be in the main package, but leaving it there makes package cycles unavoidable.
+package core
 
 import (
+	"crypto/sha256"
 	"encoding/binary"
 
 	"github.com/transparency-dev/merkle/rfc6962"
@@ -77,4 +80,10 @@ func NewEntry(data []byte) *Entry {
 		return r
 	}
 	return e
+}
+
+// identityHash calculates the antispam identity hash for the provided (single) leaf entry data.
+func identityHash(data []byte) []byte {
+	h := sha256.Sum256(data)
+	return h[:]
 }

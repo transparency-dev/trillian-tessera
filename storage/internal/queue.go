@@ -22,7 +22,7 @@ import (
 	"time"
 
 	"github.com/globocom/go-buffer"
-	"github.com/transparency-dev/tessera"
+	"github.com/transparency-dev/tessera/core"
 )
 
 // Queue knows how to queue up a number of entries in order, taking care of deduplication as they're added.
@@ -46,7 +46,7 @@ type Queue struct {
 // that the implementation MUST call each entry's MarshalBundleData function before attempting
 // to integrate it into the tree.
 // See the comment on Entry.MarshalBundleData for further info.
-type FlushFunc func(ctx context.Context, entries []*tessera.Entry) error
+type FlushFunc func(ctx context.Context, entries []*core.Entry) error
 
 // NewQueue creates a new queue with the specified maximum age and size.
 //
@@ -94,7 +94,7 @@ func NewQueue(ctx context.Context, maxAge time.Duration, maxSize uint, f FlushFu
 }
 
 // Add places e into the queue, and returns a func which may be called to retrieve the assigned index.
-func (q *Queue) Add(ctx context.Context, e *tessera.Entry) tessera.IndexFuture {
+func (q *Queue) Add(ctx context.Context, e *core.Entry) core.IndexFuture {
 	_, span := tracer.Start(ctx, "tessera.storage.queue.Add")
 	defer span.End()
 
@@ -111,7 +111,7 @@ func (q *Queue) doFlush(ctx context.Context, entries []*queueItem) {
 	ctx, span := tracer.Start(ctx, "tessera.storage.queue.doFlush")
 	defer span.End()
 
-	entriesData := make([]*tessera.Entry, 0, len(entries))
+	entriesData := make([]*core.Entry, 0, len(entries))
 	for _, e := range entries {
 		entriesData = append(entriesData, e.entry)
 	}
@@ -129,18 +129,18 @@ func (q *Queue) doFlush(ctx context.Context, entries []*queueItem) {
 // The f field acts as a future for the queueItem's assigned index/error, and will
 // hang until assign is called.
 type queueItem struct {
-	entry *tessera.Entry
-	c     chan tessera.IndexFuture
-	f     tessera.IndexFuture
+	entry *core.Entry
+	c     chan core.IndexFuture
+	f     core.IndexFuture
 }
 
 // newEntry creates a new entry for the provided data.
-func newEntry(data *tessera.Entry) *queueItem {
+func newEntry(data *core.Entry) *queueItem {
 	e := &queueItem{
 		entry: data,
-		c:     make(chan tessera.IndexFuture, 1),
+		c:     make(chan core.IndexFuture, 1),
 	}
-	e.f = sync.OnceValues(func() (tessera.Index, error) {
+	e.f = sync.OnceValues(func() (core.Index, error) {
 		return (<-e.c)()
 	})
 	return e
@@ -151,14 +151,14 @@ func newEntry(data *tessera.Entry) *queueItem {
 // This func must only be called once, and will cause any current or future callers of index()
 // to be given the values provided here.
 func (e *queueItem) notify(err error) {
-	e.c <- func() (tessera.Index, error) {
+	e.c <- func() (core.Index, error) {
 		if err != nil {
-			return tessera.Index{}, err
+			return core.Index{}, err
 		}
 		if e.entry.Index() == nil {
 			panic(errors.New("logic error: flush complete, but entry was not assigned an index - did storage fail to call entry.MarshalBundleData?"))
 		}
-		return tessera.Index{Index: *e.entry.Index()}, nil
+		return core.Index{Index: *e.entry.Index()}, nil
 	}
 	close(e.c)
 }

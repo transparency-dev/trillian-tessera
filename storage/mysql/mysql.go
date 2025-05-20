@@ -34,6 +34,7 @@ import (
 	"github.com/transparency-dev/tessera"
 	"github.com/transparency-dev/tessera/api"
 	"github.com/transparency-dev/tessera/api/layout"
+	"github.com/transparency-dev/tessera/core"
 	"github.com/transparency-dev/tessera/internal/migrate"
 	storage "github.com/transparency-dev/tessera/storage/internal"
 	"k8s.io/klog/v2"
@@ -541,7 +542,7 @@ func (a *appender) publishCheckpoint(ctx context.Context, interval time.Duration
 }
 
 // Add is the entrypoint for adding entries to a sequencing log.
-func (a *appender) Add(ctx context.Context, entry *tessera.Entry) tessera.IndexFuture {
+func (a *appender) Add(ctx context.Context, entry *core.Entry) core.IndexFuture {
 	return a.queue.Add(ctx, entry)
 }
 
@@ -553,7 +554,7 @@ func (a *appender) Add(ctx context.Context, entry *tessera.Entry) tessera.IndexF
 // than one-by-one.
 //
 // TODO(#21): Separate sequencing and integration for better performance.
-func (a *appender) sequenceBatch(ctx context.Context, entries []*tessera.Entry) error {
+func (a *appender) sequenceBatch(ctx context.Context, entries []*core.Entry) error {
 	// Return when there is no entry to sequence.
 	if len(entries) == 0 {
 		return nil
@@ -598,7 +599,7 @@ func (a *appender) sequenceBatch(ctx context.Context, entries []*tessera.Entry) 
 }
 
 // appendEntries incorporates the provided entries into the log starting at fromSeq.
-func (a *appender) appendEntries(ctx context.Context, tx *sql.Tx, fromSeq uint64, entries []*tessera.Entry) error {
+func (a *appender) appendEntries(ctx context.Context, tx *sql.Tx, fromSeq uint64, entries []*core.Entry) error {
 
 	sequencedEntries := make([]storage.SequencedEntry, len(entries))
 	// Assign provisional sequence numbers to entries.

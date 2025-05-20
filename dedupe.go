@@ -20,11 +20,12 @@ import (
 	"sync"
 
 	lru "github.com/hashicorp/golang-lru/v2"
+	"github.com/transparency-dev/tessera/core"
 )
 
 // newInMemoryDedupe wraps an Add function to prevent duplicate entries being written to the underlying
 // storage by keeping an in-memory cache of recently seen entries.
-// Where an existing entry has already been `Add`ed, the previous `IndexFuture` will be returned.
+// Where an existing entry has already been `Add`ed, the previous `core.IndexFuture` will be returned.
 // When no entry is found in the cache, the delegate method will be called to store the entry, and
 // the result will be registered in the cache.
 //
@@ -35,9 +36,9 @@ import (
 // When using this with a persistent dedupe, the persistent layer should be the delegate of this
 // InMemoryDedupe. This allows recent duplicates to be deduplicated in memory, reducing the need to
 // make calls to a persistent storage.
-func newInMemoryDedupe(size uint) func(AddFn) AddFn {
-	return func(af AddFn) AddFn {
-		c, err := lru.New[string, func() IndexFuture](int(size))
+func newInMemoryDedupe(size uint) func(core.AddFn) core.AddFn {
+	return func(af core.AddFn) core.AddFn {
+		c, err := lru.New[string, func() core.IndexFuture](int(size))
 		if err != nil {
 			panic(fmt.Errorf("lru.New(%d): %v", size, err))
 		}
@@ -50,21 +51,21 @@ func newInMemoryDedupe(size uint) func(AddFn) AddFn {
 }
 
 type inMemoryDedupe struct {
-	delegate func(ctx context.Context, e *Entry) IndexFuture
-	cache    *lru.Cache[string, func() IndexFuture]
+	delegate func(ctx context.Context, e *core.Entry) core.IndexFuture
+	cache    *lru.Cache[string, func() core.IndexFuture]
 }
 
 // Add adds the entry to the underlying delegate only if e hasn't been recently seen. In either case,
-// an IndexFuture will be returned that the client can use to get the sequence number of this entry.
-func (d *inMemoryDedupe) add(ctx context.Context, e *Entry) IndexFuture {
+// an core.IndexFuture will be returned that the client can use to get the sequence number of this entry.
+func (d *inMemoryDedupe) add(ctx context.Context, e *core.Entry) core.IndexFuture {
 	id := string(e.Identity())
 
-	f := sync.OnceValue(func() IndexFuture {
+	f := sync.OnceValue(func() core.IndexFuture {
 		// However many calls with the same entry come in and are deduped, we should only call delegate
 		// once for each unique entry:
 		df := d.delegate(ctx, e)
 
-		return func() (Index, error) {
+		return func() (core.Index, error) {
 			idx, err := df()
 			// If things went wrong we shouldn't cache the error, but rather let the request be retried as the error
 			// may be transient (including ErrPushback).
@@ -78,8 +79,8 @@ func (d *inMemoryDedupe) add(ctx context.Context, e *Entry) IndexFuture {
 	// if we've seen this entry before, discard our f and replace
 	// with the one we created last time, otherwise store f against id.
 	if prev, ok, _ := d.cache.PeekOrAdd(id, f); ok {
-		f = func() IndexFuture {
-			return func() (Index, error) {
+		f = func() core.IndexFuture {
+			return func() (core.Index, error) {
 				i, err := prev()()
 				i.IsDup = true
 				return i, err

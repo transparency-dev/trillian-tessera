@@ -42,6 +42,7 @@ import (
 	"github.com/transparency-dev/tessera"
 	"github.com/transparency-dev/tessera/api"
 	"github.com/transparency-dev/tessera/api/layout"
+	"github.com/transparency-dev/tessera/core"
 	storage "github.com/transparency-dev/tessera/storage/internal"
 	"k8s.io/klog/v2"
 )
@@ -125,9 +126,9 @@ func TestMySQLSequencerAssignEntries(t *testing.T) {
 
 	want := uint64(0)
 	for chunks := range 10 {
-		entries := []*tessera.Entry{}
+		entries := []*core.Entry{}
 		for i := range 10 + chunks {
-			entries = append(entries, tessera.NewEntry(fmt.Appendf(nil, "item %d/%d", chunks, i)))
+			entries = append(entries, core.NewEntry(fmt.Appendf(nil, "item %d/%d", chunks, i)))
 		}
 		if err := seq.assignEntries(ctx, entries); err != nil {
 			t.Fatalf("assignEntries: %v", err)
@@ -181,16 +182,16 @@ func TestMySQLSequencerPushback(t *testing.T) {
 				t.Fatalf("newMySQLSequencer: %v", err)
 			}
 			// Set up the test scenario with the configured number of initial outstanding entries
-			entries := []*tessera.Entry{}
+			entries := []*core.Entry{}
 			for i := range test.initialEntries {
-				entries = append(entries, tessera.NewEntry(fmt.Appendf(nil, "initial item %d", i)))
+				entries = append(entries, core.NewEntry(fmt.Appendf(nil, "initial item %d", i)))
 			}
 			if err := seq.assignEntries(ctx, entries); err != nil {
 				t.Fatalf("initial assignEntries: %v", err)
 			}
 
 			// Now perform the test with a single additional entry to check for pushback
-			entries = []*tessera.Entry{tessera.NewEntry([]byte("additional"))}
+			entries = []*core.Entry{core.NewEntry([]byte("additional"))}
 			err = seq.assignEntries(ctx, entries)
 			if gotPushback := errors.Is(err, tessera.ErrPushback); gotPushback != test.wantPushback {
 				t.Fatalf("assignEntries: got pushback %t (%v), want pushback: %t", gotPushback, err, test.wantPushback)
@@ -218,9 +219,9 @@ func TestMySQLSequencerRoundTrip(t *testing.T) {
 	seq := 0
 	wantEntries := []storage.SequencedEntry{}
 	for chunks := range 10 {
-		entries := []*tessera.Entry{}
+		entries := []*core.Entry{}
 		for range 10 + chunks {
-			e := tessera.NewEntry(fmt.Appendf(nil, "item %d", seq))
+			e := core.NewEntry(fmt.Appendf(nil, "item %d", seq))
 			entries = append(entries, e)
 			wantEntries = append(wantEntries, storage.SequencedEntry{
 				BundleData: e.MarshalBundleData(uint64(seq)),
@@ -317,7 +318,7 @@ func makeBundle(t *testing.T, idx uint64, size int) []byte {
 		size = layout.EntryBundleWidth
 	}
 	for i := range size {
-		e := tessera.NewEntry(fmt.Appendf(nil, "%d:%d", idx, i))
+		e := core.NewEntry(fmt.Appendf(nil, "%d:%d", idx, i))
 		if _, err := r.Write(e.MarshalBundleData(uint64(i))); err != nil {
 			t.Fatalf("MarshalBundleEntry: %v", err)
 		}

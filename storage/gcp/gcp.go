@@ -52,6 +52,7 @@ import (
 	"github.com/transparency-dev/tessera"
 	"github.com/transparency-dev/tessera/api"
 	"github.com/transparency-dev/tessera/api/layout"
+	"github.com/transparency-dev/tessera/core"
 	"github.com/transparency-dev/tessera/internal/migrate"
 	"github.com/transparency-dev/tessera/internal/otel"
 	"github.com/transparency-dev/tessera/internal/stream"
@@ -97,7 +98,7 @@ type Storage struct {
 // TODO(al): rename this as it's really more of a coordination for the log.
 type sequencer interface {
 	// assignEntries should durably allocate contiguous index numbers to the provided entries.
-	assignEntries(ctx context.Context, entries []*tessera.Entry) error
+	assignEntries(ctx context.Context, entries []*core.Entry) error
 	// consumeEntries should call the provided function with up to limit previously sequenced entries.
 	// If the call to consumeFunc returns no error, the entries should be considered to have been consumed.
 	// If any entries were successfully consumed, the implementation should also return true; this
@@ -262,7 +263,7 @@ type Appender struct {
 }
 
 // Add is the entrypoint for adding entries to a sequencing log.
-func (a *Appender) Add(ctx context.Context, e *tessera.Entry) tessera.IndexFuture {
+func (a *Appender) Add(ctx context.Context, e *core.Entry) core.IndexFuture {
 	ctx, span := tracer.Start(ctx, "tessera.storage.gcp.Add")
 	defer span.End()
 
@@ -697,7 +698,7 @@ func (s *spannerCoordinator) checkDataCompatibility(ctx context.Context) error {
 // Entries are allocated contiguous indices, in the order in which they appear in the entries parameter.
 // This is achieved by storing the passed-in entries in the Seq table in Spanner, keyed by the
 // index assigned to the first entry in the batch.
-func (s *spannerCoordinator) assignEntries(ctx context.Context, entries []*tessera.Entry) error {
+func (s *spannerCoordinator) assignEntries(ctx context.Context, entries []*core.Entry) error {
 	ctx, span := tracer.Start(ctx, "tessera.storage.gcp.assignEntries")
 	defer span.End()
 

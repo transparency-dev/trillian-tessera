@@ -25,6 +25,7 @@ import (
 
 	"github.com/transparency-dev/tessera"
 	"github.com/transparency-dev/tessera/api"
+	"github.com/transparency-dev/tessera/core"
 	aws "github.com/transparency-dev/tessera/storage/aws/antispam"
 	"github.com/transparency-dev/tessera/testonly"
 	"k8s.io/klog/v2"
@@ -71,9 +72,9 @@ func TestAntispam(t *testing.T) {
 		t.Error("expected initial position to be 0")
 	}
 
-	var idx1 tessera.Index
-	idxf1 := addFn(ctx, tessera.NewEntry([]byte("one")))
-	idxf2 := addFn(ctx, tessera.NewEntry([]byte("two")))
+	var idx1 core.Index
+	idxf1 := addFn(ctx, core.NewEntry([]byte("one")))
+	idxf2 := addFn(ctx, core.NewEntry([]byte("two")))
 	if idx1, err = idxf1(); err != nil {
 		t.Fatal(err)
 	}
@@ -87,7 +88,7 @@ func TestAntispam(t *testing.T) {
 			break
 		}
 	}
-	dupIdx, err := addFn(ctx, tessera.NewEntry([]byte("one")))()
+	dupIdx, err := addFn(ctx, core.NewEntry([]byte("one")))()
 	if err != nil {
 		t.Error(err)
 	}

@@ -27,6 +27,7 @@ import (
 
 	"github.com/dgraph-io/badger/v4"
 	"github.com/transparency-dev/tessera"
+	"github.com/transparency-dev/tessera/core"
 	"github.com/transparency-dev/tessera/internal/otel"
 	"github.com/transparency-dev/tessera/internal/stream"
 	"k8s.io/klog/v2"
@@ -152,9 +153,9 @@ func (d *AntispamStorage) index(ctx context.Context, h []byte) (*uint64, error) 
 
 // Decorator returns a function which will wrap an underlying Add delegate with
 // code to dedup against the stored data.
-func (d *AntispamStorage) Decorator() func(f tessera.AddFn) tessera.AddFn {
-	return func(delegate tessera.AddFn) tessera.AddFn {
-		return func(ctx context.Context, e *tessera.Entry) tessera.IndexFuture {
+func (d *AntispamStorage) Decorator() func(f core.AddFn) core.AddFn {
+	return func(delegate core.AddFn) core.AddFn {
+		return func(ctx context.Context, e *core.Entry) core.IndexFuture {
 			ctx, span := tracer.Start(ctx, "tessera.antispam.badger.Add")
 			defer span.End()
 
@@ -168,14 +169,14 @@ func (d *AntispamStorage) Decorator() func(f tessera.AddFn) tessera.AddFn {
 				//
 				// We may decide in the future that serving duplicate reads is more important than catching up as quickly
 				// as possible, in which case we'd move this check down below the call to index.
-				return func() (tessera.Index, error) { return tessera.Index{}, tessera.ErrPushback }
+				return func() (core.Index, error) { return core.Index{}, tessera.ErrPushback }
 			}
 			idx, err := d.index(ctx, e.Identity())
 			if err != nil {
-				return func() (tessera.Index, error) { return tessera.Index{}, err }
+				return func() (core.Index, error) { return core.Index{}, err }
 			}
 			if idx != nil {
-				return func() (tessera.Index, error) { return tessera.Index{Index: *idx, IsDup: true}, nil }
+				return func() (core.Index, error) { return core.Index{Index: *idx, IsDup: true}, nil }
 			}
 
 			return delegate(ctx, e)
