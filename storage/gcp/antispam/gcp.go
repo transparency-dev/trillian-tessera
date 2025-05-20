@@ -273,7 +273,7 @@ func (f *follower) Follow(ctx context.Context, lr stream.Streamer) {
 				// start reading from:
 				if next == nil {
 					span.AddEvent("Start streaming entries")
-					next, stop = iter.Pull2(stream.NewEntryIterator(lr.StreamEntries(ctx, followFrom, size-followFrom), f.bundleHasher))
+					next, stop = iter.Pull2(stream.Entries(lr.StreamEntries(ctx, followFrom, size-followFrom), f.bundleHasher))
 				}
 
 				if curIndex == followFrom && curEntries != nil {

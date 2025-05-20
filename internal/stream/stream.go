@@ -39,21 +39,16 @@ type Bundle struct {
 	Data []byte
 }
 
-// StreamAdaptor uses the provided function to produce a stream of entry bundles accesible via the returned functions.
+// EntryBundles produces an iterator which returns a stream of Bundle structs which cover the requested range of entries in their natural order in the log.
 //
-// Entry bundles are retuned strictly in order via consecutive calls to the returned next func.
-// If the adaptor encounters an error while reading an entry bundle, the encountered error will be returned by the corresponding call to next,
-// and the stream will be stopped - further calls to next will continue to return errors.
-//
-// When the caller has finished consuming entry bundles (either because of an error being returned via next, or having consumed all the bundles it needs),
-// it MUST call the returned cancel function to release resources.
+// If the adaptor encounters an error while reading an entry bundle, the encountered error will be returned via the iterator.
 //
 // This adaptor is optimised for the case where calling getBundle has some appreciable latency, and works
 // around that by maintaining a read-ahead cache of subsequent bundles which is populated a number of parallel
 // requests to getBundle. The request parallelism is set by the value of the numWorkers paramemter, which can be tuned
 // to balance throughput against consumption of resources, but such balancing needs to be mindful of the nature of the
 // source infrastructure, and how concurrent requests affect performance (e.g. GCS buckets vs. files on a single disk).
-func StreamAdaptor(ctx context.Context, numWorkers uint, getSize GetTreeSizeFn, getBundle GetBundleFn, fromEntry uint64, N uint64) iter.Seq2[Bundle, error] {
+func EntryBundles(ctx context.Context, numWorkers uint, getSize GetTreeSizeFn, getBundle GetBundleFn, fromEntry uint64, N uint64) iter.Seq2[Bundle, error] {
 	ctx, span := tracer.Start(ctx, "tessera.storage.StreamAdaptor")
 	defer span.End()
 
@@ -92,7 +87,7 @@ func StreamAdaptor(ctx context.Context, numWorkers uint, getSize GetTreeSizeFn, 
 			tokens <- struct{}{}
 		}
 
-		klog.V(1).Infof("StreamAdaptor: streaming [%d, %d)", fromEntry, fromEntry+N)
+		klog.V(1).Infof("stream.EntryBundles: streaming [%d, %d)", fromEntry, fromEntry+N)
 
 		// For each bundle, pop a future into the bundles channel and kick off an async request
 		// to resolve it.
@@ -120,7 +115,7 @@ func StreamAdaptor(ctx context.Context, numWorkers uint, getSize GetTreeSizeFn, 
 			bundles <- f
 		}
 
-		klog.V(1).Infof("StreamAdaptor: exiting")
+		klog.V(1).Infof("stream.EntryBundles: exiting")
 	}()
 
 	return func(yield func(Bundle, error) bool) {
@@ -130,7 +125,7 @@ func StreamAdaptor(ctx context.Context, numWorkers uint, getSize GetTreeSizeFn, 
 				return
 			}
 		}
-		klog.V(1).Infof("StreamAdaptor: iter done")
+		klog.V(1).Infof("stream.EntryBundles: iter done")
 	}
 }
 
@@ -142,10 +137,10 @@ type Entry[T any] struct {
 	Entry T
 }
 
-// NewEntryIterator creates a new stream reader which uses the provided bundleFn to process bundles into processed entries of type T.
+// Entries creates a new stream reader which uses the provided bundleFn to process bundles into processed entries of type T.
 //
 // Different bundleFn implementations can be provided to return raw entry bytes, parsed entry structs, or derivations of entries (e.g. hashes) as needed.
-func NewEntryIterator[T any](bundles iter.Seq2[Bundle, error], bundleFn func([]byte) ([]T, error)) iter.Seq2[Entry[T], error] {
+func Entries[T any](bundles iter.Seq2[Bundle, error], bundleFn func([]byte) ([]T, error)) iter.Seq2[Entry[T], error] {
 	return func(yield func(Entry[T], error) bool) {
 		for b, err := range bundles {
 			if err != nil {

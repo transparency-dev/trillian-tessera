@@ -211,7 +211,7 @@ func (l *logResourceStorage) StreamEntries(ctx context.Context, startEntry, N ui
 	// e.g. NVME will likely respond well to some concurrency, HDD less so.
 	// For now, we'll just stick to a safe default.
 	numWorkers := uint(1)
-	return stream.StreamAdaptor(ctx, numWorkers, l.IntegratedSize, l.ReadEntryBundle, startEntry, N)
+	return stream.EntryBundles(ctx, numWorkers, l.IntegratedSize, l.ReadEntryBundle, startEntry, N)
 }
 
 // sequenceBatch writes the entries from the provided batch into the entry bundle files of the log.

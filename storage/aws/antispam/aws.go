@@ -311,7 +311,7 @@ func (f *follower) Follow(ctx context.Context, lr stream.Streamer) {
 				// If this is the first time around the loop we need to start the stream of entries now that we know where we want to
 				// start reading from:
 				if next == nil {
-					next, stop = iter.Pull2(stream.NewEntryIterator(lr.StreamEntries(ctx, followFrom, size-followFrom), f.bundleHasher))
+					next, stop = iter.Pull2(stream.Entries(lr.StreamEntries(ctx, followFrom, size-followFrom), f.bundleHasher))
 				}
 
 				bs := uint64(f.as.opts.MaxBatchSize)
