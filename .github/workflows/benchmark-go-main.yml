@@ -30,7 +30,7 @@ jobs:
           go-version-file: go.mod
 
       - name: Run benchmark
-        run: set -o pipefail; go test ./... -benchmem -run=^$ -bench . | tee output.txt
+        run: set -o pipefail; echo "CPU info ${{ steps.system-info.outputs.cpu-model }}"; go test ./... -benchmem -run=^$ -bench . | tee output.txt
 
       - name: Store benchmark result
         uses: benchmark-action/github-action-benchmark@d48d326b4ca9ba73ca0cd0d59f108f9e02a381c7 # v1.20.4
