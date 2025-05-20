@@ -23,38 +23,17 @@ import (
 
 	"github.com/transparency-dev/tessera/api/layout"
 	"github.com/transparency-dev/tessera/client"
+	"github.com/transparency-dev/tessera/internal/migrate"
 	"github.com/transparency-dev/tessera/internal/stream"
 	"golang.org/x/sync/errgroup"
 	"k8s.io/klog/v2"
 )
 
-type MigrationWriter interface {
-	// SetEntryBundle stores the provided serialised entry bundle at the location implied by the provided
-	// entry bundle index and partial size.
-	//
-	// Bundles may be set in any order (not just consecutively), and the implementation should integrate
-	// them into the local tree in the most efficient way possible.
-	//
-	// Writes should be idempotent; repeated calls to set the same bundle with the same data should not
-	// return an error.
-	SetEntryBundle(ctx context.Context, idx uint64, partial uint8, bundle []byte) error
-	// AwaitIntegration should block until the local integrated tree has grown to the provided size,
-	// and should return the locally calculated root hash derived from the integration of the contents of
-	// entry bundles set using SetEntryBundle above.
-	AwaitIntegration(ctx context.Context, size uint64) ([]byte, error)
-	// IntegratedSize returns the current size of the locally integrated log.
-	IntegratedSize(ctx context.Context) (uint64, error)
-}
-
-// UnbundlerFunc is a function which knows how to turn a serialised entry bundle into a slice of
-// []byte representing each of the entries within the bundle.
-type UnbundlerFunc func(entryBundle []byte) ([][]byte, error)
-
 // NewMigrationTarget returns a MigrationTarget, which allows a personality to "import" a C2SP
 // tlog-tiles or static-ct compliant log into a Tessera instance.
 func NewMigrationTarget(ctx context.Context, d Driver, opts *MigrationOptions) (*MigrationTarget, error) {
 	type migrateLifecycle interface {
-		MigrationWriter(context.Context, *MigrationOptions) (MigrationWriter, LogReader, error)
+		MigrationWriter(context.Context, *MigrationOptions) (migrate.MigrationWriter, LogReader, error)
 	}
 	lc, ok := d.(migrateLifecycle)
 	if !ok {
@@ -114,7 +93,7 @@ func (o *MigrationOptions) WithAntispam(as Antispam) *MigrationOptions {
 
 // MigrationTarget handles the process of migrating/importing a source log into a Tessera instance.
 type MigrationTarget struct {
-	writer    MigrationWriter
+	writer    migrate.MigrationWriter
 	reader    LogReader
 	followers []stream.Follower
 }

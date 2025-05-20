@@ -33,6 +33,7 @@ import (
 	"github.com/transparency-dev/tessera"
 	"github.com/transparency-dev/tessera/api"
 	"github.com/transparency-dev/tessera/api/layout"
+	"github.com/transparency-dev/tessera/internal/migrate"
 	"github.com/transparency-dev/tessera/internal/stream"
 	storage "github.com/transparency-dev/tessera/storage/internal"
 	"k8s.io/klog/v2"
@@ -617,7 +618,7 @@ func (s *Storage) stat(p string) (os.FileInfo, error) {
 }
 
 // MigrationWriter creates a new POSIX storage for the MigrationTarget lifecycle mode.
-func (s *Storage) MigrationWriter(ctx context.Context, opts *tessera.MigrationOptions) (tessera.MigrationWriter, tessera.LogReader, error) {
+func (s *Storage) MigrationWriter(ctx context.Context, opts *tessera.MigrationOptions) (migrate.MigrationWriter, tessera.LogReader, error) {
 	r := &MigrationStorage{
 		s: s,
 		logStorage: &logResourceStorage{
@@ -636,11 +637,11 @@ func (s *Storage) MigrationWriter(ctx context.Context, opts *tessera.MigrationOp
 type MigrationStorage struct {
 	s            *Storage
 	logStorage   *logResourceStorage
-	bundleHasher tessera.UnbundlerFunc
+	bundleHasher func(entryBundle []byte) ([][]byte, error)
 	curSize      uint64
 }
 
-var _ tessera.MigrationWriter = &MigrationStorage{}
+var _ migrate.MigrationWriter = &MigrationStorage{}
 
 func (m *MigrationStorage) AwaitIntegration(ctx context.Context, sourceSize uint64) ([]byte, error) {
 	t := time.NewTicker(time.Second)
