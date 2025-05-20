@@ -46,10 +46,6 @@ type MigrationWriter interface {
 	IntegratedSize(ctx context.Context) (uint64, error)
 }
 
-// UnbundlerFunc is a function which knows how to turn a serialised entry bundle into a slice of
-// []byte representing each of the entries within the bundle.
-type UnbundlerFunc func(entryBundle []byte) ([][]byte, error)
-
 // NewMigrationTarget returns a MigrationTarget, which allows a personality to "import" a C2SP
 // tlog-tiles or static-ct compliant log into a Tessera instance.
 func NewMigrationTarget(ctx context.Context, d Driver, opts *MigrationOptions) (*MigrationTarget, error) {

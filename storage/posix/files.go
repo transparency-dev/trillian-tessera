@@ -636,7 +636,7 @@ func (s *Storage) MigrationWriter(ctx context.Context, opts *tessera.MigrationOp
 type MigrationStorage struct {
 	s            *Storage
 	logStorage   *logResourceStorage
-	bundleHasher tessera.UnbundlerFunc
+	bundleHasher func(entryBundle []byte) ([][]byte, error)
 	curSize      uint64
 }
 
