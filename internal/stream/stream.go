@@ -17,6 +17,7 @@ package stream
 
 import (
 	"context"
+	"fmt"
 	"iter"
 
 	"github.com/transparency-dev/tessera/api/layout"
@@ -91,14 +92,14 @@ func StreamAdaptor(ctx context.Context, numWorkers uint, getSize GetTreeSizeFn, 
 			tokens <- struct{}{}
 		}
 
-		klog.V(1).Infof("StreamAdaptor: streaming from %d to %d", fromEntry, fromEntry+N)
+		klog.V(1).Infof("StreamAdaptor: streaming [%d, %d)", fromEntry, fromEntry+N)
 
 		// For each bundle, pop a future into the bundles channel and kick off an async request
 		// to resolve it.
 		for ri := range layout.Range(fromEntry, fromEntry+N, treeSize) {
 			select {
 			case <-exit:
-				break
+				return
 			case <-tokens:
 				// We'll return a token below, once the bundle is fetched _and_ is being yielded.
 			}
@@ -119,7 +120,7 @@ func StreamAdaptor(ctx context.Context, numWorkers uint, getSize GetTreeSizeFn, 
 			bundles <- f
 		}
 
-		klog.Infof("StreamAdaptor: exiting")
+		klog.V(1).Infof("StreamAdaptor: exiting")
 	}()
 
 	return func(yield func(Bundle, error) bool) {
@@ -129,7 +130,7 @@ func StreamAdaptor(ctx context.Context, numWorkers uint, getSize GetTreeSizeFn, 
 				return
 			}
 		}
-		klog.Infof("iter done")
+		klog.V(1).Infof("StreamAdaptor: iter done")
 	}
 }
 
@@ -156,6 +157,11 @@ func NewEntryIterator[T any](bundles iter.Seq2[Bundle, error], bundleFn func([]b
 				yield(Entry[T]{}, err)
 				return
 			}
+			if len(es) <= int(b.RangeInfo.First) {
+				yield(Entry[T]{}, fmt.Errorf("logic error: First is %d but only %d entries", b.RangeInfo.First, len(es)))
+				return
+			}
+			es = es[b.RangeInfo.First:]
 			if len(es) > int(b.RangeInfo.N) {
 				es = es[:b.RangeInfo.N]
 			}
