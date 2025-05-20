@@ -346,7 +346,7 @@ func (s *Storage) NextIndex(ctx context.Context) (uint64, error) {
 // index.
 //
 // This is part of the tessera LogReader contract.
-func (s *Storage) StreamEntries(ctx context.Context, fromEntry uint64) iter.Seq2[stream.Bundle, error] {
+func (s *Storage) StreamEntries(ctx context.Context, startEntry, N uint64) iter.Seq2[stream.Bundle, error] {
 	type riBundle struct {
 		ri  layout.RangeInfo
 		b   []byte
@@ -359,119 +359,72 @@ func (s *Storage) StreamEntries(ctx context.Context, fromEntry uint64) iter.Seq2
 	// This happens when the returned cancel func is called.
 	done := make(chan struct{})
 
-	// Kick off a background goroutine which fills c.
 	go func() {
-		var rangeInfoNext func() (layout.RangeInfo, bool)
-		var rangeInfoCancel func()
-		var rows *sql.Rows
-		nextEntry := fromEntry
-
-		// reset should be called if we detect that something has gone wrong and/or we need to re-start our streaming.
-		reset := func() {
-			if rows != nil {
-				_ = rows.Close()
-				rows = nil
-			}
-			if rangeInfoCancel != nil {
-				rangeInfoCancel()
-				rangeInfoCancel = nil
-				rangeInfoNext = nil
-			}
+		defer close(c)
+		ts, err := s.readTreeState(ctx)
+		if err != nil {
+			klog.Warningf("Failed to read tree state: %v", err)
+			c <- riBundle{err: err}
+			return
 		}
 
-		sleep := time.Duration(0)
-	tryAgain:
-		for {
-			// We'll keep going until the context is done, but don't want to hammer the DB when we've
-			// streamed all the current entries and are waiting for the tree to grow.
+		rows, err := s.db.QueryContext(ctx, streamTiledLeavesSQL, startEntry/layout.EntryBundleWidth)
+		if err != nil {
+			klog.Warningf("Failed to read entry bundle @%d: %v", startEntry/layout.EntryBundleWidth, err)
+			c <- riBundle{err: err}
+			return
+		}
+		defer func() {
+			if err := rows.Close(); err != nil {
+				klog.Warningf("Failed to Close rows: %v", err)
+			}
+		}()
+
+		nextRange, stopRange := iter.Pull(layout.Range(startEntry, N, ts.size))
+		defer stopRange()
+
+		for rows.Next() {
 			select {
-			case <-ctx.Done():
-				return
 			case <-done:
-				close(c)
 				return
-			case <-time.After(sleep):
-				// We avoid pausing unnecessarily the first time we enter the loop by initialising sleep to zero, but
-				// subsequent iterations around the loop _should_ sleep to avoid hammering the DB when we've caught up with
-				// all the entries it contains.
-				sleep = time.Second
+			default:
 			}
 
-			// Check if we need to (re-) setup the data stream, and do it if so.
-			if rangeInfoNext == nil {
-				// We need to know what the current local tree size is.
-				ts, err := s.readTreeState(ctx)
-				if err != nil {
-					klog.Warningf("Failed to read tree state: %v", err)
-					reset()
-					continue
-				}
-				klog.Infof("StreamEntries scanning %d -> %d", fromEntry, ts.size)
-				// And we need the corresponding range info which tell us the "shape" of the entry bundles.
-				rangeInfoNext, rangeInfoCancel = iter.Pull(layout.Range(nextEntry, ts.size, ts.size))
-				nextBundle := nextEntry / layout.EntryBundleWidth
-				// Finally, we need the actual raw entry bundles themselves.
-				rows, err = s.db.QueryContext(ctx, streamTiledLeavesSQL, nextBundle)
-				if err != nil {
-					klog.Warningf("Failed to read entry bundle @%d: %v", nextBundle, err)
-					reset()
-					continue
-				}
+			ri, ok := nextRange()
+			if !ok {
+				return
 			}
 
 			// Now we can iterate over the streams we've set up above, and turn the data into the right form
 			// for sending over c, to be returned to the caller via the next func.
 			var idx, size uint64
 			var data []byte
-			for rows.Next() {
-				// Parse a bundle from the DB.
-				if err := rows.Scan(&idx, &size, &data); err != nil {
-					reset()
-					c <- riBundle{err: err}
-					continue tryAgain
-				}
-				// And grab the corresponding range info which describes it.
-				ri, ok := rangeInfoNext()
-				if !ok {
-					reset()
-					continue tryAgain
-				}
-				// The bundle data and the range info MUST refer to the same entry bundle index, so assert that they do.
-				if idx != ri.Index {
-					// Something's gone wonky - our rangeinfo and entry bundle streams are no longer lined up.
-					// Bail and set up the streams again.
-					klog.Infof("Out of sync, got entrybundle index %d, but rangeinfo for index %d", idx, ri.Index)
-					reset()
-					continue tryAgain
-				}
-				// All good, so queue up the data to be returned via calls to next.
-				klog.V(1).Infof("Sending %v", ri)
-				c <- riBundle{ri: ri, b: data}
-				nextEntry += uint64(ri.N)
+			// Parse a bundle from the DB.
+			if err := rows.Scan(&idx, &size, &data); err != nil {
+				c <- riBundle{err: err}
+				return
 			}
-			klog.V(1).Infof("StreamEntries: no more entry bundle rows, will retry")
-			// We have no more rows coming from the entrybundle table of the DB, so go around again and re-check
-			// the tree size in case it's grown since we started the query.
-			reset()
+			// The bundle data and the range info MUST refer to the same entry bundle index, so assert that they do.
+			if idx != ri.Index {
+				// Something's gone wonky - our rangeinfo and entry bundle streams are no longer lined up.
+				// Bail and set up the streams again.
+				klog.Infof("Out of sync, got entrybundle index %d, but rangeinfo for index %d", idx, ri.Index)
+				return
+			}
+			// All good, so queue up the data to be returned via calls to next.
+			klog.V(1).Infof("Sending %v", ri)
+			c <- riBundle{ri: ri, b: data}
 		}
+		klog.V(1).Infof("StreamEntries: no more entry bundle rows, exiting")
 	}()
 
-	// This is the implementation of the next function we'll return to the caller.
-	// They'll call this repeatedly to consume entries from c.
-	next = func() (layout.RangeInfo, []byte, error) {
-		select {
-		case <-ctx.Done():
-			return layout.RangeInfo{}, nil, ctx.Err()
-		case r, ok := <-c:
-			if !ok {
-				return layout.RangeInfo{}, nil, errors.New("no more entries")
+	return func(yield func(stream.Bundle, error) bool) {
+		defer close(done)
+		for r := range c {
+			if !yield(stream.Bundle{RangeInfo: r.ri, Data: r.b}, r.err) {
+				return
 			}
-			return r.ri, r.b, r.err
 		}
-	}
-
-	return next, func() {
-		close(done)
 	}
 }
 
