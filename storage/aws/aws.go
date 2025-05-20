@@ -635,7 +635,7 @@ func (lr *logResourceStore) NextIndex(ctx context.Context) (uint64, error) {
 	return lr.nextIndex(ctx)
 }
 
-func (lr *logResourceStore) StreamEntries(ctx context.Context, startEntry uint64, N uint64) iter.Seq2[stream.Bundle, error] {
+func (lr *logResourceStore) StreamEntries(ctx context.Context, startEntry, N uint64) iter.Seq2[stream.Bundle, error] {
 	klog.Infof("StreamEntries [%d, %d)", startEntry, startEntry+N)
 
 	// TODO(al): Consider making this configurable.
