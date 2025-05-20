@@ -55,5 +55,10 @@ type Streamer interface {
 	// entries into account.
 	NextIndex(ctx context.Context) (uint64, error)
 
+	// StreamEntries returns an iterator over the range of requested entries.
+	//
+	// The iterator will yield either a Bundle struct or an error. The Bundle contains the raw serialised form
+	// of the entry bundle, along with a layout.RangeInfo struct which describes which of the entries in the
+	// entry bundle are part of the requested range.
 	StreamEntries(ctx context.Context, startEntryIdx, N uint64) iter.Seq2[Bundle, error]
 }
