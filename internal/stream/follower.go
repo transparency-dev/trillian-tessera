@@ -55,5 +55,5 @@ type Streamer interface {
 	// entries into account.
 	NextIndex(ctx context.Context) (uint64, error)
 
-	StreamEntries(ctx context.Context, fromEntryIdx uint64) iter.Seq2[Bundle, error]
+	StreamEntries(ctx context.Context, startEntryIdx, N uint64) iter.Seq2[Bundle, error]
 }

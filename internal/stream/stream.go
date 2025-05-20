@@ -19,7 +19,6 @@ import (
 	"context"
 	"fmt"
 	"iter"
-	"time"
 
 	"github.com/transparency-dev/tessera/api/layout"
 	"k8s.io/klog/v2"
@@ -54,7 +53,7 @@ type Bundle struct {
 // requests to getBundle. The request parallelism is set by the value of the numWorkers paramemter, which can be tuned
 // to balance throughput against consumption of resources, but such balancing needs to be mindful of the nature of the
 // source infrastructure, and how concurrent requests affect performance (e.g. GCS buckets vs. files on a single disk).
-func StreamAdaptor(ctx context.Context, numWorkers uint, getSize GetTreeSizeFn, getBundle GetBundleFn, fromEntry uint64) iter.Seq2[Bundle, error] {
+func StreamAdaptor(ctx context.Context, numWorkers uint, getSize GetTreeSizeFn, getBundle GetBundleFn, fromEntry uint64, N uint64) iter.Seq2[Bundle, error] {
 	ctx, span := tracer.Start(ctx, "tessera.storage.StreamAdaptor")
 	defer span.End()
 
@@ -81,61 +80,47 @@ func StreamAdaptor(ctx context.Context, numWorkers uint, getSize GetTreeSizeFn, 
 
 		defer close(bundles)
 
+		treeSize, err := getSize(ctx)
+		if err != nil {
+			bundles <- func() bundleOrErr { return bundleOrErr{err: err} }
+			return
+		}
+
 		// We'll limit ourselves to numWorkers worth of on-going work using these tokens:
 		tokens := make(chan struct{}, numWorkers)
 		for range numWorkers {
 			tokens <- struct{}{}
 		}
 
-		// We'll keep looping around until told to exit.
-		for {
-			// Check afresh what size the tree is so we can keep streaming entries as the tree grows.
-			treeSize, err := getSize(ctx)
-			if err != nil {
-				klog.Warningf("StreamAdaptor: failed to get current tree size: %v", err)
-				continue
-			}
-			klog.V(1).Infof("StreamAdaptor: streaming from %d to %d", fromEntry, treeSize)
+		klog.V(1).Infof("StreamAdaptor: streaming from %d to %d", fromEntry, fromEntry+N)
 
-			// For each bundle, pop a future into the bundles channel and kick off an async request
-			// to resolve it.
-		rangeLoop:
-			for ri := range layout.Range(fromEntry, treeSize, treeSize) {
-				select {
-				case <-exit:
-					break rangeLoop
-				case <-tokens:
-					// We'll return a token below, once the bundle is fetched _and_ is being yielded.
-				}
-
-				c := make(chan bundleOrErr, 1)
-				go func(ri layout.RangeInfo) {
-					b, err := getBundle(ctx, ri.Index, ri.Partial)
-					c <- bundleOrErr{b: Bundle{RangeInfo: ri, Data: b}, err: err}
-				}(ri)
-
-				f := func() bundleOrErr {
-					b := <-c
-					// We're about to yield a value, so we can now return the token and unblock another fetch.
-					tokens <- struct{}{}
-					return b
-				}
-
-				bundles <- f
-			}
-
-			// Next loop, carry on from where we got to.
-			fromEntry = treeSize
-
+		// For each bundle, pop a future into the bundles channel and kick off an async request
+		// to resolve it.
+		for ri := range layout.Range(fromEntry, fromEntry+N, treeSize) {
 			select {
 			case <-exit:
-				klog.Infof("StreamAdaptor: exiting")
-				return
-			case <-time.After(time.Second):
-				// We've caught up with and hit the end of the tree, so wait a bit before looping to avoid busy waiting.
-				// TODO(al): could consider a shallow channel of sizes here.
+				break
+			case <-tokens:
+				// We'll return a token below, once the bundle is fetched _and_ is being yielded.
 			}
+
+			c := make(chan bundleOrErr, 1)
+			go func(ri layout.RangeInfo) {
+				b, err := getBundle(ctx, ri.Index, ri.Partial)
+				c <- bundleOrErr{b: Bundle{RangeInfo: ri, Data: b}, err: err}
+			}(ri)
+
+			f := func() bundleOrErr {
+				b := <-c
+				// We're about to yield a value, so we can now return the token and unblock another fetch.
+				tokens <- struct{}{}
+				return b
+			}
+
+			bundles <- f
 		}
+
+		klog.Infof("StreamAdaptor: exiting")
 	}()
 
 	return func(yield func(Bundle, error) bool) {

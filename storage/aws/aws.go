@@ -635,14 +635,14 @@ func (lr *logResourceStore) NextIndex(ctx context.Context) (uint64, error) {
 	return lr.nextIndex(ctx)
 }
 
-func (lr *logResourceStore) StreamEntries(ctx context.Context, fromEntry uint64) iter.Seq2[stream.Bundle, error] {
-	klog.Infof("StreamEntries from %d", fromEntry)
+func (lr *logResourceStore) StreamEntries(ctx context.Context, startEntry uint64, N uint64) iter.Seq2[stream.Bundle, error] {
+	klog.Infof("StreamEntries [%d, %d)", startEntry, startEntry+N)
 
 	// TODO(al): Consider making this configurable.
 	// Reads to S3 should be able to go highly concurrent without issue, but some performance testing should probably be undertaken.
 	// 10 works well for GCP, so start with that as a default.
 	numWorkers := uint(10)
-	return stream.StreamAdaptor(ctx, numWorkers, lr.IntegratedSize, lr.ReadEntryBundle, fromEntry)
+	return stream.StreamAdaptor(ctx, numWorkers, lr.IntegratedSize, lr.ReadEntryBundle, startEntry, N)
 }
 
 // get returns the requested object.
