@@ -388,21 +388,16 @@ func TestStreamEntries(t *testing.T) {
 	// We'll first try to stream up to logSize1, then when we reach it we'll
 	// make the tree appear to grow to logSize2 to test resuming.
 	seenEntries := uint64(0)
-	next, stop := s.StreamEntries(ctx, 0)
 
-	for {
-		gotRI, _, gotErr := next()
+	for gotEntry, gotErr := range s.StreamEntries(ctx, 0, uint64(logSize2)) {
 		if gotErr != nil {
-			if errors.Is(gotErr, tessera.ErrNoMoreEntries) {
-				break
-			}
 			t.Fatalf("gotErr after %d: %v", seenEntries, gotErr)
 		}
-		if e := gotRI.Index*layout.EntryBundleWidth + uint64(gotRI.First); e != seenEntries {
+		if e := gotEntry.RangeInfo.Index*layout.EntryBundleWidth + uint64(gotEntry.RangeInfo.First); e != seenEntries {
 			t.Fatalf("got idx %d, want %d", e, seenEntries)
 		}
-		seenEntries += uint64(gotRI.N)
-		t.Logf("got RI %d / %d", gotRI.Index, seenEntries)
+		seenEntries += uint64(gotEntry.RangeInfo.N)
+		t.Logf("got RI %d / %d", gotEntry.RangeInfo.Index, seenEntries)
 
 		switch seenEntries {
 		case uint64(logSize1):
@@ -412,9 +407,6 @@ func TestStreamEntries(t *testing.T) {
 			t.Log("Reached logSize, growing tree")
 			logSize.Store(uint64(logSize2))
 			time.Sleep(time.Second)
-		case uint64(logSize2):
-			// We've seen all the entries we created, stop the iterator
-			stop()
 		}
 	}
 }

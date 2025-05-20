@@ -83,16 +83,20 @@ func TestAntispamStorage(t *testing.T) {
 			// Hack in a workaround for spannertest not supporting BatchWrites
 			f.(*follower).updateIndex = updateIndexTx
 
+			go f.Follow(ctx, fl.LogReader)
+
 			entryIndex := make(map[string]uint64)
+			a := tessera.NewPublicationAwaiter(t.Context(), fl.LogReader.ReadCheckpoint, 100*time.Millisecond)
 			for i, e := range test.logEntries {
-				idx, err := fl.Appender.Add(t.Context(), tessera.NewEntry(e))()
+				entry := tessera.NewEntry(e)
+				f := fl.Appender.Add(t.Context(), entry)
+				idx, _, err := a.Await(t.Context(), f)
 				if err != nil {
-					t.Fatalf("Add(%d): %v", i, err)
+					t.Fatalf("Await(%d): %v", i, err)
 				}
+				klog.Infof("%d == %x", i, entry.Identity())
 				entryIndex[string(testIDHash(e))] = idx.Index
 			}
-
-			go f.Follow(ctx, fl.LogReader)
 
 			for {
 				time.Sleep(time.Second)
