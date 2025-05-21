@@ -1132,21 +1132,27 @@ func (s *mySQLSequencer) publishTree(ctx context.Context, minAge time.Duration, 
 	if err := pRow.Scan(&pubAt); err != nil {
 		return fmt.Errorf("failed to parse publishedAt: %v", err)
 	}
-	if time.Since(time.Unix(pubAt, 0)) > minAge {
-		row := tx.QueryRowContext(ctx, "SELECT seq, rootHash FROM IntCoord WHERE id = ?", 0)
-		var fromSeq uint64
-		var rootHash []byte
-		if err := row.Scan(&fromSeq, &rootHash); err != nil {
-			return fmt.Errorf("failed to read IntCoord: %v", err)
-		}
+	cpAge := time.Since(time.Unix(pubAt, 0))
+	if cpAge < minAge {
+		klog.V(1).Infof("publishTree: last checkpoint published %s ago (< required %s), not publishing new checkpoint", cpAge, minAge)
+		return nil
+	}
 
-		if err := f(ctx, fromSeq, rootHash); err != nil {
-			return err
-		}
+	klog.V(1).Infof("publishTree: updating checkpoint (replacing %s old checkpoint)", cpAge)
 
-		if _, err := tx.ExecContext(ctx, "UPDATE PubCoord SET publishedAt=? WHERE id=?", time.Now().Unix(), 0); err != nil {
-			return err
-		}
+	row := tx.QueryRowContext(ctx, "SELECT seq, rootHash FROM IntCoord WHERE id = ?", 0)
+	var fromSeq uint64
+	var rootHash []byte
+	if err := row.Scan(&fromSeq, &rootHash); err != nil {
+		return fmt.Errorf("failed to read IntCoord: %v", err)
+	}
+
+	if err := f(ctx, fromSeq, rootHash); err != nil {
+		return err
+	}
+
+	if _, err := tx.ExecContext(ctx, "UPDATE PubCoord SET publishedAt=? WHERE id=?", time.Now().Unix(), 0); err != nil {
+		return err
 	}
 	if err := tx.Commit(); err != nil {
 		return err
