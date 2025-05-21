@@ -24,9 +24,9 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/transparency-dev/merkle/compact"
 	"github.com/transparency-dev/merkle/rfc6962"
-	"github.com/transparency-dev/tessera"
 	"github.com/transparency-dev/tessera/api"
 	"github.com/transparency-dev/tessera/api/layout"
+	"github.com/transparency-dev/tessera/core"
 	"k8s.io/klog/v2"
 )
 
@@ -133,7 +133,7 @@ func TestIntegrate(t *testing.T) {
 		c := make([][]byte, chunkSize)
 		for i := range c {
 			leaf := []byte{byte(seq)}
-			entry := tessera.NewEntry(leaf)
+			entry := core.NewEntry(leaf)
 			c[i] = entry.LeafHash()
 			if err := cr.Append(rfc6962.DefaultHasher.HashLeaf(leaf), nil); err != nil {
 				t.Fatalf("compact Append: %v", err)
@@ -173,7 +173,7 @@ func BenchmarkIntegrate(b *testing.B) {
 		c := make([][]byte, chunkSize)
 		for i := range c {
 			leaf := []byte{byte(seq)}
-			entry := tessera.NewEntry(leaf)
+			entry := core.NewEntry(leaf)
 			c[i] = entry.LeafHash()
 			seq++
 		}

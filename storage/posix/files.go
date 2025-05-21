@@ -33,6 +33,7 @@ import (
 	"github.com/transparency-dev/tessera"
 	"github.com/transparency-dev/tessera/api"
 	"github.com/transparency-dev/tessera/api/layout"
+	"github.com/transparency-dev/tessera/core"
 	"github.com/transparency-dev/tessera/internal/migrate"
 	"github.com/transparency-dev/tessera/internal/stream"
 	storage "github.com/transparency-dev/tessera/storage/internal"
@@ -174,7 +175,7 @@ func (s *Storage) lockFile(p string) (func() error, error) {
 // by this method have successfully evaluated. Terminating earlier than this will likely
 // mean that some of the entries added are not committed to by a checkpoint, and thus are
 // not considered to be in the log.
-func (a *appender) Add(ctx context.Context, e *tessera.Entry) tessera.IndexFuture {
+func (a *appender) Add(ctx context.Context, e *core.Entry) core.IndexFuture {
 	return a.queue.Add(ctx, e)
 }
 
@@ -219,7 +220,7 @@ func (l *logResourceStorage) StreamEntries(ctx context.Context, fromEntry uint64
 // sequenced entries are contiguous from the zeroth entry (i.e left-hand dense).
 // We try to minimise the number of partially complete entry bundles by writing entries in chunks rather
 // than one-by-one.
-func (a *appender) sequenceBatch(ctx context.Context, entries []*tessera.Entry) error {
+func (a *appender) sequenceBatch(ctx context.Context, entries []*core.Entry) error {
 	// Double locking:
 	// - The mutex `Lock()` ensures that multiple concurrent calls to this function within a task are serialised.
 	// - The POSIX `lockFile()` ensures that distinct tasks are serialised.

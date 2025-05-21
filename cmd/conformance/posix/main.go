@@ -31,6 +31,8 @@ import (
 	"golang.org/x/mod/sumdb/note"
 
 	"github.com/transparency-dev/tessera"
+	"github.com/transparency-dev/tessera/core"
+	"github.com/transparency-dev/tessera/internal/antispam"
 	"github.com/transparency-dev/tessera/storage/posix"
 	badger_as "github.com/transparency-dev/tessera/storage/posix/antispam"
 	"k8s.io/klog/v2"
@@ -71,7 +73,7 @@ func main() {
 	if err != nil {
 		klog.Exitf("Failed to construct storage: %v", err)
 	}
-	var antispam tessera.Antispam
+	var antispam antispam.Antispam
 	// Persistent antispam is currently experimental, so there's no terraform or documentation yet!
 	if *persistentAntispam {
 		asOpts := badger_as.AntispamOpts{}
@@ -96,7 +98,7 @@ func main() {
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
-		idx, err := appender.Add(r.Context(), tessera.NewEntry(b))()
+		idx, err := appender.Add(r.Context(), core.NewEntry(b))()
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			_, _ = w.Write([]byte(err.Error()))

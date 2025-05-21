@@ -27,6 +27,7 @@ import (
 
 	"github.com/transparency-dev/tessera"
 	"github.com/transparency-dev/tessera/client"
+	"github.com/transparency-dev/tessera/internal/antispam"
 	"github.com/transparency-dev/tessera/storage/gcp"
 	gcp_as "github.com/transparency-dev/tessera/storage/gcp/antispam"
 	"k8s.io/klog/v2"
@@ -77,7 +78,7 @@ func main() {
 
 	opts := tessera.NewMigrationOptions()
 	// Configure antispam storage, if necessary
-	var antispam tessera.Antispam
+	var antispam antispam.Antispam
 	// Persistent antispam is currently experimental, so there's no terraform or documentation yet!
 	if *persistentAntispam {
 		asOpts := gcp_as.AntispamOpts{

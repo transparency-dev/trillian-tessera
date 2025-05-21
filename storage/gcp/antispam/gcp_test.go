@@ -25,6 +25,7 @@ import (
 	"cloud.google.com/go/spanner/spannertest"
 	"github.com/transparency-dev/tessera"
 	"github.com/transparency-dev/tessera/api"
+	"github.com/transparency-dev/tessera/core"
 	"github.com/transparency-dev/tessera/testonly"
 	"k8s.io/klog/v2"
 )
@@ -85,7 +86,7 @@ func TestAntispamStorage(t *testing.T) {
 
 			entryIndex := make(map[string]uint64)
 			for i, e := range test.logEntries {
-				idx, err := fl.Appender.Add(t.Context(), tessera.NewEntry(e))()
+				idx, err := fl.Appender.Add(t.Context(), core.NewEntry(e))()
 				if err != nil {
 					t.Fatalf("Add(%d): %v", i, err)
 				}

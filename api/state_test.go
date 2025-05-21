@@ -24,8 +24,8 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/transparency-dev/tessera"
 	"github.com/transparency-dev/tessera/api"
+	"github.com/transparency-dev/tessera/core"
 )
 
 func TestHashTile_MarshalTileRoundtrip(t *testing.T) {
@@ -92,7 +92,7 @@ func TestLeafBundle_MarshalTileRoundtrip(t *testing.T) {
 				if _, err := rand.Read(want[i]); err != nil {
 					t.Error(err)
 				}
-				_, _ = bundleRaw.Write(tessera.NewEntry(want[i]).MarshalBundleData(uint64(i)))
+				_, _ = bundleRaw.Write(core.NewEntry(want[i]).MarshalBundleData(uint64(i)))
 			}
 
 			tile2 := api.EntryBundle{}
@@ -151,7 +151,7 @@ func BenchmarkLeafBundle_UnmarshalText(b *testing.B) {
 	for i := range 222 {
 		// Create leaves of different lengths for interest in the parsing / memory allocation
 		leafStr := strings.Repeat(fmt.Sprintf("Leaf %d", i), i%20)
-		_, _ = bs.Write(tessera.NewEntry([]byte(leafStr)).MarshalBundleData(uint64(i)))
+		_, _ = bs.Write(core.NewEntry([]byte(leafStr)).MarshalBundleData(uint64(i)))
 	}
 	rawBundle := bs.Bytes()
 	for b.Loop() {

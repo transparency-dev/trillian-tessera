@@ -35,6 +35,7 @@ import (
 	"github.com/transparency-dev/tessera"
 
 	// Choose one!
+	"github.com/transparency-dev/tessera/core"
 	"github.com/transparency-dev/tessera/storage/posix"
 	// "github.com/transparency-dev/tessera/storage/aws"
 	// "github.com/transparency-dev/tessera/storage/gcp"
@@ -77,7 +78,7 @@ func constructAndUseAppender() {
 		panic(err)
 	}
 
-	future, err := appender.Add(ctx, tessera.NewEntry(data))()
+	future, err := appender.Add(ctx, core.NewEntry(data))()
 	// #endregion
 
 	// use the vars so the compiler/linter doesn't complain.

@@ -24,6 +24,7 @@ import (
 
 	"container/list"
 
+	"github.com/transparency-dev/tessera/core"
 	"github.com/transparency-dev/tessera/internal/parse"
 	"k8s.io/klog/v2"
 )
@@ -82,7 +83,7 @@ type PublicationAwaiter struct {
 // This operation can be aborted early by cancelling the context. In this event,
 // or in the event that there is an error getting a valid checkpoint, an error
 // will be returned from this method.
-func (a *PublicationAwaiter) Await(ctx context.Context, future IndexFuture) (Index, []byte, error) {
+func (a *PublicationAwaiter) Await(ctx context.Context, future core.IndexFuture) (core.Index, []byte, error) {
 	i, err := future()
 	if err != nil {
 		return i, nil, err
