@@ -83,12 +83,10 @@ func Check(ctx context.Context, origin string, verifier note.Verifier, f Fetcher
 	// TODO(al): consider chunking the log and doing each in parallel.
 	for b, err := range stream.EntryBundles(ctx, N, getSize, f.ReadEntryBundle, 0, cp.Size) {
 		if err != nil {
-			klog.Warningf("StreamAdaptor: %v", err)
-			break
+			return fmt.Errorf("error while streaming bundles: %v", err)
 		}
 		if err := fTree.AppendBundle(b.RangeInfo, b.Data); err != nil {
-			klog.Warningf("AppendBundle(%v): %v", b.RangeInfo, err)
-			break
+			return fmt.Errorf("failure calling AppendBundle(%v): %v", b.RangeInfo, err)
 		}
 		if fTree.tree.End() >= cp.Size {
 			break
