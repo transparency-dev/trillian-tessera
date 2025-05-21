@@ -119,9 +119,16 @@ func EntryBundles(ctx context.Context, numWorkers uint, getSize GetTreeSizeFn, g
 	}()
 
 	return func(yield func(Bundle, error) bool) {
+		defer close(exit)
+
 		for f := range bundles {
 			b := f()
 			if !yield(b.b, b.err) {
+				return
+			}
+			// For now, force the iterator to stop if we've just returned an error.
+			// If there's a good reason to allow it to continue we can change this.
+			if b.err != nil {
 				return
 			}
 		}
