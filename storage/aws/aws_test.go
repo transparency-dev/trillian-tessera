@@ -375,33 +375,43 @@ func TestPublishTree(t *testing.T) {
 		klog.Warningf("MySQL not available, skipping %s", t.Name())
 		t.Skip("MySQL not available, skipping test")
 	}
-	// Clean tables in case there's already something in there.
-	mustDropTables(t, ctx)
-
-	s, err := newMySQLSequencer(ctx, *mySQLURI, 1000, 0, 0)
-	if err != nil {
-		t.Fatalf("newMySQLSequencer: %v", err)
-	}
 
 	for _, test := range []struct {
 		name            string
 		publishInterval time.Duration
-		wait            time.Duration
-		wantUpdate      bool
+		attempts        []time.Duration
+		wantUpdates     int
 	}{
 		{
 			name:            "works ok",
-			publishInterval: 10 * time.Millisecond,
-			wait:            1 * time.Second,
-			wantUpdate:      true,
+			publishInterval: 100 * time.Millisecond,
+			attempts:        []time.Duration{1 * time.Second},
+			wantUpdates:     1,
 		}, {
 			name:            "too soon, skip update",
 			publishInterval: 10 * time.Second,
-			wait:            100 * time.Millisecond,
-			wantUpdate:      false,
+			attempts:        []time.Duration{100 * time.Millisecond},
+			wantUpdates:     0,
+		}, {
+			name:            "too soon, skip update, but recovers",
+			publishInterval: 2 * time.Second,
+			attempts:        []time.Duration{100 * time.Millisecond, 2 * time.Second},
+			wantUpdates:     1,
+		}, {
+			name:            "many attempts, eventually one succeeds",
+			publishInterval: 1 * time.Second,
+			attempts:        []time.Duration{300 * time.Millisecond, 300 * time.Millisecond, 300 * time.Millisecond, 300 * time.Millisecond},
+			wantUpdates:     1,
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			// Clean tables in case there's already something in there.
+			mustDropTables(t, ctx)
+
+			s, err := newMySQLSequencer(ctx, *mySQLURI, 1000, 0, 0)
+			if err != nil {
+				t.Fatalf("newMySQLSequencer: %v", err)
+			}
 			m := newMemObjStore()
 			storage := &Appender{
 				logStore: &logResourceStore{
@@ -424,24 +434,23 @@ func TestPublishTree(t *testing.T) {
 			if err := m.setObject(ctx, layout.CheckpointPath, cpOld, "", ""); err != nil {
 				t.Fatalf("setObject(bananas): %v", err)
 			}
-
-			time.Sleep(test.wait)
-
-			if err := s.publishTree(ctx, test.publishInterval, storage.publishCheckpoint); err != nil {
-				t.Fatalf("publishTree: %v", err)
-			}
-			cpNew, err := m.getObject(ctx, layout.CheckpointPath)
-			cpUpdated := !bytes.Equal(cpOld, cpNew)
-			if err != nil {
-				// Do not use errors.Is. Keep errors.As to compare by type and not by value.
-				var nske *types.NoSuchKey
-				if !errors.As(err, &nske) {
+			updatesSeen := 0
+			for _, d := range test.attempts {
+				time.Sleep(d)
+				if err := s.publishTree(ctx, test.publishInterval, storage.publishCheckpoint); err != nil {
+					t.Fatalf("publishTree: %v", err)
+				}
+				cpNew, err := m.getObject(ctx, layout.CheckpointPath)
+				if err != nil {
 					t.Fatalf("getObject: %v", err)
 				}
-				cpUpdated = false
+				if !bytes.Equal(cpOld, cpNew) {
+					updatesSeen++
+					cpOld = cpNew
+				}
 			}
-			if test.wantUpdate != cpUpdated {
-				t.Fatalf("got cpUpdated=%t, want %t", cpUpdated, test.wantUpdate)
+			if updatesSeen != test.wantUpdates {
+				t.Fatalf("Saw %d updates, want %d", updatesSeen, test.wantUpdates)
 			}
 		})
 	}
