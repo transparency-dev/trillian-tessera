@@ -264,7 +264,7 @@ func mustCreateWriters(us []string) loadtest.LeafWriter {
 		if err != nil {
 			klog.Exitf("Invalid log writer URL %q: %v", u, err)
 		}
-		w = append(w, httpWriter(wURL, http.DefaultClient, *bearerToken))
+		w = append(w, httpWriter(wURL, http.DefaultClient, *bearerTokenWrite))
 	}
 	return loadtest.NewRoundRobinWriter(w)
 }
