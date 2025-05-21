@@ -30,6 +30,7 @@ import (
 	"github.com/go-sql-driver/mysql"
 	"github.com/transparency-dev/tessera"
 	"github.com/transparency-dev/tessera/core"
+	"github.com/transparency-dev/tessera/internal/antispam"
 	"github.com/transparency-dev/tessera/storage/aws"
 	aws_as "github.com/transparency-dev/tessera/storage/aws/antispam"
 	"golang.org/x/mod/sumdb/note"
@@ -83,7 +84,7 @@ func main() {
 	if err != nil {
 		klog.Exitf("Failed to create new AWS storage: %v", err)
 	}
-	var antispam tessera.Antispam
+	var antispam antispam.Antispam
 	// Persistent antispam is currently experimental, so there's no documentation yet!
 	if *antispamEnable {
 		asOpts := aws_as.AntispamOpts{} // Use defaults

@@ -29,6 +29,7 @@ import (
 	"github.com/transparency-dev/merkle/rfc6962"
 	"github.com/transparency-dev/tessera/api/layout"
 	"github.com/transparency-dev/tessera/core"
+	"github.com/transparency-dev/tessera/internal/antispam"
 	"github.com/transparency-dev/tessera/internal/otel"
 	"github.com/transparency-dev/tessera/internal/parse"
 	"github.com/transparency-dev/tessera/internal/stream"
@@ -443,7 +444,7 @@ func (t *terminator) Shutdown(ctx context.Context) error {
 	}
 }
 
-func (o *AppendOptions) WithAntispam(inMemEntries uint, as Antispam) *AppendOptions {
+func (o *AppendOptions) WithAntispam(inMemEntries uint, as antispam.Antispam) *AppendOptions {
 	o.addDecorators = append(o.addDecorators, newInMemoryDedupe(inMemEntries))
 	if as != nil {
 		o.addDecorators = append(o.addDecorators, as.Decorator())

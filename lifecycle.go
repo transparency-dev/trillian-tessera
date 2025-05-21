@@ -22,7 +22,6 @@ import (
 	"github.com/transparency-dev/merkle/rfc6962"
 	"github.com/transparency-dev/tessera/api"
 	"github.com/transparency-dev/tessera/api/layout"
-	"github.com/transparency-dev/tessera/core"
 	"github.com/transparency-dev/tessera/internal/stream"
 )
 
@@ -87,18 +86,6 @@ type LogReader interface {
 	//   - the returned cancel function is called
 	// and will continue to return an error if called again after either of these cases.
 	StreamEntries(ctx context.Context, fromEntryIdx uint64) (next func() (layout.RangeInfo, []byte, error), cancel func())
-}
-
-// Antispam describes the contract that an antispam implementation must meet in order to be used via the
-// WithAntispam option below.
-type Antispam interface {
-	// Decorator must return a function which knows how to decorate an Appender's Add function in order
-	// to return an index previously assigned to an entry with the same identity hash, if one exists, or
-	// delegate to the next Add function in the chain otherwise.
-	Decorator() func(core.AddFn) core.AddFn
-	// Follower should return a structure which will populate the anti-spam index by tailing the contents
-	// of the log, using the provided function to turn entry bundles into identity hashes.
-	Follower(func(entryBundle []byte) ([][]byte, error)) stream.Follower
 }
 
 // identityHash calculates the antispam identity hash for the provided (single) leaf entry data.

@@ -26,6 +26,7 @@ import (
 
 	"github.com/transparency-dev/tessera"
 	"github.com/transparency-dev/tessera/core"
+	"github.com/transparency-dev/tessera/internal/antispam"
 	"github.com/transparency-dev/tessera/storage/gcp"
 	gcp_as "github.com/transparency-dev/tessera/storage/gcp/antispam"
 	"golang.org/x/mod/sumdb/note"
@@ -68,7 +69,7 @@ func main() {
 		klog.Exitf("Failed to create new GCP storage: %v", err)
 	}
 
-	var antispam tessera.Antispam
+	var antispam antispam.Antispam
 	// Persistent antispam is currently experimental, so there's no terraform or documentation yet!
 	if *persistentAntispam {
 		asOpts := gcp_as.AntispamOpts{} // Use defaults

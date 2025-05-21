@@ -23,6 +23,7 @@ import (
 
 	"github.com/transparency-dev/tessera/api/layout"
 	"github.com/transparency-dev/tessera/client"
+	"github.com/transparency-dev/tessera/internal/antispam"
 	"github.com/transparency-dev/tessera/internal/migrate"
 	"github.com/transparency-dev/tessera/internal/stream"
 	"golang.org/x/sync/errgroup"
@@ -84,7 +85,7 @@ func (o *MigrationOptions) LeafHasher() func([]byte) ([][]byte, error) {
 //
 // Note that since the tree is being _migrated_, the resulting target tree must match the structure
 // of the source tree and so no attempt is made to reject/deduplicate entries.
-func (o *MigrationOptions) WithAntispam(as Antispam) *MigrationOptions {
+func (o *MigrationOptions) WithAntispam(as antispam.Antispam) *MigrationOptions {
 	if as != nil {
 		o.followers = append(o.followers, as.Follower(o.bundleIDHasher))
 	}
