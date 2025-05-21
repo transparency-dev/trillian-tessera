@@ -915,20 +915,27 @@ func (s *spannerCoordinator) publishTree(ctx context.Context, minAge time.Durati
 		if err := pRow.Column(0, &pubAt); err != nil {
 			return fmt.Errorf("failed to parse publishedAt: %v", err)
 		}
-		if time.Since(pubAt) > minAge {
-			// Can't just use currentTree() here as the spanner emulator doesn't do nested transactions, so do it manually:
-			row, err := txn.ReadRow(ctx, "IntCoord", spanner.Key{0}, []string{"seq", "rootHash"})
-			if err != nil {
-				return fmt.Errorf("failed to read IntCoord: %w", err)
-			}
-			var fromSeq int64 // Spanner doesn't support uint64
-			var rootHash []byte
-			if err := row.Columns(&fromSeq, &rootHash); err != nil {
-				return fmt.Errorf("failed to parse integration coordination info: %v", err)
-			}
-			if err := f(ctx, uint64(fromSeq), rootHash); err != nil {
-				return err
-			}
+
+		cpAge := time.Since(pubAt)
+		if cpAge < minAge {
+			klog.V(1).Infof("publishTree: last checkpoint published %s ago (< required %s), not publishing new checkpoint", cpAge, minAge)
+			return nil
+		}
+
+		klog.V(1).Infof("publishTree: updating checkpoint (replacing %s old checkpoint)", cpAge)
+
+		// Can't just use currentTree() here as the spanner emulator doesn't do nested transactions, so do it manually:
+		row, err := txn.ReadRow(ctx, "IntCoord", spanner.Key{0}, []string{"seq", "rootHash"})
+		if err != nil {
+			return fmt.Errorf("failed to read IntCoord: %w", err)
+		}
+		var fromSeq int64 // Spanner doesn't support uint64
+		var rootHash []byte
+		if err := row.Columns(&fromSeq, &rootHash); err != nil {
+			return fmt.Errorf("failed to parse integration coordination info: %v", err)
+		}
+		if err := f(ctx, uint64(fromSeq), rootHash); err != nil {
+			return err
 		}
 		if err := txn.BufferWrite([]*spanner.Mutation{spanner.Update("PubCoord", []string{"id", "publishedAt"}, []any{0, time.Now()})}); err != nil {
 			return err
