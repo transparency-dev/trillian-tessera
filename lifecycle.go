@@ -49,6 +49,13 @@ type LogReader interface {
 	// The expected usage and corresponding behaviours are similar to ReadTile.
 	ReadEntryBundle(ctx context.Context, index uint64, p uint8) ([]byte, error)
 
+	// NextIndex returns the first as-yet unassigned index.
+	//
+	// In a quiescent log, this will be the same as the checkpoint size. In a log with entries actively
+	// being added, this number will be higher since it will take sequenced but not-yet-integrated/not-yet-published
+	// entries into account.
+	NextIndex(ctx context.Context) (uint64, error)
+
 	stream.Streamer
 }
 
