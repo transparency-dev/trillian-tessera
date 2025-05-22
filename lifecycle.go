@@ -88,9 +88,16 @@ type LogReader interface {
 	StreamEntries(ctx context.Context, fromEntryIdx uint64) (next func() (layout.RangeInfo, []byte, error), cancel func())
 }
 
-// Antispam describes the contract that an antispam implementation must meet in order to be used via the
-// WithAntispam option below.
-type Antispam interface {
+// Antispam is the public type for antispam implementations. Clients are expected to create one of these
+// and then pass it back in to Tessera, but are not expected to call any methods on it, nor implement it.
+// For this reason, we use `any` in order to leave the API flexible.
+//
+// Intended to be used via WithAntispam option.
+type Antispam any
+
+// antispam is the internal interface for Antispam. This is only intended for implementation and usage
+// within Tessera.
+type antispam interface {
 	// Decorator must return a function which knows how to decorate an Appender's Add function in order
 	// to return an index previously assigned to an entry with the same identity hash, if one exists, or
 	// delegate to the next Add function in the chain otherwise.

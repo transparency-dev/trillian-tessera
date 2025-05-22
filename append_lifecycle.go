@@ -469,11 +469,19 @@ func (t *terminator) Shutdown(ctx context.Context) error {
 	}
 }
 
+// WithAntispam enables in-memory antispam, and sets up persistent antispam if `as` is
+// non-nil. The size of the in-memory cache is configured with `inMemEntries`.
+// The Antispam implementations are provided with each Tessera storage layer via a
+// `NewAntispam` factory method.
 func (o *AppendOptions) WithAntispam(inMemEntries uint, as Antispam) *AppendOptions {
 	o.addDecorators = append(o.addDecorators, newInMemoryDedupe(inMemEntries))
 	if as != nil {
-		o.addDecorators = append(o.addDecorators, as.Decorator())
-		o.followers = append(o.followers, as.Follower(o.bundleIDHasher))
+		asi, ok := as.(antispam)
+		if !ok {
+			panic(fmt.Errorf("Antispam %T does not implement antispam methods", as))
+		}
+		o.addDecorators = append(o.addDecorators, asi.Decorator())
+		o.followers = append(o.followers, asi.Follower(o.bundleIDHasher))
 	}
 	return o
 }

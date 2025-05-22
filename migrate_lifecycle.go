@@ -86,7 +86,11 @@ func (o *MigrationOptions) LeafHasher() func([]byte) ([][]byte, error) {
 // of the source tree and so no attempt is made to reject/deduplicate entries.
 func (o *MigrationOptions) WithAntispam(as Antispam) *MigrationOptions {
 	if as != nil {
-		o.followers = append(o.followers, as.Follower(o.bundleIDHasher))
+		asi, ok := as.(antispam)
+		if !ok {
+			panic(fmt.Errorf("Antispam %T does not implement antispam methods", as))
+		}
+		o.followers = append(o.followers, asi.Follower(o.bundleIDHasher))
 	}
 	return o
 }
