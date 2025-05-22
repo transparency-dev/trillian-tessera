@@ -22,6 +22,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"iter"
 	"sync/atomic"
 	"time"
 
@@ -213,8 +214,8 @@ func (f *follower) Follow(ctx context.Context, lr stream.Streamer) {
 
 	t := time.NewTicker(time.Second)
 	var (
-		entryReader *stream.EntryStreamReader[[]byte]
-		stop        func()
+		next func() (stream.Entry[[]byte], error, bool)
+		stop func()
 
 		curEntries [][]byte
 		curIndex   uint64
@@ -253,7 +254,6 @@ func (f *follower) Follow(ctx context.Context, lr stream.Streamer) {
 						return fmt.Errorf("failed to get nextIdx value: %v", err)
 					}
 				}
-				klog.Infof("Following from %d", followFrom)
 
 				span.SetAttributes(followFromKey.Int64(otel.Clamp64(followFrom)))
 
@@ -269,11 +269,9 @@ func (f *follower) Follow(ctx context.Context, lr stream.Streamer) {
 
 				// If this is the first time around the loop we need to start the stream of entries now that we know where we want to
 				// start reading from:
-				if entryReader == nil {
+				if next == nil {
 					span.AddEvent("Start streaming entries")
-					next, st := lr.StreamEntries(ctx, followFrom)
-					stop = st
-					entryReader = stream.NewEntryStreamReader(next, f.bundleHasher)
+					next, stop = iter.Pull2(stream.Entries(lr.StreamEntries(ctx, followFrom, size-followFrom), f.bundleHasher))
 				}
 
 				if curIndex == followFrom && curEntries != nil {
@@ -288,16 +286,21 @@ func (f *follower) Follow(ctx context.Context, lr stream.Streamer) {
 					}
 					batch := make([][]byte, 0, bs)
 					for i := range int(bs) {
-						idx, c, err := entryReader.Next()
+						e, err, ok := next()
+						if !ok {
+							// The entry stream has ended so we'll need to start a new stream next time around the loop:
+							next = nil
+							break
+						}
 						if err != nil {
 							return fmt.Errorf("entryReader.next: %v", err)
 						}
-						if wantIdx := followFrom + uint64(i); idx != wantIdx {
-							klog.Infof("at %d, expected %d - out of sync", idx, wantIdx)
+						if wantIdx := followFrom + uint64(i); e.Index != wantIdx {
+							klog.Infof("at %d, expected %d - out of sync", e.Index, wantIdx)
 							// We're out of sync
 							return errOutOfSync
 						}
-						batch = append(batch, c)
+						batch = append(batch, e.Entry)
 					}
 					curEntries = batch
 					curIndex = followFrom
@@ -333,7 +336,7 @@ func (f *follower) Follow(ctx context.Context, lr stream.Streamer) {
 					klog.Errorf("Failed to commit antispam population tx: %v", err)
 				}
 				stop()
-				entryReader = nil
+				next = nil
 				continue
 			}
 			curEntries = nil

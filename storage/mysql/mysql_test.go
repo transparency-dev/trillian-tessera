@@ -510,20 +510,18 @@ func TestStreamEntries(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			populateEntries(t, test.treeSize, s)
-			next, cancel := s.StreamEntries(context.Background(), test.streamFrom)
 			wantBundle := uint64(test.streamFrom / layout.EntryBundleWidth)
 			nBundles := test.treeSize / layout.EntryBundleWidth
-			for i := 0; ; i++ {
-				ri, b, err := next()
+			for b, err := range s.StreamEntries(context.Background(), test.streamFrom, test.treeSize-test.streamFrom) {
 				if err != nil {
 					t.Fatalf("expecting bundle %d, next: %v", wantBundle, err)
 				}
-				if ri.Index != wantBundle {
-					t.Fatalf("got bundle %d, want %d", ri.Index, wantBundle)
+				if b.RangeInfo.Index != wantBundle {
+					t.Fatalf("got bundle %d, want %d", b.RangeInfo.Index, wantBundle)
 				}
-				verifyBundle(t, wantBundle, b)
+				verifyBundle(t, wantBundle, b.Data)
 
-				if i == int(test.growAfterBundle) && test.growTreeSize > 0 {
+				if b.RangeInfo.Index == test.growAfterBundle && test.growTreeSize > 0 {
 					populateEntries(t, test.growTreeSize, s)
 					nBundles = test.growTreeSize / layout.EntryBundleWidth
 				}
@@ -532,7 +530,6 @@ func TestStreamEntries(t *testing.T) {
 
 				t.Logf("want %d N %d", wantBundle, nBundles)
 				if wantBundle >= nBundles {
-					cancel()
 					break
 				}
 			}

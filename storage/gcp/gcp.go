@@ -35,6 +35,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"iter"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -183,16 +184,16 @@ func (lr *LogReader) NextIndex(ctx context.Context) (uint64, error) {
 	return lr.nextIndex(ctx)
 }
 
-func (lr *LogReader) StreamEntries(ctx context.Context, fromEntry uint64) (next func() (ri layout.RangeInfo, bundle []byte, err error), cancel func()) {
+func (lr *LogReader) StreamEntries(ctx context.Context, startEntry, N uint64) iter.Seq2[stream.Bundle, error] {
 	ctx, span := tracer.Start(ctx, "tessera.storage.gcp.StreamEntries")
 	defer span.End()
 
-	klog.Infof("StreamEntries from %d", fromEntry)
+	klog.Infof("StreamEntries from %d", startEntry)
 
 	// TODO(al): Consider making this configurable.
 	// Requests to GCS can go super parallel without too much issue, but even just 10 concurrent requests seems to provide pretty good throughput.
 	numWorkers := uint(10)
-	return stream.StreamAdaptor(ctx, numWorkers, lr.integratedSize, lr.lrs.getEntryBundle, fromEntry)
+	return stream.EntryBundles(ctx, numWorkers, lr.integratedSize, lr.lrs.getEntryBundle, startEntry, N)
 }
 
 func (s *Storage) Appender(ctx context.Context, opts *tessera.AppendOptions) (*tessera.Appender, tessera.LogReader, error) {

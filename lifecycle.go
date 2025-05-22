@@ -21,12 +21,8 @@ import (
 
 	"github.com/transparency-dev/merkle/rfc6962"
 	"github.com/transparency-dev/tessera/api"
-	"github.com/transparency-dev/tessera/api/layout"
 	"github.com/transparency-dev/tessera/internal/stream"
 )
-
-// NoMoreEntries is a sentinel error returned by StreamEntries when no more entries will be returned by calls to the next function.
-var ErrNoMoreEntries = stream.ErrNoMoreEntries
 
 // LogReader provides read-only access to the log.
 type LogReader interface {
@@ -53,39 +49,7 @@ type LogReader interface {
 	// The expected usage and corresponding behaviours are similar to ReadTile.
 	ReadEntryBundle(ctx context.Context, index uint64, p uint8) ([]byte, error)
 
-	// IntegratedSize returns the current size of the integrated tree.
-	//
-	// This tree will have in place all the static resources the returned size implies, but
-	// there may not yet be a checkpoint for this size signed, witnessed, or published.
-	//
-	// It's ONLY safe to use this value for processes internal to the operation of the log (e.g.
-	// populating antispam data structures); it MUST NOT not be used as a substitute for
-	// reading the checkpoint when only data which has been publicly committed to by the
-	// log should be used. If in doubt, use ReadCheckpoint instead.
-	IntegratedSize(ctx context.Context) (uint64, error)
-
-	// NextIndex returns the first as-yet unassigned index.
-	//
-	// In a quiescent log, this will be the same as the checkpoint size. In a log with entries actively
-	// being added, this number will be higher since it will take sequenced but not-yet-integrated/not-yet-published
-	// entries into account.
-	NextIndex(ctx context.Context) (uint64, error)
-
-	// StreamEntries() returns functions `next` and `stop` which act like a pull iterator for
-	// consecutive entry bundles, starting with the entry bundle which contains the requested entry
-	// index.
-	//
-	// Each call to `next` will return raw entry bundle bytes along with a RangeInfo struct which
-	// contains information on which entries within that bundle are to be considered valid.
-	//
-	// next will hang if it has reached the extent of the current tree, and return once either
-	// the tree has grown and more entries are available, or cancel was called.
-	//
-	// next will cease iterating if either:
-	//   - it produces an error (e.g. via the underlying calls to the log storage)
-	//   - the returned cancel function is called
-	// and will continue to return an error if called again after either of these cases.
-	StreamEntries(ctx context.Context, fromEntryIdx uint64) (next func() (layout.RangeInfo, []byte, error), cancel func())
+	stream.Streamer
 }
 
 // Antispam describes the contract that an antispam implementation must meet in order to be used via the

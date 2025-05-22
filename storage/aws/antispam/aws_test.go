@@ -71,9 +71,18 @@ func TestAntispam(t *testing.T) {
 		t.Error("expected initial position to be 0")
 	}
 
+	a := tessera.NewPublicationAwaiter(t.Context(), fl.LogReader.ReadCheckpoint, time.Second)
 	var idx1 tessera.Index
 	idxf1 := addFn(ctx, tessera.NewEntry([]byte("one")))
+	if _, _, err := a.Await(t.Context(), idxf1); err != nil {
+		t.Fatalf("Await(1): %v", err)
+	}
+
 	idxf2 := addFn(ctx, tessera.NewEntry([]byte("two")))
+	if _, _, err := a.Await(t.Context(), idxf2); err != nil {
+		t.Fatalf("Await(2): %v", err)
+	}
+
 	if idx1, err = idxf1(); err != nil {
 		t.Fatal(err)
 	}

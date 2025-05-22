@@ -22,6 +22,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"iter"
 	"sync/atomic"
 	"time"
 
@@ -221,8 +222,8 @@ func (f *follower) Follow(ctx context.Context, lr stream.Streamer) {
 
 	t := time.NewTicker(time.Second)
 	var (
-		entryReader *stream.EntryStreamReader[[]byte]
-		stop        func()
+		next func() (stream.Entry[[]byte], error, bool)
+		stop func()
 
 		curEntries [][]byte
 		curIndex   uint64
@@ -239,8 +240,8 @@ func (f *follower) Follow(ctx context.Context, lr stream.Streamer) {
 			continue
 		}
 
-		// Busy loop while there's work to be done
-		for workDone := true; workDone; {
+		// Busy loop while there are entries to be consumed from the stream
+		for streamDone := false; !streamDone; {
 			_, err = f.as.dbPool.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
 				ctx, span := tracer.Start(ctx, "tessera.antispam.gcp.FollowTxn")
 				defer span.End()
@@ -260,7 +261,7 @@ func (f *follower) Follow(ctx context.Context, lr stream.Streamer) {
 				followFrom := uint64(nextIdx)
 				if followFrom >= size {
 					// Our view of the log is out of date, exit the busy loop and refresh it.
-					workDone = false
+					streamDone = true
 					return nil
 				}
 
@@ -270,11 +271,9 @@ func (f *follower) Follow(ctx context.Context, lr stream.Streamer) {
 
 				// If this is the first time around the loop we need to start the stream of entries now that we know where we want to
 				// start reading from:
-				if entryReader == nil {
+				if next == nil {
 					span.AddEvent("Start streaming entries")
-					next, st := lr.StreamEntries(ctx, followFrom)
-					stop = st
-					entryReader = stream.NewEntryStreamReader(next, f.bundleHasher)
+					next, stop = iter.Pull2(stream.Entries(lr.StreamEntries(ctx, followFrom, size-followFrom), f.bundleHasher))
 				}
 
 				if curIndex == followFrom && curEntries != nil {
@@ -289,18 +288,28 @@ func (f *follower) Follow(ctx context.Context, lr stream.Streamer) {
 					}
 					batch := make([][]byte, 0, bs)
 					for i := range int(bs) {
-						idx, c, err := entryReader.Next()
+						e, err, ok := next()
+						if !ok {
+							// The entry stream has ended so we'll need to start a new stream next time around the loop:
+							stop()
+							next = nil
+							break
+						}
 						if err != nil {
 							return fmt.Errorf("entryReader.next: %v", err)
 						}
-						if wantIdx := followFrom + uint64(i); idx != wantIdx {
+						if wantIdx := followFrom + uint64(i); e.Index != wantIdx {
 							// We're out of sync
 							return errOutOfSync
 						}
-						batch = append(batch, c)
+						batch = append(batch, e.Entry)
 					}
 					curEntries = batch
 					curIndex = followFrom
+				}
+
+				if len(curEntries) == 0 {
+					return nil
 				}
 
 				// Now update the index.
@@ -328,7 +337,8 @@ func (f *follower) Follow(ctx context.Context, lr stream.Streamer) {
 					klog.Errorf("Failed to commit antispam population tx: %v", err)
 				}
 				stop()
-				entryReader = nil
+				next = nil
+				streamDone = true
 				continue
 			}
 			curEntries = nil

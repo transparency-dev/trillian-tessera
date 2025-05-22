@@ -23,6 +23,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"iter"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -256,11 +257,8 @@ func (f *follower) Follow(ctx context.Context, lr stream.Streamer) {
 
 	t := time.NewTicker(time.Second)
 	var (
-		entryReader *stream.EntryStreamReader[[]byte]
-		stop        func()
-
-		curEntries [][]byte
-		curIndex   uint64
+		next func() (stream.Entry[[]byte], error, bool)
+		stop func()
 	)
 	for {
 		select {
@@ -275,7 +273,7 @@ func (f *follower) Follow(ctx context.Context, lr stream.Streamer) {
 		}
 
 		// Busy loop while there's work to be done
-		for workDone := true; workDone; {
+		for streamDone := false; !streamDone; {
 			select {
 			case <-ctx.Done():
 				return
@@ -304,7 +302,7 @@ func (f *follower) Follow(ctx context.Context, lr stream.Streamer) {
 
 				if followFrom >= size {
 					// Our view of the log is out of date, exit the busy loop and refresh it.
-					workDone = false
+					streamDone = true
 					return nil
 				}
 
@@ -312,30 +310,36 @@ func (f *follower) Follow(ctx context.Context, lr stream.Streamer) {
 
 				// If this is the first time around the loop we need to start the stream of entries now that we know where we want to
 				// start reading from:
-				if entryReader == nil {
-					next, st := lr.StreamEntries(ctx, followFrom)
-					stop = st
-					entryReader = stream.NewEntryStreamReader(next, f.bundleHasher)
+				if next == nil {
+					next, stop = iter.Pull2(stream.Entries(lr.StreamEntries(ctx, followFrom, size-followFrom), f.bundleHasher))
 				}
 
 				bs := uint64(f.as.opts.MaxBatchSize)
 				if r := size - followFrom; r < bs {
 					bs = r
 				}
-				batch := make([][]byte, 0, bs)
+				curEntries := make([][]byte, 0, bs)
 				for i := range int(bs) {
-					idx, c, err := entryReader.Next()
+					e, err, ok := next()
+					if !ok {
+						// The entry stream has ended so we'll need to start a new stream next time around the loop:
+						stop()
+						next = nil
+						break
+					}
 					if err != nil {
 						return fmt.Errorf("entryReader.next: %v", err)
 					}
-					if wantIdx := followFrom + uint64(i); idx != wantIdx {
+					if wantIdx := followFrom + uint64(i); e.Index != wantIdx {
 						// We're out of sync
 						return errOutOfSync
 					}
-					batch = append(batch, c)
+					curEntries = append(curEntries, e.Entry)
 				}
-				curEntries = batch
-				curIndex = followFrom
+
+				if len(curEntries) == 0 {
+					return nil
+				}
 
 				klog.V(1).Infof("Inserting %d entries into antispam database (follow from %d of size %d)", len(curEntries), followFrom, size)
 
@@ -343,7 +347,7 @@ func (f *follower) Follow(ctx context.Context, lr stream.Streamer) {
 				vals := make([]any, 0, 2*len(curEntries))
 				for i, e := range curEntries {
 					args = append(args, "(?, ?)")
-					vals = append(vals, e, curIndex+uint64(i))
+					vals = append(vals, e, followFrom+uint64(i))
 				}
 				sqlStr := fmt.Sprintf("INSERT IGNORE INTO AntispamIDSeq (h, idx) VALUES %s", strings.Join(args, ","))
 
@@ -370,14 +374,14 @@ func (f *follower) Follow(ctx context.Context, lr stream.Streamer) {
 				if err != errOutOfSync {
 					klog.Errorf("Failed to commit antispam population tx: %v", err)
 				}
-				if entryReader != nil {
+				if next != nil {
 					stop()
-					entryReader = nil
+					next = nil
 					stop = nil
 				}
+				streamDone = true
 				continue
 			}
-			curEntries = nil
 		}
 	}
 }
