@@ -32,10 +32,11 @@ import (
 )
 
 var (
-	storageURL = flag.String("storage_url", "", "Base tlog-tiles URL")
-	N          = flag.Uint("N", 1, "The number of workers to use when fetching/comparing resources")
-	origin     = flag.String("origin", "", "Origin of the log to check, if unset, will use the name of the provided public key")
-	pubKey     = flag.String("public_key", "", "Path to a file containing the log's public key")
+	storageURL  = flag.String("storage_url", "", "Base tlog-tiles URL")
+	bearerToken = flag.String("bearer_token", "", "The bearer token for authorizing HTTP requests to the storage URL, if needed")
+	N           = flag.Uint("N", 1, "The number of workers to use when fetching/comparing resources")
+	origin      = flag.String("origin", "", "Origin of the log to check, if unset, will use the name of the provided public key")
+	pubKey      = flag.String("public_key", "", "Path to a file containing the log's public key")
 )
 
 func main() {
@@ -49,6 +50,9 @@ func main() {
 	src, err := client.NewHTTPFetcher(logURL, nil)
 	if err != nil {
 		klog.Exitf("Failed to create HTTP fetcher: %v", err)
+	}
+	if *bearerToken != "" {
+		src.SetAuthorizationHeader(fmt.Sprintf("Bearer %s", *bearerToken))
 	}
 	v := verifierFromFlags()
 	if *origin == "" {
