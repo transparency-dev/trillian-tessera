@@ -20,7 +20,10 @@ noting that all tree derivations are therefore idempotent.
 
 ## Transactional storage
 
-The transactional storage is implemented with Aurora MySQL, and uses a schema with 3 tables:
+The transactional storage is implemented with Aurora MySQL, and uses a schema with the following tables:
+
+### `Tessera`
+This table is used to identify the current schema version.
 
 ### `SeqCoord`
 A table with a single row which is used to keep track of the next assignable sequence number.
