@@ -48,13 +48,6 @@ type Streamer interface {
 	// log should be used. If in doubt, use ReadCheckpoint instead.
 	IntegratedSize(ctx context.Context) (uint64, error)
 
-	// NextIndex returns the first as-yet unassigned index.
-	//
-	// In a quiescent log, this will be the same as the checkpoint size. In a log with entries actively
-	// being added, this number will be higher since it will take sequenced but not-yet-integrated/not-yet-published
-	// entries into account.
-	NextIndex(ctx context.Context) (uint64, error)
-
 	// StreamEntries returns an iterator over the range of requested entries [startEntryIdx, startEntryIdx+N).
 	//
 	// The iterator will yield either a Bundle struct or an error. If an error is returned the caller should
