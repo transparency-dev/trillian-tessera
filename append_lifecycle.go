@@ -47,6 +47,8 @@ const (
 	DefaultCheckpointInterval = 10 * time.Second
 	// DefaultPushbackMaxOutstanding is used by storage implementations if no WithPushback option is provided when instantiating it.
 	DefaultPushbackMaxOutstanding = 4096
+	// DefaultGarbageCollectionInterval is the default value used if no WithGarbageCollectionInterval option is provided.
+	DefaultGarbageCollectionInterval = time.Minute
 )
 
 var (
@@ -486,13 +488,14 @@ func (o *AppendOptions) WithAntispam(inMemEntries uint, as Antispam) *AppendOpti
 
 func NewAppendOptions() *AppendOptions {
 	return &AppendOptions{
-		batchMaxSize:           DefaultBatchMaxSize,
-		batchMaxAge:            DefaultBatchMaxAge,
-		entriesPath:            layout.EntriesPath,
-		bundleIDHasher:         defaultIDHasher,
-		checkpointInterval:     DefaultCheckpointInterval,
-		addDecorators:          make([]func(AddFn) AddFn, 0),
-		pushbackMaxOutstanding: DefaultPushbackMaxOutstanding,
+		batchMaxSize:              DefaultBatchMaxSize,
+		batchMaxAge:               DefaultBatchMaxAge,
+		entriesPath:               layout.EntriesPath,
+		bundleIDHasher:            defaultIDHasher,
+		checkpointInterval:        DefaultCheckpointInterval,
+		addDecorators:             make([]func(AddFn) AddFn, 0),
+		pushbackMaxOutstanding:    DefaultPushbackMaxOutstanding,
+		garbageCollectionInterval: DefaultGarbageCollectionInterval,
 	}
 }
 
@@ -517,6 +520,9 @@ type AppendOptions struct {
 
 	addDecorators []func(AddFn) AddFn
 	followers     []stream.Follower
+
+	// garbageCollectionInterval of zero should be interpreted as requesting garbage collection to be disabled.
+	garbageCollectionInterval time.Duration
 }
 
 // valid returns an error if an invalid combination of options has been set, or nil otherwise.
@@ -576,6 +582,10 @@ func (o AppendOptions) EntriesPath() func(uint64, uint8) string {
 
 func (o AppendOptions) CheckpointInterval() time.Duration {
 	return o.checkpointInterval
+}
+
+func (o AppendOptions) GarbageCollectionInterval() time.Duration {
+	return o.garbageCollectionInterval
 }
 
 // WithCheckpointSigner is an option for setting the note signer and verifier to use when creating and parsing checkpoints.
@@ -701,4 +711,13 @@ type WitnessOptions struct {
 	// This setting is intended only for facilitating early "non-blocking" adoption of witnessing,
 	// and will be disabled and/or removed in the future.
 	FailOpen bool
+}
+
+// WithGarbageCollectionInterval allows the interval between scans to remove obsolete partial
+// tiles and entry bundles.
+//
+// Setting to zero disables garbage collection.
+func (o *AppendOptions) WithGarbageCollectionInterval(interval time.Duration) *AppendOptions {
+	o.garbageCollectionInterval = interval
+	return o
 }
