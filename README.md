@@ -1,11 +1,11 @@
-# Trillian Tessera
+# Tessera
 
 [![Go Report Card](https://goreportcard.com/badge/github.com/transparency-dev/tessera)](https://goreportcard.com/report/github.com/transparency-dev/tessera)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/transparency-dev/tessera/badge)](https://scorecard.dev/viewer/?uri=github.com/transparency-dev/tessera)
 [![Benchmarks](https://img.shields.io/badge/Benchmarks-blue.svg)](https://transparency-dev.github.io/tessera/dev/bench/)
 [![Slack Status](https://img.shields.io/badge/Slack-Chat-blue.svg)](https://transparency-dev.slack.com/)
 
-Trillian Tessera is a Go library for building [tile-based transparency logs (tlogs)](https://c2sp.org/tlog-tiles).
+Tessera is a Go library for building [tile-based transparency logs (tlogs)](https://c2sp.org/tlog-tiles).
 It is the logical successor to the approach [Trillian v1][] takes in building and operating logs.
 
 The implementation and its APIs bake-in
@@ -13,7 +13,7 @@ The implementation and its APIs bake-in
 over the past decade of building and operating transparency logs in production environments and at scale.
 
 Tessera was introduced at the Transparency.Dev summit in October 2024.
-Watch [Introducing Trillian Tessera](https://www.youtube.com/watch?v=9j_8FbQ9qSc) for all the details,
+Watch [Introducing Tessera](https://www.youtube.com/watch?v=9j_8FbQ9qSc) for all the details,
 but here's a summary of the high level goals:
 
 *   [tlog-tiles API][] and storage
@@ -53,13 +53,13 @@ Beta in Q2 2025, and production ready around mid 2025.
 |  1  | Drivers for GCP, AWS, MySQL, and POSIX                    |   ✅   |
 |  2  | [tlog-tiles API][] support                                |   ✅   |
 |  3  | Example code and terraform scripts for easy onboarding    |   ✅   |
-|  4  | Stable API                                                |   ⚠️   |
+|  4  | Stable API                                                |   ✅   |
 |  5  | Data migration between releases                           |   ✅   |
 |  6  | Data migration between drivers                            |   ✅   |
 |  7  | Witness support                                           |   ✅   |
 |  8  | Monitoring and metrics                                    |   ✅   |
 |  9  | Production ready                                          |   ✅   |
-|  10 | Mirrored logs (#576)                                      |   ❌   |
+|  10 | Mirrored logs (#576)                                      |   ⚠️   |
 |  11 | Preordered logs (#575)                                    |   ❌   |
 |  12 | Trillian v1 to Tessera migration (#577)                   |   ❌   |
 |  N  | Fancy features (to be expanded upon later)                |   ❌   |

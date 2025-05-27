@@ -1,6 +1,6 @@
-# MySQL Storage for Trillian Tessera
+# MySQL Storage for Tessera
 
-This directory contains the implementation of a storage backend for Trillian Tessera using MySQL. This allows Tessera to leverage MySQL as its underlying database for storing checkpoint, entry hashes and data in tiles format.
+This directory contains the implementation of a storage backend for Tessera using MySQL. This allows Tessera to leverage MySQL as its underlying database for storing checkpoint, entry hashes and data in tiles format.
 
 ## Design
 
@@ -14,7 +14,7 @@ See [MySQL storage design documentation](/storage/mysql/DESIGN.md).
 
 ### Constructing the Storage Object
 
-Here is an example code snippet to initialise the MySQL storage in Trillian Tessera.
+Here is an example code snippet to initialise the MySQL storage in Tessera.
 
 ```go
 import (

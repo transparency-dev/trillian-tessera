@@ -2,7 +2,7 @@
 
 ## Objective
 
-This document explains the rationale behind some of the philosophy and design choices underpinning Trillian Tessera.
+This document explains the rationale behind some of the philosophy and design choices underpinning Tessera.
 
 
 ## Simplicity
@@ -17,7 +17,7 @@ we *really need now*?", or otherwise restricting our ability to make large inter
 
 ## Multi-implementation storage
 
-Each storage implementation for Trillian Tessera is independently implemented, and takes the most "native"
+Each storage implementation for Tessera is independently implemented, and takes the most "native"
 approach for the infrastructure it targets.
 
 Trillian v1 defined `LogStorage` and embedded `TreeStorage` interfaces which all storage implementations had
@@ -28,7 +28,7 @@ desired by higher levels in the stack. In turn, this made it hard to:
 1. Support non-single-domain/non-transactional storage implementations, and 
 2. Refactor storage internals to improve performance.
 
-With Trillian Tessera, we are learning from these mistakes, and acknowledging that:
+With Tessera, we are learning from these mistakes, and acknowledging that:
 
 1. The different storage implementations we are building now, and those which will come in the future, have their
    own unique properties which stem from the infrastructure they're built upon - e.g. _some_ infrastructure offers
@@ -51,7 +51,7 @@ caller requesting the addition of the entry was given nothing more than a timest
 would be integrated at some point (note that 24h is the CT _policy_, but there's no specific parameter or deadline
 in Trillian itself - it's _"as soon as possible"_).
 
-With Trillian Tessera, we're tightening the storage contract up so that calls to add entries to the log will
+With Tessera, we're tightening the storage contract up so that calls to add entries to the log will
 return with a durably assigned sequence number, or an error.
 
 It's not a requirement that the Merkle tree has already been extended to cryptographically commit to the new leaf
@@ -82,7 +82,7 @@ This API represents a reasonable set of tradeoffs:
           amortise the long-pole cost over a larger number of sequenced entries.
 2. Limiting the intended window between &lt;sequence> and &lt;integrate> operations to a low
    single-digit-seconds target enables a synchronous add API to be constructed at the layer above (i.e within
-   the "personality" that is built using Trillian Tessera).
+   the "personality" that is built using Tessera).
 
    This approach enables:
      1. synchronous "personalities" to benefit from improved write-throughput (compared with a naive 
