@@ -12,7 +12,7 @@
 -- See the License for the specific language governing permissions and
 -- limitations under the License.
 
--- MySQL version of the Trillian Tessera database schema.
+-- MySQL version of the Tessera database schema.
 
 -- "Tessera" table stores a single row that is the version of this schema
 -- and the data formats within it. This is read at startup to prevent Tessera

@@ -1,6 +1,6 @@
 # Deployment
 
-This directory contains configuration-as-code to deploy Trillian Tessera to supported infrastructure:
+This directory contains configuration-as-code to deploy Tessera to supported infrastructure:
  - `modules`: terraform modules to configure infrastructure for running a Tessera log.
    + `gcp`: a Tessera GCP specific terraform module.
    + `aws`: a Tessera AWS specific terraform module.

@@ -1,7 +1,7 @@
 # MySQL Performance
 
 > [!TIP]
-> The performance test result shows that Trillian Tessera can run on the free tier VM instance on GCP.
+> The performance test result shows that Tessera can run on the free tier VM instance on GCP.
 
 ### GCP Free Tier VM Instance
 
@@ -67,7 +67,7 @@ MiB Swap:      0.0 total,      0.0 free,      0.0 used.     37.3 avail Mem
    git version 2.39.2
    ```
 
-1. Clone the Trillian Tessera repository
+1. Clone the Tessera repository
 
    ```sh
    instance:~$ git clone https://github.com/transparency-dev/tessera.git
@@ -146,7 +146,7 @@ The bottleneck comes from CPU usage of the `cmd/conformance/mysql` binary on the
    git version 2.39.2
    ```
 
-1. Clone the Trillian Tessera repository
+1. Clone the Tessera repository
 
    ```sh
    instance:~$ git clone https://github.com/transparency-dev/tessera.git
@@ -234,7 +234,7 @@ MiB Swap:      0.0 total,      0.0 free,      0.0 used.    403.2 avail Mem
    git version 2.39.2
    ```
 
-1. Clone the Trillian Tessera repository
+1. Clone the Tessera repository
 
    ```sh
    instance:~$ git clone https://github.com/transparency-dev/tessera.git

@@ -374,7 +374,7 @@ func TestTileRoundTrip(t *testing.T) {
 		},
 		{
 			name:  "string entry",
-			entry: []byte("I love Trillian Tessera"),
+			entry: []byte("I love Tessera"),
 		},
 		{
 			name:  "empty byte",
@@ -425,7 +425,7 @@ func TestEntryBundleRoundTrip(t *testing.T) {
 		},
 		{
 			name:  "string entry",
-			entry: []byte("I love Trillian Tessera"),
+			entry: []byte("I love Tessera"),
 		},
 		{
 			name:  "empty byte",

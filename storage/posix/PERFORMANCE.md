@@ -102,7 +102,7 @@ MiB Mem :    970.0 total,     62.2 free,    839.5 used,    227.0 buff/cache
    git version 2.39.2
    ```
 
-1. Clone the Trillian Tessera repository
+1. Clone the Tessera repository
 
    ```sh
    instance:~$ git clone https://github.com/transparency-dev/tessera.git

@@ -1,6 +1,6 @@
 # AWS codelab deployment
 
-This codelab helps you bring a test Trillian Tessera infrastructure on AWS, and
+This codelab helps you bring a test Tessera infrastructure on AWS, and
 to use it by running a test personality server on an EC2 VM. The infrastructure 
 will be comprised of an [Aurora](https://aws.amazon.com/rds/aurora/) MySQL
 database and a private [S3](https://aws.amazon.com/s3/) bucket. 
@@ -20,7 +20,7 @@ with a running EC2 Amazon Linux VM, and the following software installed:
    run the test personality on the VM
  - [terraform](https://developer.hashicorp.com/terraform/tutorials/aws-get-started/install-cli)
    and [terragrunt](https://terragrunt.gruntwork.io/docs/getting-started/install/)
-   in order to deploy the Trillian Tessera infrastructure from the VM.
+   in order to deploy the Tessera infrastructure from the VM.
  - `git` to clone the repo
  - a terminal multiplexer of your choice for convenience
 
@@ -83,7 +83,7 @@ the defaults settings, including for the default VPC. Don't forget to run
     cd tessera/
     ```
 
-### Deploy a Trillian Tessera storage infrastructure
+### Deploy a Tessera storage infrastructure
 In this section, we'll bring up a [S3](https://aws.amazon.com/s3/) bucket, an
 [Aurora](https://aws.amazon.com/rds/aurora/) MySQL, and we'll connect them to the
 VM.
@@ -98,7 +98,7 @@ VM.
     terragrunt apply --working-dir=deployment/live/aws/codelab/
     ```
     This brings up the Terraform infrastructure (S3 bucket + DynamoDB table for
-    terraform state locking only) and the Trillian Tessera infrastructure: an
+    terraform state locking only) and the Tessera infrastructure: an
     RDS Aurora instance, a private S3 bucket, and connects this bucket to the
     default VPC that your VM should be connected to.
 
@@ -112,8 +112,8 @@ VM.
 1. Connect the VM and Aurora database following [these instructions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/tutorial-ec2-rds-option1.html#option1-task3-connect-ec2-instance-to-rds-database),
    it takes a few clicks in the UI.
 
-### Start a Trillian Tessera personality
-A personality is a server that interacts with Trillian Tessera's storage
+### Start a Tessera personality
+A personality is a server that interacts with Tessera's storage
 infrastructure. In this codelab, it accepts POST requests on a `add/` HTTP
 endpoint.
 
@@ -149,7 +149,7 @@ endpoint.
 
  1. 🎉 **Congratulations** 🎉
 
-    You have successfully brought up Trillian Tessera's
+    You have successfully brought up Tessera's
     AWS infrastructure, and started a personality server that can add entries to it.
 
     Use the environment variables from above to interact with the personality in a different terminal.
