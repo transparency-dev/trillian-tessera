@@ -17,6 +17,7 @@ package client
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"os"
@@ -25,6 +26,7 @@ import (
 
 	"github.com/transparency-dev/formats/log"
 	"github.com/transparency-dev/merkle/compact"
+	"github.com/transparency-dev/merkle/proof"
 	"github.com/transparency-dev/tessera/api"
 	"github.com/transparency-dev/tessera/api/layout"
 	"golang.org/x/mod/sumdb/note"
@@ -237,20 +239,31 @@ func TestHandleZeroRoot(t *testing.T) {
 func TestGetEntryBundleAddressing(t *testing.T) {
 	for _, test := range []struct {
 		name                string
-		idx, logSize        uint64
+		idx                 uint64
+		clientLogSize       uint64
+		actualLogSize       uint64
 		wantPartialTileSize uint8
 	}{
 		{
 			name:                "works - partial tile",
 			idx:                 0,
-			logSize:             34,
+			clientLogSize:       34,
+			actualLogSize:       34,
 			wantPartialTileSize: 34,
 		},
 		{
 			name:                "works - full tile",
 			idx:                 1,
-			logSize:             layout.TileWidth*2 + 45,
+			clientLogSize:       layout.TileWidth*2 + 45,
+			actualLogSize:       layout.TileWidth*2 + 45,
 			wantPartialTileSize: 0,
+		},
+		{
+			name:                "works - request partial but fallback to full tile",
+			idx:                 3,                       // Request the partial bundle at the end of the log
+			clientLogSize:       layout.TileWidth*2 + 45, // bundle 3 is partial according to client's PoV
+			actualLogSize:       layout.TileWidth * 3,    // but the log has grown and bundle 3 is now full.
+			wantPartialTileSize: 0,                       // so we expect the last call to the fetcher to be for a full bundle.
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -259,14 +272,91 @@ func TestGetEntryBundleAddressing(t *testing.T) {
 			f := func(_ context.Context, i uint64, sz uint8) ([]byte, error) {
 				gotIdx = i
 				gotTileSize = sz
+				p := layout.PartialTileSize(0, i, test.actualLogSize)
+				if p != sz {
+					return nil, os.ErrNotExist
+				}
 				return []byte{}, nil
 			}
-			_, err := GetEntryBundle(context.Background(), f, test.idx, test.logSize)
+			_, err := GetEntryBundle(context.Background(), f, test.idx, test.clientLogSize)
 			if err != nil {
 				t.Fatalf("GetEntryBundle: %v", err)
 			}
 			if gotIdx != test.idx {
 				t.Errorf("f got idx %d, want %d", gotIdx, test.idx)
+			}
+			if gotTileSize != test.wantPartialTileSize {
+				t.Errorf("f got tileSize %d, want %d", gotTileSize, test.wantPartialTileSize)
+			}
+		})
+	}
+}
+
+func TestNodeFetcherAddressing(t *testing.T) {
+	for _, test := range []struct {
+		name                string
+		nodeLevel           uint
+		nodeIdx             uint64
+		clientLogSize       uint64
+		actualLogSize       uint64
+		wantPartialTileSize uint8
+	}{
+		{
+			name:                "works - partial tile",
+			nodeIdx:             0,
+			clientLogSize:       34,
+			actualLogSize:       34,
+			wantPartialTileSize: 34,
+		},
+		{
+			name:                "works - full tile",
+			nodeIdx:             56,
+			clientLogSize:       layout.TileWidth*2 + 45,
+			actualLogSize:       layout.TileWidth*2 + 45,
+			wantPartialTileSize: 0,
+		},
+		{
+			name:                "works - request partial but fallback to full tile",
+			nodeIdx:             3*layout.TileWidth + 23, // Request node from the partial tile at the end of the log
+			clientLogSize:       layout.TileWidth*2 + 45, // tile 3 is partial according to client's PoV
+			actualLogSize:       layout.TileWidth * 3,    // but the log has grown and tile 3 is now full.
+			wantPartialTileSize: 0,                       // so we expect the last call to the fetcher to be for a full tile.
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			gotLevel, gotIdx, gotTileSize := uint(0), uint64(0), uint8(0)
+			f := func(_ context.Context, l, i uint64, sz uint8) ([]byte, error) {
+				gotLevel = uint(l)
+				gotIdx = i
+				gotTileSize = sz
+				p := layout.PartialTileSize(l, i, test.actualLogSize)
+				if p != sz {
+					return nil, os.ErrNotExist
+				}
+				r := api.HashTile{}
+				s := int(sz)
+				if s == 0 {
+					s = layout.TileWidth
+				}
+				for x := range s {
+					h := sha256.Sum256(fmt.Appendf(nil, "node at %d/%d", l, i+uint64(x)))
+					r.Nodes = append(r.Nodes, h[:])
+				}
+				return r.MarshalText()
+			}
+			pb, err := NewProofBuilder(t.Context(), test.clientLogSize, f)
+			if err != nil {
+				t.Fatalf("NewProofBuilder: %v", err)
+			}
+			_, err = pb.fetchNodes(t.Context(), proof.Nodes{IDs: []compact.NodeID{compact.NewNodeID(test.nodeLevel, test.nodeIdx)}})
+			if err != nil {
+				t.Fatalf("fetchNodes: %v", err)
+			}
+			if wantLevel := test.nodeLevel >> layout.TileHeight; gotLevel != wantLevel {
+				t.Errorf("f got level %d, want %d", gotLevel, wantLevel)
+			}
+			if wantIdx := test.nodeIdx >> layout.TileHeight; gotIdx != wantIdx {
+				t.Errorf("f got idx %d, want %d", gotIdx, wantIdx)
 			}
 			if gotTileSize != test.wantPartialTileSize {
 				t.Errorf("f got tileSize %d, want %d", gotTileSize, test.wantPartialTileSize)
