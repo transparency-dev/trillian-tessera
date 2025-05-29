@@ -351,7 +351,7 @@ func (a *Appender) garbageCollectorJob(ctx context.Context, i time.Duration) {
 	defer t.Stop()
 
 	// Entirely arbitrary number.
-	maxDeletesPerRun := uint(1024)
+	maxBundlesPerRun := uint(100)
 
 	for {
 		select {
@@ -375,7 +375,7 @@ func (a *Appender) garbageCollectorJob(ctx context.Context, i time.Duration) {
 				klog.Warningf("Failed to parse published checkpoint: %v", err)
 			}
 
-			if err := a.sequencer.garbageCollect(ctx, pubSize, maxDeletesPerRun, a.logStore.objStore.deleteObjectsWithPrefix); err != nil {
+			if err := a.sequencer.garbageCollect(ctx, pubSize, maxBundlesPerRun, a.logStore.objStore.deleteObjectsWithPrefix); err != nil {
 				klog.Warningf("GarbageCollect failed: %v", err)
 			}
 		}()
@@ -1030,13 +1030,12 @@ func (s *spannerCoordinator) publishCheckpoint(ctx context.Context, minAge time.
 	return nil
 }
 
-// garbageCollect is a long running function which will identify unneeded partial tiles/entry bundles, and call the provided function to remove them.
+// garbageCollect will identify up to maxBundles unneeded partial entry bundles (and any unneeded partial tiles which sit above them in the tree) and
+// call the provided function to remove them.
 //
 // Uses the `GCCoord` table to ensure that only one binary is actively garbage collecting at any given time, and to track progress so that we don't
 // needlessly attempt to GC over regions which have already been cleaned.
-//
-// Returns true if we've "caught up" with the current state of the tree.
-func (s *spannerCoordinator) garbageCollect(ctx context.Context, treeSize uint64, maxDeletes uint, deleteWithPrefix func(ctx context.Context, prefix string) error) error {
+func (s *spannerCoordinator) garbageCollect(ctx context.Context, treeSize uint64, maxBundles uint, deleteWithPrefix func(ctx context.Context, prefix string) error) error {
 	_, err := s.dbPool.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
 		row, err := txn.ReadRowWithOptions(ctx, "GCCoord", spanner.Key{0}, []string{"fromSize"}, &spanner.ReadOptions{LockHint: spannerpb.ReadRequest_LOCK_HINT_EXCLUSIVE})
 		if err != nil {
@@ -1052,21 +1051,33 @@ func (s *spannerCoordinator) garbageCollect(ctx context.Context, treeSize uint64
 			return nil
 		}
 
-		d := uint(0)
+		n := uint(0)
 		eg := errgroup.Group{}
-	done:
-		for l, f, x := uint64(0), fromSize, treeSize; x > 0; l, f, x = l+1, f>>layout.TileHeight, x>>layout.TileHeight {
-			for ri := range layout.Range(f, x-f, x) {
-				if ri.Partial != 0 || d > maxDeletes {
-					break done
+		// GC the tree in "vertical" chunks defined by entry bundles.
+		for ri := range layout.Range(fromSize, treeSize-fromSize, treeSize) {
+			// Only known-full bundles are in-scope for for GC, so exit if the current bundle is partial or
+			// we've reached our limit of chunks.
+			if ri.Partial > 0 || n > maxBundles {
+				break
+			}
+
+			// GC any partial versions of the entry bundle itself.
+			eg.Go(func() error { return deleteWithPrefix(ctx, layout.EntriesPath(ri.Index, 0)+".p/") })
+			fromSize += uint64(ri.N)
+			n++
+
+			// Now consider (only) the part of the tree which sits above the bundle.
+			// We'll walk up, layer by layer, until we find a tile which is non-full (and therefore ineligible
+			// for GC), at which point we can stop since there cannot be a full tile above a partial tile.
+			for lvl, idx := uint64(0), ri.Index; ; lvl, idx = lvl+1, idx>>layout.TileHeight {
+				// GC any partial versions of the tile.
+				eg.Go(func() error { return deleteWithPrefix(ctx, layout.TilePath(lvl, idx, 0)+".p/") })
+
+				// The tile above is full IFF this tile rolls up as the last element in that tile.
+				// If it's not full, then neither it, nor anything above it, needs GC yet so we're done.
+				if idx%layout.TileWidth != layout.TileWidth-1 {
+					break
 				}
-				if l == 0 {
-					eg.Go(func() error { return deleteWithPrefix(ctx, layout.EntriesPath(ri.Index, 0)+".p/") })
-					d++
-					fromSize += uint64(ri.N)
-				}
-				eg.Go(func() error { return deleteWithPrefix(ctx, layout.TilePath(l, ri.Index, 0)+".p/") })
-				d++
 			}
 		}
 		if err := eg.Wait(); err != nil {
