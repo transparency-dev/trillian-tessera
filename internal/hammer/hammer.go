@@ -294,9 +294,9 @@ func httpWriter(u *url.URL, hc *http.Client, bearerToken string) loadtest.LeafWr
 				return 0, fmt.Errorf("write leaf was redirected to %s", resp.Request.URL)
 			}
 			// Continue below
-		case http.StatusServiceUnavailable, http.StatusBadGateway, http.StatusGatewayTimeout:
+		case http.StatusServiceUnavailable, http.StatusBadGateway, http.StatusGatewayTimeout, http.StatusTooManyRequests:
 			// These status codes may indicate a delay before retrying, so handle that here:
-			time.Sleep(retryDelay(resp.Header.Get("RetryAfter"), time.Second))
+			time.Sleep(retryDelay(resp.Header.Get("Retry-After"), time.Second))
 
 			return 0, fmt.Errorf("log not available. Status code: %d. Body: %q %w", resp.StatusCode, body, loadtest.ErrRetry)
 		default:
