@@ -1051,33 +1051,33 @@ func (s *spannerCoordinator) garbageCollect(ctx context.Context, treeSize uint64
 			return nil
 		}
 
-		n := uint(0)
+		d := uint(0)
 		eg := errgroup.Group{}
 		// GC the tree in "vertical" chunks defined by entry bundles.
 		for ri := range layout.Range(fromSize, treeSize-fromSize, treeSize) {
 			// Only known-full bundles are in-scope for for GC, so exit if the current bundle is partial or
 			// we've reached our limit of chunks.
-			if ri.Partial > 0 || n > maxBundles {
+			if ri.Partial > 0 || d > maxBundles {
 				break
 			}
 
-			// GC any partial versions of the entry bundle itself.
+			// GC any partial versions of the entry bundle itself and the tile which sits immediately above it.
 			eg.Go(func() error { return deleteWithPrefix(ctx, layout.EntriesPath(ri.Index, 0)+".p/") })
+			eg.Go(func() error { return deleteWithPrefix(ctx, layout.TilePath(0, ri.Index, 0)+".p/") })
 			fromSize += uint64(ri.N)
-			n++
+			d++
 
 			// Now consider (only) the part of the tree which sits above the bundle.
-			// We'll walk up, layer by layer, until we find a tile which is non-full (and therefore ineligible
-			// for GC), at which point we can stop since there cannot be a full tile above a partial tile.
-			for lvl, idx := uint64(0), ri.Index; ; lvl, idx = lvl+1, idx>>layout.TileHeight {
-				// GC any partial versions of the tile.
-				eg.Go(func() error { return deleteWithPrefix(ctx, layout.TilePath(lvl, idx, 0)+".p/") })
+			// We'll walk up the parent tiles for as a long as we're tracing the right-hand
+			// edge of a perfect subtree.
+			// This gives the property we'll only visit each parent tile once, rather than up to 256 times.
+			pL, pIdx := uint64(0), ri.Index
+			for isLastLeafInParent(pIdx) {
+				// Move our coordinates up to the parent
+				pL, pIdx = pL+1, pIdx>>layout.TileHeight
+				// GC any partial versions of the parent tile.
+				eg.Go(func() error { return deleteWithPrefix(ctx, layout.TilePath(pL, pIdx, 0)+".p/") })
 
-				// The tile above is full IFF this tile rolls up as the last element in that tile.
-				// If it's not full, then neither it, nor anything above it, needs GC yet so we're done.
-				if idx%layout.TileWidth != layout.TileWidth-1 {
-					break
-				}
 			}
 		}
 		if err := eg.Wait(); err != nil {
@@ -1091,6 +1091,12 @@ func (s *spannerCoordinator) garbageCollect(ctx context.Context, treeSize uint64
 		return nil
 	})
 	return err
+}
+
+// isLastLeafInParent returns true if a tile with the provided index is the final child node of a
+// (hypothetical) full parent tile.
+func isLastLeafInParent(i uint64) bool {
+	return i%layout.TileWidth == layout.TileWidth-1
 }
 
 // gcsStorage knows how to store and retrieve objects from GCS.
