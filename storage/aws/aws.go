@@ -115,8 +115,8 @@ type sequencer interface {
 	// nextIndex returns the next available index in the log.
 	nextIndex(ctx context.Context) (uint64, error)
 
-	// publishTree coordinates the publication of new checkpoints based on the current integrated tree.
-	publishTree(ctx context.Context, minAge time.Duration, f func(ctx context.Context, size uint64, root []byte) error) error
+	// publishCheckpoint coordinates the publication of new checkpoints based on the current integrated tree.
+	publishCheckpoint(ctx context.Context, minAge time.Duration, f func(ctx context.Context, size uint64, root []byte) error) error
 }
 
 // consumeFunc is the signature of a function which can consume entries from the sequencer.
@@ -215,10 +215,10 @@ func (s *Storage) Appender(ctx context.Context, opts *tessera.AppendOptions) (*t
 	}
 
 	// Kick off go-routine which handles the integration of entries.
-	go r.consumeEntriesTask(ctx)
+	go r.integrateEntriesJob(ctx)
 
 	// Kick off go-routine which handles the publication of checkpoints.
-	go r.publishCheckpointTask(ctx, opts.CheckpointInterval())
+	go r.publishCheckpointJob(ctx, opts.CheckpointInterval())
 
 	return &tessera.Appender{
 		Add: r.Add,
@@ -237,10 +237,10 @@ type Appender struct {
 	treeUpdated chan struct{}
 }
 
-// sequenceEntriesTask periodically integrates newly sequenced entries.
+// integrateEntriesJob periodically appends newly sequenced entries to the log.
 //
 // This function does not return until the passed context is done.
-func (a *Appender) consumeEntriesTask(ctx context.Context) {
+func (a *Appender) integrateEntriesJob(ctx context.Context) {
 	t := time.NewTicker(1 * time.Second)
 	defer t.Stop()
 	for {
@@ -255,8 +255,8 @@ func (a *Appender) consumeEntriesTask(ctx context.Context) {
 			cctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 			defer cancel()
 
-			if _, err := a.sequencer.consumeEntries(cctx, DefaultIntegrationSizeLimit, a.appendEntries, false); err != nil {
-				klog.Errorf("integrate: %v", err)
+			if _, err := a.sequencer.consumeEntries(cctx, DefaultIntegrationSizeLimit, a.integrateEntries, false); err != nil {
+				klog.Errorf("integrateEntries: %v", err)
 				return
 			}
 			select {
@@ -267,11 +267,11 @@ func (a *Appender) consumeEntriesTask(ctx context.Context) {
 	}
 }
 
-// publishCheckpointTask periodically attempts to publish a new checkpoint representing the current state
+// publishCheckpointJob periodically attempts to publish a new checkpoint representing the current state
 // of the tree, once per interval.
 //
 // This function does not return until the passed in context is done.
-func (a *Appender) publishCheckpointTask(ctx context.Context, interval time.Duration) {
+func (a *Appender) publishCheckpointJob(ctx context.Context, interval time.Duration) {
 	t := time.NewTicker(interval)
 	defer t.Stop()
 	for {
@@ -281,7 +281,7 @@ func (a *Appender) publishCheckpointTask(ctx context.Context, interval time.Dura
 		case <-a.treeUpdated:
 		case <-t.C:
 		}
-		if err := a.sequencer.publishTree(ctx, interval, a.publishCheckpoint); err != nil {
+		if err := a.sequencer.publishCheckpoint(ctx, interval, a.publishCheckpoint); err != nil {
 			klog.Warningf("publishCheckpoint: %v", err)
 		}
 	}
@@ -302,7 +302,7 @@ func (a *Appender) init(ctx context.Context) error {
 			// framework which prevents the tree from rolling backwards or otherwise forking).
 			cctx, c := context.WithTimeout(ctx, 10*time.Second)
 			defer c()
-			if _, err := a.sequencer.consumeEntries(cctx, DefaultIntegrationSizeLimit, a.appendEntries, true); err != nil {
+			if _, err := a.sequencer.consumeEntries(cctx, DefaultIntegrationSizeLimit, a.integrateEntries, true); err != nil {
 				return fmt.Errorf("forced integrate: %v", err)
 			}
 			select {
@@ -332,10 +332,10 @@ func (a *Appender) publishCheckpoint(ctx context.Context, size uint64, root []by
 	return nil
 }
 
-// appendEntries incorporates the provided entries into the log starting at fromSeq.
+// integrateEntries appends the provided entries into the log starting at fromSeq.
 //
 // Returns the new root hash of the log with the entries added.
-func (a *Appender) appendEntries(ctx context.Context, fromSeq uint64, entries []storage.SequencedEntry) ([]byte, error) {
+func (a *Appender) integrateEntries(ctx context.Context, fromSeq uint64, entries []storage.SequencedEntry) ([]byte, error) {
 	var newRoot []byte
 
 	errG := errgroup.Group{}
@@ -1112,12 +1112,12 @@ func (s *mySQLSequencer) nextIndex(ctx context.Context) (uint64, error) {
 	return nextSeq, nil
 }
 
-// publishTree checks when the last checkpoint was published, and if it was more than minAge ago, calls the provided
+// publishCheckpoint checks when the last checkpoint was published, and if it was more than minAge ago, calls the provided
 // function to publish a new one.
 //
 // This function uses PubCoord with an exclusive lock to guarantee that only one tessera instance can attempt to publish
 // a checkpoint at any given time.
-func (s *mySQLSequencer) publishTree(ctx context.Context, minAge time.Duration, f func(context.Context, uint64, []byte) error) error {
+func (s *mySQLSequencer) publishCheckpoint(ctx context.Context, minAge time.Duration, f func(context.Context, uint64, []byte) error) error {
 	tx, err := s.dbPool.Begin()
 	if err != nil {
 		return err
@@ -1135,11 +1135,11 @@ func (s *mySQLSequencer) publishTree(ctx context.Context, minAge time.Duration, 
 	}
 	cpAge := time.Since(time.Unix(pubAt, 0))
 	if cpAge < minAge {
-		klog.V(1).Infof("publishTree: last checkpoint published %s ago (< required %s), not publishing new checkpoint", cpAge, minAge)
+		klog.V(1).Infof("publishCheckpoint: last checkpoint published %s ago (< required %s), not publishing new checkpoint", cpAge, minAge)
 		return nil
 	}
 
-	klog.V(1).Infof("publishTree: updating checkpoint (replacing %s old checkpoint)", cpAge)
+	klog.V(1).Infof("publishCheckpoint: updating checkpoint (replacing %s old checkpoint)", cpAge)
 
 	row := tx.QueryRowContext(ctx, "SELECT seq, rootHash FROM IntCoord WHERE id = ?", 0)
 	var fromSeq uint64
