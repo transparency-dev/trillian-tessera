@@ -95,3 +95,32 @@ func TestQueue(t *testing.T) {
 		})
 	}
 }
+
+func BenchmarkQueue(b *testing.B) {
+	ctx := context.Background()
+	const count = 1024
+	// Outer loop is for benchmark calibration, inside here is each individual run of the benchmark
+	for b.Loop() {
+		flushFn := func(_ context.Context, entries []*tessera.Entry) error {
+			for _, e := range entries {
+				_ = e.MarshalBundleData(0)
+			}
+			return nil
+		}
+		q := storage.NewQueue(ctx, time.Second, 256, flushFn)
+
+		adds := make([]tessera.IndexFuture, 0, count)
+		for leafIndex := range count {
+			f := q.Add(ctx, tessera.NewEntry([]byte{byte(leafIndex)}))
+			adds = append(adds, f)
+		}
+
+		for _, r := range adds {
+			_, err := r()
+			if err != nil {
+				b.Errorf("Add: %v", err)
+				return
+			}
+		}
+	}
+}
