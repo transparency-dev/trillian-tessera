@@ -803,17 +803,34 @@ func (s *spannerCoordinator) consumeEntries(ctx context.Context, limit uint64, f
 		if err := row.Columns(&fromSeq, &rootHash); err != nil {
 			return fmt.Errorf("failed to read integration coordination info: %v", err)
 		}
-		klog.V(1).Infof("Consuming from %d", fromSeq)
+
+		// See how much potential work there is to do and trim our limit accordingly.
+		row, err = txn.ReadRow(ctx, "SeqCoord", spanner.Key{0}, []string{"next"})
+		if err != nil {
+			return err
+		}
+		var endSeq int64 // Spanner doesn't support uint64
+		if err := row.Columns(&endSeq); err != nil {
+			return fmt.Errorf("failed to read sequence coordination info: %v", err)
+		}
+		if endSeq == fromSeq {
+			return nil
+		}
+		if l := fromSeq + int64(limit); l < endSeq {
+			endSeq = l
+		}
+
+		klog.V(1).Infof("Consuming bundles start from %d to at most %d", fromSeq, endSeq)
 
 		// Now read the sequenced starting at the index we got above.
 		rows := txn.ReadWithOptions(ctx, "Seq",
-			spanner.KeyRange{Start: spanner.Key{0, fromSeq}, End: spanner.Key{0, fromSeq + int64(limit)}},
+			spanner.KeyRange{Start: spanner.Key{0, fromSeq}, End: spanner.Key{0, endSeq}},
 			[]string{"seq", "v"},
 			&spanner.ReadOptions{LockHint: spannerpb.ReadRequest_LOCK_HINT_EXCLUSIVE})
 		defer rows.Stop()
 
 		seqsConsumed := []int64{}
-		entries := make([]storage.SequencedEntry, 0, limit)
+		entries := make([]storage.SequencedEntry, 0, endSeq-fromSeq)
 		orderCheck := fromSeq
 		for {
 			row, err := rows.Next()
