@@ -20,8 +20,10 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"reflect"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -31,10 +33,13 @@ import (
 	"cloud.google.com/go/spanner/spannertest"
 	gcs "cloud.google.com/go/storage"
 	"github.com/google/go-cmp/cmp"
+	"github.com/transparency-dev/merkle/rfc6962"
 	"github.com/transparency-dev/tessera"
 	"github.com/transparency-dev/tessera/api"
 	"github.com/transparency-dev/tessera/api/layout"
+	"github.com/transparency-dev/tessera/internal/fsck"
 	storage "github.com/transparency-dev/tessera/storage/internal"
+	"golang.org/x/mod/sumdb/note"
 )
 
 func newSpannerDB(t *testing.T) func() {
@@ -494,6 +499,109 @@ func TestPublishTree(t *testing.T) {
 	}
 }
 
+func TestGarbageCollect(t *testing.T) {
+	ctx := t.Context()
+	batchSize := uint64(60000)
+	integrateEvery := uint64(31234)
+
+	closeDB := newSpannerDB(t)
+	defer closeDB()
+
+	s, err := newSpannerCoordinator(ctx, "projects/p/instances/i/databases/d", batchSize)
+	if err != nil {
+		t.Fatalf("newSpannerCoordinator: %v", err)
+	}
+	defer s.dbPool.Close()
+
+	sk, vk := mustGenerateKeys(t)
+
+	m := newMemObjStore()
+	storage := &Storage{}
+
+	opts := tessera.NewAppendOptions().
+		WithCheckpointInterval(1200*time.Millisecond).
+		WithBatching(uint(batchSize), 100*time.Millisecond).
+		// Disable GC so we can manually invoke below.
+		WithGarbageCollectionInterval(time.Duration(0)).
+		WithCheckpointSigner(sk)
+	appender, lr, err := storage.newAppender(ctx, m, s, opts)
+	if err != nil {
+		t.Fatalf("newAppender: %v", err)
+	}
+	if err := appender.publishCheckpoint(ctx, 0, []byte("")); err != nil {
+		t.Fatalf("publishCheckpoint: %v", err)
+	}
+
+	// Build a reasonably-sized tree with a bunch of partial resouces present, and wait for
+	// it to be published.
+	treeSize := uint64(256 * 384)
+
+	a := tessera.NewPublicationAwaiter(ctx, lr.ReadCheckpoint, 100*time.Millisecond)
+
+	// grow and garbage collect the tree several times to check continued correct operation over lifetime of the log
+	for size := uint64(0); size < treeSize; {
+		t.Logf("Adding entries from %d", size)
+		for range batchSize {
+			f := appender.Add(ctx, tessera.NewEntry(fmt.Appendf(nil, "entry %d", size)))
+			if size%integrateEvery == 0 {
+				t.Logf("Awaiting entry  %d", size)
+				if _, _, err := a.Await(ctx, f); err != nil {
+					t.Fatalf("Await: %v", err)
+				}
+			}
+			size++
+		}
+		t.Logf("Awaiting tree at size  %d", size)
+		if _, _, err := a.Await(ctx, func() (tessera.Index, error) { return tessera.Index{Index: size - 1}, nil }); err != nil {
+			t.Fatalf("Await final tree: %v", err)
+		}
+
+		t.Logf("Running GC at size  %d", size)
+		if err := s.garbageCollect(ctx, size, 1000, m.deleteObjectsWithPrefix); err != nil {
+			t.Fatalf("garbageCollect: %v", err)
+		}
+
+		// Compare any remaining partial resources to the list of places
+		// we'd expect them to be, given the tree size.
+		wantPartialPrefixes := make(map[string]struct{})
+		for _, p := range expectedPartialPrefixes(size) {
+			wantPartialPrefixes[p] = struct{}{}
+		}
+		for k := range m.mem {
+			if strings.Contains(k, ".p/") {
+				p := strings.SplitAfter(k, ".p/")[0]
+				if _, ok := wantPartialPrefixes[p]; !ok {
+					t.Errorf("Found unwanted partial: %s", k)
+				}
+			}
+		}
+	}
+
+	// And finally, for good measure, assert that all the resources implied by the log's checkpoint
+	// are present.
+	if err := fsck.Check(ctx, vk.Name(), vk, lr, 1, defaultMerkleLeafHasher); err != nil {
+		t.Fatalf("FSCK failed: %v", err)
+	}
+}
+
+// expectedPartialPrefixes returns a slice containing resource prefixes where it's acceptable for a
+// tree of the provided size to have partial resources.
+//
+// These are really just the right-hand tiles/entry bundle in the tree.
+func expectedPartialPrefixes(size uint64) []string {
+	r := []string{}
+	for l, c := uint64(0), size; c > 0; l, c = l+1, c>>8 {
+		idx, p := c/256, c%256
+		if p != 0 {
+			if l == 0 {
+				r = append(r, layout.EntriesPath(idx, 0)+".p/")
+			}
+			r = append(r, layout.TilePath(l, idx, 0)+".p/")
+		}
+	}
+	return r
+}
+
 type memObjStore struct {
 	sync.RWMutex
 	mem map[string][]byte
@@ -532,4 +640,47 @@ func (m *memObjStore) setObject(_ context.Context, obj string, data []byte, cond
 	}
 	m.mem[obj] = data
 	return nil
+}
+
+func (m *memObjStore) deleteObjectsWithPrefix(_ context.Context, prefix string) error {
+	m.Lock()
+	defer m.Unlock()
+
+	for k := range m.mem {
+		if strings.HasPrefix(k, prefix) {
+			log.Printf("DELETE: %s", k)
+			delete(m.mem, k)
+		}
+	}
+	return nil
+}
+
+func mustGenerateKeys(t *testing.T) (note.Signer, note.Verifier) {
+	sk, vk, err := note.GenerateKey(nil, "testlog")
+	if err != nil {
+		t.Fatalf("GenerateKey: %v", err)
+	}
+	s, err := note.NewSigner(sk)
+	if err != nil {
+		t.Fatalf("NewSigner: %v", err)
+	}
+	v, err := note.NewVerifier(vk)
+	if err != nil {
+		t.Fatalf("NewVerifier: %v", err)
+	}
+	return s, v
+}
+
+// defaultMerkleLeafHasher parses a C2SP tlog-tile bundle and returns the Merkle leaf hashes of each entry it contains.
+func defaultMerkleLeafHasher(bundle []byte) ([][]byte, error) {
+	eb := &api.EntryBundle{}
+	if err := eb.UnmarshalText(bundle); err != nil {
+		return nil, fmt.Errorf("unmarshal: %v", err)
+	}
+	r := make([][]byte, 0, len(eb.Entries))
+	for _, e := range eb.Entries {
+		h := rfc6962.DefaultHasher.HashLeaf(e)
+		r = append(r, h[:])
+	}
+	return r, nil
 }
