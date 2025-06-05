@@ -502,6 +502,7 @@ func TestPublishTree(t *testing.T) {
 func TestGarbageCollect(t *testing.T) {
 	ctx := t.Context()
 	batchSize := uint64(60000)
+	integrateEvery := uint64(31234)
 
 	closeDB := newSpannerDB(t)
 	defer closeDB()
@@ -536,34 +537,42 @@ func TestGarbageCollect(t *testing.T) {
 	treeSize := uint64(256 * 384)
 
 	a := tessera.NewPublicationAwaiter(ctx, lr.ReadCheckpoint, 100*time.Millisecond)
-	for i := range treeSize {
-		f := appender.Add(ctx, tessera.NewEntry(fmt.Appendf(nil, "entry %d", i)))
-		// Occasionally wait for the publish to complete so we know we have some partial tiles to clean up.
-		if i%batchSize == 0 {
-			if _, _, err := a.Await(ctx, f); err != nil {
-				t.Fatalf("Await: %v", err)
+
+	// grow and garbage collect the tree several times to check continued correct operation over lifetime of the log
+	for size := uint64(0); size < treeSize; {
+		t.Logf("Adding entries from %d", size)
+		for range batchSize {
+			f := appender.Add(ctx, tessera.NewEntry(fmt.Appendf(nil, "entry %d", size)))
+			if size%integrateEvery == 0 {
+				t.Logf("Awaiting entry  %d", size)
+				if _, _, err := a.Await(ctx, f); err != nil {
+					t.Fatalf("Await: %v", err)
+				}
 			}
+			size++
 		}
-	}
-	if _, _, err := a.Await(ctx, func() (tessera.Index, error) { return tessera.Index{Index: treeSize - 1}, nil }); err != nil {
-		t.Fatalf("Await final tree: %v", err)
-	}
+		t.Logf("Awaiting tree at size  %d", size)
+		if _, _, err := a.Await(ctx, func() (tessera.Index, error) { return tessera.Index{Index: size - 1}, nil }); err != nil {
+			t.Fatalf("Await final tree: %v", err)
+		}
 
-	if err := s.garbageCollect(ctx, treeSize, 1000, m.deleteObjectsWithPrefix); err != nil {
-		t.Fatalf("garbageCollect: %v", err)
-	}
+		t.Logf("Running GC at size  %d", size)
+		if err := s.garbageCollect(ctx, size, 1000, m.deleteObjectsWithPrefix); err != nil {
+			t.Fatalf("garbageCollect: %v", err)
+		}
 
-	// Compare any remaining partial resources to the list of places
-	// we'd expect them to be, given the tree size.
-	wantPartialPrefixes := make(map[string]struct{})
-	for _, p := range expectedPartialPrefixes(treeSize) {
-		wantPartialPrefixes[p] = struct{}{}
-	}
-	for k := range m.mem {
-		if strings.Contains(k, ".p/") {
-			p := strings.SplitAfter(k, ".p/")[0]
-			if _, ok := wantPartialPrefixes[p]; !ok {
-				t.Errorf("Found unwanted partial: %s", k)
+		// Compare any remaining partial resources to the list of places
+		// we'd expect them to be, given the tree size.
+		wantPartialPrefixes := make(map[string]struct{})
+		for _, p := range expectedPartialPrefixes(size) {
+			wantPartialPrefixes[p] = struct{}{}
+		}
+		for k := range m.mem {
+			if strings.Contains(k, ".p/") {
+				p := strings.SplitAfter(k, ".p/")[0]
+				if _, ok := wantPartialPrefixes[p]; !ok {
+					t.Errorf("Found unwanted partial: %s", k)
+				}
 			}
 		}
 	}
