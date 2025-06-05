@@ -218,6 +218,9 @@ func NewAppender(ctx context.Context, d Driver, opts *AppendOptions) (*Appender,
 	if !ok {
 		return nil, nil, nil, fmt.Errorf("driver %T does not implement Appender lifecycle", d)
 	}
+	if opts == nil {
+		return nil, nil, nil, errors.New("opts cannot be nil")
+	}
 	if err := opts.valid(); err != nil {
 		return nil, nil, nil, err
 	}
