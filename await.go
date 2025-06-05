@@ -83,6 +83,9 @@ type PublicationAwaiter struct {
 // or in the event that there is an error getting a valid checkpoint, an error
 // will be returned from this method.
 func (a *PublicationAwaiter) Await(ctx context.Context, future IndexFuture) (Index, []byte, error) {
+	ctx, span := tracer.Start(ctx, "tessera.Await")
+	defer span.End()
+
 	i, err := future()
 	if err != nil {
 		return i, nil, err

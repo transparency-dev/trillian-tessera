@@ -788,7 +788,7 @@ func (s *spannerCoordinator) assignEntries(ctx context.Context, entries []*tesse
 //
 // Returns true if some entries were consumed as a weak signal that there may be further entries waiting to be consumed.
 func (s *spannerCoordinator) consumeEntries(ctx context.Context, limit uint64, f consumeFunc, forceUpdate bool) (bool, error) {
-	ctx, span := tracer.Start(ctx, "tessera.storage.gcp.assignEntries")
+	ctx, span := tracer.Start(ctx, "tessera.storage.gcp.consumeEntries")
 	defer span.End()
 
 	didWork := false

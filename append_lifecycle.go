@@ -241,6 +241,9 @@ func NewAppender(ctx context.Context, d Driver, opts *AppendOptions) (*Appender,
 	}
 	// TODO(mhutchinson): move this into the decorators
 	a.Add = func(ctx context.Context, entry *Entry) IndexFuture {
+		ctx, span := tracer.Start(ctx, "tessera.Appender.Add")
+		defer span.End()
+
 		return t.Add(ctx, entry)
 	}
 	return a, t.Shutdown, r, nil
