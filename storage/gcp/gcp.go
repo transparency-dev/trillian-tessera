@@ -79,6 +79,9 @@ const (
 
 	DefaultIntegrationSizeLimit = 5 * 4096
 
+	DefaultSpannerTimeout = 10 * time.Second
+	DefaultInitTimeout    = time.Minute
+
 	// SchemaCompatibilityVersion represents the expected version (e.g. layout & serialisation) of stored data.
 	//
 	// A binary built with a given version of the Tessera library is compatible with stored data created by a different version
@@ -237,9 +240,9 @@ func (s *Storage) newAppender(ctx context.Context, o objStore, seq *spannerCoord
 			entriesPath: opts.EntriesPath(),
 		},
 		sequencer: seq,
+		queue:     storage.NewQueue(ctx, opts.BatchMaxAge(), opts.BatchMaxSize(), seq.assignEntriesWithTimeout(DefaultSpannerTimeout)),
 		cpUpdated: make(chan struct{}),
 	}
-	a.queue = storage.NewQueue(ctx, opts.BatchMaxAge(), opts.BatchMaxSize(), a.sequencer.assignEntries)
 
 	reader := &LogReader{
 		lrs: *a.logStore,
@@ -253,7 +256,10 @@ func (s *Storage) newAppender(ctx context.Context, o objStore, seq *spannerCoord
 	}
 	a.newCP = opts.CheckpointPublisher(reader, http.DefaultClient)
 
-	if err := a.init(ctx); err != nil {
+	tCtx, cancel := context.WithTimeout(ctx, DefaultInitTimeout)
+	defer cancel()
+
+	if err := a.init(tCtx); err != nil {
 		return nil, nil, fmt.Errorf("failed to initialise log storage: %v", err)
 	}
 
@@ -300,14 +306,14 @@ func (a *Appender) integrateEntriesJob(ctx context.Context) {
 		}
 
 		func() {
+			ctx, cancel := context.WithTimeout(ctx, DefaultSpannerTimeout)
+			defer cancel()
+
 			ctx, span := tracer.Start(ctx, "tessera.storage.gcp.integrateEntriesJob")
 			defer span.End()
 
 			// Don't quickloop for now, it causes issues updating checkpoint too frequently.
-			cctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-			defer cancel()
-
-			if _, err := a.sequencer.consumeEntries(cctx, DefaultIntegrationSizeLimit, a.integrateEntries, false); err != nil {
+			if _, err := a.sequencer.consumeEntries(ctx, DefaultIntegrationSizeLimit, a.integrateEntries, false); err != nil {
 				klog.Errorf("integrateEntriesJob: %v", err)
 				return
 			}
@@ -334,6 +340,9 @@ func (a *Appender) publishCheckpointJob(ctx context.Context, i time.Duration) {
 		case <-t.C:
 		}
 		func() {
+			ctx, cancel := context.WithTimeout(ctx, DefaultSpannerTimeout)
+			defer cancel()
+
 			ctx, span := tracer.Start(ctx, "tessera.storage.gcp.publishCheckpointJob")
 			defer span.End()
 			if err := a.sequencer.publishCheckpoint(ctx, i, a.publishCheckpoint); err != nil {
@@ -390,9 +399,7 @@ func (a *Appender) init(ctx context.Context) error {
 			// No checkpoint exists, do a forced (possibly empty) integration to create one in a safe
 			// way (setting the checkpoint directly here would not be safe as it's outside the transactional
 			// framework which prevents the tree from rolling backwards or otherwise forking).
-			cctx, c := context.WithTimeout(ctx, 10*time.Second)
-			defer c()
-			if _, err := a.sequencer.consumeEntries(cctx, DefaultIntegrationSizeLimit, a.integrateEntries, true); err != nil {
+			if _, err := a.sequencer.consumeEntries(ctx, DefaultIntegrationSizeLimit, a.integrateEntries, true); err != nil {
 				return fmt.Errorf("forced integrate: %v", err)
 			}
 			select {
@@ -696,10 +703,14 @@ func newSpannerCoordinator(ctx context.Context, spannerDB string, maxOutstanding
 		dbPool:         dbPool,
 		maxOutstanding: maxOutstanding,
 	}
-	if err := r.initDB(ctx, spannerDB); err != nil {
+
+	tCtx, cancel := context.WithTimeout(ctx, DefaultSpannerTimeout)
+	defer cancel()
+
+	if err := r.initDB(tCtx, spannerDB); err != nil {
 		return nil, fmt.Errorf("failed to initDB: %v", err)
 	}
-	if err := r.checkDataCompatibility(ctx); err != nil {
+	if err := r.checkDataCompatibility(tCtx); err != nil {
 		return nil, fmt.Errorf("schema is not compatible with this version of the Tessera library: %v", err)
 	}
 	return r, nil
@@ -755,6 +766,17 @@ func (s *spannerCoordinator) checkDataCompatibility(ctx context.Context) error {
 		return fmt.Errorf("schema compatibilityVersion (%d) != library compatibilityVersion (%d)", compat, SchemaCompatibilityVersion)
 	}
 	return nil
+}
+
+// assignEntriesWithTimeout returns a simple wrapper around assignEntries which applies a timeout
+// to the provided context.
+func (s *spannerCoordinator) assignEntriesWithTimeout(t time.Duration) storage.FlushFunc {
+	return func(ctx context.Context, entries []*tessera.Entry) error {
+		cctx, cancel := context.WithTimeout(ctx, t)
+		defer cancel()
+
+		return s.assignEntries(cctx, entries)
+	}
 }
 
 // assignEntries durably assigns each of the passed-in entries an index in the log.
