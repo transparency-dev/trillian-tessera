@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"io"
 	"math/rand/v2"
+	"net"
 	"net/http"
 	"net/http/httptrace"
 	"net/url"
@@ -89,7 +90,13 @@ func main() {
 	}
 	if *forceHTTP2 {
 		hc.Transport = &http2.Transport{
-			TLSClientConfig: &tls.Config{},
+			// So http2.Transport doesn't complain the URL scheme isn't 'https'
+			AllowHTTP: true,
+			// Pretend we are dialing a TLS endpoint. (Note, we ignore the passed tls.Config)
+			DialTLSContext: func(ctx context.Context, network, addr string, cfg *tls.Config) (net.Conn, error) {
+				var d net.Dialer
+				return d.DialContext(ctx, network, addr)
+			},
 		}
 	}
 
